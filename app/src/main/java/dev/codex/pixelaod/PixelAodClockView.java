@@ -103,6 +103,10 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int INFO_AOD_WEIGHT = 500;
     private static final int WEATHER_ICON_SIZE_DP = 15;
     private static final int WEATHER_ICON_PADDING_DP = 6;
+    private static final int BURN_IN_OFFSET_X_DP = 16;
+    private static final int BURN_IN_OFFSET_Y_DP = 24;
+    private static final float BURN_IN_PERIOD_X_MINUTES = 43f;
+    private static final float BURN_IN_PERIOD_Y_MINUTES = 271f;
     private static final int NOTIFICATION_FLAG_SILENT = 0x00020000;
     private static final String GOOGLE_SANS_FLEX_CLOCK_ASSET = "assets/fonts/GoogleSansFlex-200.ttf";
     private static final String GOOGLE_SANS_FLEX_INFO_ASSET = "assets/fonts/GoogleSansFlex-500.ttf";
@@ -143,6 +147,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static int activeSnapshotDirectLogCount;
     private static int instanceRefreshLogCount;
     private static int shadeSuppressionLogCount;
+    private static int burnInLogCount;
     private static long lastCachedWeatherRequestAt;
     private static String atAGlanceExtra = "";
     private static WeatherSnapshot breezyWeather = WeatherSnapshot.empty();
@@ -341,10 +346,10 @@ public final class PixelAodClockView extends FrameLayout {
             synchronized (PixelAodClockView.class) {
                 breezyWeatherReceiverRegistered = true;
             }
-            PixelAodXposedEntry.log("registered Pixel AOD Breezy weather receiver");
+            PixelAodLog.log("registered Pixel AOD Breezy weather receiver");
             requestCachedBreezyWeather(receiverContext);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to register Pixel AOD Breezy weather receiver", t);
+            PixelAodLog.log("failed to register Pixel AOD Breezy weather receiver", t);
         }
     }
 
@@ -354,9 +359,9 @@ public final class PixelAodClockView extends FrameLayout {
                     .setPackage(MODULE_PACKAGE)
                     .setFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
             context.sendBroadcast(request);
-            PixelAodXposedEntry.log("requested cached Breezy weather replay");
+            PixelAodLog.log("requested cached Breezy weather replay");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to request cached Breezy weather replay", t);
+            PixelAodLog.log("failed to request cached Breezy weather replay", t);
         }
     }
 
@@ -375,14 +380,14 @@ public final class PixelAodClockView extends FrameLayout {
             packageSummary = describeNotificationPackages(activeNotifications);
             if (notificationUpdateLogCount < 10) {
                 notificationUpdateLogCount++;
-                PixelAodXposedEntry.log("updated native AOD notification snapshot raw="
+                PixelAodLog.log("updated native AOD notification snapshot raw="
                         + rawCount
                         + " usable=" + usableCount
                         + " packages=" + packageSummary);
             }
             if (activeSnapshotDirectLogCount < 16) {
                 activeSnapshotDirectLogCount++;
-                PixelAodXposedEntry.log("AOD notification snapshot direct raw="
+                PixelAodLog.log("AOD notification snapshot direct raw="
                         + rawCount
                         + " usable=" + usableCount);
             }
@@ -396,7 +401,7 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             rawSnapshot = rawNotifications;
         }
-        PixelAodXposedEntry.log("refreshing AOD notification filtering from " + source);
+        PixelAodLog.log("refreshing AOD notification filtering from " + source);
         setActiveNotifications(rawSnapshot);
     }
 
@@ -417,7 +422,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
         });
         if (changed) {
-            PixelAodXposedEntry.log("Pixel AOD active=" + active + " source=" + source);
+            PixelAodLog.log("Pixel AOD active=" + active + " source=" + source);
         }
     }
 
@@ -431,12 +436,13 @@ public final class PixelAodClockView extends FrameLayout {
                 if (view != null) {
                     if (view.getVisibility() != View.GONE) {
                         view.setVisibility(View.GONE);
+                        view.resetBurnInTranslation();
                         hidden++;
                     }
                     view.stop();
                 }
             }
-            PixelAodXposedEntry.log("hid Pixel AOD overlays from " + source + " count=" + hidden);
+            PixelAodLog.log("hid Pixel AOD overlays from " + source + " count=" + hidden);
         });
     }
 
@@ -472,7 +478,7 @@ public final class PixelAodClockView extends FrameLayout {
                 notificationRankings.clear();
                 notificationRankings.putAll(snapshot);
             }
-            PixelAodXposedEntry.log("updated AOD notification ranking lockscreen overrides count="
+            PixelAodLog.log("updated AOD notification ranking lockscreen overrides count="
                     + snapshot.size());
             StatusBarNotification[] rawSnapshot;
             synchronized (PixelAodClockView.class) {
@@ -480,7 +486,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             setActiveNotifications(rawSnapshot);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to update AOD notification ranking map", t);
+            PixelAodLog.log("failed to update AOD notification ranking map", t);
         }
     }
 
@@ -564,7 +570,7 @@ public final class PixelAodClockView extends FrameLayout {
                 PixelLockscreenClockView.refreshAll("weather");
             });
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to handle Breezy weather payload", t);
+            PixelAodLog.log("failed to handle Breezy weather payload", t);
         }
     }
 
@@ -620,7 +626,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             return array.optJSONObject(0).toString();
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to parse Breezy WeatherGz payload", t);
+            PixelAodLog.log("failed to parse Breezy WeatherGz payload", t);
             return null;
         }
     }
@@ -656,7 +662,7 @@ public final class PixelAodClockView extends FrameLayout {
                     formatTemperature(temperature), code, condition, timestampMillis);
             return snapshot.hasDisplayableWeather() ? snapshot : null;
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to parse Breezy WeatherJson", t);
+            PixelAodLog.log("failed to parse Breezy WeatherJson", t);
             return null;
         }
     }
@@ -732,7 +738,7 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         breezyWeatherLogCount++;
-        PixelAodXposedEntry.log(message);
+        PixelAodLog.log(message);
     }
 
     static void setAtAGlanceExtra(String extra) {
@@ -753,7 +759,7 @@ public final class PixelAodClockView extends FrameLayout {
         }
         if (atAGlanceLogCount < 12) {
             atAGlanceLogCount++;
-            PixelAodXposedEntry.log("updated Pixel AOD At a Glance extra=" + normalized);
+            PixelAodLog.log("updated Pixel AOD At a Glance extra=" + normalized);
         }
         mainHandler().post(() -> {
             for (PixelAodClockView view : INSTANCES) {
@@ -810,6 +816,7 @@ public final class PixelAodClockView extends FrameLayout {
     public void stop() {
         running = false;
         mainHandler().removeCallbacks(ticker);
+        resetBurnInTranslation();
     }
 
     static void tickAllInstances() {
@@ -847,7 +854,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             if (instanceRefreshLogCount < 16) {
                 instanceRefreshLogCount++;
-                PixelAodXposedEntry.log("refreshed Pixel AOD instances from "
+                PixelAodLog.log("refreshed Pixel AOD instances from "
                         + source + " count=" + count);
             }
         };
@@ -894,10 +901,10 @@ public final class PixelAodClockView extends FrameLayout {
             mediaSessionManager.addOnActiveSessionsChangedListener(
                     activeSessionsChangedListener, null, mainHandler());
             refreshActiveMediaControllers();
-            PixelAodXposedEntry.log("started Pixel-style AOD media listener");
+            PixelAodLog.log("started Pixel-style AOD media listener");
         } catch (Throwable t) {
             mediaListening = false;
-            PixelAodXposedEntry.log("failed to start Pixel-style AOD media listener", t);
+            PixelAodLog.log("failed to start Pixel-style AOD media listener", t);
             mediaRow.setVisibility(View.GONE);
         }
     }
@@ -913,7 +920,7 @@ public final class PixelAodClockView extends FrameLayout {
             getContext().registerReceiver(screenStateReceiver, filter);
             screenStateReceiverRegistered = true;
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to register Pixel AOD screen-state receiver", t);
+            PixelAodLog.log("failed to register Pixel AOD screen-state receiver", t);
         }
     }
 
@@ -925,7 +932,7 @@ public final class PixelAodClockView extends FrameLayout {
         try {
             getContext().unregisterReceiver(screenStateReceiver);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to unregister Pixel AOD screen-state receiver", t);
+            PixelAodLog.log("failed to unregister Pixel AOD screen-state receiver", t);
         }
     }
 
@@ -940,7 +947,7 @@ public final class PixelAodClockView extends FrameLayout {
                     notificationSettingsObserver);
             notificationSettingsObserverRegistered = true;
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to watch lockscreen notification setting", t);
+            PixelAodLog.log("failed to watch lockscreen notification setting", t);
         }
     }
 
@@ -952,7 +959,7 @@ public final class PixelAodClockView extends FrameLayout {
         try {
             getContext().getContentResolver().unregisterContentObserver(notificationSettingsObserver);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to unwatch lockscreen notification setting", t);
+            PixelAodLog.log("failed to unwatch lockscreen notification setting", t);
         }
     }
 
@@ -961,9 +968,14 @@ public final class PixelAodClockView extends FrameLayout {
         int desiredVisibility = visible ? View.VISIBLE : View.GONE;
         if (getVisibility() != desiredVisibility) {
             setVisibility(desiredVisibility);
-            PixelAodXposedEntry.log("Pixel AOD overlay visibility="
+            PixelAodLog.log("Pixel AOD overlay visibility="
                     + (visible ? "visible" : "hidden")
                     + " source=" + source);
+        }
+        if (visible) {
+            applyBurnInTranslation();
+        } else {
+            resetBurnInTranslation();
         }
     }
 
@@ -977,7 +989,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             if (shadeSuppressionLogCount < 12) {
                 shadeSuppressionLogCount++;
-                PixelAodXposedEntry.log("suppressed Pixel AOD overlay in expanded shade source="
+                PixelAodLog.log("suppressed Pixel AOD overlay in expanded shade source="
                         + source);
             }
             return false;
@@ -1019,7 +1031,7 @@ public final class PixelAodClockView extends FrameLayout {
                 mediaSessionManager.removeOnActiveSessionsChangedListener(activeSessionsChangedListener);
             }
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to remove Pixel-style AOD media listener", t);
+            PixelAodLog.log("failed to remove Pixel-style AOD media listener", t);
         }
         unregisterMediaCallbacks();
     }
@@ -1032,7 +1044,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             updateMediaControllers(mediaSessionManager.getActiveSessions(null));
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to query active media sessions for AOD", t);
+            PixelAodLog.log("failed to query active media sessions for AOD", t);
             updateMediaControllers(Collections.emptyList());
         }
     }
@@ -1065,7 +1077,7 @@ public final class PixelAodClockView extends FrameLayout {
                     controller.registerCallback(callback, mainHandler());
                     mediaCallbacks.put(controller, callback);
                 } catch (Throwable t) {
-                    PixelAodXposedEntry.log("failed to watch active media controller for AOD", t);
+                    PixelAodLog.log("failed to watch active media controller for AOD", t);
                 }
             }
         }
@@ -1077,7 +1089,7 @@ public final class PixelAodClockView extends FrameLayout {
             try {
                 entry.getKey().unregisterCallback(entry.getValue());
             } catch (Throwable t) {
-                PixelAodXposedEntry.log("failed to unregister AOD media callback", t);
+                PixelAodLog.log("failed to unregister AOD media callback", t);
             }
         }
         mediaCallbacks.clear();
@@ -1186,7 +1198,7 @@ public final class PixelAodClockView extends FrameLayout {
             applyClockMode(false);
             if (notificationRebuildLogCount < 16) {
                 notificationRebuildLogCount++;
-                PixelAodXposedEntry.log("rebuilt native AOD notification icons input=0 emitted=0");
+                PixelAodLog.log("rebuilt native AOD notification icons input=0 emitted=0");
             }
             return;
         }
@@ -1224,7 +1236,7 @@ public final class PixelAodClockView extends FrameLayout {
         applyClockMode(emitted > 0);
         if (notificationRebuildLogCount < 12) {
             notificationRebuildLogCount++;
-            PixelAodXposedEntry.log("rebuilt native AOD notification icons input="
+            PixelAodLog.log("rebuilt native AOD notification icons input="
                     + notifications.size() + " emitted=" + emitted + " loadFailures=" + loadFailures
                     + " packages=" + describeNotificationPackages(notifications));
         }
@@ -1428,7 +1440,7 @@ public final class PixelAodClockView extends FrameLayout {
             result.setTintMode(PorterDuff.Mode.SRC_IN);
             return result;
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to load media notification smallIcon pkg=" + sbn.getPackageName(), t);
+            PixelAodLog.log("failed to load media notification smallIcon pkg=" + sbn.getPackageName(), t);
             return null;
         }
     }
@@ -1456,7 +1468,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             return result;
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to load AOD media monochrome icon pkg=" + packageName, t);
+            PixelAodLog.log("failed to load AOD media monochrome icon pkg=" + packageName, t);
             return null;
         }
     }
@@ -1478,7 +1490,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             return result;
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to load AOD application icon pkg=" + packageName, t);
+            PixelAodLog.log("failed to load AOD application icon pkg=" + packageName, t);
             return null;
         }
     }
@@ -1525,7 +1537,7 @@ public final class PixelAodClockView extends FrameLayout {
             logNotificationIconChoice(sbn.getPackageName(), "notification-smallIcon");
             return mutated;
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to load native notification smallIcon", t);
+            PixelAodLog.log("failed to load native notification smallIcon", t);
             return null;
         }
     }
@@ -1714,7 +1726,7 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         notificationFilterLogCount++;
-        PixelAodXposedEntry.log("filtered AOD notification pkg=" + sbn.getPackageName()
+        PixelAodLog.log("filtered AOD notification pkg=" + sbn.getPackageName()
                 + " key=" + sbn.getKey()
                 + " category=" + sbn.getNotification().category
                 + " visibility=" + sbn.getNotification().visibility
@@ -1726,7 +1738,7 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         notificationKeepLogCount++;
-        PixelAodXposedEntry.log("kept AOD notification pkg=" + sbn.getPackageName()
+        PixelAodLog.log("kept AOD notification pkg=" + sbn.getPackageName()
                 + " key=" + sbn.getKey()
                 + " category=" + sbn.getNotification().category
                 + " visibility=" + sbn.getNotification().visibility
@@ -1738,7 +1750,7 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         notificationIconLogCount++;
-        PixelAodXposedEntry.log("AOD notification icon mode=" + mode + " pkg=" + packageName);
+        PixelAodLog.log("AOD notification icon mode=" + mode + " pkg=" + packageName);
     }
 
     private static void logMediaIconChoice(String packageName, String mode) {
@@ -1746,7 +1758,7 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         mediaIconLogCount++;
-        PixelAodXposedEntry.log("AOD media icon mode=" + mode + " pkg=" + packageName);
+        PixelAodLog.log("AOD media icon mode=" + mode + " pkg=" + packageName);
     }
 
     private static void logRejectedMediaIcon(String packageName) {
@@ -1754,7 +1766,7 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         mediaIconRejectLogCount++;
-        PixelAodXposedEntry.log("ignored blocky AOD media monochrome icon pkg=" + packageName);
+        PixelAodLog.log("ignored blocky AOD media monochrome icon pkg=" + packageName);
     }
 
     private static void logMediaNotificationCache(String action, String source, int count) {
@@ -1762,7 +1774,7 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         mediaNotificationLogCount++;
-        PixelAodXposedEntry.log("AOD media notification cache " + action
+        PixelAodLog.log("AOD media notification cache " + action
                 + " source=" + source + " count=" + count);
     }
 
@@ -1907,6 +1919,41 @@ public final class PixelAodClockView extends FrameLayout {
         batteryView.setText(batteryStatus.percentText);
         chargeBoltView.setVisibility(batteryStatus.charging ? View.VISIBLE : View.GONE);
         batteryRow.setVisibility(TextUtils.isEmpty(batteryStatus.percentText) ? View.GONE : View.VISIBLE);
+        applyBurnInTranslation();
+    }
+
+    private void applyBurnInTranslation() {
+        if (getVisibility() != View.VISIBLE || !shouldCustomizeAodNow(getContext())) {
+            resetBurnInTranslation();
+            return;
+        }
+        float minutes = System.currentTimeMillis() / 60000f;
+        int maxX = dp(BURN_IN_OFFSET_X_DP);
+        int maxY = dp(BURN_IN_OFFSET_Y_DP);
+        float x = zigzag(minutes, maxX, BURN_IN_PERIOD_X_MINUTES) - maxX / 2f;
+        float y = zigzag(minutes, maxY, BURN_IN_PERIOD_Y_MINUTES) - maxY / 2f;
+        setTranslationX(x);
+        setTranslationY(y);
+        if (burnInLogCount < 8) {
+            burnInLogCount++;
+            PixelAodLog.log("applied Pixel AOD burn-in offset x=" + Math.round(x)
+                    + " y=" + Math.round(y));
+        }
+    }
+
+    private void resetBurnInTranslation() {
+        if (getTranslationX() != 0f) {
+            setTranslationX(0f);
+        }
+        if (getTranslationY() != 0f) {
+            setTranslationY(0f);
+        }
+    }
+
+    private static float zigzag(float value, float amplitude, float period) {
+        float x = value % period / (period / 2f);
+        float interpolation = x <= 1f ? x : 2f - x;
+        return amplitude * interpolation;
     }
 
     private void applyClockMode(boolean compact) {
@@ -1950,7 +1997,7 @@ public final class PixelAodClockView extends FrameLayout {
         updateInfoStackLayout();
         updateTime();
         if (changed) {
-            PixelAodXposedEntry.log("switched Pixel AOD clock mode compact=" + compact);
+            PixelAodLog.log("switched Pixel AOD clock mode compact=" + compact);
         }
     }
 
@@ -2061,29 +2108,29 @@ public final class PixelAodClockView extends FrameLayout {
                     GOOGLE_SANS_FLEX_CLOCK_ASSET,
                     GOOGLE_SANS_FLEX_CLOCK_CACHE);
             if (cachedClockTypeface != null) {
-                PixelAodXposedEntry.log("loaded bundled Google Sans Flex 200 for AOD clock");
+                PixelAodLog.log("loaded bundled Google Sans Flex 200 for AOD clock");
                 return cachedClockTypeface;
             }
             cachedClockTypeface = loadGoogleSansFlex(context,
                     GOOGLE_SANS_FLEX_REGULAR_ASSET,
                     GOOGLE_SANS_FLEX_REGULAR_CACHE);
             if (cachedClockTypeface != null) {
-                PixelAodXposedEntry.log("loaded bundled Google Sans Flex regular fallback for AOD clock");
+                PixelAodLog.log("loaded bundled Google Sans Flex regular fallback for AOD clock");
                 return cachedClockTypeface;
             }
             File androidClock = new File(ANDROID_CLOCK_FONT);
             if (androidClock.isFile() && androidClock.canRead()) {
                 try {
                     cachedClockTypeface = Typeface.createFromFile(androidClock);
-                    PixelAodXposedEntry.log("loaded Android clock font " + ANDROID_CLOCK_FONT);
+                    PixelAodLog.log("loaded Android clock font " + ANDROID_CLOCK_FONT);
                     return cachedClockTypeface;
                 } catch (Throwable t) {
-                    PixelAodXposedEntry.log("failed to load " + ANDROID_CLOCK_FONT, t);
+                    PixelAodLog.log("failed to load " + ANDROID_CLOCK_FONT, t);
                 }
             }
             try {
                 cachedClockTypeface = Typeface.MONOSPACE;
-                PixelAodXposedEntry.log("using fallback AOSP Pixel clock typeface semantics: monospace weight 200");
+                PixelAodLog.log("using fallback AOSP Pixel clock typeface semantics: monospace weight 200");
                 return cachedClockTypeface;
             } catch (Throwable ignored) {
                 // Try named families below.
@@ -2108,14 +2155,14 @@ public final class PixelAodClockView extends FrameLayout {
                     GOOGLE_SANS_FLEX_INFO_ASSET,
                     GOOGLE_SANS_FLEX_INFO_CACHE);
             if (cachedInfoTypeface != null) {
-                PixelAodXposedEntry.log("loaded bundled Google Sans Flex 500 for AOD info");
+                PixelAodLog.log("loaded bundled Google Sans Flex 500 for AOD info");
                 return cachedInfoTypeface;
             }
             cachedInfoTypeface = loadGoogleSansFlex(context,
                     GOOGLE_SANS_FLEX_REGULAR_ASSET,
                     GOOGLE_SANS_FLEX_REGULAR_CACHE);
             if (cachedInfoTypeface != null) {
-                PixelAodXposedEntry.log("loaded bundled Google Sans Flex regular fallback for AOD info");
+                PixelAodLog.log("loaded bundled Google Sans Flex regular fallback for AOD info");
                 return cachedInfoTypeface;
             }
             cachedInfoTypeface = firstUsableTypeface(
@@ -2160,7 +2207,7 @@ public final class PixelAodClockView extends FrameLayout {
             try {
                 return Typeface.createFromFile(fontFile);
             } catch (Throwable t) {
-                PixelAodXposedEntry.log("failed to load extracted Google Sans Flex", t);
+                PixelAodLog.log("failed to load extracted Google Sans Flex", t);
             }
         }
         return null;
@@ -2197,7 +2244,7 @@ public final class PixelAodClockView extends FrameLayout {
                 closeQuietly(output);
             }
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to extract bundled Google Sans Flex", t);
+            PixelAodLog.log("failed to extract bundled Google Sans Flex", t);
             return false;
         } finally {
             closeQuietly(zipFile);

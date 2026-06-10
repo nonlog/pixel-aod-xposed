@@ -182,7 +182,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             }
             if (nonKeyguardSuppressionLogCount < 12) {
                 nonKeyguardSuppressionLogCount++;
-                PixelAodXposedEntry.log("suppressed Pixel lockscreen clock outside keyguard");
+                PixelAodLog.log("suppressed Pixel lockscreen clock outside keyguard");
             }
             return;
         }
@@ -201,7 +201,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             try {
                 getContext().registerReceiver(receiver, filter);
             } catch (Throwable t) {
-                PixelAodXposedEntry.log("failed to register Pixel lockscreen receiver", t);
+                PixelAodLog.log("failed to register Pixel lockscreen receiver", t);
             }
         }
         updatePresentation("start");
@@ -215,7 +215,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         try {
             getContext().unregisterReceiver(receiver);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to unregister Pixel lockscreen receiver", t);
+            PixelAodLog.log("failed to unregister Pixel lockscreen receiver", t);
         }
     }
 
@@ -233,7 +233,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             hasVisibleLockscreenNotificationCards = hasCards;
         }
         if (changed) {
-            PixelAodXposedEntry.log("Pixel lockscreen visible notification cards="
+            PixelAodLog.log("Pixel lockscreen visible notification cards="
                     + hasCards + " source=" + source);
         }
         refreshAll(source);
@@ -246,7 +246,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             lockscreenSurfaceVisible = visible;
         }
         if (changed) {
-            PixelAodXposedEntry.log("Pixel lockscreen surface visible=" + visible
+            PixelAodLog.log("Pixel lockscreen surface visible=" + visible
                     + " source=" + source);
         }
         refreshAll(source);
@@ -257,7 +257,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             pendingAodToLockscreenTransitionAt = android.os.SystemClock.uptimeMillis();
             pendingAodToLockscreenTransitionSource = source;
         }
-        PixelAodXposedEntry.log("prepared Pixel lockscreen clock weight transition source="
+        PixelAodLog.log("prepared Pixel lockscreen clock weight transition source="
                 + source);
     }
 
@@ -321,7 +321,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         }
         if (modeLogCount < 12) {
             modeLogCount++;
-            PixelAodXposedEntry.log("Pixel lockscreen clock visible compact="
+            PixelAodLog.log("Pixel lockscreen clock visible compact="
                     + compactClock + " notifications=" + notifications.size()
                     + " source=" + source);
         }
@@ -342,7 +342,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             String source = pendingAodToLockscreenTransitionSource;
             pendingAodToLockscreenTransitionAt = 0L;
             pendingAodToLockscreenTransitionSource = "";
-            PixelAodXposedEntry.log("consumed Pixel lockscreen clock weight transition from="
+            PixelAodLog.log("consumed Pixel lockscreen clock weight transition from="
                     + source + " update=" + updateSource + " ageMs=" + age);
             return true;
         }
@@ -488,7 +488,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         int toWeight = PixelAodClockView.lockscreenClockWeight(getContext());
         setClockWeight(fromWeight);
         postDelayed(clockWeightTransitionStarter, 140L);
-        PixelAodXposedEntry.log("scheduled visible Pixel lockscreen weight transition source="
+        PixelAodLog.log("scheduled visible Pixel lockscreen weight transition source="
                 + source + " from=" + fromWeight + " to=" + toWeight);
     }
 

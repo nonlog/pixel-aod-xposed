@@ -31,10 +31,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XposedBridge;
-import de.robv.android.xposed.XposedHelpers;
-
 final class PixelAodHook {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
     private static final String CLOCK_LAYOUT = "com.oplus.systemui.aod.aodclock.off.AodClockLayout";
@@ -114,7 +110,7 @@ final class PixelAodHook {
             hookLockscreenClockProbe(classLoader);
             hookStockClockDrawSuppression();
         }
-        PixelAodXposedEntry.log("installed Pixel AOD hooks customAod=" + customAod
+        PixelAodLog.log("installed Pixel AOD hooks customAod=" + customAod
                 + " lockscreenClock=" + lockscreenClock
                 + " notificationIcons=" + notificationIcons
                 + " lockscreenPolicy=" + lockscreenPolicy
@@ -123,21 +119,18 @@ final class PixelAodHook {
 
     private static void hookStockClockDrawSuppression() {
         try {
-            XposedHelpers.findAndHookMethod(View.class, "draw", Canvas.class, new XC_MethodHook() {
-                @Override
-                protected void beforeHookedMethod(MethodHookParam param) {
-                    if (!(param.thisObject instanceof View)) {
-                        return;
-                    }
-                    View view = (View) param.thisObject;
-                    if (shouldSuppressStockClockDraw(view)) {
-                        param.setResult(null);
-                    }
+            ModernHookBridge.hookBefore(View.class, "draw", param -> {
+                if (!(param.thisObject instanceof View)) {
+                    return;
                 }
-            });
-            PixelAodXposedEntry.log("hooked stock AOD/keyguard clock draw suppression");
+                View view = (View) param.thisObject;
+                if (shouldSuppressStockClockDraw(view)) {
+                    param.setResult(null);
+                }
+            }, Canvas.class);
+            PixelAodLog.log("hooked stock AOD/keyguard clock draw suppression");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook stock AOD/keyguard clock draw suppression", t);
+            PixelAodLog.log("failed to hook stock AOD/keyguard clock draw suppression", t);
         }
     }
 
@@ -165,7 +158,7 @@ final class PixelAodHook {
         view.setAlpha(0f);
         if (stockDrawSuppressionLogCount < 20) {
             stockDrawSuppressionLogCount++;
-            PixelAodXposedEntry.log("suppressed stock clock draw " + marker);
+            PixelAodLog.log("suppressed stock clock draw " + marker);
         }
         return true;
     }
@@ -208,52 +201,45 @@ final class PixelAodHook {
 
     private static void hookLockscreenClockGlobalAttachProbe() {
         try {
-            XposedHelpers.findAndHookMethod(View.class, "onAttachedToWindow", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    Object candidate = param.thisObject;
-                    if (!(candidate instanceof View)) {
-                        return;
-                    }
-                    View view = (View) candidate;
-                    String className = candidate.getClass().getName();
-                    if (isShadeWindowClassName(className) && candidate instanceof ViewGroup) {
-                        MAIN.post(() -> handleLockscreenHost(view.getContext(), (ViewGroup) candidate,
-                                "View#onAttachedToWindow/" + className));
-                        return;
-                    }
-                    if (!isLockscreenClockClassName(className)) {
-                        return;
-                    }
-                    MAIN.post(() -> inspectLockscreenClockCandidate(candidate,
-                            "View#onAttachedToWindow/" + className));
+            ModernHookBridge.hookAfter(View.class, "onAttachedToWindow", param -> {
+                Object candidate = param.thisObject;
+                if (!(candidate instanceof View)) {
+                    return;
                 }
+                View view = (View) candidate;
+                String className = candidate.getClass().getName();
+                if (isShadeWindowClassName(className) && candidate instanceof ViewGroup) {
+                    MAIN.post(() -> handleLockscreenHost(view.getContext(), (ViewGroup) candidate,
+                            "View#onAttachedToWindow/" + className));
+                    return;
+                }
+                if (!isLockscreenClockClassName(className)) {
+                    return;
+                }
+                MAIN.post(() -> inspectLockscreenClockCandidate(candidate,
+                        "View#onAttachedToWindow/" + className));
             });
-            XposedHelpers.findAndHookMethod(View.class, "onVisibilityChanged",
-                    View.class, int.class, new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            Object candidate = param.thisObject;
-                            if (!(candidate instanceof View)) {
-                                return;
-                            }
-                            View view = (View) candidate;
-                            String className = view.getClass().getName();
-                            if (isShadeWindowClassName(className) && candidate instanceof ViewGroup) {
-                                MAIN.post(() -> handleLockscreenHost(view.getContext(), (ViewGroup) candidate,
-                                        "View#onVisibilityChanged/" + className));
-                                return;
-                            }
-                            if (!isLockscreenClockClassName(className)) {
-                                return;
-                            }
-                            MAIN.post(() -> inspectLockscreenClockCandidate(view,
-                                    "View#onVisibilityChanged/" + className));
-                        }
-                    });
-            PixelAodXposedEntry.log("hooked global lockscreen/shade attach+visibility probe");
+            ModernHookBridge.hookAfter(View.class, "onVisibilityChanged", param -> {
+                Object candidate = param.thisObject;
+                if (!(candidate instanceof View)) {
+                    return;
+                }
+                View view = (View) candidate;
+                String className = view.getClass().getName();
+                if (isShadeWindowClassName(className) && candidate instanceof ViewGroup) {
+                    MAIN.post(() -> handleLockscreenHost(view.getContext(), (ViewGroup) candidate,
+                            "View#onVisibilityChanged/" + className));
+                    return;
+                }
+                if (!isLockscreenClockClassName(className)) {
+                    return;
+                }
+                MAIN.post(() -> inspectLockscreenClockCandidate(view,
+                        "View#onVisibilityChanged/" + className));
+            }, View.class, int.class);
+            PixelAodLog.log("hooked global lockscreen/shade attach+visibility probe");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook global lockscreen/shade probe", t);
+            PixelAodLog.log("failed to hook global lockscreen/shade probe", t);
         }
     }
 
@@ -271,136 +257,113 @@ final class PixelAodHook {
 
     private static void hookLockscreenClockProbeClass(ClassLoader classLoader, String className) {
         try {
-            Class<?> clazz = XposedHelpers.findClass(className, classLoader);
-            XposedHelpers.findAndHookMethod(clazz, "onAttachedToWindow", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    MAIN.post(() -> inspectLockscreenClockCandidate(param.thisObject, className));
-                }
-            });
-            PixelAodXposedEntry.log("hooked lockscreen clock probe " + className);
+            Class<?> clazz = ModernHookBridge.findClass(className, classLoader);
+            ModernHookBridge.hookAfter(clazz, "onAttachedToWindow",
+                    param -> MAIN.post(() -> inspectLockscreenClockCandidate(param.thisObject, className)));
+            PixelAodLog.log("hooked lockscreen clock probe " + className);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook lockscreen clock probe " + className, t);
+            PixelAodLog.log("failed to hook lockscreen clock probe " + className, t);
         }
     }
 
     private static void hookClockLayout(Context context, ClassLoader classLoader) {
         try {
-            Class<?> clockLayoutClass = XposedHelpers.findClass(CLOCK_LAYOUT, classLoader);
-            XposedHelpers.findAndHookMethod(clockLayoutClass, "initForAodApk", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    MAIN.post(() -> handleClockLayout(context, param.thisObject, "initForAodApk"));
-                }
-            });
-            XposedHelpers.findAndHookMethod(clockLayoutClass, "onAttachedToWindow", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    MAIN.post(() -> handleClockLayout(context, param.thisObject, "onAttachedToWindow"));
-                }
-            });
-            PixelAodXposedEntry.log("hooked " + CLOCK_LAYOUT + " init/attach");
+            Class<?> clockLayoutClass = ModernHookBridge.findClass(CLOCK_LAYOUT, classLoader);
+            ModernHookBridge.hookAfter(clockLayoutClass, "initForAodApk",
+                    param -> MAIN.post(() -> handleClockLayout(context, param.thisObject, "initForAodApk")));
+            ModernHookBridge.hookAfter(clockLayoutClass, "onAttachedToWindow",
+                    param -> MAIN.post(() -> handleClockLayout(context, param.thisObject, "onAttachedToWindow")));
+            PixelAodLog.log("hooked " + CLOCK_LAYOUT + " init/attach");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook AodClockLayout", t);
+            PixelAodLog.log("failed to hook AodClockLayout", t);
         }
     }
 
     private static void hookShadeWindowView(Context context, ClassLoader classLoader) {
         try {
-            Class<?> shadeClass = XposedHelpers.findClass(SHADE_WINDOW_VIEW, classLoader);
-            XposedHelpers.findAndHookMethod(shadeClass, "onAttachedToWindow", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    if (param.thisObject instanceof ViewGroup) {
-                        MAIN.post(() -> handleLockscreenHost(context, (ViewGroup) param.thisObject,
-                                "NotificationShadeWindowView#onAttachedToWindow"));
-                    }
+            Class<?> shadeClass = ModernHookBridge.findClass(SHADE_WINDOW_VIEW, classLoader);
+            ModernHookBridge.hookAfter(shadeClass, "onAttachedToWindow", param -> {
+                if (param.thisObject instanceof ViewGroup) {
+                    MAIN.post(() -> handleLockscreenHost(context, (ViewGroup) param.thisObject,
+                            "NotificationShadeWindowView#onAttachedToWindow"));
                 }
             });
-            PixelAodXposedEntry.log("hooked " + SHADE_WINDOW_VIEW + " attach");
+            PixelAodLog.log("hooked " + SHADE_WINDOW_VIEW + " attach");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook " + SHADE_WINDOW_VIEW, t);
+            PixelAodLog.log("failed to hook " + SHADE_WINDOW_VIEW, t);
         }
     }
 
     private static void hookOuterRootLayout(ClassLoader classLoader) {
         try {
-            Class<?> rootLayoutClass = XposedHelpers.findClass(AOD_ROOT_LAYOUT, classLoader);
-            XposedHelpers.findAndHookMethod(rootLayoutClass, "onAttachedToWindow", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    if (param.thisObject instanceof ViewGroup) {
-                        ViewGroup root = (ViewGroup) param.thisObject;
-                        MAIN.post(() -> handleOuterRootLayout(root, "AodRootLayout#onAttachedToWindow"));
-                    }
+            Class<?> rootLayoutClass = ModernHookBridge.findClass(AOD_ROOT_LAYOUT, classLoader);
+            ModernHookBridge.hookAfter(rootLayoutClass, "onAttachedToWindow", param -> {
+                if (param.thisObject instanceof ViewGroup) {
+                    ViewGroup root = (ViewGroup) param.thisObject;
+                    MAIN.post(() -> handleOuterRootLayout(root, "AodRootLayout#onAttachedToWindow"));
                 }
             });
-            PixelAodXposedEntry.log("hooked " + AOD_ROOT_LAYOUT + "#onAttachedToWindow");
+            PixelAodLog.log("hooked " + AOD_ROOT_LAYOUT + "#onAttachedToWindow");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook AodRootLayout.onAttachedToWindow", t);
+            PixelAodLog.log("failed to hook AodRootLayout.onAttachedToWindow", t);
         }
     }
 
     private static void hookNotificationView(ClassLoader classLoader) {
         try {
-            Class<?> notificationViewClass = XposedHelpers.findClass(
+            Class<?> notificationViewClass = ModernHookBridge.findClass(
                     "com.oplus.egview.widget.NotificationView", classLoader);
             hookNotificationViewClass(notificationViewClass, "SystemUI loader");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to find OPlus NotificationView updates from SystemUI loader", t);
+            PixelAodLog.log("failed to find OPlus NotificationView updates from SystemUI loader", t);
         }
     }
 
     private static void hookNotificationListenerService() {
         try {
-            XposedHelpers.findAndHookMethod(NotificationListenerService.class,
-                    "onListenerConnected", new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                    if (param.thisObject instanceof NotificationListenerService) {
-                        rememberNotificationListener(param.thisObject, "NotificationListenerService#onListenerConnected");
-                        publishNotificationsFromListener(
-                                (NotificationListenerService) param.thisObject,
-                                "NotificationListenerService#onListenerConnected");
-                            }
+            ModernHookBridge.hookAfter(NotificationListenerService.class,
+                    "onListenerConnected", param -> {
+                        if (param.thisObject instanceof NotificationListenerService) {
+                            rememberNotificationListener(param.thisObject,
+                                    "NotificationListenerService#onListenerConnected");
+                            publishNotificationsFromListener(
+                                    (NotificationListenerService) param.thisObject,
+                                    "NotificationListenerService#onListenerConnected");
                         }
                     });
-            XposedHelpers.findAndHookMethod(NotificationListenerService.class,
-                    "onNotificationPosted", StatusBarNotification.class, new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            if (param.args != null && param.args.length > 0
-                                    && param.args[0] instanceof StatusBarNotification) {
-                                rememberNotificationListener(param.thisObject, "NotificationListenerService#onNotificationPosted");
-                                cacheNotification((StatusBarNotification) param.args[0], "onNotificationPosted");
-                            }
+            ModernHookBridge.hookAfter(NotificationListenerService.class,
+                    "onNotificationPosted", param -> {
+                        if (param.args != null && param.args.length > 0
+                                && param.args[0] instanceof StatusBarNotification) {
+                            rememberNotificationListener(param.thisObject,
+                                    "NotificationListenerService#onNotificationPosted");
+                            cacheNotification((StatusBarNotification) param.args[0],
+                                    "onNotificationPosted");
                         }
-                    });
-            XposedHelpers.findAndHookMethod(NotificationListenerService.class,
-                    "onNotificationRemoved", StatusBarNotification.class, new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            if (param.args != null && param.args.length > 0
-                                    && param.args[0] instanceof StatusBarNotification) {
-                                rememberNotificationListener(param.thisObject, "NotificationListenerService#onNotificationRemoved");
-                                removeCachedNotification((StatusBarNotification) param.args[0],
-                                        "onNotificationRemoved");
-                            }
+                    }, StatusBarNotification.class);
+            ModernHookBridge.hookAfter(NotificationListenerService.class,
+                    "onNotificationRemoved", param -> {
+                        if (param.args != null && param.args.length > 0
+                                && param.args[0] instanceof StatusBarNotification) {
+                            rememberNotificationListener(param.thisObject,
+                                    "NotificationListenerService#onNotificationRemoved");
+                            removeCachedNotification((StatusBarNotification) param.args[0],
+                                    "onNotificationRemoved");
                         }
-                    });
-            PixelAodXposedEntry.log("hooked NotificationListenerService fallback notification cache");
+                    }, StatusBarNotification.class);
+            PixelAodLog.log("hooked NotificationListenerService fallback notification cache");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook NotificationListenerService fallback notification cache", t);
+            PixelAodLog.log("failed to hook NotificationListenerService fallback notification cache", t);
         }
     }
 
     private static void hookSystemUiNotificationListener(ClassLoader classLoader) {
         try {
-            Class<?> listenerClass = XposedHelpers.findClass(
+            Class<?> listenerClass = ModernHookBridge.findClass(
                     "com.android.systemui.statusbar.NotificationListener", classLoader);
             hookNotificationListenerClass(listenerClass, "SystemUI NotificationListener");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook SystemUI NotificationListener fallback", t);
+            PixelAodLog.log("failed to hook SystemUI NotificationListener fallback", t);
         }
     }
 
@@ -408,19 +371,16 @@ final class PixelAodHook {
         boolean hookedPosted = false;
         boolean hookedRemoved = false;
         try {
-            XposedHelpers.findAndHookMethod(listenerClass, "onListenerConnected", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    if (param.thisObject instanceof NotificationListenerService) {
-                        rememberNotificationListener(param.thisObject, source + "#onListenerConnected");
-                        publishNotificationsFromListener(
-                                (NotificationListenerService) param.thisObject,
-                                source + "#onListenerConnected");
-                    }
+            ModernHookBridge.hookAfter(listenerClass, "onListenerConnected", param -> {
+                if (param.thisObject instanceof NotificationListenerService) {
+                    rememberNotificationListener(param.thisObject, source + "#onListenerConnected");
+                    publishNotificationsFromListener(
+                            (NotificationListenerService) param.thisObject,
+                            source + "#onListenerConnected");
                 }
             });
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook " + source + "#onListenerConnected", t);
+            PixelAodLog.log("failed to hook " + source + "#onListenerConnected", t);
         }
         for (Method method : listenerClass.getDeclaredMethods()) {
             if (Modifier.isAbstract(method.getModifiers())) {
@@ -438,24 +398,21 @@ final class PixelAodHook {
             int rankingIndex = firstRankingMapParameterIndex(parameterTypes);
             try {
                 method.setAccessible(true);
-                XposedBridge.hookMethod(method, new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
-                        if (param.args == null || param.args.length <= sbnIndex
-                                || !(param.args[sbnIndex] instanceof StatusBarNotification)) {
-                            return;
-                        }
-                        String methodSource = source + "#" + name;
-                        rememberNotificationListener(param.thisObject, methodSource);
-                        if (rankingIndex >= 0) {
-                            publishRankingFromArg(param, rankingIndex);
-                        }
-                        StatusBarNotification sbn = (StatusBarNotification) param.args[sbnIndex];
-                        if ("onNotificationRemoved".equals(name)) {
-                            removeCachedNotification(sbn, methodSource);
-                        } else {
-                            cacheNotification(sbn, methodSource);
-                        }
+                ModernHookBridge.hookAfter(method, param -> {
+                    if (param.args == null || param.args.length <= sbnIndex
+                            || !(param.args[sbnIndex] instanceof StatusBarNotification)) {
+                        return;
+                    }
+                    String methodSource = source + "#" + name;
+                    rememberNotificationListener(param.thisObject, methodSource);
+                    if (rankingIndex >= 0) {
+                        publishRankingFromArg(param, rankingIndex);
+                    }
+                    StatusBarNotification sbn = (StatusBarNotification) param.args[sbnIndex];
+                    if ("onNotificationRemoved".equals(name)) {
+                        removeCachedNotification(sbn, methodSource);
+                    } else {
+                        cacheNotification(sbn, methodSource);
                     }
                 });
                 if ("onNotificationRemoved".equals(name)) {
@@ -463,12 +420,12 @@ final class PixelAodHook {
                 } else {
                     hookedPosted = true;
                 }
-                PixelAodXposedEntry.log("hooked " + source + "#" + methodSignature(method));
+                PixelAodLog.log("hooked " + source + "#" + methodSignature(method));
             } catch (Throwable t) {
-                PixelAodXposedEntry.log("failed to hook " + source + "#" + methodSignature(method), t);
+                PixelAodLog.log("failed to hook " + source + "#" + methodSignature(method), t);
             }
         }
-        PixelAodXposedEntry.log("hooked " + source + " fallback notification cache posted="
+        PixelAodLog.log("hooked " + source + " fallback notification cache posted="
                 + hookedPosted + " removed=" + hookedRemoved);
     }
 
@@ -509,7 +466,7 @@ final class PixelAodHook {
         return builder.append(')').toString();
     }
 
-    private static void publishRankingFromArg(XC_MethodHook.MethodHookParam param, int index) {
+    private static void publishRankingFromArg(ModernHookBridge.HookParam param, int index) {
         try {
             if (param.args == null || param.args.length <= index
                     || !(param.args[index] instanceof NotificationListenerService.RankingMap)) {
@@ -517,7 +474,7 @@ final class PixelAodHook {
             }
             PixelAodClockView.updateRankingMap((NotificationListenerService.RankingMap) param.args[index]);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to publish notification ranking map", t);
+            PixelAodLog.log("failed to publish notification ranking map", t);
         }
     }
 
@@ -527,7 +484,7 @@ final class PixelAodHook {
         }
         lastNotificationListener = (NotificationListenerService) candidate;
         if (LOGGED_STATUS_CLASSES.add("listener|" + candidate.getClass().getName())) {
-            PixelAodXposedEntry.log("remembered notification listener from " + source
+            PixelAodLog.log("remembered notification listener from " + source
                     + " class=" + candidate.getClass().getName());
         }
     }
@@ -537,7 +494,7 @@ final class PixelAodHook {
         if (service == null) {
             if (listenerRefreshLogCount < 6) {
                 listenerRefreshLogCount++;
-                PixelAodXposedEntry.log("no cached notification listener for " + source);
+                PixelAodLog.log("no cached notification listener for " + source);
             }
             return;
         }
@@ -553,7 +510,7 @@ final class PixelAodHook {
             try {
                 PixelAodClockView.updateRankingMap(service.getCurrentRanking());
             } catch (Throwable t) {
-                PixelAodXposedEntry.log("failed to capture current notification ranking from " + source, t);
+                PixelAodLog.log("failed to capture current notification ranking from " + source, t);
             }
             synchronized (NOTIFICATION_CACHE) {
                 NOTIFICATION_CACHE.clear();
@@ -565,10 +522,10 @@ final class PixelAodHook {
             }
             PixelAodClockView.setActiveNotifications(notifications);
             PixelAodClockView.setMediaNotificationCandidates(notifications, source);
-            PixelAodXposedEntry.log("captured active notifications from " + source
+            PixelAodLog.log("captured active notifications from " + source
                     + " count=" + notifications.length);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to capture active notifications from " + source, t);
+            PixelAodLog.log("failed to capture active notifications from " + source, t);
         }
     }
 
@@ -582,11 +539,11 @@ final class PixelAodHook {
             PixelAodClockView.setActiveNotifications(snapshot);
             PixelAodClockView.cacheMediaNotificationCandidate(sbn, source);
             if (LOGGED_STATUS_CLASSES.add("fallbackNotification|" + source)) {
-                PixelAodXposedEntry.log("cached notification from " + source
+                PixelAodLog.log("cached notification from " + source
                         + " pkg=" + sbn.getPackageName() + " count=" + snapshot.length);
             }
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to cache notification from " + source, t);
+            PixelAodLog.log("failed to cache notification from " + source, t);
         }
     }
 
@@ -600,11 +557,11 @@ final class PixelAodHook {
             PixelAodClockView.setActiveNotifications(snapshot);
             PixelAodClockView.removeMediaNotificationCandidate(sbn, source);
             if (LOGGED_STATUS_CLASSES.add("fallbackNotification|" + source)) {
-                PixelAodXposedEntry.log("removed notification from " + source
+                PixelAodLog.log("removed notification from " + source
                         + " pkg=" + sbn.getPackageName() + " count=" + snapshot.length);
             }
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to remove notification from " + source, t);
+            PixelAodLog.log("failed to remove notification from " + source, t);
         }
     }
 
@@ -612,7 +569,7 @@ final class PixelAodHook {
         try {
             hookNotificationViewClass(notificationViewClass, source);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook runtime OPlus NotificationView updates from " + source, t);
+            PixelAodLog.log("failed to hook runtime OPlus NotificationView updates from " + source, t);
         }
     }
 
@@ -627,43 +584,27 @@ final class PixelAodHook {
             }
         }
         try {
-            XposedHelpers.findAndHookMethod(notificationViewClass, "onActiveNotifications",
-                    StatusBarNotification[].class, new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            publishNotificationsFromArg(param, 0, "onActiveNotifications/" + source);
-                        }
-                    });
-            XposedHelpers.findAndHookMethod(notificationViewClass, "onReceiveNotification",
-                    StatusBarNotification[].class, StatusBarNotification.class, new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            publishNotificationsFromArg(param, 0, "onReceiveNotification/" + source);
-                        }
-                    });
-            XposedHelpers.findAndHookMethod(notificationViewClass, "onRemoveNotification",
-                    StatusBarNotification[].class, StatusBarNotification.class, new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            publishNotificationsFromArg(param, 0, "onRemoveNotification/" + source);
-                        }
-                    });
-            XposedHelpers.findAndHookMethod(notificationViewClass, "clearNotificationView", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    clearCachedNotifications("NotificationView#clearNotificationView");
-                }
-            });
-            PixelAodXposedEntry.log("hooked OPlus NotificationView notification updates from " + source);
+            ModernHookBridge.hookAfter(notificationViewClass, "onActiveNotifications",
+                    param -> publishNotificationsFromArg(param, 0, "onActiveNotifications/" + source),
+                    StatusBarNotification[].class);
+            ModernHookBridge.hookAfter(notificationViewClass, "onReceiveNotification",
+                    param -> publishNotificationsFromArg(param, 0, "onReceiveNotification/" + source),
+                    StatusBarNotification[].class, StatusBarNotification.class);
+            ModernHookBridge.hookAfter(notificationViewClass, "onRemoveNotification",
+                    param -> publishNotificationsFromArg(param, 0, "onRemoveNotification/" + source),
+                    StatusBarNotification[].class, StatusBarNotification.class);
+            ModernHookBridge.hookAfter(notificationViewClass, "clearNotificationView",
+                    param -> clearCachedNotifications("NotificationView#clearNotificationView"));
+            PixelAodLog.log("hooked OPlus NotificationView notification updates from " + source);
         } catch (Throwable t) {
             synchronized (HOOKED_NOTIFICATION_VIEW_CLASSES) {
                 HOOKED_NOTIFICATION_VIEW_CLASSES.remove(key);
             }
-            PixelAodXposedEntry.log("failed to hook OPlus NotificationView updates from " + source, t);
+            PixelAodLog.log("failed to hook OPlus NotificationView updates from " + source, t);
         }
     }
 
-    private static void publishNotificationsFromArg(XC_MethodHook.MethodHookParam param, int index, String source) {
+    private static void publishNotificationsFromArg(ModernHookBridge.HookParam param, int index, String source) {
         try {
             if (param.args == null || param.args.length <= index || !(param.args[index] instanceof StatusBarNotification[])) {
                 return;
@@ -676,11 +617,11 @@ final class PixelAodHook {
                 PixelAodClockView.setActiveNotifications(snapshot);
             }
             if (LOGGED_STATUS_CLASSES.add("notifications|" + source)) {
-                PixelAodXposedEntry.log("merged OPlus AOD notification subset from " + source
+                PixelAodLog.log("merged OPlus AOD notification subset from " + source
                         + " subset=" + notifications.length + " cache=" + snapshot.length);
             }
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to publish AOD notifications from " + source, t);
+            PixelAodLog.log("failed to publish AOD notifications from " + source, t);
         }
     }
 
@@ -716,7 +657,7 @@ final class PixelAodHook {
             if (lastNotificationListener != null) {
                 refreshNotificationsFromLastListener(source);
                 if (LOGGED_STATUS_CLASSES.add("clearRefresh|" + source)) {
-                    PixelAodXposedEntry.log("refreshed fallback native AOD notification icons from " + source);
+                    PixelAodLog.log("refreshed fallback native AOD notification icons from " + source);
                 }
                 return;
             }
@@ -724,9 +665,9 @@ final class PixelAodHook {
                 NOTIFICATION_CACHE.clear();
             }
             PixelAodClockView.clearActiveNotifications();
-            PixelAodXposedEntry.log("cleared fallback native AOD notification icons from " + source);
+            PixelAodLog.log("cleared fallback native AOD notification icons from " + source);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to clear cached notifications from " + source, t);
+            PixelAodLog.log("failed to clear cached notifications from " + source, t);
         }
     }
 
@@ -737,58 +678,45 @@ final class PixelAodHook {
                 snapshot = NOTIFICATION_CACHE.values().toArray(new StatusBarNotification[0]);
             }
             PixelAodClockView.setActiveNotifications(snapshot);
-            PixelAodXposedEntry.log("kept fallback native AOD notification icons from "
+            PixelAodLog.log("kept fallback native AOD notification icons from "
                     + source + " count=" + snapshot.length);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to publish cached notifications from " + source, t);
+            PixelAodLog.log("failed to publish cached notifications from " + source, t);
         }
     }
 
     private static void hookAodRecord(ClassLoader classLoader) {
         try {
-            Class<?> recordClass = XposedHelpers.findClass(AOD_RECORD, classLoader);
-            XposedHelpers.findAndHookMethod(recordClass, "createAndInitRootView", Context.class, new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    Object result = param.getResult();
-                    if (result instanceof ViewGroup) {
-                        ViewGroup root = (ViewGroup) result;
-                        PixelAodXposedEntry.log("AodRecord root=" + root.getClass().getName()
-                                + " children=" + root.getChildCount());
-                        MAIN.post(() -> handleOuterRootLayout(root, "AodRecord#createAndInitRootView"));
-                    }
+            Class<?> recordClass = ModernHookBridge.findClass(AOD_RECORD, classLoader);
+            ModernHookBridge.hookAfter(recordClass, "createAndInitRootView", param -> {
+                Object result = param.getResult();
+                if (result instanceof ViewGroup) {
+                    ViewGroup root = (ViewGroup) result;
+                    PixelAodLog.log("AodRecord root=" + root.getClass().getName()
+                            + " children=" + root.getChildCount());
+                    MAIN.post(() -> handleOuterRootLayout(root, "AodRecord#createAndInitRootView"));
                 }
-            });
-            XposedHelpers.findAndHookMethod(recordClass, "onDreamingStarted", boolean.class, new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    MAIN.post(() -> {
-                        refreshNotificationsFromLastListener("AodRecord#onDreamingStarted");
-                        PixelAodClockView.setAodActive(true, "AodRecord#onDreamingStarted");
-                        PixelAodClockView.tickAllInstances();
-                    });
+            }, Context.class);
+            ModernHookBridge.hookAfter(recordClass, "onDreamingStarted", param -> MAIN.post(() -> {
+                refreshNotificationsFromLastListener("AodRecord#onDreamingStarted");
+                PixelAodClockView.setAodActive(true, "AodRecord#onDreamingStarted");
+                PixelAodClockView.tickAllInstances();
+            }), boolean.class);
+            ModernHookBridge.hookBefore(recordClass, "onDreamingStopped", param -> MAIN.post(() -> {
+                PixelLockscreenClockView.prepareAodToLockscreenTransition(
+                        "AodRecord#onDreamingStopped");
+                PixelAodClockView.hideAllAodOverlays("AodRecord#onDreamingStopped");
+                PixelAodClockView.stopAllInstances();
+                restoreAdjustedStatusViews();
+                if (PixelLockscreenClockView.shouldShowOnKnownContext()) {
+                    applyLockscreenClockReplacementFromLastHosts("AodRecord#onDreamingStopped");
+                } else {
+                    restoreHiddenStockViews();
                 }
-            });
-            XposedHelpers.findAndHookMethod(recordClass, "onDreamingStopped", new XC_MethodHook() {
-                @Override
-                protected void beforeHookedMethod(MethodHookParam param) {
-                    MAIN.post(() -> {
-                        PixelLockscreenClockView.prepareAodToLockscreenTransition(
-                                "AodRecord#onDreamingStopped");
-                        PixelAodClockView.hideAllAodOverlays("AodRecord#onDreamingStopped");
-                        PixelAodClockView.stopAllInstances();
-                        restoreAdjustedStatusViews();
-                        if (PixelLockscreenClockView.shouldShowOnKnownContext()) {
-                            applyLockscreenClockReplacementFromLastHosts("AodRecord#onDreamingStopped");
-                        } else {
-                            restoreHiddenStockViews();
-                        }
-                    });
-                }
-            });
-            PixelAodXposedEntry.log("hooked " + AOD_RECORD + " lifecycle/root");
+            }));
+            PixelAodLog.log("hooked " + AOD_RECORD + " lifecycle/root");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook AodRecord lifecycle", t);
+            PixelAodLog.log("failed to hook AodRecord lifecycle", t);
         }
     }
 
@@ -799,69 +727,58 @@ final class PixelAodHook {
 
     private static void hookKeyguardNotificationVisibilityProvider(ClassLoader classLoader) {
         try {
-            Class<?> providerClass = XposedHelpers.findClass(
+            Class<?> providerClass = ModernHookBridge.findClass(
                     KEYGUARD_NOTIFICATION_VISIBILITY_PROVIDER_IMPL, classLoader);
-            XposedHelpers.findAndHookMethod(providerClass, "shouldHideNotification",
-                    XposedHelpers.findClass(
-                            "com.android.systemui.statusbar.notification.collection.NotificationEntry",
-                            classLoader),
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            if (!Boolean.TRUE.equals(param.getResult()) || param.args == null
-                                    || param.args.length == 0) {
-                                return;
-                            }
-                            StatusBarNotification sbn = statusBarNotificationFromEntry(param.args[0]);
-                            Object ranking = rankingFromEntry(param.args[0]);
-                            if (isEligibleForLockscreenPolicyOverride(sbn, ranking,
-                                    "KeyguardNotificationVisibilityProvider")) {
-                                param.setResult(false);
-                            }
-                        }
-                    });
-            PixelAodXposedEntry.log("hooked KeyguardNotificationVisibilityProvider lockscreen policy");
+            Class<?> entryClass = ModernHookBridge.findClass(
+                    "com.android.systemui.statusbar.notification.collection.NotificationEntry",
+                    classLoader);
+            ModernHookBridge.hookAfter(providerClass, "shouldHideNotification", param -> {
+                if (!Boolean.TRUE.equals(param.getResult()) || param.args == null
+                        || param.args.length == 0) {
+                    return;
+                }
+                StatusBarNotification sbn = statusBarNotificationFromEntry(param.args[0]);
+                Object ranking = rankingFromEntry(param.args[0]);
+                if (isEligibleForLockscreenPolicyOverride(sbn, ranking,
+                        "KeyguardNotificationVisibilityProvider")) {
+                    param.setResult(false);
+                }
+            }, entryClass);
+            PixelAodLog.log("hooked KeyguardNotificationVisibilityProvider lockscreen policy");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook KeyguardNotificationVisibilityProvider lockscreen policy", t);
+            PixelAodLog.log("failed to hook KeyguardNotificationVisibilityProvider lockscreen policy", t);
         }
     }
 
     private static void hookKeyguardNotifFilter(ClassLoader classLoader) {
         try {
-            Class<?> filterClass = XposedHelpers.findClass(NOTIF_FILTER, classLoader);
+            Class<?> filterClass = ModernHookBridge.findClass(NOTIF_FILTER, classLoader);
+            Class<?> entryClass = ModernHookBridge.findClass(
+                    "com.android.systemui.statusbar.notification.collection.NotificationEntry",
+                    classLoader);
             Method method = filterClass.getDeclaredMethod("shouldFilterOut",
-                    XposedHelpers.findClass(
-                            "com.android.systemui.statusbar.notification.collection.NotificationEntry",
-                            classLoader),
+                    entryClass,
                     long.class);
             if (Modifier.isAbstract(method.getModifiers())) {
-                PixelAodXposedEntry.log("skipped abstract keyguard NotifFilter lockscreen policy fallback");
+                PixelAodLog.log("skipped abstract keyguard NotifFilter lockscreen policy fallback");
                 return;
             }
-            XposedHelpers.findAndHookMethod(filterClass, "shouldFilterOut",
-                    XposedHelpers.findClass(
-                            "com.android.systemui.statusbar.notification.collection.NotificationEntry",
-                            classLoader),
-                    long.class,
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            if (!Boolean.TRUE.equals(param.getResult()) || param.args == null
-                                    || param.args.length == 0
-                                    || !looksLikeKeyguardNotificationFilter(param.thisObject)) {
-                                return;
-                            }
-                            StatusBarNotification sbn = statusBarNotificationFromEntry(param.args[0]);
-                            Object ranking = rankingFromEntry(param.args[0]);
-                            if (isEligibleForLockscreenPolicyOverride(sbn, ranking,
-                                    filterName(param.thisObject))) {
-                                param.setResult(false);
-                            }
-                        }
-                    });
-            PixelAodXposedEntry.log("hooked keyguard NotifFilter lockscreen policy fallback");
+            ModernHookBridge.hookAfter(filterClass, "shouldFilterOut", param -> {
+                if (!Boolean.TRUE.equals(param.getResult()) || param.args == null
+                        || param.args.length == 0
+                        || !looksLikeKeyguardNotificationFilter(param.thisObject)) {
+                    return;
+                }
+                StatusBarNotification sbn = statusBarNotificationFromEntry(param.args[0]);
+                Object ranking = rankingFromEntry(param.args[0]);
+                if (isEligibleForLockscreenPolicyOverride(sbn, ranking,
+                        filterName(param.thisObject))) {
+                    param.setResult(false);
+                }
+            }, entryClass, long.class);
+            PixelAodLog.log("hooked keyguard NotifFilter lockscreen policy fallback");
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to hook keyguard NotifFilter lockscreen policy fallback", t);
+            PixelAodLog.log("failed to hook keyguard NotifFilter lockscreen policy fallback", t);
         }
     }
 
@@ -882,7 +799,7 @@ final class PixelAodHook {
         }
         StringBuilder builder = new StringBuilder(filter.getClass().getName());
         try {
-            Object name = XposedHelpers.callMethod(filter, "getName");
+            Object name = ModernHookBridge.callMethod(filter, "getName");
             if (name != null) {
                 builder.append("/").append(name);
             }
@@ -897,7 +814,7 @@ final class PixelAodHook {
             return null;
         }
         try {
-            Object value = XposedHelpers.callMethod(entry, "getSbn");
+            Object value = ModernHookBridge.callMethod(entry, "getSbn");
             if (value instanceof StatusBarNotification) {
                 return (StatusBarNotification) value;
             }
@@ -905,7 +822,7 @@ final class PixelAodHook {
             // OPlus variants may rename or inline accessors.
         }
         try {
-            Object value = XposedHelpers.getObjectField(entry, "mSbn");
+            Object value = ModernHookBridge.getObjectField(entry, "mSbn");
             if (value instanceof StatusBarNotification) {
                 return (StatusBarNotification) value;
             }
@@ -920,12 +837,12 @@ final class PixelAodHook {
             return null;
         }
         try {
-            return XposedHelpers.callMethod(entry, "getRanking");
+            return ModernHookBridge.callMethod(entry, "getRanking");
         } catch (Throwable ignored) {
             // OPlus variants may rename or inline accessors.
         }
         try {
-            return XposedHelpers.getObjectField(entry, "mRanking");
+            return ModernHookBridge.getObjectField(entry, "mRanking");
         } catch (Throwable ignored) {
             return null;
         }
@@ -962,7 +879,7 @@ final class PixelAodHook {
             return false;
         }
         if (LOGGED_STATUS_CLASSES.add("lockscreenPolicy|" + sbn.getKey())) {
-            PixelAodXposedEntry.log("allowing lockscreen notification through OOS policy pkg="
+            PixelAodLog.log("allowing lockscreen notification through OOS policy pkg="
                     + pkg + " key=" + sbn.getKey() + " importance=" + importance
                     + " source=" + source);
         }
@@ -974,7 +891,7 @@ final class PixelAodHook {
             return false;
         }
         try {
-            Object override = XposedHelpers.callMethod(ranking, "getLockscreenVisibilityOverride");
+            Object override = ModernHookBridge.callMethod(ranking, "getLockscreenVisibilityOverride");
             if (override instanceof Integer
                     && (Integer) override == Notification.VISIBILITY_SECRET) {
                 return true;
@@ -983,7 +900,7 @@ final class PixelAodHook {
             // Continue with channel visibility fallback.
         }
         try {
-            Object channel = XposedHelpers.callMethod(ranking, "getChannel");
+            Object channel = ModernHookBridge.callMethod(ranking, "getChannel");
             if (channel instanceof NotificationChannel
                     && ((NotificationChannel) channel).getLockscreenVisibility()
                     == Notification.VISIBILITY_SECRET) {
@@ -1000,7 +917,7 @@ final class PixelAodHook {
             return Integer.MIN_VALUE;
         }
         try {
-            Object value = XposedHelpers.callMethod(ranking, "getImportance");
+            Object value = ModernHookBridge.callMethod(ranking, "getImportance");
             if (value instanceof Integer) {
                 return (Integer) value;
             }
@@ -1013,41 +930,41 @@ final class PixelAodHook {
     private static void handleClockLayout(Context context, Object clockLayoutObject, String source) {
         try {
             if (!(clockLayoutObject instanceof ViewGroup)) {
-                PixelAodXposedEntry.log("AodClockLayout is not ViewGroup from " + source + ": " + clockLayoutObject);
+                PixelAodLog.log("AodClockLayout is not ViewGroup from " + source + ": " + clockLayoutObject);
                 return;
             }
             Object aodView = null;
             try {
-                aodView = XposedHelpers.getObjectField(clockLayoutObject, "mAodViewFromApk");
+                aodView = ModernHookBridge.getObjectField(clockLayoutObject, "mAodViewFromApk");
             } catch (Throwable ignored) {
                 // Field may be unavailable early in attach; initForAodApk will run with the real host.
             }
             if (!(aodView instanceof ViewGroup)) {
-                PixelAodXposedEntry.log("skip clock injection from " + source
+                PixelAodLog.log("skip clock injection from " + source
                         + " because mAodViewFromApk is not ready; layout="
                         + clockLayoutObject.getClass().getName());
                 return;
             }
             handleClockHost(context, (ViewGroup) aodView, "AodClockLayout#" + source);
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("customize AOD clock layout failed from " + source, t);
+            PixelAodLog.log("customize AOD clock layout failed from " + source, t);
         }
     }
 
     private static void handleOuterRootLayout(ViewGroup host, String source) {
         try {
             scheduleParentDebugDumps(host, source);
-            PixelAodXposedEntry.log("observed AOD outer root from " + source + " host="
+            PixelAodLog.log("observed AOD outer root from " + source + " host="
                     + host.getClass().getName() + " children=" + host.getChildCount());
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("observe AOD outer root failed from " + source, t);
+            PixelAodLog.log("observe AOD outer root failed from " + source, t);
         }
     }
 
     private static void inspectLockscreenClockCandidate(Object candidate, String source) {
         try {
             if (!(candidate instanceof View)) {
-                PixelAodXposedEntry.log("lockscreen clock probe ignored non-view " + source
+                PixelAodLog.log("lockscreen clock probe ignored non-view " + source
                         + " value=" + candidate);
                 return;
             }
@@ -1071,7 +988,7 @@ final class PixelAodHook {
             }
             logChunked(builder.toString());
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to inspect lockscreen clock candidate " + source, t);
+            PixelAodLog.log("failed to inspect lockscreen clock candidate " + source, t);
         }
     }
 
@@ -1100,11 +1017,11 @@ final class PixelAodHook {
                 restoreHiddenStockViews();
             }
             scheduleReapply(context, host, pixelHost);
-            PixelAodXposedEntry.log("customized AOD clock host from " + source + " host="
+            PixelAodLog.log("customized AOD clock host from " + source + " host="
                     + host.getClass().getName() + " pixelHost=" + markerFor(pixelHost)
                     + " hostChildren=" + host.getChildCount());
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("customize AOD clock host failed from " + source, t);
+            PixelAodLog.log("customize AOD clock host failed from " + source, t);
         }
     }
 
@@ -1125,11 +1042,11 @@ final class PixelAodHook {
             injectPixelLockscreenClock(context, host);
             applyLockscreenClockReplacement(context, host, host, source);
             scheduleLockscreenReapply(context, host);
-            PixelAodXposedEntry.log("prepared Pixel lockscreen host from " + source
+            PixelAodLog.log("prepared Pixel lockscreen host from " + source
                     + " host=" + markerFor(host)
                     + " children=" + host.getChildCount());
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("prepare Pixel lockscreen host failed from " + source, t);
+            PixelAodLog.log("prepare Pixel lockscreen host failed from " + source, t);
         }
     }
 
@@ -1183,7 +1100,7 @@ final class PixelAodHook {
                 ViewGroup.LayoutParams.MATCH_PARENT));
         clockView.bringToFront();
         clockView.start();
-        PixelAodXposedEntry.log("injected PixelAodClockView into " + host.getClass().getName());
+        PixelAodLog.log("injected PixelAodClockView into " + host.getClass().getName());
     }
 
     private static void injectPixelLockscreenClock(Context context, ViewGroup host) {
@@ -1205,7 +1122,7 @@ final class PixelAodHook {
                 ViewGroup.LayoutParams.MATCH_PARENT));
         clockView.bringToFront();
         clockView.start();
-        PixelAodXposedEntry.log("injected PixelLockscreenClockView into " + host.getClass().getName());
+        PixelAodLog.log("injected PixelLockscreenClockView into " + host.getClass().getName());
     }
 
     private static void scheduleReapply(Context context, ViewGroup stockHost, ViewGroup pixelHost) {
@@ -1234,7 +1151,7 @@ final class PixelAodHook {
                 applyLockscreenClockReplacement(context, host, host,
                         "NotificationShadeWindowView#delayed-" + delayMillis);
             } catch (Throwable t) {
-                PixelAodXposedEntry.log("delayed lockscreen reapply failed", t);
+                PixelAodLog.log("delayed lockscreen reapply failed", t);
             }
         }, delayMillis);
     }
@@ -1268,7 +1185,7 @@ final class PixelAodHook {
                     injectPixelClock(context, pixelHost);
                 }
             } catch (Throwable t) {
-                PixelAodXposedEntry.log("delayed AOD reapply failed", t);
+                PixelAodLog.log("delayed AOD reapply failed", t);
             }
         }, delayMillis);
     }
@@ -1346,7 +1263,7 @@ final class PixelAodHook {
                 PixelAodClockView.setAtAGlanceExtra(extra);
             }
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to publish At a Glance extra from stock AOD tree", t);
+            PixelAodLog.log("failed to publish At a Glance extra from stock AOD tree", t);
         }
     }
 
@@ -1389,16 +1306,16 @@ final class PixelAodHook {
                     PixelAodClockView.setActiveNotifications(snapshot);
                 }
                 if (LOGGED_STATUS_CLASSES.add("notificationsFromView|" + view.getClass().getName())) {
-                    PixelAodXposedEntry.log("merged AOD notifications from runtime view subset="
+                    PixelAodLog.log("merged AOD notifications from runtime view subset="
                             + array.length + " cache=" + snapshot.length
                             + " marker=" + marker + " fields=" + fieldSummary);
                 }
             } else if (LOGGED_STATUS_CLASSES.add("notificationsFromViewEmpty|" + view.getClass().getName())) {
-                PixelAodXposedEntry.log("no StatusBarNotification objects found in runtime NotificationView "
+                PixelAodLog.log("no StatusBarNotification objects found in runtime NotificationView "
                         + marker + " fields=" + fieldSummary);
             }
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to inspect runtime NotificationView notifications " + marker, t);
+            PixelAodLog.log("failed to inspect runtime NotificationView notifications " + marker, t);
         }
     }
 
@@ -1506,7 +1423,7 @@ final class PixelAodHook {
         moveTarget.setAlpha(0.92f);
         moveTarget.bringToFront();
         if (LOGGED_STATUS_CLASSES.add("move|" + marker)) {
-            PixelAodXposedEntry.log("moved AOD notification view " + marker);
+            PixelAodLog.log("moved AOD notification view " + marker);
         }
     }
 
@@ -1537,9 +1454,9 @@ final class PixelAodHook {
                 }
                 builder.append(");");
             }
-            PixelAodXposedEntry.log(builder.toString());
+            PixelAodLog.log(builder.toString());
         } catch (Throwable t) {
-            PixelAodXposedEntry.log("failed to inspect NotificationView " + marker, t);
+            PixelAodLog.log("failed to inspect NotificationView " + marker, t);
         }
     }
 
@@ -1597,13 +1514,13 @@ final class PixelAodHook {
                 }
                 ViewGroup parentRoot = highestParentGroup(root);
                 if (parentRoot == root) {
-                    PixelAodXposedEntry.log("AOD parent dump skipped from " + source
+                    PixelAodLog.log("AOD parent dump skipped from " + source
                             + " because no ViewGroup parent is attached for " + root.getClass().getName());
                     return;
                 }
                 hideStockKeyguardClockViews(parentRoot);
             } catch (Throwable t) {
-                PixelAodXposedEntry.log("AOD parent tree dump failed from " + source, t);
+                PixelAodLog.log("AOD parent tree dump failed from " + source, t);
             }
         }, delayMillis);
     }
@@ -1615,7 +1532,7 @@ final class PixelAodHook {
                 : stockHost != null ? stockHost.getContext() : null;
         if (context == null) {
             PixelLockscreenClockView.refreshAll(source);
-            PixelAodXposedEntry.log("lockscreen replacement skipped without remembered hosts from " + source);
+            PixelAodLog.log("lockscreen replacement skipped without remembered hosts from " + source);
             return;
         }
         applyLockscreenClockReplacement(context, stockHost, pixelHost, source);
@@ -1626,7 +1543,7 @@ final class PixelAodHook {
             try {
                 logViewTree(root, source + "+" + delayMillis + "ms");
             } catch (Throwable t) {
-                PixelAodXposedEntry.log("AOD view tree dump failed from " + source, t);
+                PixelAodLog.log("AOD view tree dump failed from " + source, t);
             }
         }, delayMillis);
     }
@@ -1699,7 +1616,7 @@ final class PixelAodHook {
         int max = 3200;
         for (int start = 0; start < message.length(); start += max) {
             int end = Math.min(message.length(), start + max);
-            PixelAodXposedEntry.log(message.substring(start, end));
+            PixelAodLog.log(message.substring(start, end));
         }
     }
 
@@ -1718,7 +1635,7 @@ final class PixelAodHook {
                 if (looksLikeStockAodClockContainer(marker)) {
                     if (containsSystemAodMediaView((ViewGroup) view)) {
                         if (LOGGED_STATUS_CLASSES.add("preserveMediaSubtree|" + marker)) {
-                            PixelAodXposedEntry.log("preserved stock AOD container with media subtree " + marker);
+                            PixelAodLog.log("preserved stock AOD container with media subtree " + marker);
                         }
                         return true;
                     } else {
@@ -1788,7 +1705,7 @@ final class PixelAodHook {
             if (looksLikeVisibleLockscreenNotificationCard(marker, view)) {
                 found[0] = true;
                 if (LOGGED_STATUS_CLASSES.add("lockscreenNotificationCard|" + marker)) {
-                    PixelAodXposedEntry.log("detected visible lockscreen notification card " + marker
+                    PixelAodLog.log("detected visible lockscreen notification card " + marker
                             + " size=" + view.getWidth() + "x" + view.getHeight()
                             + " screen=" + screenLocationFor(view));
                 }
@@ -1826,7 +1743,7 @@ final class PixelAodHook {
                     && marker.contains("notification")) {
                 found[0] = true;
                 if (LOGGED_STATUS_CLASSES.add("shadeDismiss|" + marker)) {
-                    PixelAodXposedEntry.log("detected expanded notification shade dismiss control "
+                    PixelAodLog.log("detected expanded notification shade dismiss control "
                             + marker + " size=" + view.getWidth() + "x" + view.getHeight()
                             + " screen=" + screenLocationFor(view));
                 }
@@ -1853,7 +1770,7 @@ final class PixelAodHook {
             if (looksLikeOplusKeyguardBigClock(marker)) {
                 found[0] = true;
                 if (LOGGED_STATUS_CLASSES.add("stockKeyguardClock|" + marker)) {
-                    PixelAodXposedEntry.log("detected stock keyguard clock " + marker
+                    PixelAodLog.log("detected stock keyguard clock " + marker
                             + " visibility=" + view.getVisibility()
                             + " shown=" + view.isShown()
                             + " size=" + view.getWidth() + "x" + view.getHeight()
@@ -1869,7 +1786,7 @@ final class PixelAodHook {
     private static void hideView(View view, String marker) {
         if (looksLikeSystemAodMediaView(marker)) {
             if (LOGGED_STATUS_CLASSES.add("preserveMedia|" + marker)) {
-                PixelAodXposedEntry.log("preserved system AOD media view " + marker);
+                PixelAodLog.log("preserved system AOD media view " + marker);
             }
             return;
         }
@@ -1883,7 +1800,7 @@ final class PixelAodHook {
         view.setAlpha(0f);
         view.setVisibility(View.GONE);
         if (firstHide) {
-            PixelAodXposedEntry.log("hid stock AOD view " + marker);
+            PixelAodLog.log("hid stock AOD view " + marker);
         }
     }
 
@@ -1892,11 +1809,11 @@ final class PixelAodHook {
             PixelLockscreenClockView.refreshAll(source);
             restoreAdjustedStatusViews();
             if (PixelLockscreenClockView.shouldShowOnKnownContext()) {
-                PixelAodXposedEntry.log("kept stock keyguard clock hidden for Pixel lockscreen from " + source);
+                PixelAodLog.log("kept stock keyguard clock hidden for Pixel lockscreen from " + source);
                 return;
             }
             restoreHiddenStockViews();
-            PixelAodXposedEntry.log("restored system lockscreen views from " + source);
+            PixelAodLog.log("restored system lockscreen views from " + source);
         });
     }
 
@@ -1910,13 +1827,13 @@ final class PixelAodHook {
                         view.setVisibility(state.visibility);
                         view.setAlpha(state.alpha);
                     } catch (Throwable t) {
-                        PixelAodXposedEntry.log("restore hidden stock AOD view failed", t);
+                        PixelAodLog.log("restore hidden stock AOD view failed", t);
                     }
                 }
             }
             HIDDEN_STOCK_VIEWS.clear();
         }
-        PixelAodXposedEntry.log("restored hidden stock AOD views");
+        PixelAodLog.log("restored hidden stock AOD views");
     }
 
     private static void restoreAdjustedStatusViews() {
@@ -1932,13 +1849,13 @@ final class PixelAodHook {
                         view.setAlpha(state.alpha);
                         view.setLayerType(state.layerType, null);
                     } catch (Throwable t) {
-                        PixelAodXposedEntry.log("restore adjusted AOD status view failed", t);
+                        PixelAodLog.log("restore adjusted AOD status view failed", t);
                     }
                 }
             }
             ADJUSTED_STATUS_VIEWS.clear();
         }
-        PixelAodXposedEntry.log("restored adjusted AOD status views");
+        PixelAodLog.log("restored adjusted AOD status views");
     }
 
     private static boolean looksLikeStockAodClockContainer(String marker) {
@@ -2363,7 +2280,7 @@ final class PixelAodHook {
 
     private static void logAtAGlanceCandidate(String marker, String value) {
         if (LOGGED_STATUS_CLASSES.add("ataglance|" + marker + "|" + value)) {
-            PixelAodXposedEntry.log("captured stock AOD At a Glance candidate value="
+            PixelAodLog.log("captured stock AOD At a Glance candidate value="
                     + value + " marker=" + marker);
         }
     }

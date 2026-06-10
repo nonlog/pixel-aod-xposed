@@ -56,7 +56,6 @@ dependencies {
     implementation("io.github.kyuubiran.ezxhelper:xposed-api-101:3.2.0-preview1") {
         exclude group: "io.github.libxposed", module: "api"
     }
-    compileOnly("de.robv.android.xposed:api:82")
     compileOnly(project(":libxposed-stubs"))
 }
 

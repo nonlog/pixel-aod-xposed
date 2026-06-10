@@ -26,6 +26,7 @@ public final class PixelAodModernEntry extends XposedModule {
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
         try {
+            ModernHookBridge.attach(this);
             EzXposed.initOnModuleLoaded(this, param);
             logInfo("modern module loaded process=" + param.getProcessName()
                     + " api=" + getApiVersion()

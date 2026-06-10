@@ -33,7 +33,7 @@ public final class TestNotificationReceiver extends BroadcastReceiver {
         if (Build.VERSION.SDK_INT >= 33
                 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
-            PixelAodXposedEntry.log("test notification skipped; POST_NOTIFICATIONS is not granted");
+            PixelAodLog.log("test notification skipped; POST_NOTIFICATIONS is not granted");
             return;
         }
         NotificationManager manager = notificationManager(context);
