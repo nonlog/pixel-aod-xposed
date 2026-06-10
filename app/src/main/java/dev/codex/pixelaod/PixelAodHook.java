@@ -706,18 +706,20 @@ final class PixelAodHook {
                 PixelAodClockView.setAodActive(true, "AodRecord#onDreamingStarted");
                 PixelAodClockView.tickAllInstances();
             }), boolean.class);
-            ModernHookBridge.hookBefore(recordClass, "onDreamingStopped", param -> MAIN.post(() -> {
-                PixelLockscreenClockView.prepareAodToLockscreenTransition(
-                        "AodRecord#onDreamingStopped");
-                PixelAodClockView.hideAllAodOverlays("AodRecord#onDreamingStopped");
-                PixelAodClockView.stopAllInstances();
-                restoreAdjustedStatusViews();
-                if (PixelLockscreenClockView.shouldShowOnKnownContext()) {
-                    applyLockscreenClockReplacementFromLastHosts("AodRecord#onDreamingStopped");
-                } else {
-                    restoreHiddenStockViews();
-                }
-            }));
+            ModernHookBridge.hookBefore(recordClass, "onDreamingStopped",
+                    param -> runAtFrontOfMain(() -> {
+                        PixelLockscreenClockView.prepareAodToLockscreenTransition(
+                                "AodRecord#onDreamingStopped");
+                        PixelAodClockView.hideAllAodOverlays("AodRecord#onDreamingStopped");
+                        PixelAodClockView.stopAllInstances();
+                        restoreAdjustedStatusViews();
+                        if (PixelLockscreenClockView.shouldShowOnKnownContext()) {
+                            applyLockscreenClockReplacementFromLastHosts("AodRecord#onDreamingStopped");
+                        } else {
+                            suppressSystemAodDuringLockscreenTransition("AodRecord#onDreamingStopped");
+                            restoreHiddenStockViewsAfterTransition("AodRecord#onDreamingStopped");
+                        }
+                    }));
             PixelAodLog.log("hooked " + AOD_RECORD + " lifecycle/root");
         } catch (Throwable t) {
             PixelAodLog.log("failed to hook AodRecord lifecycle", t);
@@ -1545,6 +1547,52 @@ final class PixelAodHook {
             return;
         }
         applyLockscreenClockReplacement(context, stockHost, pixelHost, source);
+    }
+
+    static void suppressSystemAodDuringLockscreenTransition(String source) {
+        runAtFrontOfMain(() -> {
+            PixelLockscreenClockView.refreshAll(source);
+            ViewGroup stockHost = lastStockHost.get();
+            if (stockHost != null) {
+                hideStockClockViews(stockHost);
+                hideStockKeyguardClockViews(highestParentGroup(stockHost));
+            }
+            ViewGroup pixelHost = lastPixelHost.get();
+            if (pixelHost != null) {
+                hideStockKeyguardClockViews(highestParentGroup(pixelHost));
+            }
+        });
+    }
+
+    private static void restoreHiddenStockViewsAfterTransition(String source) {
+        MAIN.postDelayed(() -> {
+            Context context = null;
+            ViewGroup pixelHost = lastPixelHost.get();
+            ViewGroup stockHost = lastStockHost.get();
+            if (pixelHost != null) {
+                context = pixelHost.getContext();
+            } else if (stockHost != null) {
+                context = stockHost.getContext();
+            }
+            if (PixelLockscreenClockView.shouldShowOnLockscreen(context)
+                    || PixelAodClockView.shouldCustomizeAodNow(context)) {
+                PixelAodLog.log("kept stock AOD/keyguard views hidden after transition from "
+                        + source);
+                return;
+            }
+            restoreHiddenStockViews();
+        }, 900L);
+    }
+
+    private static void runAtFrontOfMain(Runnable runnable) {
+        if (runnable == null) {
+            return;
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            runnable.run();
+        } else {
+            MAIN.postAtFrontOfQueue(runnable);
+        }
     }
 
     private static void debugDumpLater(ViewGroup root, String source, long delayMillis) {

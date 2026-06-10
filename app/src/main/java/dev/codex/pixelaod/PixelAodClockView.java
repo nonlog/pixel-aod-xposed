@@ -80,15 +80,15 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int LARGE_CLOCK_TEXT_DP = 150;
     private static final int LARGE_CLOCK_TOP_DP = 118;
     private static final int SMALL_CLOCK_TEXT_DP = 56;
-    private static final int SMALL_CLOCK_TOP_DP = 28;
+    private static final int SMALL_CLOCK_TOP_DP = 54;
     private static final int INFO_EDGE_DP = 34;
-    private static final int LARGE_INFO_TOP_DP = 36;
-    private static final int LARGE_NOTIFICATION_LINE_TOP_DP = 76;
-    private static final int LARGE_MEDIA_TOP_DP = 104;
-    private static final int LARGE_MEDIA_NO_NOTIFICATIONS_TOP_DP = 72;
-    private static final int SMALL_INFO_TOP_DP = 98;
-    private static final int SMALL_NOTIFICATION_LINE_TOP_DP = 150;
-    private static final int SMALL_MEDIA_TOP_DP = 186;
+    private static final int LARGE_INFO_TOP_DP = 72;
+    private static final int LARGE_NOTIFICATION_LINE_TOP_DP = 112;
+    private static final int LARGE_MEDIA_TOP_DP = 140;
+    private static final int LARGE_MEDIA_NO_NOTIFICATIONS_TOP_DP = 108;
+    private static final int SMALL_INFO_TOP_DP = 126;
+    private static final int SMALL_NOTIFICATION_LINE_TOP_DP = 178;
+    private static final int SMALL_MEDIA_TOP_DP = 214;
     private static final int NOTIFICATION_ICON_SIZE_DP = 14;
     private static final int NOTIFICATION_ICON_SPACING_DP = 8;
     private static final int MEDIA_ICON_SIZE_DP = 13;
@@ -191,7 +191,7 @@ public final class PixelAodClockView extends FrameLayout {
                     PixelLockscreenClockView.prepareAodToLockscreenTransition("screen-on");
                 }
                 hideAllAodOverlays("screen-on");
-                PixelAodHook.restoreSystemViewsForLockscreen("screen-on");
+                PixelAodHook.suppressSystemAodDuringLockscreenTransition("screen-on");
             }
             updateAodVisibility("screen-state");
         }

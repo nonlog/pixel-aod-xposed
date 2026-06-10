@@ -42,7 +42,7 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static final int SMALL_CLOCK_TEXT_DP = 56;
     private static final int SMALL_CLOCK_TOP_DP = 74;
     private static final int EDGE_DP = 34;
-    private static final int LARGE_INFO_TOP_DP = 36;
+    private static final int LARGE_INFO_TOP_DP = 392;
     private static final int SMALL_INFO_TOP_DP = 150;
     private static final int SMALL_NOTIFICATION_TOP_DP = 198;
     private static final int NOTIFICATION_ICON_SIZE_DP = 18;
