@@ -148,8 +148,10 @@ public final class PixelAodClockView extends FrameLayout {
     private static int instanceRefreshLogCount;
     private static int shadeSuppressionLogCount;
     private static int burnInLogCount;
+    private static int recentAodVisibleLogCount;
     private static float lastBurnInTranslationX;
     private static float lastBurnInTranslationY;
+    private static long lastAodOverlayVisibleAt;
     private static long lastCachedWeatherRequestAt;
     private static String atAGlanceExtra = "";
     private static WeatherSnapshot breezyWeather = WeatherSnapshot.empty();
@@ -416,6 +418,9 @@ public final class PixelAodClockView extends FrameLayout {
             changed = aodActive != active;
             aodActive = active;
         }
+        if (active) {
+            markRecentAodOverlayVisible(source + "#active");
+        }
         mainHandler().post(() -> {
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
@@ -454,6 +459,32 @@ public final class PixelAodClockView extends FrameLayout {
     static BurnInOffset currentBurnInOffset() {
         synchronized (PixelAodClockView.class) {
             return new BurnInOffset(lastBurnInTranslationX, lastBurnInTranslationY);
+        }
+    }
+
+    static BurnInOffset consumeRecentBurnInOffset(long windowMillis) {
+        synchronized (PixelAodClockView.class) {
+            long age = android.os.SystemClock.uptimeMillis() - lastAodOverlayVisibleAt;
+            if (lastAodOverlayVisibleAt <= 0L || age < 0L || age > windowMillis) {
+                return null;
+            }
+            lastAodOverlayVisibleAt = 0L;
+            return new BurnInOffset(lastBurnInTranslationX, lastBurnInTranslationY);
+        }
+    }
+
+    static void markRecentAodOverlayVisible(String source) {
+        float x;
+        float y;
+        synchronized (PixelAodClockView.class) {
+            lastAodOverlayVisibleAt = android.os.SystemClock.uptimeMillis();
+            x = lastBurnInTranslationX;
+            y = lastBurnInTranslationY;
+        }
+        if (recentAodVisibleLogCount < 16) {
+            recentAodVisibleLogCount++;
+            PixelAodLog.log("marked recent Pixel AOD visible source=" + source
+                    + " x=" + Math.round(x) + " y=" + Math.round(y));
         }
     }
 
@@ -984,6 +1015,7 @@ public final class PixelAodClockView extends FrameLayout {
                     + " source=" + source);
         }
         if (visible) {
+            markRecentAodOverlayVisible(source);
             applyBurnInTranslation();
         } else {
             resetBurnInTranslation();

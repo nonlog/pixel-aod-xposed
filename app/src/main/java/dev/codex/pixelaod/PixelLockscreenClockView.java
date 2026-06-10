@@ -54,6 +54,7 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static final int CLOCK_LOCKSCREEN_WEIGHT = 520;
     private static final int INFO_LOCKSCREEN_WEIGHT = 500;
     private static final long AOD_TRANSITION_ANIMATION_WINDOW_MS = 1800L;
+    private static final long RECENT_AOD_FALLBACK_WINDOW_MS = 120_000L;
     private static final StatusBarNotification[] EMPTY_NOTIFICATIONS = new StatusBarNotification[0];
 
     private static StatusBarNotification[] activeNotifications = EMPTY_NOTIFICATIONS;
@@ -179,6 +180,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             }
             return;
         }
+        maybeStartDrawTimeAodTransition();
         super.dispatchDraw(canvas);
     }
 
@@ -296,6 +298,9 @@ final class PixelLockscreenClockView extends FrameLayout {
         boolean visible = shouldShowOnLockscreen(getContext());
         boolean firstVisibleFrame = visible && getVisibility() != View.VISIBLE;
         TransitionInfo transition = visible ? consumeRecentAodToLockscreenTransition(source) : null;
+        if (transition == null && visible) {
+            transition = consumeRecentAodFallbackTransition(source);
+        }
         boolean animateWeight = visible && transition != null;
         if (animateWeight) {
             setClockWeight(PixelAodClockView.aodClockWeight(getContext()));
@@ -327,6 +332,22 @@ final class PixelLockscreenClockView extends FrameLayout {
         }
     }
 
+    private void maybeStartDrawTimeAodTransition() {
+        if (clockWeightTransitionPending || getVisibility() != View.VISIBLE) {
+            return;
+        }
+        PixelAodClockView.BurnInOffset offset =
+                PixelAodClockView.consumeRecentBurnInOffset(RECENT_AOD_FALLBACK_WINDOW_MS);
+        if (offset == null) {
+            return;
+        }
+        PixelAodLog.log("consumed recent Pixel AOD fallback transition update=dispatchDraw"
+                + " x=" + Math.round(offset.translationX)
+                + " y=" + Math.round(offset.translationY));
+        beginClockTransition("dispatchDraw", new TransitionInfo(
+                "recent-aod-draw", offset.translationX, offset.translationY));
+    }
+
     private static TransitionInfo consumeRecentAodToLockscreenTransition(String updateSource) {
         synchronized (PixelLockscreenClockView.class) {
             long markedAt = pendingAodToLockscreenTransitionAt;
@@ -353,6 +374,18 @@ final class PixelLockscreenClockView extends FrameLayout {
                     + " x=" + Math.round(translationX) + " y=" + Math.round(translationY));
             return new TransitionInfo(source, translationX, translationY);
         }
+    }
+
+    private static TransitionInfo consumeRecentAodFallbackTransition(String updateSource) {
+        PixelAodClockView.BurnInOffset offset =
+                PixelAodClockView.consumeRecentBurnInOffset(RECENT_AOD_FALLBACK_WINDOW_MS);
+        if (offset == null) {
+            return null;
+        }
+        PixelAodLog.log("consumed recent Pixel AOD fallback transition update="
+                + updateSource + " x=" + Math.round(offset.translationX)
+                + " y=" + Math.round(offset.translationY));
+        return new TransitionInfo("recent-aod", offset.translationX, offset.translationY);
     }
 
     private void updateTime() {

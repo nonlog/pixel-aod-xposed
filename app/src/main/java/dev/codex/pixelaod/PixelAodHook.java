@@ -1002,6 +1002,9 @@ final class PixelAodHook {
             PixelLockscreenClockView.refreshAll(source);
             boolean screenOff = !PixelAodClockView.isDeviceInteractive(context);
             boolean lockscreenVisible = isLikelyLockscreenSurfaceVisible(context, host, pixelHost);
+            if (screenOff) {
+                PixelAodClockView.markRecentAodOverlayVisible(source + "#host-ready");
+            }
             if (screenOff && !PixelAodClockView.shouldCustomizeAodNow(context)) {
                 PixelAodClockView.setAodActive(true, source + "#host-ready");
             }
