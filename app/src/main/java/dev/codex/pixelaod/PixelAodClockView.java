@@ -148,6 +148,8 @@ public final class PixelAodClockView extends FrameLayout {
     private static int instanceRefreshLogCount;
     private static int shadeSuppressionLogCount;
     private static int burnInLogCount;
+    private static float lastBurnInTranslationX;
+    private static float lastBurnInTranslationY;
     private static long lastCachedWeatherRequestAt;
     private static String atAGlanceExtra = "";
     private static WeatherSnapshot breezyWeather = WeatherSnapshot.empty();
@@ -183,6 +185,9 @@ public final class PixelAodClockView extends FrameLayout {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (intent != null && Intent.ACTION_SCREEN_ON.equals(intent.getAction())) {
+                if (getVisibility() == View.VISIBLE || shouldCustomizeAodNow(context)) {
+                    PixelLockscreenClockView.prepareAodToLockscreenTransition("screen-on");
+                }
                 hideAllAodOverlays("screen-on");
                 PixelAodHook.restoreSystemViewsForLockscreen("screen-on");
             }
@@ -444,6 +449,12 @@ public final class PixelAodClockView extends FrameLayout {
             }
             PixelAodLog.log("hid Pixel AOD overlays from " + source + " count=" + hidden);
         });
+    }
+
+    static BurnInOffset currentBurnInOffset() {
+        synchronized (PixelAodClockView.class) {
+            return new BurnInOffset(lastBurnInTranslationX, lastBurnInTranslationY);
+        }
     }
 
     static boolean shouldCustomizeAodNow(Context context) {
@@ -1800,27 +1811,45 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static int resolveMaterialClockColor(Context context) {
-        return resolveSystemColor(context, "system_accent1_100", CLOCK_COLOR);
+        return resolveWallpaperTextColor(context, CLOCK_COLOR);
     }
 
     static int resolveMaterialInfoColor(Context context) {
-        int color = resolveSystemColor(context, "system_accent1_200", INFO_COLOR);
-        return Color.argb(230, Color.red(color), Color.green(color), Color.blue(color));
+        return withAlpha(resolveWallpaperTextColor(context, INFO_COLOR), 230);
     }
 
-    private static int resolveSystemColor(Context context, String name, int fallback) {
+    private static int resolveWallpaperTextColor(Context context, int fallback) {
         if (context == null) {
             return fallback;
         }
         try {
-            int id = context.getResources().getIdentifier(name, "color", "android");
-            if (id != 0) {
-                return context.getColor(id);
+            int attrId = context.getResources().getIdentifier(
+                    "wallpaperTextColor", "attr", "com.android.systemui");
+            if (attrId == 0) {
+                attrId = context.getResources().getIdentifier(
+                        "wallpaperTextColor", "attr", context.getPackageName());
+            }
+            if (attrId != 0) {
+                TypedValue value = new TypedValue();
+                if (context.getTheme() != null
+                        && context.getTheme().resolveAttribute(attrId, value, true)) {
+                    if (value.resourceId != 0) {
+                        return context.getColor(value.resourceId);
+                    }
+                    if (value.type >= TypedValue.TYPE_FIRST_COLOR_INT
+                            && value.type <= TypedValue.TYPE_LAST_COLOR_INT) {
+                        return value.data;
+                    }
+                }
             }
         } catch (Throwable ignored) {
-            // Dynamic color resources are available on modern Android only.
+            // Wallpaper text colors are provided by SystemUI and vary by OEM theme.
         }
         return fallback;
+    }
+
+    private static int withAlpha(int color, int alpha) {
+        return Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color));
     }
 
     private TextView makeInfoLine(Context context, Typeface typeface, int textSizeDp, int gravity) {
@@ -1934,6 +1963,10 @@ public final class PixelAodClockView extends FrameLayout {
         float y = zigzag(minutes, maxY, BURN_IN_PERIOD_Y_MINUTES) - maxY / 2f;
         setTranslationX(x);
         setTranslationY(y);
+        synchronized (PixelAodClockView.class) {
+            lastBurnInTranslationX = x;
+            lastBurnInTranslationY = y;
+        }
         if (burnInLogCount < 8) {
             burnInLogCount++;
             PixelAodLog.log("applied Pixel AOD burn-in offset x=" + Math.round(x)
@@ -2305,6 +2338,16 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static final class MainHandlerHolder {
         static final Handler MAIN = new Handler(Looper.getMainLooper());
+    }
+
+    static final class BurnInOffset {
+        final float translationX;
+        final float translationY;
+
+        BurnInOffset(float translationX, float translationY) {
+            this.translationX = translationX;
+            this.translationY = translationY;
+        }
     }
 
     private static final class BatteryStatus {

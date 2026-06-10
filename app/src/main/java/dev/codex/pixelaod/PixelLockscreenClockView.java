@@ -64,6 +64,8 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static boolean lockscreenSurfaceVisible;
     private static long pendingAodToLockscreenTransitionAt;
     private static String pendingAodToLockscreenTransitionSource = "";
+    private static float pendingAodToLockscreenTranslationX;
+    private static float pendingAodToLockscreenTranslationY;
 
     private final TextView clockView;
     private final TextView dateView;
@@ -79,14 +81,6 @@ final class PixelLockscreenClockView extends FrameLayout {
     private ValueAnimator clockWeightAnimator;
     private int currentClockWeight = CLOCK_LOCKSCREEN_WEIGHT;
     private boolean clockWeightTransitionPending;
-    private final Runnable clockWeightTransitionStarter = new Runnable() {
-        @Override
-        public void run() {
-            clockWeightTransitionPending = false;
-            animateClockWeight(PixelAodClockView.aodClockWeight(getContext()),
-                    PixelAodClockView.lockscreenClockWeight(getContext()));
-        }
-    };
 
     PixelLockscreenClockView(Context context) {
         super(context);
@@ -167,8 +161,7 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     @Override
     protected void onDetachedFromWindow() {
-        removeCallbacks(clockWeightTransitionStarter);
-        clockWeightTransitionPending = false;
+        resetTransitionState();
         stop();
         INSTANCES.remove(this);
         super.onDetachedFromWindow();
@@ -253,12 +246,16 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     static void prepareAodToLockscreenTransition(String source) {
+        PixelAodClockView.BurnInOffset offset = PixelAodClockView.currentBurnInOffset();
         synchronized (PixelLockscreenClockView.class) {
             pendingAodToLockscreenTransitionAt = android.os.SystemClock.uptimeMillis();
             pendingAodToLockscreenTransitionSource = source;
+            pendingAodToLockscreenTranslationX = offset.translationX;
+            pendingAodToLockscreenTranslationY = offset.translationY;
         }
         PixelAodLog.log("prepared Pixel lockscreen clock weight transition source="
-                + source);
+                + source + " x=" + Math.round(offset.translationX)
+                + " y=" + Math.round(offset.translationY));
     }
 
     static void refreshAll(String source) {
@@ -298,13 +295,14 @@ final class PixelLockscreenClockView extends FrameLayout {
     private void updatePresentation(String source) {
         boolean visible = shouldShowOnLockscreen(getContext());
         boolean firstVisibleFrame = visible && getVisibility() != View.VISIBLE;
-        boolean animateWeight = visible
-                && (firstVisibleFrame || consumeRecentAodToLockscreenTransition(source));
+        TransitionInfo transition = visible ? consumeRecentAodToLockscreenTransition(source) : null;
+        boolean animateWeight = visible && transition != null;
         if (animateWeight) {
             setClockWeight(PixelAodClockView.aodClockWeight(getContext()));
         }
         setVisibility(visible ? View.VISIBLE : View.GONE);
         if (!visible) {
+            resetTransitionState();
             return;
         }
         List<StatusBarNotification> notifications = currentNotifications();
@@ -315,36 +313,45 @@ final class PixelLockscreenClockView extends FrameLayout {
         updateTime();
         rebuildNotificationIcons(hasCards ? Collections.emptyList() : notifications);
         if (animateWeight) {
-            beginClockWeightTransition(source);
+            beginClockTransition(source, transition);
         } else if (!clockWeightTransitionPending) {
             setClockWeight(PixelAodClockView.lockscreenClockWeight(getContext()));
+            setTranslationX(0f);
+            setTranslationY(0f);
         }
         if (modeLogCount < 12) {
             modeLogCount++;
             PixelAodLog.log("Pixel lockscreen clock visible compact="
                     + compactClock + " notifications=" + notifications.size()
-                    + " source=" + source);
+                    + " firstVisible=" + firstVisibleFrame + " source=" + source);
         }
     }
 
-    private static boolean consumeRecentAodToLockscreenTransition(String updateSource) {
+    private static TransitionInfo consumeRecentAodToLockscreenTransition(String updateSource) {
         synchronized (PixelLockscreenClockView.class) {
             long markedAt = pendingAodToLockscreenTransitionAt;
             if (markedAt <= 0L) {
-                return false;
+                return null;
             }
             long age = android.os.SystemClock.uptimeMillis() - markedAt;
             if (age < 0L || age > AOD_TRANSITION_ANIMATION_WINDOW_MS) {
                 pendingAodToLockscreenTransitionAt = 0L;
                 pendingAodToLockscreenTransitionSource = "";
-                return false;
+                pendingAodToLockscreenTranslationX = 0f;
+                pendingAodToLockscreenTranslationY = 0f;
+                return null;
             }
             String source = pendingAodToLockscreenTransitionSource;
+            float translationX = pendingAodToLockscreenTranslationX;
+            float translationY = pendingAodToLockscreenTranslationY;
             pendingAodToLockscreenTransitionAt = 0L;
             pendingAodToLockscreenTransitionSource = "";
+            pendingAodToLockscreenTranslationX = 0f;
+            pendingAodToLockscreenTranslationY = 0f;
             PixelAodLog.log("consumed Pixel lockscreen clock weight transition from="
-                    + source + " update=" + updateSource + " ageMs=" + age);
-            return true;
+                    + source + " update=" + updateSource + " ageMs=" + age
+                    + " x=" + Math.round(translationX) + " y=" + Math.round(translationY));
+            return new TransitionInfo(source, translationX, translationY);
         }
     }
 
@@ -461,35 +468,55 @@ final class PixelLockscreenClockView extends FrameLayout {
                 PixelAodClockView.currentFreshWeather(getContext()), infoColor);
     }
 
-    private void animateClockWeight(int fromWeight, int toWeight) {
+    private void beginClockTransition(String source, TransitionInfo transition) {
         if (clockWeightAnimator != null) {
             clockWeightAnimator.cancel();
         }
-        setClockWeight(fromWeight);
-        clockWeightAnimator = ValueAnimator.ofInt(fromWeight, toWeight);
-        clockWeightAnimator.setDuration(700L);
-        clockWeightAnimator.setInterpolator(new android.view.animation.DecelerateInterpolator(1.4f));
-        clockWeightAnimator.addUpdateListener(animation -> {
-            Object value = animation.getAnimatedValue();
-            if (value instanceof Integer) {
-                setClockWeight((Integer) value);
-            }
-        });
-        clockWeightAnimator.start();
-    }
-
-    private void beginClockWeightTransition(String source) {
-        if (clockWeightAnimator != null) {
-            clockWeightAnimator.cancel();
-        }
-        removeCallbacks(clockWeightTransitionStarter);
         clockWeightTransitionPending = true;
         int fromWeight = PixelAodClockView.aodClockWeight(getContext());
         int toWeight = PixelAodClockView.lockscreenClockWeight(getContext());
+        float fromTranslationX = transition != null ? transition.translationX : 0f;
+        float fromTranslationY = transition != null ? transition.translationY : 0f;
         setClockWeight(fromWeight);
-        postDelayed(clockWeightTransitionStarter, 140L);
-        PixelAodLog.log("scheduled visible Pixel lockscreen weight transition source="
-                + source + " from=" + fromWeight + " to=" + toWeight);
+        setTranslationX(fromTranslationX);
+        setTranslationY(fromTranslationY);
+        clockWeightAnimator = ValueAnimator.ofFloat(0f, 1f);
+        clockWeightAnimator.setDuration(700L);
+        clockWeightAnimator.setInterpolator(new android.view.animation.DecelerateInterpolator(1.4f));
+        clockWeightAnimator.addUpdateListener(animation -> {
+            Object animated = animation.getAnimatedValue();
+            if (animated instanceof Float) {
+                float progress = (Float) animated;
+                int weight = Math.round(fromWeight + ((toWeight - fromWeight) * progress));
+                setClockWeight(weight);
+                setTranslationX(fromTranslationX * (1f - progress));
+                setTranslationY(fromTranslationY * (1f - progress));
+            }
+        });
+        clockWeightAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                setClockWeight(toWeight);
+                setTranslationX(0f);
+                setTranslationY(0f);
+                clockWeightTransitionPending = false;
+            }
+        });
+        clockWeightAnimator.start();
+        PixelAodLog.log("started Pixel lockscreen transition source=" + source
+                + " fromWeight=" + fromWeight + " toWeight=" + toWeight
+                + " x=" + Math.round(fromTranslationX)
+                + " y=" + Math.round(fromTranslationY));
+    }
+
+    private void resetTransitionState() {
+        if (clockWeightAnimator != null) {
+            clockWeightAnimator.cancel();
+            clockWeightAnimator = null;
+        }
+        clockWeightTransitionPending = false;
+        setTranslationX(0f);
+        setTranslationY(0f);
     }
 
     private void setClockWeight(int weight) {
@@ -508,27 +535,11 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     private static int resolveMaterialClockColor(Context context) {
-        return resolveSystemColor(context, "system_accent1_100", CLOCK_COLOR);
+        return PixelAodClockView.resolveMaterialClockColor(context);
     }
 
     private static int resolveMaterialInfoColor(Context context) {
-        int color = resolveSystemColor(context, "system_accent1_200", INFO_COLOR);
-        return Color.argb(230, Color.red(color), Color.green(color), Color.blue(color));
-    }
-
-    private static int resolveSystemColor(Context context, String name, int fallback) {
-        if (context == null) {
-            return fallback;
-        }
-        try {
-            int id = context.getResources().getIdentifier(name, "color", "android");
-            if (id != 0) {
-                return context.getColor(id);
-            }
-        } catch (Throwable ignored) {
-            // Dynamic color resources are available on modern Android only.
-        }
-        return fallback;
+        return PixelAodClockView.resolveMaterialInfoColor(context);
     }
 
     private static List<StatusBarNotification> currentNotifications() {
@@ -564,5 +575,17 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     private static final class MainHandlerHolder {
         static final Handler MAIN = new Handler(Looper.getMainLooper());
+    }
+
+    private static final class TransitionInfo {
+        final String source;
+        final float translationX;
+        final float translationY;
+
+        TransitionInfo(String source, float translationX, float translationY) {
+            this.source = source;
+            this.translationX = translationX;
+            this.translationY = translationY;
+        }
     }
 }
