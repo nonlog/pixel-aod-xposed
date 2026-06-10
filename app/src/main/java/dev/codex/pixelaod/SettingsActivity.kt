@@ -169,7 +169,7 @@ private fun SettingsContent(modifier: Modifier = Modifier) {
             lockscreenPolicy.value = it
             prefs.edit().putBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, it).apply()
         }
-        ToggleCard(Icons.Outlined.BugReport, "调试日志", "输出 PixelAod 日志", debugLogging.value) {
+        ToggleCard(Icons.Outlined.BugReport, "调试日志", "输出详细诊断日志", debugLogging.value) {
             debugLogging.value = it
             prefs.edit().putBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, it).apply()
         }

@@ -92,5 +92,7 @@ public final class PixelAodSettings {
             CACHE.clear();
             CACHE.putAll(values);
         }
+        PixelAodLog.setDebugEnabled(Boolean.parseBoolean(
+                values.getOrDefault(KEY_DEBUG_LOGGING, "false")));
     }
 }

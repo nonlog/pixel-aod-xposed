@@ -180,6 +180,21 @@ final class PixelLockscreenClockView extends FrameLayout {
             }
             return;
         }
+        if (isBouncerVisible()) {
+            if (getVisibility() != View.GONE) {
+                setVisibility(View.GONE);
+            }
+            return;
+        }
+        boolean liveCards = hasLiveLockscreenNotificationCards();
+        if (liveCards) {
+            if (!compactClock) {
+                applyClockMode(true);
+                updateTime();
+            }
+            notificationIconRow.removeAllViews();
+            notificationIconRow.setVisibility(View.GONE);
+        }
         maybeStartDrawTimeAodTransition();
         super.dispatchDraw(canvas);
     }
@@ -295,7 +310,7 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     private void updatePresentation(String source) {
-        boolean visible = shouldShowOnLockscreen(getContext());
+        boolean visible = shouldShowOnLockscreen(getContext()) && !isBouncerVisible();
         boolean firstVisibleFrame = visible && getVisibility() != View.VISIBLE;
         TransitionInfo transition = visible ? consumeRecentAodToLockscreenTransition(source) : null;
         if (transition == null && visible) {
@@ -311,7 +326,8 @@ final class PixelLockscreenClockView extends FrameLayout {
             return;
         }
         List<StatusBarNotification> notifications = currentNotifications();
-        boolean hasCards = hasVisibleLockscreenNotificationCards();
+        boolean hasCards = hasVisibleLockscreenNotificationCards()
+                || hasLiveLockscreenNotificationCards();
         boolean compact = !notifications.isEmpty() || hasCards;
         applyClockMode(compact);
         applyMaterialColors();
@@ -330,6 +346,18 @@ final class PixelLockscreenClockView extends FrameLayout {
                     + compactClock + " notifications=" + notifications.size()
                     + " firstVisible=" + firstVisibleFrame + " source=" + source);
         }
+    }
+
+    private boolean isBouncerVisible() {
+        View root = getRootView();
+        return root instanceof ViewGroup
+                && PixelAodHook.hasVisibleKeyguardBouncer((ViewGroup) root);
+    }
+
+    private boolean hasLiveLockscreenNotificationCards() {
+        View root = getRootView();
+        return root instanceof ViewGroup
+                && PixelAodHook.hasVisibleLockscreenNotificationCardsIn((ViewGroup) root);
     }
 
     private void maybeStartDrawTimeAodTransition() {

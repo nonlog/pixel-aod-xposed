@@ -7,12 +7,17 @@ import io.github.libxposed.api.XposedInterface;
 final class PixelAodLog {
     static final String TAG = "PixelAodOPlus";
     private static volatile XposedInterface framework;
+    private static volatile boolean debugEnabled;
 
     private PixelAodLog() {
     }
 
     static void attach(XposedInterface xposed) {
         framework = xposed;
+    }
+
+    static void setDebugEnabled(boolean enabled) {
+        debugEnabled = enabled;
     }
 
     static void i(String message) {
@@ -27,7 +32,9 @@ final class PixelAodLog {
     }
 
     static void log(String message) {
-        i(message);
+        if (debugEnabled) {
+            i(message);
+        }
     }
 
     static void e(String message, Throwable throwable) {

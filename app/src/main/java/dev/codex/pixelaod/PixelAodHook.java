@@ -95,7 +95,6 @@ final class PixelAodHook {
         if (customAod) {
             hookClockLayout(context, classLoader);
             hookNotificationView(classLoader);
-            hookOuterRootLayout(classLoader);
             hookAodRecord(classLoader);
         }
         if (notificationIcons || customAod || lockscreenClock) {
@@ -108,7 +107,6 @@ final class PixelAodHook {
         if (customAod || lockscreenClock) {
             hookShadeWindowView(context, classLoader);
             hookLockscreenClockProbe(classLoader);
-            hookStockClockDrawSuppression();
         }
         PixelAodLog.log("installed Pixel AOD hooks customAod=" + customAod
                 + " lockscreenClock=" + lockscreenClock
@@ -141,6 +139,9 @@ final class PixelAodHook {
         }
         Context context = view.getContext();
         if (context == null) {
+            return false;
+        }
+        if (isChargingUiView(view)) {
             return false;
         }
         String marker = markerFor(view);
@@ -300,6 +301,9 @@ final class PixelAodHook {
             ModernHookBridge.hookAfter(rootLayoutClass, "onAttachedToWindow", param -> {
                 if (param.thisObject instanceof ViewGroup) {
                     ViewGroup root = (ViewGroup) param.thisObject;
+                    if (!isAodRootLayout(root) || isChargingUiView(root)) {
+                        return;
+                    }
                     MAIN.post(() -> handleOuterRootLayout(root, "AodRootLayout#onAttachedToWindow"));
                 }
             });
@@ -953,7 +957,9 @@ final class PixelAodHook {
 
     private static void handleOuterRootLayout(ViewGroup host, String source) {
         try {
-            scheduleParentDebugDumps(host, source);
+            if (!isAodRootLayout(host) || isChargingUiView(host)) {
+                return;
+            }
             PixelAodLog.log("observed AOD outer root from " + source + " host="
                     + host.getClass().getName() + " children=" + host.getChildCount());
         } catch (Throwable t) {
@@ -1727,6 +1733,39 @@ final class PixelAodHook {
                 || hasVisibleShadeDismissButton(root);
     }
 
+    static boolean hasVisibleLockscreenNotificationCardsIn(ViewGroup root) {
+        return hasVisibleLockscreenNotificationCards(root);
+    }
+
+    static boolean hasVisibleKeyguardBouncer(ViewGroup root) {
+        if (root == null || !root.isShown()) {
+            return false;
+        }
+        final boolean[] found = {false};
+        traverse(root, view -> {
+            if (found[0]) {
+                return false;
+            }
+            if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
+                    || !view.isShown()) {
+                return false;
+            }
+            String marker = markerFor(view).toLowerCase(Locale.US);
+            if (looksLikeVisibleKeyguardBouncer(marker, view)) {
+                found[0] = true;
+                if (LOGGED_STATUS_CLASSES.add("keyguardBouncer|" + marker)) {
+                    PixelAodLog.log("detected visible keyguard bouncer " + marker
+                            + " size=" + view.getWidth() + "x" + view.getHeight()
+                            + " screen=" + screenLocationFor(view)
+                            + textMarkerFor(view));
+                }
+                return false;
+            }
+            return true;
+        });
+        return found[0];
+    }
+
     private static boolean hasVisibleShadeDismissButton(ViewGroup root) {
         final boolean[] found = {false};
         traverse(root, view -> {
@@ -2032,6 +2071,39 @@ final class PixelAodHook {
                 || signals.clockTime && signals.meaningfulTextCount > 1 && view.getBackground() != null;
     }
 
+    private static boolean looksLikeVisibleKeyguardBouncer(String marker, View view) {
+        String m = marker.toLowerCase(Locale.US);
+        if (m.contains("keyguardpin")
+                || m.contains("keyguardsecurity")
+                || m.contains("keyguardbouncer")
+                || m.contains("bouncer")
+                || m.contains("pinview")
+                || m.contains("pin_view")
+                || m.contains("pukview")
+                || m.contains("passwordview")
+                || m.contains("patternview")
+                || m.contains("num_pad")
+                || m.contains("numpad")
+                || m.contains("passwordentry")
+                || m.contains("lockscreenpin")) {
+            return true;
+        }
+        String text = shortTextFor(view);
+        if (text == null) {
+            text = shortDescriptionFor(view);
+        }
+        if (text == null) {
+            return false;
+        }
+        String normalized = text.trim().toLowerCase(Locale.US);
+        return normalized.equals("emergency call")
+                || normalized.equals("紧急呼叫")
+                || normalized.equals("紧急电话")
+                || normalized.contains("enter pin")
+                || normalized.contains("输入 pin")
+                || normalized.contains("输入密码");
+    }
+
     private static void collectNotificationTextSignals(View view, int depth,
             NotificationTextSignals signals) {
         if (view == null || depth > 4 || signals.visitedCount > 80) {
@@ -2084,6 +2156,32 @@ final class PixelAodHook {
 
     private static boolean looksLikePluginNotificationView(String marker) {
         return marker.toLowerCase(Locale.US).startsWith("com.oplus.egview.widget.notificationview");
+    }
+
+    private static boolean isAodRootLayout(View view) {
+        if (view == null) {
+            return false;
+        }
+        String className = view.getClass().getName().toLowerCase(Locale.US);
+        return className.contains("aodrootlayout");
+    }
+
+    private static boolean isChargingUiView(View view) {
+        View current = view;
+        int depth = 0;
+        while (current != null && depth < 8) {
+            String className = current.getClass().getName().toLowerCase(Locale.US);
+            if (className.startsWith("com.oplus.charge.")
+                    || className.startsWith("com.oplus.systemui.charge.")
+                    || className.contains(".charge.")
+                    || className.contains(".charging.")) {
+                return true;
+            }
+            Object parent = current.getParent();
+            current = parent instanceof View ? (View) parent : null;
+            depth++;
+        }
+        return false;
     }
 
     private static boolean looksLikeSystemAodMediaView(String marker) {
