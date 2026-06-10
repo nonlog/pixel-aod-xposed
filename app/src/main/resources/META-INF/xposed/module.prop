@@ -1,0 +1,9 @@
+id=dev.codex.pixelaod
+name=Pixel AOD for OPlus
+description=Pixel-style AOD and lockscreen clock for OPlus SystemUI
+author=Codex
+version=0.1.78
+versionCode=79
+minApiVersion=101
+targetApiVersion=101
+staticScope=false

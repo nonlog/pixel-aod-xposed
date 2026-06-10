@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Pixel AOD for OPlus</string>
+    <string name="module_description">Pixel-style two-line AOD clock for OPlus SystemUI</string>
+</resources>

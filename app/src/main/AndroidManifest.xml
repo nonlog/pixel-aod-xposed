@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="org.breezyweather.READ_PROVIDER" />
+
+    <application
+        android:allowBackup="false"
+        android:extractNativeLibs="false"
+        android:hasCode="true"
+        android:label="@string/app_name"
+        android:supportsRtl="false"
+        android:theme="@style/Theme.PixelAod">
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.PixelAod">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver
+            android:name=".TestNotificationReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.codex.pixelaod.TEST_NOTIFICATION" />
+                <action android:name="dev.codex.pixelaod.CLEAR_TEST_NOTIFICATION" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".BreezyWeatherRelayReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="nodomain.freeyourgadget.gadgetbridge.ACTION_GENERIC_WEATHER" />
+                <action android:name="org.breezyweather.ACTION_UPDATE_NOTIFIER" />
+                <action android:name="dev.codex.pixelaod.REQUEST_BREEZY_WEATHER_RELAY" />
+            </intent-filter>
+        </receiver>
+        <provider
+            android:name=".PixelAodSettingsProvider"
+            android:authorities="dev.codex.pixelaod.settings"
+            android:exported="true" />
+    </application>
+</manifest>
+

@@ -1,0 +1,10 @@
+.gradle/
+.gradle-user-home/
+.kotlin/
+build/
+app/build/
+libxposed-stubs/build/
+verification/
+local.properties
+*.iml
+.idea/
