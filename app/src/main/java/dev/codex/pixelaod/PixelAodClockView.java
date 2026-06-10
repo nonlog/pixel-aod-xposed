@@ -440,7 +440,7 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             aodActive = false;
         }
-        mainHandler().post(() -> {
+        Runnable task = () -> {
             int hidden = 0;
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
@@ -453,7 +453,12 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
             PixelAodLog.log("hid Pixel AOD overlays from " + source + " count=" + hidden);
-        });
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            task.run();
+        } else {
+            mainHandler().postAtFrontOfQueue(task);
+        }
     }
 
     static BurnInOffset currentBurnInOffset() {
@@ -837,6 +842,10 @@ public final class PixelAodClockView extends FrameLayout {
     @Override
     protected void dispatchDraw(Canvas canvas) {
         if (!shouldDrawAodOverlay("dispatchDraw")) {
+            if (getVisibility() != View.GONE) {
+                setVisibility(View.GONE);
+            }
+            resetBurnInTranslation();
             return;
         }
         super.dispatchDraw(canvas);

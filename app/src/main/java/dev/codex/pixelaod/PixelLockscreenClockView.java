@@ -9,7 +9,6 @@ import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.Canvas;
 import android.graphics.Typeface;
-import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.service.notification.StatusBarNotification;
@@ -19,14 +18,12 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -45,9 +42,6 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static final int LARGE_INFO_TOP_DP = 392;
     private static final int SMALL_INFO_TOP_DP = 150;
     private static final int SMALL_NOTIFICATION_TOP_DP = 198;
-    private static final int NOTIFICATION_ICON_SIZE_DP = 18;
-    private static final int NOTIFICATION_ICON_SPACING_DP = 9;
-    private static final int MAX_NOTIFICATION_ICONS = 5;
     private static final float CLOCK_LINE_SPACING = 0.70f;
     private static final float LARGE_CLOCK_LETTER_SPACING = -0.02f;
     private static final float SMALL_CLOCK_LETTER_SPACING = -0.025f;
@@ -332,7 +326,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         applyClockMode(compact);
         applyMaterialColors();
         updateTime();
-        rebuildNotificationIcons(hasCards ? Collections.emptyList() : notifications);
+        rebuildNotificationIcons(Collections.emptyList());
         if (animateWeight) {
             beginClockTransition(source, transition);
         } else if (!clockWeightTransitionPending) {
@@ -487,37 +481,7 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     private void rebuildNotificationIcons(List<StatusBarNotification> notifications) {
         notificationIconRow.removeAllViews();
-        if (notifications.isEmpty()) {
-            notificationIconRow.setVisibility(View.GONE);
-            return;
-        }
-        notificationIconRow.setVisibility(View.VISIBLE);
-        int emitted = 0;
-        HashSet<String> seenPackages = new HashSet<>();
-        for (StatusBarNotification sbn : notifications) {
-            if (sbn == null || !seenPackages.add(sbn.getPackageName())) {
-                continue;
-            }
-            Drawable drawable = PixelAodClockView.loadSmallIconDrawable(getContext(), sbn);
-            if (drawable == null) {
-                continue;
-            }
-            ImageView iconView = new ImageView(getContext());
-            iconView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            iconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-            iconView.setImageDrawable(drawable);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    dp(NOTIFICATION_ICON_SIZE_DP), dp(NOTIFICATION_ICON_SIZE_DP));
-            if (emitted > 0) {
-                params.leftMargin = dp(NOTIFICATION_ICON_SPACING_DP);
-            }
-            notificationIconRow.addView(iconView, params);
-            emitted++;
-            if (emitted >= MAX_NOTIFICATION_ICONS) {
-                break;
-            }
-        }
-        notificationIconRow.setVisibility(emitted > 0 ? View.VISIBLE : View.GONE);
+        notificationIconRow.setVisibility(View.GONE);
     }
 
     private void applyMaterialColors() {

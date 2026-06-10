@@ -107,6 +107,7 @@ final class PixelAodHook {
         if (customAod || lockscreenClock) {
             hookShadeWindowView(context, classLoader);
             hookLockscreenClockProbe(classLoader);
+            hookStockClockDrawSuppression();
         }
         PixelAodLog.log("installed Pixel AOD hooks customAod=" + customAod
                 + " lockscreenClock=" + lockscreenClock
@@ -144,13 +145,12 @@ final class PixelAodHook {
         if (isChargingUiView(view)) {
             return false;
         }
+        if (PixelAodClockView.isDeviceInteractive(context)) {
+            return false;
+        }
         String marker = markerFor(view);
         boolean suppress = false;
-        if (!PixelAodClockView.isDeviceInteractive(context)
-                && isStockAodDrawCandidate(marker, view)) {
-            suppress = true;
-        } else if (PixelLockscreenClockView.isSystemKeyguardLocked(context)
-                && isStockKeyguardClockDrawCandidate(marker, view)) {
+        if (isStockAodDrawCandidate(marker, view)) {
             suppress = true;
         }
         if (!suppress) {
@@ -180,6 +180,9 @@ final class PixelAodHook {
     private static boolean isStockAodDrawCandidate(String marker, View view) {
         if (looksLikeSystemAodMediaView(marker)) {
             return false;
+        }
+        if (looksLikeGenericStockAodVisual(marker, view)) {
+            return true;
         }
         if (looksLikeStockAodWeatherOrExtra(marker, view instanceof TextView
                 ? ((TextView) view).getText() : null)) {
@@ -1689,7 +1692,8 @@ final class PixelAodHook {
             }
 
             if (view instanceof ViewGroup) {
-                if (looksLikeStockAodClockContainer(marker)) {
+                if (looksLikeStockAodClockContainer(marker)
+                        || looksLikeGenericStockAodVisual(marker, view)) {
                     if (containsSystemAodMediaView((ViewGroup) view)) {
                         if (LOGGED_STATUS_CLASSES.add("preserveMediaSubtree|" + marker)) {
                             PixelAodLog.log("preserved stock AOD container with media subtree " + marker);
@@ -1710,14 +1714,16 @@ final class PixelAodHook {
             if (view instanceof TextView) {
                 TextView textView = (TextView) view;
                 if (looksLikeStockAodText(marker, textView.getText())
-                        || looksLikeStockAodWeatherOrExtra(marker, textView.getText())) {
+                        || looksLikeStockAodWeatherOrExtra(marker, textView.getText())
+                        || looksLikeGenericStockAodVisual(marker, textView)) {
                     hideView(textView, marker);
                 }
                 return true;
             }
 
             if (looksLikeStockAodClockLeaf(marker)
-                    || looksLikeStockAodWeatherOrExtra(marker, null)) {
+                    || looksLikeStockAodWeatherOrExtra(marker, null)
+                    || looksLikeGenericStockAodVisual(marker, view)) {
                 hideView(view, marker);
             }
             return true;
@@ -1959,6 +1965,62 @@ final class PixelAodHook {
         return m.contains("aodscenemusicdefaulttimeviewgroup")
                 || m.contains("timeviewgroup")
                 || m.contains("clockviewgroup");
+    }
+
+    private static boolean looksLikeGenericStockAodVisual(String marker, View view) {
+        if (view == null) {
+            return false;
+        }
+        String m = marker.toLowerCase(Locale.US);
+        if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
+                || looksLikeSystemAodMediaView(marker)
+                || m.contains("notification") || m.contains("notif")
+                || m.contains("battery") || m.contains("charging")
+                || m.contains("media") || m.contains("music")
+                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")) {
+            return false;
+        }
+        if (!m.contains("aod") && !hasAodAncestor(view)) {
+            return false;
+        }
+        if (view instanceof TextView) {
+            TextView textView = (TextView) view;
+            CharSequence text = textView.getText();
+            if (looksLikeStockAodText(marker, text)
+                    || looksLikeStockAodWeatherOrExtra(marker, text)) {
+                return true;
+            }
+            float sp = textView.getTextSize() / textView.getResources().getDisplayMetrics().scaledDensity;
+            return sp >= 48f;
+        }
+        int screenWidth = view.getResources().getDisplayMetrics().widthPixels;
+        int screenHeight = view.getResources().getDisplayMetrics().heightPixels;
+        int width = view.getWidth();
+        int height = view.getHeight();
+        return width >= Math.round(screenWidth * 0.28f)
+                && height >= Math.round(screenHeight * 0.06f)
+                && height <= Math.round(screenHeight * 0.45f)
+                && (m.contains("time") || m.contains("clock") || m.contains("date")
+                || m.contains("weather") || m.contains("temp") || m.contains("view"));
+    }
+
+    private static boolean hasAodAncestor(View view) {
+        View current = view;
+        int depth = 0;
+        while (current != null && depth < 10) {
+            String marker = markerFor(current).toLowerCase(Locale.US);
+            if (marker.contains("aodrootlayout")
+                    || marker.contains("aodclock")
+                    || marker.contains("aod_off_layout")
+                    || marker.contains("com.oplus.egview")
+                    || marker.contains("com.oplus.aod")) {
+                return true;
+            }
+            Object parent = current.getParent();
+            current = parent instanceof View ? (View) parent : null;
+            depth++;
+        }
+        return false;
     }
 
     private static boolean looksLikeOplusKeyguardBigClock(String marker) {
