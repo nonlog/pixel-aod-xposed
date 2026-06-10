@@ -432,6 +432,7 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     private void applyClockMode(boolean compact) {
         if (compactClock == compact) {
+            dateView.setVisibility(compact ? View.VISIBLE : View.GONE);
             return;
         }
         compactClock = compact;
@@ -454,6 +455,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             clockParams.leftMargin = dp(EDGE_DP);
             clockParams.topMargin = dp(SMALL_CLOCK_TOP_DP);
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            dateView.setVisibility(View.VISIBLE);
             dateParams.topMargin = dp(SMALL_INFO_TOP_DP);
             notificationParams.topMargin = dp(SMALL_NOTIFICATION_TOP_DP);
         } else {
@@ -471,6 +473,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             clockParams.leftMargin = 0;
             clockParams.topMargin = dp(LARGE_CLOCK_TOP_DP);
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            dateView.setVisibility(View.GONE);
             dateParams.topMargin = dp(LARGE_INFO_TOP_DP);
             notificationParams.topMargin = dp(SMALL_NOTIFICATION_TOP_DP);
         }

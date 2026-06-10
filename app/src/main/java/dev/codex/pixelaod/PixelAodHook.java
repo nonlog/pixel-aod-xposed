@@ -1044,6 +1044,14 @@ final class PixelAodHook {
             if (PixelAodClockView.isDeviceInteractive(context)
                     && !PixelAodClockView.shouldCustomizeAodNow(context)) {
                 PixelAodClockView.hideAllAodOverlays(source + "#interactive-shade");
+                if (!PixelLockscreenClockView.isSystemKeyguardLocked(context)) {
+                    PixelLockscreenClockView.setLockscreenSurfaceVisible(false,
+                            source + "#interactive-unlocked");
+                    PixelLockscreenClockView.refreshAll(source + "#interactive-unlocked");
+                    restoreAdjustedStatusViews();
+                    restoreHiddenStockViews();
+                    return;
+                }
             }
             if (!shouldTouchLockscreenHost(host)) {
                 return;
@@ -1209,6 +1217,8 @@ final class PixelAodHook {
         boolean surfaceVisible = isLikelyLockscreenSurfaceVisible(context, stockHost, pixelHost);
         PixelLockscreenClockView.setLockscreenSurfaceVisible(surfaceVisible, source);
         if (!surfaceVisible) {
+            restoreAdjustedStatusViews();
+            restoreHiddenStockViews();
             return;
         }
         boolean hasNotificationCards = false;
