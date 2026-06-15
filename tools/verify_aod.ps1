@@ -44,7 +44,7 @@ function Invoke-AdbShell {
 function Save-Screenshot {
     param([string]$Name)
     $path = Join-Path $outDir $Name
-    & $Adb exec-out screencap -p > $path
+    cmd.exe /c """$Adb"" exec-out screencap -p > ""$path"""
     if ($LASTEXITCODE -ne 0) {
         throw "screencap failed: $Name"
     }

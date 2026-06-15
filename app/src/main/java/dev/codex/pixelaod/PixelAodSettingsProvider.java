@@ -7,6 +7,7 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
+import android.text.TextUtils;
 
 public final class PixelAodSettingsProvider extends ContentProvider {
     static final String AUTHORITY = "dev.codex.pixelaod.settings";
@@ -25,10 +26,11 @@ public final class PixelAodSettingsProvider extends ContentProvider {
         if (context == null) {
             return cursor;
         }
-        SharedPreferences prefs = context.getSharedPreferences(PixelAodSettings.PREFS,
-                Context.MODE_PRIVATE);
+        SharedPreferences prefs = PixelAodSettings.getSharedPreferences(context);
         putBoolean(cursor, PixelAodSettings.KEY_CUSTOM_AOD,
                 prefs.getBoolean(PixelAodSettings.KEY_CUSTOM_AOD, true));
+        putBoolean(cursor, PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE,
+                prefs.getBoolean(PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, false));
         putBoolean(cursor, PixelAodSettings.KEY_LOCKSCREEN_CLOCK,
                 prefs.getBoolean(PixelAodSettings.KEY_LOCKSCREEN_CLOCK, true));
         putBoolean(cursor, PixelAodSettings.KEY_WEATHER,
@@ -68,7 +70,51 @@ public final class PixelAodSettingsProvider extends ContentProvider {
 
     @Override
     public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) {
-        return 0;
+        Context context = getContext();
+        if (context == null || values == null) {
+            return 0;
+        }
+        String key = values.getAsString("key");
+        if (TextUtils.isEmpty(key)) {
+            return 0;
+        }
+        Object rawValue = values.get("value");
+        if (rawValue == null) {
+            return 0;
+        }
+        SharedPreferences.Editor editor = PixelAodSettings.getSharedPreferences(context).edit();
+        if (rawValue instanceof Boolean) {
+            editor.putBoolean(key, (Boolean) rawValue);
+        } else if (rawValue instanceof Integer) {
+            editor.putInt(key, (Integer) rawValue);
+        } else if (rawValue instanceof Long) {
+            editor.putLong(key, (Long) rawValue);
+        } else if (rawValue instanceof Float) {
+            editor.putFloat(key, (Float) rawValue);
+        } else if (rawValue instanceof Double) {
+            editor.putFloat(key, ((Double) rawValue).floatValue());
+        } else {
+            String value = String.valueOf(rawValue);
+            if ("true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value)) {
+                editor.putBoolean(key, Boolean.parseBoolean(value));
+            } else {
+                try {
+                    if (value.contains(".")) {
+                        editor.putFloat(key, Float.parseFloat(value));
+                    } else {
+                        editor.putInt(key, Integer.parseInt(value));
+                    }
+                } catch (NumberFormatException ignored) {
+                    editor.putString(key, value);
+                }
+            }
+        }
+        if (!editor.commit()) {
+            return 0;
+        }
+        PixelAodSettings.refresh(context);
+        context.getContentResolver().notifyChange(URI, null);
+        return 1;
     }
 
     private static void putBoolean(MatrixCursor cursor, String key, boolean value) {

@@ -41,7 +41,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,9 +81,9 @@ private fun PixelAodSettingsScreen() {
                     LargeTopAppBar(
                         title = {
                             Column {
-                                Text("Pixel AOD", fontWeight = FontWeight.SemiBold)
+                                Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "OPlus / modern LSPosed",
+                                    stringResource(R.string.module_description),
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -108,11 +110,14 @@ private fun PixelAodSettingsScreen() {
 private fun SettingsContent(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val prefs = remember {
-        context.getSharedPreferences(PixelAodSettings.PREFS, Context.MODE_PRIVATE)
+        PixelAodSettings.getSharedPreferences(context)
     }
 
     val customAod = remember {
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_CUSTOM_AOD, true))
+    }
+    val skipDozeOffState = remember {
+        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, false))
     }
     val lockscreenClock = remember {
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_LOCKSCREEN_CLOCK, true))
@@ -149,33 +154,37 @@ private fun SettingsContent(modifier: Modifier = Modifier) {
     }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        ToggleCard(Icons.Outlined.Palette, "自定义 AOD", "双排 Pixel 时钟", customAod.value) {
+        ToggleCard(Icons.Outlined.Palette, stringResource(R.string.title_custom_aod), stringResource(R.string.desc_custom_aod), customAod.value) {
             customAod.value = it
             prefs.edit().putBoolean(PixelAodSettings.KEY_CUSTOM_AOD, it).apply()
         }
-        ToggleCard(Icons.Outlined.Schedule, "锁屏时钟", "锁屏与 AOD 统一样式", lockscreenClock.value) {
+        ToggleCard(Icons.Outlined.Bolt, stringResource(R.string.title_skip_doze_off_state), stringResource(R.string.desc_skip_doze_off_state), skipDozeOffState.value) {
+            skipDozeOffState.value = it
+            prefs.edit().putBoolean(PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, it).apply()
+        }
+        ToggleCard(Icons.Outlined.Schedule, stringResource(R.string.title_lockscreen_clock), stringResource(R.string.desc_lockscreen_clock), lockscreenClock.value) {
             lockscreenClock.value = it
             prefs.edit().putBoolean(PixelAodSettings.KEY_LOCKSCREEN_CLOCK, it).apply()
         }
-        ToggleCard(Icons.Outlined.Cloud, "天气信息", "Breezy Weather / Gadgetbridge", weather.value) {
+        ToggleCard(Icons.Outlined.Cloud, stringResource(R.string.title_weather), stringResource(R.string.desc_weather), weather.value) {
             weather.value = it
             prefs.edit().putBoolean(PixelAodSettings.KEY_WEATHER, it).apply()
         }
-        ToggleCard(Icons.Outlined.Notifications, "通知图标", "AOD 单色通知图标", notificationIcons.value) {
+        ToggleCard(Icons.Outlined.Notifications, stringResource(R.string.title_notification_icons), stringResource(R.string.desc_notification_icons), notificationIcons.value) {
             notificationIcons.value = it
             prefs.edit().putBoolean(PixelAodSettings.KEY_NOTIFICATION_ICONS, it).apply()
         }
-        ToggleCard(Icons.Outlined.Policy, "锁屏通知策略", "修正 OOS 锁屏显示规则", lockscreenPolicy.value) {
+        ToggleCard(Icons.Outlined.Policy, stringResource(R.string.title_lockscreen_policy), stringResource(R.string.desc_lockscreen_policy), lockscreenPolicy.value) {
             lockscreenPolicy.value = it
             prefs.edit().putBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, it).apply()
         }
-        ToggleCard(Icons.Outlined.BugReport, "调试日志", "输出详细诊断日志", debugLogging.value) {
+        ToggleCard(Icons.Outlined.BugReport, stringResource(R.string.title_debug_logging), stringResource(R.string.desc_debug_logging), debugLogging.value) {
             debugLogging.value = it
             prefs.edit().putBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, it).apply()
         }
         SliderCard(
             icon = Icons.Outlined.Bolt,
-            title = "时钟缩放",
+            title = stringResource(R.string.title_clock_scale),
             valueText = "%.0f%%".format(clockScale.floatValue * 100f),
             value = clockScale.floatValue,
             valueRange = 0.9f..1.15f
@@ -185,25 +194,37 @@ private fun SettingsContent(modifier: Modifier = Modifier) {
         }
         SliderCard(
             icon = Icons.Outlined.Schedule,
-            title = "AOD 字重",
+            title = stringResource(R.string.title_aod_weight),
             valueText = aodWeight.floatValue.toInt().toString(),
             value = aodWeight.floatValue,
-            valueRange = 200f..420f
+            valueRange = 100f..500f
         ) {
             aodWeight.floatValue = it
             prefs.edit().putFloat(PixelAodSettings.KEY_AOD_WEIGHT, it).apply()
         }
         SliderCard(
             icon = Icons.Outlined.Palette,
-            title = "锁屏字重",
+            title = stringResource(R.string.title_lockscreen_weight),
             valueText = lockscreenWeight.floatValue.toInt().toString(),
             value = lockscreenWeight.floatValue,
-            valueRange = 420f..650f
+            valueRange = 100f..500f
         ) {
             lockscreenWeight.floatValue = it
             prefs.edit().putFloat(PixelAodSettings.KEY_LOCKSCREEN_WEIGHT, it).apply()
         }
         Spacer(modifier = Modifier.height(6.dp))
+        Button(
+            onClick = {
+                try {
+                    Runtime.getRuntime().exec(arrayOf("su", "-c", "pkill -f com.android.systemui"))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+        ) {
+            Text(stringResource(R.string.restart_systemui))
+        }
     }
 }
 

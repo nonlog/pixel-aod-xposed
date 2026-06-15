@@ -20,6 +20,9 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.media.session.MediaController;
+import android.media.session.MediaSessionManager;
+import android.media.session.PlaybackState;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -35,11 +38,12 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static final int CLOCK_COLOR = Color.rgb(232, 234, 237);
     private static final int INFO_COLOR = Color.rgb(218, 220, 224);
     private static final int LARGE_CLOCK_TEXT_DP = 150;
-    private static final int LARGE_CLOCK_TOP_DP = 118;
+    private static final int LARGE_CLOCK_TOP_DP = 144;
     private static final int SMALL_CLOCK_TEXT_DP = 56;
     private static final int SMALL_CLOCK_TOP_DP = 74;
     private static final int EDGE_DP = 34;
-    private static final int LARGE_INFO_TOP_DP = 392;
+    private static final int COMPACT_CLOCK_VISUAL_START_OFFSET_DP = 7;
+    private static final int LARGE_INFO_TOP_DP = 100;
     private static final int SMALL_INFO_TOP_DP = 150;
     private static final int SMALL_NOTIFICATION_TOP_DP = 198;
     private static final float CLOCK_LINE_SPACING = 0.70f;
@@ -49,6 +53,11 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static final int INFO_LOCKSCREEN_WEIGHT = 500;
     private static final long AOD_TRANSITION_ANIMATION_WINDOW_MS = 1800L;
     private static final long RECENT_AOD_FALLBACK_WINDOW_MS = 120_000L;
+    private static final long LOCKSCREEN_TO_AOD_ANIMATION_WINDOW_MS = 2500L;
+    private static final long MIN_LOCKSCREEN_VISIBLE_FOR_AOD_ANIMATION_MS = 450L;
+    private static final long NOTIFICATION_LAYOUT_CHECK_INTERVAL_MS = 900L;
+    private static final long BOUNCER_CHECK_INTERVAL_MS = 900L;
+    private static final boolean ANIMATE_AOD_POSITION_TO_LOCKSCREEN = true;
     private static final StatusBarNotification[] EMPTY_NOTIFICATIONS = new StatusBarNotification[0];
 
     private static StatusBarNotification[] activeNotifications = EMPTY_NOTIFICATIONS;
@@ -61,6 +70,8 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static String pendingAodToLockscreenTransitionSource = "";
     private static float pendingAodToLockscreenTranslationX;
     private static float pendingAodToLockscreenTranslationY;
+    private static long interactiveLockscreenVisibleSince;
+    private static long recentInteractiveLockscreenVisibleAt;
 
     private final TextView clockView;
     private final TextView dateView;
@@ -76,6 +87,56 @@ final class PixelLockscreenClockView extends FrameLayout {
     private ValueAnimator clockWeightAnimator;
     private int currentClockWeight = CLOCK_LOCKSCREEN_WEIGHT;
     private boolean clockWeightTransitionPending;
+    private boolean expandedNotificationSuppressed;
+    private boolean lastLiveLockscreenNotificationCards;
+    private boolean lastExpandedLockscreenNotificationContent;
+    private boolean lastBouncerVisible;
+    private long lastNotificationLayoutCheckAt;
+    private long lastBouncerCheckAt;
+    private long lastClockTransitionStartedAt;
+
+    private MediaSessionManager mediaSessionManager;
+    private final List<MediaController> mediaControllers = new ArrayList<>();
+    private final MediaSessionManager.OnActiveSessionsChangedListener activeSessionsChangedListener =
+            this::updateMediaControllers;
+    private final MediaController.Callback mediaControllerCallback = new MediaController.Callback() {
+        @Override
+        public void onPlaybackStateChanged(PlaybackState state) {
+            refreshAll("media_state");
+        }
+    };
+
+    private void updateMediaControllers(List<MediaController> controllers) {
+        mainHandler().post(() -> {
+            for (MediaController controller : mediaControllers) {
+                try { controller.unregisterCallback(mediaControllerCallback); } catch (Throwable ignored) {}
+            }
+            mediaControllers.clear();
+            if (controllers != null) {
+                mediaControllers.addAll(controllers);
+                for (MediaController controller : mediaControllers) {
+                    try { controller.registerCallback(mediaControllerCallback); } catch (Throwable ignored) {}
+                }
+            }
+            refreshAll("media_sessions");
+            PixelAodHook.reapplyLockscreenClockFromKnownHost("media_sessions");
+        });
+    }
+
+    private boolean hasPlayingMediaLocally() {
+        for (MediaController controller : mediaControllers) {
+            PlaybackState state = controller.getPlaybackState();
+            if (state != null) {
+                int st = state.getState();
+                if (st == PlaybackState.STATE_PLAYING || st == PlaybackState.STATE_BUFFERING
+                        || st == PlaybackState.STATE_FAST_FORWARDING || st == PlaybackState.STATE_REWINDING
+                        || st == PlaybackState.STATE_SKIPPING_TO_NEXT || st == PlaybackState.STATE_SKIPPING_TO_PREVIOUS) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 
     PixelLockscreenClockView(Context context) {
         super(context);
@@ -87,24 +148,15 @@ final class PixelLockscreenClockView extends FrameLayout {
 
         int lockscreenWeight = PixelAodClockView.lockscreenClockWeight(context);
         currentClockWeight = lockscreenWeight;
-        Typeface clockTypeface = PixelAodClockView.sharedClockTypeface(context, lockscreenWeight);
         Typeface infoTypeface = PixelAodClockView.sharedInfoTypeface(context, INFO_LOCKSCREEN_WEIGHT);
 
         clockView = new TextView(context);
         clockView.setTextColor(resolveMaterialClockColor(context));
-        clockView.setTextSize(TypedValue.COMPLEX_UNIT_DIP,
-                PixelAodClockView.scaledClockTextDp(context, LARGE_CLOCK_TEXT_DP));
-        clockView.setTypeface(clockTypeface);
-        PixelAodClockView.applySharedFontVariation(clockView, lockscreenWeight);
-        clockView.setIncludeFontPadding(false);
-        clockView.setElegantTextHeight(false);
-        clockView.setGravity(Gravity.CENTER_HORIZONTAL);
-        clockView.setTextAlignment(TEXT_ALIGNMENT_CENTER);
-        clockView.setSingleLine(false);
-        clockView.setLines(2);
-        clockView.setLineSpacing(0f, CLOCK_LINE_SPACING);
-        clockView.setLetterSpacing(LARGE_CLOCK_LETTER_SPACING);
-        clockView.setFontFeatureSettings("tnum");
+        PixelAodClockView.applySharedClockTextStyle(clockView, context, lockscreenWeight,
+                PixelAodClockView.scaledClockTextDp(context, LARGE_CLOCK_TEXT_DP), false);
+        PixelAodLog.log("applied Pixel lockscreen clock style source=init weight=" + lockscreenWeight
+                + " variation=" + PixelAodClockView.sharedClockFontVariationSettings(lockscreenWeight)
+                + " typeface=builder");
         clockView.setAlpha(0.98f);
         FrameLayout.LayoutParams clockParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -113,16 +165,8 @@ final class PixelLockscreenClockView extends FrameLayout {
         clockParams.topMargin = dp(LARGE_CLOCK_TOP_DP);
         addView(clockView, clockParams);
 
-        dateView = new TextView(context);
-        dateView.setTextColor(resolveMaterialInfoColor(context));
-        dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-        dateView.setTypeface(infoTypeface);
-        PixelAodClockView.applySharedFontVariation(dateView, INFO_LOCKSCREEN_WEIGHT);
-        dateView.setIncludeFontPadding(false);
-        dateView.setGravity(Gravity.START);
-        dateView.setTextAlignment(TEXT_ALIGNMENT_TEXT_START);
-        dateView.setSingleLine(true);
-        dateView.setAlpha(0.94f);
+        dateView = PixelAodClockView.makeInfoLine(context, infoTypeface,
+                INFO_LOCKSCREEN_WEIGHT, 16, Gravity.START);
         FrameLayout.LayoutParams dateParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -180,7 +224,15 @@ final class PixelLockscreenClockView extends FrameLayout {
             }
             return;
         }
-        boolean liveCards = hasLiveLockscreenNotificationCards();
+        boolean expandedNotificationContent = hasExpandedLockscreenNotificationContent(false);
+        if (expandedNotificationContent) {
+            setExpandedNotificationSuppressed(true);
+            return;
+        } else if (expandedNotificationSuppressed) {
+            setExpandedNotificationSuppressed(false);
+            updatePresentation("expanded-notification-collapsed");
+        }
+        boolean liveCards = hasLiveLockscreenNotificationCards(false);
         if (liveCards) {
             if (!compactClock) {
                 applyClockMode(true);
@@ -189,6 +241,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             notificationIconRow.removeAllViews();
             notificationIconRow.setVisibility(View.GONE);
         }
+        markInteractiveLockscreenVisibleIfNeeded();
         maybeStartDrawTimeAodTransition();
         super.dispatchDraw(canvas);
     }
@@ -207,6 +260,15 @@ final class PixelLockscreenClockView extends FrameLayout {
             } catch (Throwable t) {
                 PixelAodLog.log("failed to register Pixel lockscreen receiver", t);
             }
+            try {
+                mediaSessionManager = (MediaSessionManager) getContext().getSystemService(Context.MEDIA_SESSION_SERVICE);
+                if (mediaSessionManager != null) {
+                    mediaSessionManager.addOnActiveSessionsChangedListener(activeSessionsChangedListener, null);
+                    updateMediaControllers(mediaSessionManager.getActiveSessions(null));
+                }
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to register media session listener", t);
+            }
         }
         updatePresentation("start");
     }
@@ -221,6 +283,14 @@ final class PixelLockscreenClockView extends FrameLayout {
         } catch (Throwable t) {
             PixelAodLog.log("failed to unregister Pixel lockscreen receiver", t);
         }
+        try {
+            if (mediaSessionManager != null) {
+                mediaSessionManager.removeOnActiveSessionsChangedListener(activeSessionsChangedListener);
+            }
+            updateMediaControllers(Collections.emptyList());
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to unregister media session listener", t);
+        }
     }
 
     static void setActiveNotifications(StatusBarNotification[] notifications) {
@@ -228,6 +298,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             activeNotifications = notifications != null ? notifications.clone() : EMPTY_NOTIFICATIONS;
         }
         refreshAll("notifications");
+        PixelAodHook.reapplyLockscreenClockFromKnownHost("notifications");
     }
 
     static void setVisibleLockscreenNotificationCards(boolean hasCards, String source) {
@@ -239,8 +310,8 @@ final class PixelLockscreenClockView extends FrameLayout {
         if (changed) {
             PixelAodLog.log("Pixel lockscreen visible notification cards="
                     + hasCards + " source=" + source);
+            refreshAll(source);
         }
-        refreshAll(source);
     }
 
     static void setLockscreenSurfaceVisible(boolean visible, String source) {
@@ -248,12 +319,16 @@ final class PixelLockscreenClockView extends FrameLayout {
         synchronized (PixelLockscreenClockView.class) {
             changed = lockscreenSurfaceVisible != visible;
             lockscreenSurfaceVisible = visible;
+            if (!visible) {
+                interactiveLockscreenVisibleSince = 0L;
+                recentInteractiveLockscreenVisibleAt = 0L;
+            }
         }
         if (changed) {
             PixelAodLog.log("Pixel lockscreen surface visible=" + visible
                     + " source=" + source);
+            refreshAll(source);
         }
-        refreshAll(source);
     }
 
     static void prepareAodToLockscreenTransition(String source) {
@@ -280,14 +355,31 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     static boolean shouldShowOnLockscreen(Context context) {
-        if (context == null || !PixelAodClockView.isDeviceInteractive(context)) {
+        if (context == null) {
             return false;
         }
-        return isSystemKeyguardLocked(context);
+        if (!PixelAodClockView.isDeviceInteractive(context)) {
+            return shouldBridgeLockscreenToAod(context);
+        }
+        return isSystemKeyguardLockedRaw(context);
     }
 
     static boolean isSystemKeyguardLocked(Context context) {
         if (context == null || !PixelAodClockView.isDeviceInteractive(context)) {
+            return false;
+        }
+        return isSystemKeyguardLockedRaw(context);
+    }
+
+    private static boolean shouldBridgeLockscreenToAod(Context context) {
+        return isSystemKeyguardLockedRaw(context)
+                && !PixelAodClockView.isAodActive()
+                && PixelAodClockView.isInAodEntryTransitionWindow(
+                        AOD_TRANSITION_ANIMATION_WINDOW_MS);
+    }
+
+    private static boolean isSystemKeyguardLockedRaw(Context context) {
+        if (context == null) {
             return false;
         }
         try {
@@ -303,6 +395,20 @@ final class PixelLockscreenClockView extends FrameLayout {
         return shouldShowOnLockscreen(appContext);
     }
 
+    static boolean shouldAnimateLockscreenToAodTransition() {
+        synchronized (PixelLockscreenClockView.class) {
+            long now = android.os.SystemClock.uptimeMillis();
+            long age = now - recentInteractiveLockscreenVisibleAt;
+            long visibleFor = recentInteractiveLockscreenVisibleAt - interactiveLockscreenVisibleSince;
+            return lockscreenSurfaceVisible
+                    && recentInteractiveLockscreenVisibleAt > 0L
+                    && interactiveLockscreenVisibleSince > 0L
+                    && age >= 0L
+                    && age <= LOCKSCREEN_TO_AOD_ANIMATION_WINDOW_MS
+                    && visibleFor >= MIN_LOCKSCREEN_VISIBLE_FOR_AOD_ANIMATION_MS;
+        }
+    }
+
     private void updatePresentation(String source) {
         boolean visible = shouldShowOnLockscreen(getContext()) && !isBouncerVisible();
         boolean firstVisibleFrame = visible && getVisibility() != View.VISIBLE;
@@ -310,27 +416,38 @@ final class PixelLockscreenClockView extends FrameLayout {
         if (transition == null && visible) {
             transition = consumeRecentAodFallbackTransition(source);
         }
-        boolean animateWeight = visible && transition != null;
-        if (animateWeight) {
-            setClockWeight(PixelAodClockView.aodClockWeight(getContext()));
+        boolean hasTransition = visible && transition != null;
+        int aodWeight = PixelAodClockView.aodClockWeight(getContext());
+        int lockscreenWeight = PixelAodClockView.lockscreenClockWeight(getContext());
+        boolean animateWeight = hasTransition && aodWeight != lockscreenWeight;
+        if (!clockWeightTransitionPending) {
+            setClockWeight(animateWeight ? aodWeight : lockscreenWeight);
         }
         setVisibility(visible ? View.VISIBLE : View.GONE);
         if (!visible) {
+            clearInteractiveLockscreenVisibleIfNeeded();
             resetTransitionState();
+            setExpandedNotificationSuppressed(false);
             return;
         }
+        markInteractiveLockscreenVisibleIfNeeded();
+        boolean playingMedia = hasPlayingMediaLocally();
+        if (hasExpandedLockscreenNotificationContent(firstVisibleFrame)) {
+            setExpandedNotificationSuppressed(true);
+            return;
+        }
+        setExpandedNotificationSuppressed(false);
         List<StatusBarNotification> notifications = currentNotifications();
         boolean hasCards = hasVisibleLockscreenNotificationCards()
-                || hasLiveLockscreenNotificationCards();
-        boolean compact = !notifications.isEmpty() || hasCards;
+                || hasLiveLockscreenNotificationCards(false);
+        boolean compact = !notifications.isEmpty() || hasCards || playingMedia;
         applyClockMode(compact);
         applyMaterialColors();
         updateTime();
         rebuildNotificationIcons(Collections.emptyList());
-        if (animateWeight) {
+        if (hasTransition) {
             beginClockTransition(source, transition);
         } else if (!clockWeightTransitionPending) {
-            setClockWeight(PixelAodClockView.lockscreenClockWeight(getContext()));
             setTranslationX(0f);
             setTranslationY(0f);
         }
@@ -343,15 +460,96 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     private boolean isBouncerVisible() {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - lastBouncerCheckAt < BOUNCER_CHECK_INTERVAL_MS) {
+            return lastBouncerVisible;
+        }
+        lastBouncerCheckAt = now;
         View root = getRootView();
-        return root instanceof ViewGroup
+        lastBouncerVisible = root instanceof ViewGroup
+                && PixelAodClockView.isDeviceInteractive(getContext())
                 && PixelAodHook.hasVisibleKeyguardBouncer((ViewGroup) root);
+        return lastBouncerVisible;
     }
 
-    private boolean hasLiveLockscreenNotificationCards() {
+    private boolean hasLiveLockscreenNotificationCards(boolean force) {
+        refreshNotificationLayoutState(force);
+        return lastLiveLockscreenNotificationCards;
+    }
+
+    private void markInteractiveLockscreenVisibleIfNeeded() {
+        Context context = getContext();
+        if (PixelAodClockView.isDeviceInteractive(context) && isSystemKeyguardLockedRaw(context)) {
+            long now = android.os.SystemClock.uptimeMillis();
+            synchronized (PixelLockscreenClockView.class) {
+                if (interactiveLockscreenVisibleSince <= 0L
+                        || now - recentInteractiveLockscreenVisibleAt > 700L) {
+                    interactiveLockscreenVisibleSince = now;
+                }
+                recentInteractiveLockscreenVisibleAt = now;
+            }
+        }
+    }
+
+    private void clearInteractiveLockscreenVisibleIfNeeded() {
+        Context context = getContext();
+        if (PixelAodClockView.isDeviceInteractive(context) && !isSystemKeyguardLockedRaw(context)) {
+            synchronized (PixelLockscreenClockView.class) {
+                interactiveLockscreenVisibleSince = 0L;
+                recentInteractiveLockscreenVisibleAt = 0L;
+            }
+        }
+    }
+
+    private boolean hasExpandedLockscreenNotificationContent(boolean force) {
+        refreshNotificationLayoutState(force);
+        return lastExpandedLockscreenNotificationContent;
+    }
+
+    private void refreshNotificationLayoutState(boolean force) {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (!force && now - lastNotificationLayoutCheckAt < NOTIFICATION_LAYOUT_CHECK_INTERVAL_MS) {
+            return;
+        }
+        lastNotificationLayoutCheckAt = now;
         View root = getRootView();
-        return root instanceof ViewGroup
-                && PixelAodHook.hasVisibleLockscreenNotificationCardsIn((ViewGroup) root);
+        if (root instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) root;
+            lastExpandedLockscreenNotificationContent =
+                    PixelAodHook.hasExpandedLockscreenNotificationContentIn(group);
+            lastLiveLockscreenNotificationCards =
+                    lastExpandedLockscreenNotificationContent
+                            || PixelAodHook.hasVisibleLockscreenNotificationCardsIn(group);
+        } else {
+            lastExpandedLockscreenNotificationContent = false;
+            lastLiveLockscreenNotificationCards = false;
+        }
+    }
+
+    private void setExpandedNotificationSuppressed(boolean suppressed) {
+        boolean changed = expandedNotificationSuppressed != suppressed;
+        expandedNotificationSuppressed = suppressed;
+        if (suppressed && getVisibility() != View.GONE) {
+            setVisibility(View.GONE);
+        }
+        clockView.setVisibility(suppressed ? View.GONE : View.VISIBLE);
+        dateView.setVisibility(suppressed ? View.GONE : View.VISIBLE);
+        notificationIconRow.setVisibility(View.GONE);
+        if (changed) {
+            PixelAodLog.log("Pixel lockscreen clock expanded-notification suppression=" + suppressed);
+            if (suppressed) {
+                scheduleSuppressionRefresh(300L);
+                scheduleSuppressionRefresh(900L);
+            }
+        }
+    }
+
+    private void scheduleSuppressionRefresh(long delayMillis) {
+        mainHandler().postDelayed(() -> {
+            if (started) {
+                updatePresentation("expanded-notification-suppression+" + delayMillis);
+            }
+        }, delayMillis);
     }
 
     private void maybeStartDrawTimeAodTransition() {
@@ -431,55 +629,44 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     private void applyClockMode(boolean compact) {
-        if (compactClock == compact) {
-            dateView.setVisibility(compact ? View.VISIBLE : View.GONE);
-            return;
-        }
+        boolean changed = compactClock != compact;
         compactClock = compact;
         FrameLayout.LayoutParams clockParams = (FrameLayout.LayoutParams) clockView.getLayoutParams();
         FrameLayout.LayoutParams dateParams = (FrameLayout.LayoutParams) dateView.getLayoutParams();
         FrameLayout.LayoutParams notificationParams =
                 (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
         if (compact) {
-            clockView.setTextSize(TypedValue.COMPLEX_UNIT_DIP,
-                    PixelAodClockView.scaledClockTextDp(getContext(), SMALL_CLOCK_TEXT_DP));
-            clockView.setGravity(Gravity.START);
-            clockView.setTextAlignment(TEXT_ALIGNMENT_TEXT_START);
-            clockView.setSingleLine(true);
-            clockView.setLines(1);
-            clockView.setLineSpacing(0f, 1f);
-            clockView.setLetterSpacing(SMALL_CLOCK_LETTER_SPACING);
-            clockView.setFontFeatureSettings("pnum");
+            PixelAodClockView.applySharedClockTextStyle(clockView, getContext(), currentClockWeight,
+                    PixelAodClockView.scaledClockTextDp(getContext(), SMALL_CLOCK_TEXT_DP), true);
             clockParams.width = ViewGroup.LayoutParams.WRAP_CONTENT;
             clockParams.gravity = Gravity.TOP | Gravity.START;
-            clockParams.leftMargin = dp(EDGE_DP);
+            clockParams.leftMargin = dp(EDGE_DP - COMPACT_CLOCK_VISUAL_START_OFFSET_DP);
             clockParams.topMargin = dp(SMALL_CLOCK_TOP_DP);
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             dateView.setVisibility(View.VISIBLE);
             dateParams.topMargin = dp(SMALL_INFO_TOP_DP);
             notificationParams.topMargin = dp(SMALL_NOTIFICATION_TOP_DP);
         } else {
-            clockView.setTextSize(TypedValue.COMPLEX_UNIT_DIP,
-                    PixelAodClockView.scaledClockTextDp(getContext(), LARGE_CLOCK_TEXT_DP));
-            clockView.setGravity(Gravity.CENTER_HORIZONTAL);
-            clockView.setTextAlignment(TEXT_ALIGNMENT_CENTER);
-            clockView.setSingleLine(false);
-            clockView.setLines(2);
-            clockView.setLineSpacing(0f, CLOCK_LINE_SPACING);
-            clockView.setLetterSpacing(LARGE_CLOCK_LETTER_SPACING);
-            clockView.setFontFeatureSettings("tnum");
+            PixelAodClockView.applySharedClockTextStyle(clockView, getContext(), currentClockWeight,
+                    PixelAodClockView.scaledClockTextDp(getContext(), LARGE_CLOCK_TEXT_DP), false);
             clockParams.width = ViewGroup.LayoutParams.MATCH_PARENT;
             clockParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
             clockParams.leftMargin = 0;
             clockParams.topMargin = dp(LARGE_CLOCK_TOP_DP);
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-            dateView.setVisibility(View.GONE);
+            dateView.setVisibility(View.VISIBLE);
             dateParams.topMargin = dp(LARGE_INFO_TOP_DP);
             notificationParams.topMargin = dp(SMALL_NOTIFICATION_TOP_DP);
         }
         clockView.setLayoutParams(clockParams);
         dateView.setLayoutParams(dateParams);
         notificationIconRow.setLayoutParams(notificationParams);
+        if (changed) {
+            PixelAodLog.log("applied Pixel lockscreen clock style source=mode-change compact="
+                    + compact + " weight=" + currentClockWeight
+                    + " variation=" + PixelAodClockView.sharedClockFontVariationSettings(currentClockWeight)
+                    + " typeface=builder");
+        }
     }
 
     private void rebuildNotificationIcons(List<StatusBarNotification> notifications) {
@@ -488,8 +675,8 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     private void applyMaterialColors() {
-        int clockColor = resolveMaterialClockColor(getContext());
-        int infoColor = resolveMaterialInfoColor(getContext());
+        int clockColor = PixelAodClockView.resolveMaterialClockColor(getContext());
+        int infoColor = PixelAodClockView.resolveMaterialInfoColor(getContext());
         clockView.setTextColor(clockColor);
         dateView.setTextColor(infoColor);
         PixelAodClockView.applyWeatherIcon(dateView,
@@ -497,14 +684,43 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     private void beginClockTransition(String source, TransitionInfo transition) {
+        if (clockWeightTransitionPending && clockWeightAnimator != null
+                && clockWeightAnimator.isRunning()) {
+            PixelAodLog.log("ignored duplicate Pixel lockscreen transition source=" + source);
+            return;
+        }
         if (clockWeightAnimator != null) {
             clockWeightAnimator.cancel();
         }
         clockWeightTransitionPending = true;
+        lastClockTransitionStartedAt = android.os.SystemClock.uptimeMillis();
         int fromWeight = PixelAodClockView.aodClockWeight(getContext());
         int toWeight = PixelAodClockView.lockscreenClockWeight(getContext());
-        float fromTranslationX = transition != null ? transition.translationX : 0f;
-        float fromTranslationY = transition != null ? transition.translationY : 0f;
+        float sanitizedTranslationX = ANIMATE_AOD_POSITION_TO_LOCKSCREEN && transition != null
+                ? transition.translationX : 0f;
+        float sanitizedTranslationY = ANIMATE_AOD_POSITION_TO_LOCKSCREEN && transition != null
+                ? transition.translationY : 0f;
+        if (Float.isNaN(sanitizedTranslationX) || Float.isInfinite(sanitizedTranslationX)) {
+            sanitizedTranslationX = 0f;
+        }
+        if (Float.isNaN(sanitizedTranslationY) || Float.isInfinite(sanitizedTranslationY)) {
+            sanitizedTranslationY = 0f;
+        }
+        final float fromTranslationX = sanitizedTranslationX;
+        final float fromTranslationY = sanitizedTranslationY;
+        final boolean animateWeight = fromWeight != toWeight;
+        final boolean animatePosition =
+                Math.abs(fromTranslationX) >= 0.5f || Math.abs(fromTranslationY) >= 0.5f;
+        if (!animateWeight && !animatePosition) {
+            setClockWeight(toWeight);
+            setTranslationX(0f);
+            setTranslationY(0f);
+            clockWeightTransitionPending = false;
+            clockWeightAnimator = null;
+            PixelAodLog.log("skipped Pixel lockscreen transition source=" + source
+                    + " weight=" + toWeight + " x=0 y=0");
+            return;
+        }
         setClockWeight(fromWeight);
         setTranslationX(fromTranslationX);
         setTranslationY(fromTranslationY);
@@ -515,10 +731,14 @@ final class PixelLockscreenClockView extends FrameLayout {
             Object animated = animation.getAnimatedValue();
             if (animated instanceof Float) {
                 float progress = (Float) animated;
-                int weight = Math.round(fromWeight + ((toWeight - fromWeight) * progress));
-                setClockWeight(weight);
-                setTranslationX(fromTranslationX * (1f - progress));
-                setTranslationY(fromTranslationY * (1f - progress));
+                if (animateWeight) {
+                    int weight = Math.round(fromWeight + ((toWeight - fromWeight) * progress));
+                    setClockWeight(weight);
+                }
+                if (animatePosition) {
+                    setTranslationX(fromTranslationX * (1f - progress));
+                    setTranslationY(fromTranslationY * (1f - progress));
+                }
             }
         });
         clockWeightAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
@@ -528,11 +748,16 @@ final class PixelLockscreenClockView extends FrameLayout {
                 setTranslationX(0f);
                 setTranslationY(0f);
                 clockWeightTransitionPending = false;
+                lastClockTransitionStartedAt = 0L;
             }
         });
         clockWeightAnimator.start();
         PixelAodLog.log("started Pixel lockscreen transition source=" + source
-                + " fromWeight=" + fromWeight + " toWeight=" + toWeight
+                + " fromWeight=" + fromWeight
+                + " fromVariation=" + PixelAodClockView.sharedClockFontVariationSettings(fromWeight)
+                + " toWeight=" + toWeight
+                + " toVariation=" + PixelAodClockView.sharedClockFontVariationSettings(toWeight)
+                + " typeface=builder"
                 + " x=" + Math.round(fromTranslationX)
                 + " y=" + Math.round(fromTranslationY));
     }
@@ -543,6 +768,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             clockWeightAnimator = null;
         }
         clockWeightTransitionPending = false;
+        lastClockTransitionStartedAt = 0L;
         setTranslationX(0f);
         setTranslationY(0f);
     }
@@ -552,14 +778,8 @@ final class PixelLockscreenClockView extends FrameLayout {
             return;
         }
         currentClockWeight = weight;
-        PixelAodClockView.applySharedFontVariation(clockView, weight);
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            try {
-                clockView.setTypeface(PixelAodClockView.sharedClockTypeface(getContext(), weight));
-            } catch (Throwable ignored) {
-                // Font variation is the primary path; static typeface fallback is best-effort.
-            }
-        }
+        PixelAodClockView.applySharedClockTypeface(clockView, getContext(), weight);
+        PixelAodClockView.applySharedClockLetterSpacing(clockView, getContext(), weight, compactClock);
     }
 
     private static int resolveMaterialClockColor(Context context) {

@@ -40,6 +40,7 @@
         <provider
             android:name=".PixelAodSettingsProvider"
             android:authorities="dev.codex.pixelaod.settings"
+            android:directBootAware="true"
             android:exported="true" />
     </application>
 </manifest>

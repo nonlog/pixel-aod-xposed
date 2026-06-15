@@ -1,7 +1,9 @@
 package dev.codex.pixelaod;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.database.Cursor;
+import android.os.Build;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -9,6 +11,7 @@ import java.util.Map;
 public final class PixelAodSettings {
     public static final String PREFS = "pixel_aod_settings";
     public static final String KEY_CUSTOM_AOD = "custom_aod";
+    public static final String KEY_SKIP_DOZE_OFF_STATE = "skip_doze_off_state";
     public static final String KEY_LOCKSCREEN_CLOCK = "lockscreen_clock";
     public static final String KEY_WEATHER = "weather";
     public static final String KEY_NOTIFICATION_ICONS = "notification_icons";
@@ -17,6 +20,8 @@ public final class PixelAodSettings {
     public static final String KEY_CLOCK_SCALE = "clock_scale";
     public static final String KEY_AOD_WEIGHT = "aod_weight";
     public static final String KEY_LOCKSCREEN_WEIGHT = "lockscreen_weight";
+    public static final String KEY_FORCE_ENGLISH_DATE = "force_english_date";
+    public static final String KEY_DISABLE_BURN_IN_OFFSET = "disable_burn_in_offset";
     public static final float DEFAULT_CLOCK_SCALE = 1.0f;
     public static final float DEFAULT_AOD_WEIGHT = 280f;
     public static final float DEFAULT_LOCKSCREEN_WEIGHT = 520f;
@@ -52,6 +57,11 @@ public final class PixelAodSettings {
 
     public static void refresh(Context context) {
         load(context, true);
+    }
+
+    public static SharedPreferences getSharedPreferences(Context context) {
+        Context storage = storageContext(context);
+        return storage.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
     private static String getValue(Context context, String key) {
@@ -94,5 +104,21 @@ public final class PixelAodSettings {
         }
         PixelAodLog.setDebugEnabled(Boolean.parseBoolean(
                 values.getOrDefault(KEY_DEBUG_LOGGING, "false")));
+    }
+
+    private static Context storageContext(Context context) {
+        if (context == null || Build.VERSION.SDK_INT < 24) {
+            return context;
+        }
+        Context directBootContext = context.createDeviceProtectedStorageContext();
+        if (directBootContext == null) {
+            return context;
+        }
+        try {
+            directBootContext.moveSharedPreferencesFrom(context, PREFS);
+        } catch (Throwable ignored) {
+            // The credential-encrypted store may be locked during early SystemUI startup.
+        }
+        return directBootContext;
     }
 }

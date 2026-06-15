@@ -6,8 +6,10 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.os.Handler;
 import android.os.Looper;
+import android.service.dreams.DreamService;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
+import android.view.Display;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
@@ -20,6 +22,7 @@ import java.lang.reflect.Method;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,6 +39,10 @@ final class PixelAodHook {
     private static final String CLOCK_LAYOUT = "com.oplus.systemui.aod.aodclock.off.AodClockLayout";
     private static final String AOD_ROOT_LAYOUT = "com.oplus.systemui.aod.aodclock.off.AodRootLayout";
     private static final String AOD_RECORD = "com.oplus.systemui.aod.AodRecord";
+    private static final String AOD_DISPLAY_UTIL =
+            "com.oplus.systemui.aod.display.AODDisplayUtil";
+    private static final String AOD_SMOOTH_TRANSITION_CONTROLLER =
+            "com.oplus.systemui.aod.display.SmoothTransitionController";
     private static final String SHADE_WINDOW_VIEW =
             "com.android.systemui.shade.NotificationShadeWindowView";
     private static final String KEYGUARD_STYLE_CLOCK =
@@ -51,10 +58,16 @@ final class PixelAodHook {
     private static final String MODULE_PACKAGE = "dev.codex.pixelaod";
     private static final int STATUS_EDGE_DP = 68;
     private static final int NOTIFICATION_FLAG_SILENT = 0x00020000;
+    private static final long AOD_ENTRY_STATE_REWRITE_WINDOW_MILLIS = 10000L;
+    private static final boolean ENABLE_EXPENSIVE_DEBUG_REAPPLY = false;
+    private static final boolean ENABLE_EXPENSIVE_DEBUG_DUMPS = false;
+    private static final boolean ENABLE_NOTIFICATION_VIEW_REFLECTION_DUMP = false;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final Set<String> LOGGED_STATUS_CLASSES = new HashSet<>();
     private static final Set<String> LOGGED_VIEW_TREE_KEYS = new HashSet<>();
     private static final Set<String> HOOKED_NOTIFICATION_VIEW_CLASSES = new HashSet<>();
+    private static final Set<View> INSPECTED_PLUGIN_NOTIFICATION_VIEWS =
+            Collections.newSetFromMap(new WeakHashMap<>());
     private static final Map<View, HiddenState> HIDDEN_STOCK_VIEWS = new WeakHashMap<>();
     private static final Map<View, AdjustedState> ADJUSTED_STATUS_VIEWS = new WeakHashMap<>();
     private static final Map<View, Long> LOCKSCREEN_HOST_TOUCH_TIMES = new WeakHashMap<>();
@@ -68,8 +81,10 @@ final class PixelAodHook {
     private static NotificationListenerService lastNotificationListener;
     private static int listenerRefreshLogCount;
     private static int stockDrawSuppressionLogCount;
+    private static int aodStateRewriteLogCount;
     private static WeakReference<ViewGroup> lastStockHost = new WeakReference<>(null);
     private static WeakReference<ViewGroup> lastPixelHost = new WeakReference<>(null);
+    private static WeakReference<ViewGroup> lastShadeHost = new WeakReference<>(null);
 
     private PixelAodHook() {
     }
@@ -96,6 +111,7 @@ final class PixelAodHook {
             hookClockLayout(context, classLoader);
             hookNotificationView(classLoader);
             hookAodRecord(classLoader);
+            hookSkipDozeOffState(context, classLoader);
         }
         if (notificationIcons || customAod || lockscreenClock) {
             hookNotificationListenerService();
@@ -107,7 +123,7 @@ final class PixelAodHook {
         if (customAod || lockscreenClock) {
             hookShadeWindowView(context, classLoader);
             hookLockscreenClockProbe(classLoader);
-            hookStockClockDrawSuppression();
+            PixelAodLog.log("skipped global stock clock draw suppression to avoid UI jank");
         }
         PixelAodLog.log("installed Pixel AOD hooks customAod=" + customAod
                 + " lockscreenClock=" + lockscreenClock
@@ -138,6 +154,10 @@ final class PixelAodHook {
                 || hasCustomClockAncestor(view)) {
             return false;
         }
+        String className = view.getClass().getName();
+        if (!isStockDrawSuppressionClassCandidate(className)) {
+            return false;
+        }
         Context context = view.getContext();
         if (context == null) {
             return false;
@@ -150,7 +170,9 @@ final class PixelAodHook {
         }
         String marker = markerFor(view);
         boolean suppress = false;
-        if (isStockAodDrawCandidate(marker, view)) {
+        if (isStockAodDrawCandidate(marker, view)
+                || looksLikePluginBatteryView(marker)
+                || looksLikePluginNotificationView(marker)) {
             suppress = true;
         }
         if (!suppress) {
@@ -162,6 +184,30 @@ final class PixelAodHook {
             PixelAodLog.log("suppressed stock clock draw " + marker);
         }
         return true;
+    }
+
+    private static boolean isStockDrawSuppressionClassCandidate(String className) {
+        if (className == null) {
+            return false;
+        }
+        String name = className.toLowerCase(Locale.US);
+        if (name.contains("pixelaod")
+                || name.contains("media")
+                || name.contains("music")
+                || name.contains("charge")
+                || name.contains("finger")
+                || name.contains("biometric")
+                || name.contains("udfps")) {
+            return false;
+        }
+        return name.startsWith("com.oplus.egview.widget.batteryview")
+                || name.startsWith("com.oplus.egview.widget.notificationview")
+                || name.contains("aod")
+                || name.contains("clock")
+                || name.contains("timeview")
+                || name.contains("dateview")
+                || name.contains("weather")
+                || name.contains("temperature");
     }
 
     private static boolean hasCustomClockAncestor(View view) {
@@ -198,7 +244,7 @@ final class PixelAodHook {
     }
 
     private static void hookLockscreenClockProbe(ClassLoader classLoader) {
-        hookLockscreenClockGlobalAttachProbe();
+        PixelAodLog.log("skipped global lockscreen/shade View probe to avoid UI jank");
         hookLockscreenClockProbeClass(classLoader, KEYGUARD_STYLE_CLOCK);
         hookLockscreenClockProbeClass(classLoader, KEYGUARD_CLOCK_VIEW_ROOT);
     }
@@ -967,9 +1013,109 @@ final class PixelAodHook {
             }
             PixelAodLog.log("observed AOD outer root from " + source + " host="
                     + host.getClass().getName() + " children=" + host.getChildCount());
+            hideStockClockViews(host);
+            adjustPluginStatusViews(host.getContext(), host);
+            scheduleStockSuppressionReapply(host, source);
         } catch (Throwable t) {
             PixelAodLog.log("observe AOD outer root failed from " + source, t);
         }
+    }
+
+    private static void hookSkipDozeOffState(Context context, ClassLoader classLoader) {
+        if (!PixelAodSettings.getBoolean(context, PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, false)) {
+            return;
+        }
+        hookAodDisplayUtilScreenState(context, classLoader);
+        try {
+            ModernHookBridge.hookBefore(DreamService.class, "setDozeScreenState", param -> {
+                if (!(param.thisObject instanceof DreamService) || param.args == null
+                        || param.args.length == 0 || !(param.args[0] instanceof Integer)) {
+                    return;
+                }
+                DreamService service = (DreamService) param.thisObject;
+                rewriteAodEntryState(service, param.args, 0, "DreamService#setDozeScreenState");
+            }, int.class);
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook DreamService doze OFF skip", t);
+        }
+    }
+
+    private static void hookAodDisplayUtilScreenState(Context context, ClassLoader classLoader) {
+        try {
+            Class<?> utilClass = ModernHookBridge.findClass(AOD_DISPLAY_UTIL, classLoader);
+            ModernHookBridge.hookBefore(utilClass, "requestScreenState",
+                    param -> rewriteAodEntryState(context, param.args, 0,
+                            "AODDisplayUtil#requestScreenState(int,int,String)"),
+                    int.class, int.class, String.class);
+            ModernHookBridge.hookBefore(utilClass, "requestScreenState",
+                    param -> rewriteAodEntryState(viewContextOr(context, param.args, 0),
+                            param.args, 1, "AODDisplayUtil#requestScreenState(View,int,boolean)"),
+                    View.class, int.class, boolean.class);
+            ModernHookBridge.hookBefore(utilClass, "requestScreenStateWhileDreamingStart",
+                    param -> rewriteAodEntryState(context, param.args, 0,
+                            "AODDisplayUtil#requestScreenStateWhileDreamingStart"),
+                    int.class, String.class, boolean.class);
+            PixelAodLog.log("hooked " + AOD_DISPLAY_UTIL + " screen-state entry rewrite");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook AODDisplayUtil screen-state entry rewrite", t);
+        }
+        try {
+            Class<?> smoothClass = ModernHookBridge.findClass(AOD_SMOOTH_TRANSITION_CONTROLLER,
+                    classLoader);
+            ModernHookBridge.hookBefore(smoothClass, "requestScreenState",
+                    param -> rewriteAodEntryState(context, param.args, 0,
+                            "SmoothTransitionController#requestScreenState"),
+                    int.class);
+            PixelAodLog.log("hooked " + AOD_SMOOTH_TRANSITION_CONTROLLER
+                    + " screen-state entry rewrite");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook SmoothTransitionController screen-state entry rewrite", t);
+        }
+    }
+
+    private static Context viewContextOr(Context fallback, Object[] args, int index) {
+        if (args != null && args.length > index && args[index] instanceof View) {
+            Context context = ((View) args[index]).getContext();
+            if (context != null) {
+                return context;
+            }
+        }
+        return fallback;
+    }
+
+    private static void rewriteAodEntryState(Context context, Object[] args, int stateIndex,
+            String source) {
+        if (args == null || args.length <= stateIndex || !(args[stateIndex] instanceof Integer)) {
+            return;
+        }
+        int requestedState = (Integer) args[stateIndex];
+        if (requestedState != Display.STATE_OFF
+                && requestedState != Display.STATE_DOZE_SUSPEND) {
+            return;
+        }
+        if (context != null && PixelAodClockView.isDeviceInteractive(context)) {
+            return;
+        }
+        if (context != null) {
+            PixelAodClockView.noteScreenOffIfUnset(source + "#off-request");
+        }
+        if (!PixelAodClockView.isInAodEntryTransitionWindow(
+                AOD_ENTRY_STATE_REWRITE_WINDOW_MILLIS)) {
+            return;
+        }
+        args[stateIndex] = Display.STATE_DOZE;
+        logAodStateRewrite(source, requestedState);
+    }
+
+    private static void logAodStateRewrite(String source, int requestedState) {
+        if (aodStateRewriteLogCount >= 16) {
+            return;
+        }
+        aodStateRewriteLogCount++;
+        String stateName = requestedState == Display.STATE_DOZE_SUSPEND
+                ? "DOZE_SUSPEND"
+                : "OFF";
+        PixelAodLog.log("rewrote " + source + " " + stateName + "->DOZE during AOD entry");
     }
 
     private static void inspectLockscreenClockCandidate(Object candidate, String source) {
@@ -1014,6 +1160,7 @@ final class PixelAodHook {
             boolean screenOff = !PixelAodClockView.isDeviceInteractive(context);
             boolean lockscreenVisible = isLikelyLockscreenSurfaceVisible(context, host, pixelHost);
             if (screenOff) {
+                PixelAodClockView.noteScreenOffIfUnset(source + "#host-ready");
                 PixelAodClockView.markRecentAodOverlayVisible(source + "#host-ready");
             }
             if (screenOff && !PixelAodClockView.shouldCustomizeAodNow(context)) {
@@ -1023,14 +1170,18 @@ final class PixelAodHook {
                 refreshNotificationsFromLastListener(source);
                 hideStockClockViews(host);
                 adjustPluginStatusViews(context, host);
-                scheduleParentDebugDumps(host, source);
+                if (ENABLE_EXPENSIVE_DEBUG_DUMPS && PixelAodLog.isDebugEnabled()) {
+                    scheduleParentDebugDumps(host, source);
+                }
             } else if (lockscreenVisible) {
                 applyLockscreenClockReplacement(context, host, pixelHost, source);
             } else {
                 restoreAdjustedStatusViews();
                 restoreHiddenStockViews();
             }
-            scheduleReapply(context, host, pixelHost);
+            if (ENABLE_EXPENSIVE_DEBUG_REAPPLY && PixelAodLog.isDebugEnabled()) {
+                scheduleReapply(context, host, pixelHost);
+            }
             PixelAodLog.log("customized AOD clock host from " + source + " host="
                     + host.getClass().getName() + " pixelHost=" + markerFor(pixelHost)
                     + " hostChildren=" + host.getChildCount());
@@ -1041,6 +1192,7 @@ final class PixelAodHook {
 
     private static void handleLockscreenHost(Context context, ViewGroup host, String source) {
         try {
+            lastShadeHost = new WeakReference<>(host);
             if (PixelAodClockView.isDeviceInteractive(context)
                     && !PixelAodClockView.shouldCustomizeAodNow(context)) {
                 PixelAodClockView.hideAllAodOverlays(source + "#interactive-shade");
@@ -1061,15 +1213,50 @@ final class PixelAodHook {
                 lastStockHost = new WeakReference<>(host);
             }
             disableClippingUpwards(host);
+            injectPixelClock(context, host);
             injectPixelLockscreenClock(context, host);
             applyLockscreenClockReplacement(context, host, host, source);
-            scheduleLockscreenReapply(context, host);
+            if (ENABLE_EXPENSIVE_DEBUG_REAPPLY && PixelAodLog.isDebugEnabled()) {
+                scheduleLockscreenReapply(context, host);
+            }
             PixelAodLog.log("prepared Pixel lockscreen host from " + source
                     + " host=" + markerFor(host)
                     + " children=" + host.getChildCount());
         } catch (Throwable t) {
             PixelAodLog.log("prepare Pixel lockscreen host failed from " + source, t);
         }
+    }
+
+    static void reapplyLockscreenClockFromKnownHost(String source) {
+        if (!ENABLE_EXPENSIVE_DEBUG_REAPPLY) {
+            PixelLockscreenClockView.refreshAll("known-host-" + source);
+            return;
+        }
+        MAIN.post(() -> {
+            try {
+                ViewGroup pixelHost = lastPixelHost.get();
+                ViewGroup stockHost = lastStockHost.get();
+                ViewGroup shadeHost = lastShadeHost.get();
+                ViewGroup host = pixelHost != null ? pixelHost : stockHost != null ? stockHost : shadeHost;
+                if (host == null) {
+                    return;
+                }
+                Context context = host.getContext();
+                if (context == null || PixelAodClockView.shouldCustomizeAodNow(context)
+                        || !PixelLockscreenClockView.isSystemKeyguardLocked(context)) {
+                    return;
+                }
+                if (pixelHost == null && shadeHost != null) {
+                    pixelHost = shadeHost;
+                }
+                applyLockscreenClockReplacement(context,
+                        stockHost != null ? stockHost : host,
+                        pixelHost != null ? pixelHost : host,
+                        "known-host-" + source);
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to reapply Pixel lockscreen clock from known host " + source, t);
+            }
+        });
     }
 
     private static boolean shouldTouchLockscreenHost(ViewGroup host) {
@@ -1108,6 +1295,8 @@ final class PixelAodHook {
         if (existing instanceof PixelAodClockView) {
             existing.bringToFront();
             ((PixelAodClockView) existing).start();
+            PixelAodLog.log("reused PixelAodClockView in " + host.getClass().getName()
+                    + " visibility=" + existing.getVisibility());
             return;
         }
 
@@ -1148,19 +1337,35 @@ final class PixelAodHook {
     }
 
     private static void scheduleReapply(Context context, ViewGroup stockHost, ViewGroup pixelHost) {
-        reapplyLater(context, stockHost, pixelHost, 80L);
-        reapplyLater(context, stockHost, pixelHost, 250L);
         reapplyLater(context, stockHost, pixelHost, 650L);
-        reapplyLater(context, stockHost, pixelHost, 1000L);
         reapplyLater(context, stockHost, pixelHost, 2500L);
     }
 
+    private static void scheduleStockSuppressionReapply(ViewGroup host, String source) {
+        stockSuppressionReapplyLater(host, source, 1800L);
+    }
+
+    private static void stockSuppressionReapplyLater(ViewGroup host, String source, long delayMillis) {
+        MAIN.postDelayed(() -> {
+            try {
+                if (host == null || PixelAodClockView.isDeviceInteractive(host.getContext())) {
+                    return;
+                }
+                hideStockClockViews(host);
+                adjustPluginStatusViews(host.getContext(), host);
+                if (LOGGED_STATUS_CLASSES.add("stockSuppressionReapply|" + source + "+" + delayMillis)) {
+                    PixelAodLog.log("reapplied stock AOD suppression from " + source
+                            + "+" + delayMillis + " children=" + host.getChildCount());
+                }
+            } catch (Throwable t) {
+                PixelAodLog.log("delayed stock AOD suppression failed", t);
+            }
+        }, delayMillis);
+    }
+
     private static void scheduleLockscreenReapply(Context context, ViewGroup host) {
-        lockscreenReapplyLater(context, host, 80L);
-        lockscreenReapplyLater(context, host, 250L);
         lockscreenReapplyLater(context, host, 650L);
-        lockscreenReapplyLater(context, host, 1200L);
-        lockscreenReapplyLater(context, host, 2500L);
+        lockscreenReapplyLater(context, host, 2000L);
     }
 
     private static void lockscreenReapplyLater(Context context, ViewGroup host, long delayMillis) {
@@ -1244,13 +1449,7 @@ final class PixelAodHook {
 
     private static boolean isLikelyLockscreenSurfaceVisible(Context context, ViewGroup stockHost,
             ViewGroup pixelHost) {
-        if (PixelLockscreenClockView.isSystemKeyguardLocked(context)) {
-            return true;
-        }
-        if (context == null || !PixelAodClockView.isDeviceInteractive(context)) {
-            return false;
-        }
-        return containsStockKeyguardClock(stockHost) || containsStockKeyguardClock(pixelHost);
+        return PixelLockscreenClockView.isSystemKeyguardLocked(context);
     }
 
     private static void adjustPluginStatusViews(Context context, ViewGroup root) {
@@ -1271,9 +1470,17 @@ final class PixelAodHook {
 
             if (looksLikePluginNotificationView(marker)) {
                 hookRuntimeNotificationView(view.getClass(), marker);
-                publishNotificationsFromView(view, marker);
+                boolean firstInspection;
+                synchronized (INSPECTED_PLUGIN_NOTIFICATION_VIEWS) {
+                    firstInspection = INSPECTED_PLUGIN_NOTIFICATION_VIEWS.add(view);
+                }
+                if (firstInspection) {
+                    publishNotificationsFromView(view, marker);
+                    if (ENABLE_NOTIFICATION_VIEW_REFLECTION_DUMP) {
+                        logNotificationViewShape(view, marker);
+                    }
+                }
                 hideView(view, marker);
-                logNotificationViewShape(view, marker);
                 return false;
             }
             return true;
@@ -1336,7 +1543,7 @@ final class PixelAodHook {
                 }
             } else if (LOGGED_STATUS_CLASSES.add("notificationsFromViewEmpty|" + view.getClass().getName())) {
                 PixelAodLog.log("no StatusBarNotification objects found in runtime NotificationView "
-                        + marker + " fields=" + fieldSummary);
+                        + marker);
             }
         } catch (Throwable t) {
             PixelAodLog.log("failed to inspect runtime NotificationView notifications " + marker, t);
@@ -1511,16 +1718,19 @@ final class PixelAodHook {
     }
 
     private static void scheduleDebugDumps(ViewGroup root, String source) {
+        if (!ENABLE_EXPENSIVE_DEBUG_DUMPS || !PixelAodLog.isDebugEnabled()) {
+            return;
+        }
         debugDumpLater(root, source, 120L);
-        debugDumpLater(root, source, 650L);
-        debugDumpLater(root, source, 1600L);
-        debugDumpLater(root, source, 3200L);
+        debugDumpLater(root, source, 1200L);
     }
 
     private static void scheduleParentDebugDumps(ViewGroup root, String source) {
+        if (!ENABLE_EXPENSIVE_DEBUG_DUMPS || !PixelAodLog.isDebugEnabled()) {
+            return;
+        }
         parentDebugDumpLater(root, source, 1600L);
         parentDebugDumpLater(root, source, 3600L);
-        parentDebugDumpLater(root, source, 5600L);
     }
 
     private static void parentDebugDumpLater(ViewGroup root, String source, long delayMillis) {
@@ -1751,6 +1961,11 @@ final class PixelAodHook {
                 return false;
             }
 
+            if (view instanceof ViewGroup
+                    && containsPixelLockscreenClock((ViewGroup) view)) {
+                return true;
+            }
+
             if (looksLikeOplusKeyguardBigClock(marker)) {
                 hideView(view, marker);
                 return false;
@@ -1793,12 +2008,43 @@ final class PixelAodHook {
         if (root == null || !root.isShown()) {
             return false;
         }
-        return hasVisibleLockscreenNotificationCards(root)
-                || hasVisibleShadeDismissButton(root);
+        return hasVisibleShadeDismissButton(root);
     }
 
     static boolean hasVisibleLockscreenNotificationCardsIn(ViewGroup root) {
         return hasVisibleLockscreenNotificationCards(root);
+    }
+
+    static boolean hasExpandedLockscreenNotificationContentIn(ViewGroup root) {
+        if (root == null || !root.isShown()) {
+            return false;
+        }
+        final boolean[] found = {false};
+        traverse(root, view -> {
+            if (found[0]) {
+                return false;
+            }
+            if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
+                    || !view.isShown()) {
+                return false;
+            }
+            if (isInsideMediaNotificationSurface(view)) {
+                return false;
+            }
+            if (looksLikeExpandedNotificationControl(view)
+                    || looksLikeExpandedNotificationCard(markerFor(view), view)) {
+                found[0] = true;
+                if (LOGGED_STATUS_CLASSES.add("expandedLockscreenNotification|" + markerFor(view))) {
+                    PixelAodLog.log("detected expanded lockscreen notification content "
+                            + markerFor(view) + " size=" + view.getWidth() + "x" + view.getHeight()
+                            + " screen=" + screenLocationFor(view)
+                            + textMarkerFor(view));
+                }
+                return false;
+            }
+            return true;
+        });
+        return found[0];
     }
 
     static boolean hasVisibleKeyguardBouncer(ViewGroup root) {
@@ -1860,7 +2106,80 @@ final class PixelAodHook {
         return found[0];
     }
 
-    private static boolean containsStockKeyguardClock(ViewGroup root) {
+    private static boolean looksLikeExpandedNotificationControl(View view) {
+        String text = shortTextFor(view);
+        if (text == null) {
+            text = shortDescriptionFor(view);
+        }
+        if (text == null) {
+            return false;
+        }
+        String normalized = text.trim().replace(" ", "").toLowerCase(Locale.US);
+        return normalized.equals("showless")
+                || normalized.equals("收起")
+                || normalized.equals("折叠")
+                || normalized.contains("showless")
+                || normalized.contains("collapsenotifications")
+                || normalized.contains("lessnotifications");
+    }
+
+    private static boolean looksLikeExpandedNotificationCard(String marker, View view) {
+        if (looksLikeMediaNotificationSurface(marker)) {
+            return false;
+        }
+        if (!looksLikeVisibleLockscreenNotificationCard(marker, view)) {
+            return false;
+        }
+        int[] location = new int[2];
+        try {
+            view.getLocationOnScreen(location);
+        } catch (Throwable ignored) {
+            location[1] = Integer.MAX_VALUE;
+        }
+        int minExpandedHeight = dp(view.getContext(), 128);
+        int topOverlapLimit = dp(view.getContext(), 430);
+        return view.getHeight() >= minExpandedHeight && location[1] < topOverlapLimit;
+    }
+
+    private static boolean looksLikeMediaNotificationSurface(String marker) {
+        String m = marker.toLowerCase(Locale.US);
+        return m.contains("qsmediaplayer")
+                || m.contains("mediacarousel")
+                || m.contains("oplusmedia")
+                || m.contains("keyguardmedia")
+                || m.contains("seedling")
+                || m.contains("fluid")
+                || m.contains("capsule")
+                || m.contains("livealert")
+                || m.contains("mediahostview")
+                || m.contains("media_carousel")
+                || m.contains("media_container")
+                || m.contains("media_view")
+                || m.contains("mediaoutput")
+                || m.contains("playback")
+                || m.contains("album")
+                || m.contains("artwork")
+                || m.contains("nowplaying");
+    }
+
+    private static boolean isInsideMediaNotificationSurface(View view) {
+        View current = view;
+        int depth = 0;
+        while (current != null && depth < 8) {
+            if (looksLikeMediaNotificationSurface(markerFor(current))) {
+                return true;
+            }
+            Object parent = current.getParent();
+            if (!(parent instanceof View)) {
+                return false;
+            }
+            current = (View) parent;
+            depth++;
+        }
+        return false;
+    }
+
+    private static boolean containsVisibleStockKeyguardClock(ViewGroup root) {
         if (root == null) {
             return false;
         }
@@ -1870,6 +2189,9 @@ final class PixelAodHook {
                 return false;
             }
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
+                return false;
+            }
+            if (!view.isShown()) {
                 return false;
             }
             String marker = markerFor(view);
@@ -1887,6 +2209,74 @@ final class PixelAodHook {
             return true;
         });
         return found[0];
+    }
+
+    private static boolean containsVisibleLockscreenSurfaceChrome(ViewGroup root) {
+        if (root == null || !root.isShown()) {
+            return false;
+        }
+        final boolean[] found = {false};
+        traverse(root, view -> {
+            if (found[0]) {
+                return false;
+            }
+            if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
+                    || !view.isShown()) {
+                return false;
+            }
+            String marker = markerFor(view).toLowerCase(Locale.US);
+            if (looksLikeVisibleLockscreenSurfaceChrome(marker, view)) {
+                found[0] = true;
+                if (LOGGED_STATUS_CLASSES.add("lockscreenSurfaceChrome|" + marker)) {
+                    PixelAodLog.log("detected lockscreen surface chrome " + marker
+                            + " size=" + view.getWidth() + "x" + view.getHeight()
+                            + " screen=" + screenLocationFor(view));
+                }
+                return false;
+            }
+            return true;
+        });
+        return found[0];
+    }
+
+    private static boolean looksLikeVisibleLockscreenSurfaceChrome(String marker, View view) {
+        if (marker.contains("notificationshadewindowview")
+                || marker.contains("notificationpanel")
+                || marker.contains("notificationstackscrolllayout")
+                || marker.contains("notification_stack_scroller")
+                || marker.contains("statusbar")
+                || marker.contains("status_bar")
+                || marker.contains("quicksettings")
+                || marker.contains("qs")) {
+            return false;
+        }
+        if (view.getWidth() <= 0 || view.getHeight() <= 0) {
+            return false;
+        }
+        return marker.contains("keyguard")
+                || marker.contains("lock_icon")
+                || marker.contains("lockicon")
+                || marker.contains("bottomaffordance")
+                || marker.contains("bottom_affordance")
+                || marker.contains("quickaffordance")
+                || marker.contains("keyguardmedia");
+    }
+
+    private static boolean containsPixelLockscreenClock(ViewGroup root) {
+        if (root == null) {
+            return false;
+        }
+        int childCount = Math.min(root.getChildCount(), 120);
+        for (int i = 0; i < childCount; i++) {
+            View child = root.getChildAt(i);
+            if (child instanceof PixelLockscreenClockView) {
+                return true;
+            }
+            if (child instanceof ViewGroup && containsPixelLockscreenClock((ViewGroup) child)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void hideView(View view, String marker) {
@@ -2102,6 +2492,16 @@ final class PixelAodHook {
 
     private static boolean looksLikeLockscreenNotificationCard(String marker, View view) {
         String m = marker.toLowerCase(Locale.US);
+        if (m.contains("qsmediaplayer")
+                || m.contains("mediacarousel")
+                || m.contains("oplusmedia")
+                || m.contains("keyguardmedia")
+                || m.contains("mediahostview")
+                || m.contains("media_carousel")
+                || m.contains("media_container")
+                || m.contains("media_view")) {
+            return true;
+        }
         if (!m.contains("notification") && !m.contains("expandable")) {
             return false;
         }
@@ -2141,7 +2541,22 @@ final class PixelAodHook {
 
     private static boolean looksLikeVisibleLockscreenNotificationCard(String marker, View view) {
         return looksLikeLockscreenNotificationCard(marker, view)
-                || looksLikeOplusLockscreenNotificationCardByContent(marker, view);
+                || looksLikeOplusLockscreenNotificationCardByContent(marker, view)
+                || isNonEmptySeedling(marker, view);
+    }
+
+    private static boolean isNonEmptySeedling(String marker, View view) {
+        String m = marker.toLowerCase(Locale.US);
+        if (m.contains("seedling") || m.contains("fluid") || m.contains("capsule")) {
+            if (view.getVisibility() == View.VISIBLE && view instanceof ViewGroup) {
+                NotificationTextSignals signals = new NotificationTextSignals();
+                collectNotificationTextSignals(view, 0, signals);
+                // A media seedling or timer seedling will have some meaningful text (e.g. song name, timer)
+                // Even if relativeTime is false, meaningfulTextCount > 0 will catch it.
+                return signals.meaningfulTextCount > 0 || signals.clockTime || signals.relativeTime;
+            }
+        }
+        return false;
     }
 
     private static boolean looksLikeOplusLockscreenNotificationCardByContent(String marker, View view) {

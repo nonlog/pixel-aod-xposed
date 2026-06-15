@@ -1,4 +1,22 @@
 <resources>
     <string name="app_name">Pixel AOD for OPlus</string>
-    <string name="module_description">Pixel-style two-line AOD clock for OPlus SystemUI</string>
+    <string name="module_description">OPlus 的 Pixel 风格双排 AOD 时钟</string>
+    <string name="title_custom_aod">自定义 AOD</string>
+    <string name="desc_custom_aod">双排 Pixel 时钟</string>
+    <string name="title_skip_doze_off_state">跳过 AOD 黑屏</string>
+    <string name="desc_skip_doze_off_state">实验性：跳过 AOD 入口黑屏与暂停态</string>
+    <string name="title_lockscreen_clock">锁屏时钟</string>
+    <string name="desc_lockscreen_clock">锁屏与 AOD 统一样式</string>
+    <string name="title_weather">天气信息</string>
+    <string name="desc_weather">Breezy Weather / Gadgetbridge</string>
+    <string name="title_notification_icons">通知图标</string>
+    <string name="desc_notification_icons">AOD 单色通知图标</string>
+    <string name="title_lockscreen_policy">锁屏通知策略</string>
+    <string name="desc_lockscreen_policy">修正 OOS 锁屏显示规则</string>
+    <string name="title_debug_logging">调试日志</string>
+    <string name="desc_debug_logging">输出详细诊断日志</string>
+    <string name="title_clock_scale">时钟缩放</string>
+    <string name="title_aod_weight">AOD 字重</string>
+    <string name="title_lockscreen_weight">锁屏字重</string>
+    <string name="restart_systemui">重启 SystemUI (需要 Root)</string>
 </resources>
