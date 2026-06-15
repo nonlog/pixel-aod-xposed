@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.99] - 2026-06-15
+### Bug Fixes
+- **Fix Notification Shade Header Clock**: Exclude status bar, quick settings, shade header, bouncer, emergency, and carrier views from the stock AOD view suppression filters. This ensures the system clock in the top-left corner of the notification shade/quick settings header remains visible and functional.
+
 ## [0.1.98] - 2026-06-15
 ### Bug Fixes
 - **Fix AOD Media Info display**: Ensure the AOD media row is hidden immediately when the active media playback state changes to paused or stopped, or when the media session is swiped away.

@@ -2377,7 +2377,11 @@ final class PixelAodHook {
                 || m.contains("notification") || m.contains("notif")
                 || m.contains("battery") || m.contains("charging")
                 || m.contains("media") || m.contains("music")
-                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")) {
+                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")
+                || m.contains("statusbar") || m.contains("status_bar")
+                || m.contains("quicksettings") || m.contains("quick_settings")
+                || m.contains("policy.clock") || m.contains("header") || m.contains("bouncer")
+                || m.contains("emergency") || m.contains("carrier")) {
             return false;
         }
         if (!m.contains("aod") && !hasAodAncestor(view)) {
@@ -2432,8 +2436,9 @@ final class PixelAodHook {
                 || m.contains("bouncer") || m.contains("emergency")
                 || m.contains("bottomaffordance") || m.contains("bottom_affordance")
                 || m.contains("camera") || m.contains("flashlight") || m.contains("quickaffordance")
-                || m.contains("carrier") || m.contains("quicksettings")
-                || m.contains("statusbar") || m.contains("status_bar")) {
+                || m.contains("carrier") || m.contains("quicksettings") || m.contains("quick_settings")
+                || m.contains("statusbar") || m.contains("status_bar")
+                || m.contains("policy.clock") || m.contains("header")) {
             return false;
         }
         return m.contains("customopluskeyguardstyleclock")
@@ -2773,7 +2778,11 @@ final class PixelAodHook {
     private static boolean looksLikeStockAodText(String marker, CharSequence text) {
         String m = marker.toLowerCase(Locale.US);
         if (looksLikeSystemAodMediaView(marker)
-                || m.contains("notification") || m.contains("notif") || m.contains("battery") || m.contains("charging")) {
+                || m.contains("notification") || m.contains("notif") || m.contains("battery") || m.contains("charging")
+                || m.contains("statusbar") || m.contains("status_bar")
+                || m.contains("quicksettings") || m.contains("quick_settings")
+                || m.contains("policy.clock") || m.contains("header") || m.contains("bouncer")
+                || m.contains("emergency") || m.contains("carrier")) {
             return false;
         }
         if (m.contains("time") || m.contains("clock") || m.contains("date")) {
@@ -2790,7 +2799,11 @@ final class PixelAodHook {
         String m = marker.toLowerCase(Locale.US);
         if (looksLikeSystemAodMediaView(marker)
                 || m.contains("notification") || m.contains("notif") || m.contains("battery") || m.contains("charging")
-                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")) {
+                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")
+                || m.contains("statusbar") || m.contains("status_bar")
+                || m.contains("quicksettings") || m.contains("quick_settings")
+                || m.contains("policy.clock") || m.contains("header") || m.contains("bouncer")
+                || m.contains("emergency") || m.contains("carrier")) {
             return false;
         }
         return m.contains("timeview") || m.contains("dateview") || m.contains("clockview")
@@ -2803,7 +2816,11 @@ final class PixelAodHook {
                 || m.contains("notification") || m.contains("notif")
                 || m.contains("battery") || m.contains("charging")
                 || m.contains("media") || m.contains("music")
-                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")) {
+                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")
+                || m.contains("statusbar") || m.contains("status_bar")
+                || m.contains("quicksettings") || m.contains("quick_settings")
+                || m.contains("policy.clock") || m.contains("header") || m.contains("bouncer")
+                || m.contains("emergency") || m.contains("carrier")) {
             return false;
         }
         if (m.contains("weather")
