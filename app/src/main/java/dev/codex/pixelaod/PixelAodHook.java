@@ -1457,6 +1457,9 @@ final class PixelAodHook {
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
                 return false;
             }
+            if (isSystemUiHeaderOrQsView(view)) {
+                return false;
+            }
 
             String marker = markerFor(view);
             if (looksLikeSystemAodMediaView(marker)) {
@@ -1905,6 +1908,9 @@ final class PixelAodHook {
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
                 return false;
             }
+            if (isSystemUiHeaderOrQsView(view)) {
+                return false;
+            }
 
             String marker = markerFor(view);
             if (looksLikeSystemAodMediaView(marker)) {
@@ -1953,6 +1959,9 @@ final class PixelAodHook {
     private static void hideStockKeyguardClockViews(ViewGroup root) {
         traverse(root, view -> {
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
+                return false;
+            }
+            if (isSystemUiHeaderOrQsView(view)) {
                 return false;
             }
 
@@ -2189,6 +2198,9 @@ final class PixelAodHook {
                 return false;
             }
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
+                return false;
+            }
+            if (isSystemUiHeaderOrQsView(view)) {
                 return false;
             }
             if (!view.isShown()) {
@@ -2936,6 +2948,48 @@ final class PixelAodHook {
             PixelAodLog.log("captured stock AOD At a Glance candidate value="
                     + value + " marker=" + marker);
         }
+    }
+
+    private static boolean isSystemUiHeaderOrQsView(View view) {
+        if (view == null) {
+            return false;
+        }
+        String marker = markerFor(view).toLowerCase(Locale.US);
+        if (marker.contains("statusbar") || marker.contains("status_bar")
+                || marker.contains("quicksettings") || marker.contains("quick_settings")
+                || marker.contains(".qs.") || marker.contains("/qs") || marker.contains("_qs") || marker.contains("qs_")
+                || marker.contains("header") || marker.contains("policy.clock")
+                || marker.contains("bouncer") || marker.contains("emergency") || marker.contains("carrier")) {
+            return true;
+        }
+        ViewParent parent = view.getParent();
+        int depth = 0;
+        while (parent instanceof View && depth < 12) {
+            String name = parent.getClass().getName().toLowerCase(Locale.US);
+            if (name.contains(".qs.") || name.contains("quicksettings") || name.contains("quick_settings")
+                    || name.contains("statusbar") || name.contains("status_bar")
+                    || name.contains("header") || name.contains("bouncer")
+                    || name.contains("emergency") || name.contains("carrier")) {
+                return true;
+            }
+            int id = ((View) parent).getId();
+            if (id != View.NO_ID) {
+                try {
+                    String idName = ((View) parent).getResources().getResourceName(id).toLowerCase(Locale.US);
+                    if (idName.contains("/qs") || idName.contains("_qs") || idName.contains("qs_")
+                            || idName.contains("quicksettings") || idName.contains("quick_settings")
+                            || idName.contains("statusbar") || idName.contains("status_bar")
+                            || idName.contains("header") || idName.contains("bouncer")
+                            || idName.contains("emergency") || idName.contains("carrier")) {
+                        return true;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            parent = ((View) parent).getParent();
+            depth++;
+        }
+        return false;
     }
 
     private static String markerFor(View view) {
