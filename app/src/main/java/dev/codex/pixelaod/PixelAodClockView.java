@@ -1346,6 +1346,14 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void updateMediaLine(String source) {
+        if (!hasPlayingMedia()) {
+            currentMediaNotificationKey = null;
+            mediaView.setText("");
+            mediaIconView.setImageDrawable(null);
+            mediaRow.setVisibility(View.GONE);
+            rebuildNotificationIcons(source);
+            return;
+        }
         MediaController controller = chooseVisibleMediaController();
         StatusBarNotification mediaNotification = controller != null
                 ? findMediaNotification(controller)
@@ -1391,8 +1399,31 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    private boolean hasPlayingMedia() {
+        for (MediaController controller : mediaControllers) {
+            if (controller == null) {
+                continue;
+            }
+            PlaybackState state = null;
+            try {
+                state = controller.getPlaybackState();
+            } catch (Throwable ignored) {
+                // Ignore
+            }
+            if (state != null) {
+                int st = state.getState();
+                if (st == PlaybackState.STATE_PLAYING || st == PlaybackState.STATE_BUFFERING
+                        || st == PlaybackState.STATE_CONNECTING
+                        || st == PlaybackState.STATE_FAST_FORWARDING || st == PlaybackState.STATE_REWINDING
+                        || st == PlaybackState.STATE_SKIPPING_TO_NEXT || st == PlaybackState.STATE_SKIPPING_TO_PREVIOUS) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private MediaController chooseVisibleMediaController() {
-        MediaController pausedCandidate = null;
         for (MediaController controller : mediaControllers) {
             if (controller == null) {
                 continue;
@@ -1414,11 +1445,8 @@ public final class PixelAodClockView extends FrameLayout {
                     || playbackState == PlaybackState.STATE_REWINDING) {
                 return controller;
             }
-            if (pausedCandidate == null && playbackState == PlaybackState.STATE_PAUSED) {
-                pausedCandidate = controller;
-            }
         }
-        return pausedCandidate;
+        return null;
     }
 
     private static String formatMediaText(MediaMetadata metadata) {

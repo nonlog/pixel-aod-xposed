@@ -440,7 +440,8 @@ final class PixelLockscreenClockView extends FrameLayout {
         List<StatusBarNotification> notifications = currentNotifications();
         boolean hasCards = hasVisibleLockscreenNotificationCards()
                 || hasLiveLockscreenNotificationCards(false);
-        boolean compact = !notifications.isEmpty() || hasCards || playingMedia;
+        boolean hasMediaSession = !mediaControllers.isEmpty();
+        boolean compact = !notifications.isEmpty() || hasCards || playingMedia || hasMediaSession;
         applyClockMode(compact);
         applyMaterialColors();
         updateTime();
