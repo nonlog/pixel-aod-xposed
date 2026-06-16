@@ -25,6 +25,10 @@ import android.graphics.drawable.AdaptiveIconDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.hardware.display.DisplayManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.media.MediaDescription;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
@@ -172,6 +176,71 @@ public final class PixelAodClockView extends FrameLayout {
     private static WeatherSnapshot breezyWeather = WeatherSnapshot.empty();
     private static boolean breezyWeatherReceiverRegistered;
     private static final Map<String, RankingSnapshot> notificationRankings = new HashMap<>();
+
+    private static SensorManager proximitySensorManager;
+    private static Sensor proximitySensor;
+    private static boolean proximityNear;
+    private static final SensorEventListener proximityListener = new SensorEventListener() {
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            if (event.values == null || event.values.length == 0) {
+                return;
+            }
+            float distance = event.values[0];
+            float maxRange = event.sensor.getMaximumRange();
+            boolean near = false;
+            if (distance < maxRange && distance < 5.0f) {
+                near = true;
+            }
+            if (proximityNear != near) {
+                proximityNear = near;
+                PixelAodLog.i("proximity sensor state changed: near=" + near + " distance=" + distance + " maxRange=" + maxRange);
+                mainHandler().post(() -> {
+                    for (PixelAodClockView view : INSTANCES) {
+                        if (view != null) {
+                            view.updateAodVisibility("proximity");
+                        }
+                    }
+                });
+            }
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) {
+        }
+    };
+
+    private static void startProximityListening(Context context) {
+        if (context == null) {
+            return;
+        }
+        try {
+            if (proximitySensorManager == null) {
+                proximitySensorManager = (SensorManager) context.getApplicationContext().getSystemService(Context.SENSOR_SERVICE);
+            }
+            if (proximitySensorManager != null && proximitySensor == null) {
+                proximitySensor = proximitySensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY);
+            }
+            if (proximitySensorManager != null && proximitySensor != null) {
+                proximitySensorManager.registerListener(proximityListener, proximitySensor, SensorManager.SENSOR_DELAY_NORMAL);
+                PixelAodLog.i("registered proximity sensor listener");
+            }
+        } catch (Throwable t) {
+            PixelAodLog.e("failed to register proximity sensor listener", t);
+        }
+    }
+
+    private static void stopProximityListening() {
+        try {
+            if (proximitySensorManager != null && proximitySensor != null) {
+                proximitySensorManager.unregisterListener(proximityListener);
+                PixelAodLog.i("unregistered proximity sensor listener");
+            }
+        } catch (Throwable t) {
+            PixelAodLog.e("failed to unregister proximity sensor listener", t);
+        }
+        proximityNear = false;
+    }
     private static final BroadcastReceiver BREEZY_WEATHER_RECEIVER = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -243,6 +312,12 @@ public final class PixelAodClockView extends FrameLayout {
         Context applicationContext = context.getApplicationContext();
         appContext = applicationContext != null ? applicationContext : context;
         ensureBreezyWeatherReceiver(appContext);
+        if (isAodActive()) {
+            boolean pocketModeEnabled = PixelAodSettings.getBoolean(appContext, PixelAodSettings.KEY_POCKET_MODE, true);
+            if (pocketModeEnabled) {
+                startProximityListening(appContext);
+            }
+        }
         setClipChildren(false);
         setClipToPadding(false);
         setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -467,6 +542,16 @@ public final class PixelAodClockView extends FrameLayout {
         }
         if (active) {
             markRecentAodOverlayVisible(source + "#active");
+            if (changed) {
+                boolean pocketModeEnabled = PixelAodSettings.getBoolean(appContext, PixelAodSettings.KEY_POCKET_MODE, true);
+                if (pocketModeEnabled) {
+                    startProximityListening(appContext);
+                }
+            }
+        } else {
+            if (changed) {
+                stopProximityListening();
+            }
         }
         if (!changed && active) {
             return;
@@ -1223,6 +1308,12 @@ public final class PixelAodClockView extends FrameLayout {
 
     private boolean shouldDrawAodOverlay(String source) {
         if (!shouldCustomizeAodNow(getContext())) {
+            return false;
+        }
+        if (proximityNear) {
+            if (getVisibility() != View.GONE) {
+                setVisibility(View.GONE);
+            }
             return false;
         }
         if (isInsideExpandedSystemShade()) {

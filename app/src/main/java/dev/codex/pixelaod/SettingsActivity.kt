@@ -134,6 +134,9 @@ private fun SettingsContent(modifier: Modifier = Modifier) {
     val debugLogging = remember {
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, false))
     }
+    val pocketMode = remember {
+        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_POCKET_MODE, true))
+    }
     val clockScale = remember {
         mutableFloatStateOf(
             prefs.getFloat(PixelAodSettings.KEY_CLOCK_SCALE, PixelAodSettings.DEFAULT_CLOCK_SCALE)
@@ -181,6 +184,10 @@ private fun SettingsContent(modifier: Modifier = Modifier) {
         ToggleCard(Icons.Outlined.BugReport, stringResource(R.string.title_debug_logging), stringResource(R.string.desc_debug_logging), debugLogging.value) {
             debugLogging.value = it
             prefs.edit().putBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, it).apply()
+        }
+        ToggleCard(Icons.Outlined.Policy, stringResource(R.string.title_pocket_mode), stringResource(R.string.desc_pocket_mode), pocketMode.value) {
+            pocketMode.value = it
+            prefs.edit().putBoolean(PixelAodSettings.KEY_POCKET_MODE, it).apply()
         }
         SliderCard(
             icon = Icons.Outlined.Bolt,

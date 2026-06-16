@@ -19,4 +19,6 @@
     <string name="title_aod_weight">AOD 字重</string>
     <string name="title_lockscreen_weight">锁屏字重</string>
     <string name="restart_systemui">重启 SystemUI (需要 Root)</string>
+    <string name="title_pocket_mode">口袋模式</string>
+    <string name="desc_pocket_mode">放进口袋或遮挡距离传感器时停止显示 AOD</string>
 </resources>
