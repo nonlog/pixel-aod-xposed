@@ -55,7 +55,7 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static final long RECENT_AOD_FALLBACK_WINDOW_MS = 120_000L;
     private static final long LOCKSCREEN_TO_AOD_ANIMATION_WINDOW_MS = 2500L;
     private static final long MIN_LOCKSCREEN_VISIBLE_FOR_AOD_ANIMATION_MS = 450L;
-    private static final long NOTIFICATION_LAYOUT_CHECK_INTERVAL_MS = 900L;
+    private static final long NOTIFICATION_LAYOUT_CHECK_INTERVAL_MS = 80L;
     private static final long BOUNCER_CHECK_INTERVAL_MS = 900L;
     private static final boolean ANIMATE_AOD_POSITION_TO_LOCKSCREEN = true;
     private static final StatusBarNotification[] EMPTY_NOTIFICATIONS = new StatusBarNotification[0];
@@ -437,11 +437,9 @@ final class PixelLockscreenClockView extends FrameLayout {
             return;
         }
         setExpandedNotificationSuppressed(false);
-        List<StatusBarNotification> notifications = currentNotifications();
         boolean hasCards = hasVisibleLockscreenNotificationCards()
                 || hasLiveLockscreenNotificationCards(false);
-        boolean hasMediaSession = !mediaControllers.isEmpty();
-        boolean compact = !notifications.isEmpty() || hasCards || playingMedia || hasMediaSession;
+        boolean compact = hasCards || playingMedia;
         applyClockMode(compact);
         applyMaterialColors();
         updateTime();
@@ -455,7 +453,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         if (modeLogCount < 12) {
             modeLogCount++;
             PixelAodLog.log("Pixel lockscreen clock visible compact="
-                    + compactClock + " notifications=" + notifications.size()
+                    + compactClock + " notifications=" + currentNotifications().size()
                     + " firstVisible=" + firstVisibleFrame + " source=" + source);
         }
     }

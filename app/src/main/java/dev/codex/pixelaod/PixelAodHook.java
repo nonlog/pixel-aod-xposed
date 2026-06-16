@@ -1083,6 +1083,90 @@ final class PixelAodHook {
         return fallback;
     }
 
+    private static boolean shouldBypassStateRewrite(Object[] args) {
+        if (args == null) {
+            return false;
+        }
+        for (Object arg : args) {
+            if (arg instanceof String) {
+                String str = ((String) arg).toLowerCase(Locale.US);
+                if (str.contains("prox")
+                        || str.contains("pocket")
+                        || str.contains("sensor")
+                        || str.contains("near")
+                        || str.contains("timeout")
+                        || str.contains("power")
+                        || str.contains("key")
+                        || str.contains("fold")
+                        || str.contains("lid")
+                        || str.contains("close")
+                        || str.contains("suspend")
+                        || str.contains("sleep")
+                        || str.contains("saver")
+                        || str.contains("schedule")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAodAllowedBySystemSettings(Context context) {
+        if (context == null) {
+            return true;
+        }
+        try {
+            android.content.ContentResolver resolver = context.getContentResolver();
+            
+            // Check global AOD switches
+            int aodEnable = android.provider.Settings.Secure.getInt(resolver, "Setting_AodEnable", 1);
+            int aodSwitchEnable = android.provider.Settings.Secure.getInt(resolver, "Setting_AodSwitchEnable", 1);
+            int aodState = android.provider.Settings.Secure.getInt(resolver, "Setting_AodState", 1);
+            if (aodEnable == 0 || aodSwitchEnable == 0 || aodState == 0) {
+                return false;
+            }
+
+            int aodDisplayMode = android.provider.Settings.Secure.getInt(resolver, "aod_display_mode", 1);
+            // If display mode is 0 (off), return false
+            if (aodDisplayMode == 0) {
+                return false;
+            }
+
+            int userSetTime = android.provider.Settings.Secure.getInt(resolver, "Setting_AodUserSetTime", 0);
+            
+            // Mode 3 is scheduled, or UserSetTime == 1 is scheduled
+            if (aodDisplayMode == 3 || userSetTime == 1) {
+                int beginHour = android.provider.Settings.Secure.getInt(resolver, "Setting_AodSetTimeBeginHour", 7);
+                int beginMin = android.provider.Settings.Secure.getInt(resolver, "Setting_AodSetTimeBeginMin", 0);
+                int endHour = android.provider.Settings.Secure.getInt(resolver, "Setting_AodSetTimeEndHour", 23);
+                int endMin = android.provider.Settings.Secure.getInt(resolver, "Setting_AodSetTimeEndMin", 0);
+
+                java.util.Calendar now = java.util.Calendar.getInstance();
+                int currentHour = now.get(java.util.Calendar.HOUR_OF_DAY);
+                int currentMin = now.get(java.util.Calendar.MINUTE);
+
+                int nowMinutes = currentHour * 60 + currentMin;
+                int startMinutes = beginHour * 60 + beginMin;
+                int endMinutes = endHour * 60 + endMin;
+
+                if (startMinutes < endMinutes) {
+                    // Schedule is within the same day, e.g. 07:00 to 23:00
+                    if (nowMinutes < startMinutes || nowMinutes >= endMinutes) {
+                        return false;
+                    }
+                } else if (startMinutes > endMinutes) {
+                    // Schedule crosses midnight, e.g. 23:00 to 07:00
+                    if (nowMinutes < startMinutes && nowMinutes >= endMinutes) {
+                        return false;
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to check AOD system settings", t);
+        }
+        return true;
+    }
+
     private static void rewriteAodEntryState(Context context, Object[] args, int stateIndex,
             String source) {
         if (args == null || args.length <= stateIndex || !(args[stateIndex] instanceof Integer)) {
@@ -1096,6 +1180,16 @@ final class PixelAodHook {
         if (context != null && PixelAodClockView.isDeviceInteractive(context)) {
             return;
         }
+
+        if (context != null && !isAodAllowedBySystemSettings(context)) {
+            PixelAodLog.log("Bypassing AOD rewrite because AOD is disabled or outside scheduled time by system settings");
+            return;
+        }
+        if (shouldBypassStateRewrite(args)) {
+            PixelAodLog.log("Bypassing AOD rewrite because reason matches bypass keywords");
+            return;
+        }
+
         if (context != null) {
             PixelAodClockView.noteScreenOffIfUnset(source + "#off-request");
         }
@@ -1995,7 +2089,7 @@ final class PixelAodHook {
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
                 return false;
             }
-            if (!view.isShown()) {
+            if (view.getVisibility() != View.VISIBLE) {
                 return false;
             }
             String marker = markerFor(view);
@@ -2014,7 +2108,7 @@ final class PixelAodHook {
     }
 
     static boolean hasExpandedSystemNotificationShadeContent(ViewGroup root) {
-        if (root == null || !root.isShown()) {
+        if (root == null || root.getVisibility() != View.VISIBLE) {
             return false;
         }
         return hasVisibleShadeDismissButton(root);
@@ -2025,7 +2119,7 @@ final class PixelAodHook {
     }
 
     static boolean hasExpandedLockscreenNotificationContentIn(ViewGroup root) {
-        if (root == null || !root.isShown()) {
+        if (root == null || root.getVisibility() != View.VISIBLE) {
             return false;
         }
         final boolean[] found = {false};
@@ -2034,7 +2128,7 @@ final class PixelAodHook {
                 return false;
             }
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
-                    || !view.isShown()) {
+                    || view.getVisibility() != View.VISIBLE) {
                 return false;
             }
             if (isInsideMediaNotificationSurface(view)) {
@@ -2057,7 +2151,7 @@ final class PixelAodHook {
     }
 
     static boolean hasVisibleKeyguardBouncer(ViewGroup root) {
-        if (root == null || !root.isShown()) {
+        if (root == null || root.getVisibility() != View.VISIBLE) {
             return false;
         }
         final boolean[] found = {false};
@@ -2066,7 +2160,7 @@ final class PixelAodHook {
                 return false;
             }
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
-                    || !view.isShown()) {
+                    || view.getVisibility() != View.VISIBLE) {
                 return false;
             }
             String marker = markerFor(view).toLowerCase(Locale.US);
@@ -2094,7 +2188,7 @@ final class PixelAodHook {
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
                 return false;
             }
-            if (!view.isShown() || view.getWidth() < dp(view.getContext(), 36)
+            if (view.getVisibility() != View.VISIBLE || view.getWidth() < dp(view.getContext(), 36)
                     || view.getHeight() < dp(view.getContext(), 36)) {
                 return true;
             }
@@ -2203,7 +2297,7 @@ final class PixelAodHook {
             if (isSystemUiHeaderOrQsView(view)) {
                 return false;
             }
-            if (!view.isShown()) {
+            if (view.getVisibility() != View.VISIBLE) {
                 return false;
             }
             String marker = markerFor(view);
@@ -2224,7 +2318,7 @@ final class PixelAodHook {
     }
 
     private static boolean containsVisibleLockscreenSurfaceChrome(ViewGroup root) {
-        if (root == null || !root.isShown()) {
+        if (root == null || root.getVisibility() != View.VISIBLE) {
             return false;
         }
         final boolean[] found = {false};
@@ -2233,7 +2327,7 @@ final class PixelAodHook {
                 return false;
             }
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
-                    || !view.isShown()) {
+                    || view.getVisibility() != View.VISIBLE) {
                 return false;
             }
             String marker = markerFor(view).toLowerCase(Locale.US);

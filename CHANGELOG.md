@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.99b] - 2026-06-16
+### Bug Fixes
+- **Fix Lockscreen Clock stuck in compact mode**: Removed background media session check (`hasMediaSession`) from layout updates so that the clock correctly returns to the large layout when notifications are dismissed.
+- **Eliminate Notification Expand/Collapse Transition Delay**: Reduced layout verification interval to 80ms and replaced slow `isShown()` calls with instant visibility state checks during animations.
+- **Fix Pocket Mode / Proximity Sensor State Bypass**: Inspected state transition reasons to bypass AOD state overrides when pocket mode or proximity sensors request screen off.
+- **Support AOD Schedule Settings**: Added system settings schedule verification to respect OnePlus/OOS system AOD scheduling and modes (Always On, Scheduled, Power Saving).
+
 ## [0.1.99a] - 2026-06-15
 ### Bug Fixes
 - **Fix Notification Shade Header Clock (Robust Exclusion)**: Implemented recursive ancestor tracking to protect all descendant views of Quick Settings, Status Bar, Bouncer, and Emergency layers from being hidden by the stock view suppression mechanism. This correctly preserves the system clock inside the notification shade header (e.g. `QSClock`) under all layouts.
