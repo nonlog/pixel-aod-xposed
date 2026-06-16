@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.99f] - 2026-06-16
+### Stability
+- Disable global `View#setVisibility` / `View#setAlpha` stock-clock hooks by default to avoid SystemUI-wide hot-path interception.
+- Move custom AOD visibility enforcement out of `dispatchDraw()` and cache schedule checks to reduce per-frame work.
+- Guard proximity listener registration so pocket mode does not repeatedly register the same listener.
+- Keep test notifications, but remove the experimental broadcast-based settings mutation path.
+- Sync modern Xposed `module.prop` with the Gradle app version.
+
+## [0.1.99e] - 2026-06-16
+### Features
+- **AOD Display Schedule Mode**: Added a custom scheduling option (Start Time ~ End Time) for the custom AOD. When enabled, the AOD clock and widgets will only render during the user-configured time range (supporting ranges spanning midnight). Outside this schedule, the custom AOD layout is hidden, and the stock clock remains suppressed to keep the screen completely black.
+### Bug Fixes
+- **Settings Synchronization Fix**: Expose missing keys (`pocket_mode`, `force_english_date`, `disable_burn_in_offset`, and AOD schedule keys) in `PixelAodSettingsProvider` to ensure settings successfully propagate from the Settings application to SystemUI.
+
 ## [0.1.99d] - 2026-06-16
 ### Bug Fixes
 - **Fix Overlapping System AOD Clock:** Enhanced the stock clock draw suppression hook in `PixelAodHook.java`. Added standard and Oplus keyguard clock container classes (such as `KeyguardStatusView`, `KeyguardClockSwitch`, and `DateMessageView`) to the suppression class list and draw candidate checks. This ensures that the stock clock is completely blocked from rendering when the screen is in AOD mode, resolving the overlapping/double-clock issue.

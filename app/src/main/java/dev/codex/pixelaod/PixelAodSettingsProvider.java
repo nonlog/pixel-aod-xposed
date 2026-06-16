@@ -50,6 +50,18 @@ public final class PixelAodSettingsProvider extends ContentProvider {
         putFloat(cursor, PixelAodSettings.KEY_LOCKSCREEN_WEIGHT,
                 prefs.getFloat(PixelAodSettings.KEY_LOCKSCREEN_WEIGHT,
                         PixelAodSettings.DEFAULT_LOCKSCREEN_WEIGHT));
+        putBoolean(cursor, PixelAodSettings.KEY_FORCE_ENGLISH_DATE,
+                prefs.getBoolean(PixelAodSettings.KEY_FORCE_ENGLISH_DATE, false));
+        putBoolean(cursor, PixelAodSettings.KEY_DISABLE_BURN_IN_OFFSET,
+                prefs.getBoolean(PixelAodSettings.KEY_DISABLE_BURN_IN_OFFSET, false));
+        putBoolean(cursor, PixelAodSettings.KEY_POCKET_MODE,
+                prefs.getBoolean(PixelAodSettings.KEY_POCKET_MODE, true));
+        putBoolean(cursor, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED,
+                prefs.getBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, false));
+        putString(cursor, PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME,
+                prefs.getString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, "22:00"));
+        putString(cursor, PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME,
+                prefs.getString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, "07:00"));
         return cursor;
     }
 
@@ -123,5 +135,9 @@ public final class PixelAodSettingsProvider extends ContentProvider {
 
     private static void putFloat(MatrixCursor cursor, String key, float value) {
         cursor.addRow(new Object[]{key, "float", Float.toString(value)});
+    }
+
+    private static void putString(MatrixCursor cursor, String key, String value) {
+        cursor.addRow(new Object[]{key, "string", value});
     }
 }

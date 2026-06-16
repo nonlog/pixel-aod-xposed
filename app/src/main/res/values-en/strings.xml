@@ -21,4 +21,8 @@
     <string name="restart_systemui">Restart SystemUI (Needs Root)</string>
     <string name="title_pocket_mode">Pocket Mode</string>
     <string name="desc_pocket_mode">Stop displaying AOD when device is in a pocket or proximity sensor is covered</string>
+    <string name="title_aod_schedule">AOD Schedule</string>
+    <string name="desc_aod_schedule">Only display AOD during specified time range</string>
+    <string name="title_schedule_start_time">Start Time</string>
+    <string name="title_schedule_end_time">End Time</string>
 </resources>

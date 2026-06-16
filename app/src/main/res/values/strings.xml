@@ -21,4 +21,8 @@
     <string name="restart_systemui">重启 SystemUI (需要 Root)</string>
     <string name="title_pocket_mode">口袋模式</string>
     <string name="desc_pocket_mode">放进口袋或遮挡距离传感器时停止显示 AOD</string>
+    <string name="title_aod_schedule">AOD 定时模式</string>
+    <string name="desc_aod_schedule">仅在指定的时间段内显示 AOD</string>
+    <string name="title_schedule_start_time">开始时间</string>
+    <string name="title_schedule_end_time">结束时间</string>
 </resources>

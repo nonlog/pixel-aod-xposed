@@ -23,6 +23,9 @@ public final class PixelAodSettings {
     public static final String KEY_FORCE_ENGLISH_DATE = "force_english_date";
     public static final String KEY_DISABLE_BURN_IN_OFFSET = "disable_burn_in_offset";
     public static final String KEY_POCKET_MODE = "pocket_mode";
+    public static final String KEY_AOD_SCHEDULE_ENABLED = "aod_schedule_enabled";
+    public static final String KEY_AOD_SCHEDULE_START_TIME = "aod_schedule_start_time";
+    public static final String KEY_AOD_SCHEDULE_END_TIME = "aod_schedule_end_time";
     public static final float DEFAULT_CLOCK_SCALE = 1.0f;
     public static final float DEFAULT_AOD_WEIGHT = 280f;
     public static final float DEFAULT_LOCKSCREEN_WEIGHT = 520f;
@@ -36,6 +39,11 @@ public final class PixelAodSettings {
     public static boolean getBoolean(Context context, String key, boolean fallback) {
         String value = getValue(context, key);
         return value == null ? fallback : Boolean.parseBoolean(value);
+    }
+
+    public static String getString(Context context, String key, String fallback) {
+        String value = getValue(context, key);
+        return value == null ? fallback : value;
     }
 
     public static float getFloat(Context context, String key, float fallback) {

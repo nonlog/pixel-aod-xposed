@@ -137,6 +137,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static final long AOD_ENTRY_DELAY_MILLIS = 650L;
     private static final long BURN_IN_SETTLE_MILLIS = 8000L;
     private static final long WEATHER_STALE_MILLIS = 12L * 60L * 60L * 1000L;
+    private static final long SCHEDULE_CACHE_MILLIS = 30_000L;
     private static final StatusBarNotification[] EMPTY_NOTIFICATIONS = new StatusBarNotification[0];
     private static final LinkedHashMap<String, StatusBarNotification> mediaNotificationCache =
             new LinkedHashMap<>();
@@ -175,11 +176,16 @@ public final class PixelAodClockView extends FrameLayout {
     private static String atAGlanceExtra = "";
     private static WeatherSnapshot breezyWeather = WeatherSnapshot.empty();
     private static boolean breezyWeatherReceiverRegistered;
+    private static long cachedScheduleCheckedAt;
+    private static boolean cachedScheduleResult = true;
+    private static String cachedScheduleKey = "";
+    private static int scheduleLogCount;
     private static final Map<String, RankingSnapshot> notificationRankings = new HashMap<>();
 
     private static SensorManager proximitySensorManager;
     private static Sensor proximitySensor;
     private static boolean proximityNear;
+    private static boolean proximityListening;
     private static final SensorEventListener proximityListener = new SensorEventListener() {
         @Override
         public void onSensorChanged(SensorEvent event) {
@@ -214,6 +220,9 @@ public final class PixelAodClockView extends FrameLayout {
         if (context == null) {
             return;
         }
+        if (proximityListening) {
+            return;
+        }
         try {
             if (proximitySensorManager == null) {
                 proximitySensorManager = (SensorManager) context.getApplicationContext().getSystemService(Context.SENSOR_SERVICE);
@@ -223,6 +232,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             if (proximitySensorManager != null && proximitySensor != null) {
                 proximitySensorManager.registerListener(proximityListener, proximitySensor, SensorManager.SENSOR_DELAY_NORMAL);
+                proximityListening = true;
                 PixelAodLog.i("registered proximity sensor listener");
             }
         } catch (Throwable t) {
@@ -231,6 +241,10 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static void stopProximityListening() {
+        if (!proximityListening) {
+            proximityNear = false;
+            return;
+        }
         try {
             if (proximitySensorManager != null && proximitySensor != null) {
                 proximitySensorManager.unregisterListener(proximityListener);
@@ -239,6 +253,7 @@ public final class PixelAodClockView extends FrameLayout {
         } catch (Throwable t) {
             PixelAodLog.e("failed to unregister proximity sensor listener", t);
         }
+        proximityListening = false;
         proximityNear = false;
     }
     private static final BroadcastReceiver BREEZY_WEATHER_RECEIVER = new BroadcastReceiver() {
@@ -271,6 +286,7 @@ public final class PixelAodClockView extends FrameLayout {
         @Override
         public void run() {
             updateTime();
+            updateAodVisibility("ticker");
             mainHandler().postDelayed(this, millisUntilNextMinute());
         }
     };
@@ -1108,10 +1124,7 @@ public final class PixelAodClockView extends FrameLayout {
 
     @Override
     protected void dispatchDraw(Canvas canvas) {
-        if (!shouldDrawAodOverlay("dispatchDraw")) {
-            if (getVisibility() != View.GONE) {
-                setVisibility(View.GONE);
-            }
+        if (getVisibility() != View.VISIBLE) {
             resetBurnInTranslation();
             return;
         }
@@ -1310,16 +1323,13 @@ public final class PixelAodClockView extends FrameLayout {
         if (!shouldCustomizeAodNow(getContext())) {
             return false;
         }
+        if (!isWithinAodSchedule()) {
+            return false;
+        }
         if (proximityNear) {
-            if (getVisibility() != View.GONE) {
-                setVisibility(View.GONE);
-            }
             return false;
         }
         if (isInsideExpandedSystemShade()) {
-            if (getVisibility() != View.GONE) {
-                setVisibility(View.GONE);
-            }
             if (shadeSuppressionLogCount < 12) {
                 shadeSuppressionLogCount++;
                 PixelAodLog.log("suppressed Pixel AOD overlay in expanded shade source="
@@ -1328,6 +1338,67 @@ public final class PixelAodClockView extends FrameLayout {
             return false;
         }
         return true;
+    }
+
+    private boolean isWithinAodSchedule() {
+        Context appContext = getContext().getApplicationContext();
+        Context ctx = appContext != null ? appContext : getContext();
+        boolean enabled = PixelAodSettings.getBoolean(ctx, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, false);
+        if (!enabled) {
+            synchronized (PixelAodClockView.class) {
+                cachedScheduleCheckedAt = 0L;
+                cachedScheduleKey = "";
+                cachedScheduleResult = true;
+            }
+            return true;
+        }
+        String startTimeStr = PixelAodSettings.getString(ctx, PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, "22:00");
+        String endTimeStr = PixelAodSettings.getString(ctx, PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, "07:00");
+        long now = SystemClock.uptimeMillis();
+        String key = startTimeStr + "|" + endTimeStr;
+        synchronized (PixelAodClockView.class) {
+            if (key.equals(cachedScheduleKey)
+                    && now - cachedScheduleCheckedAt < SCHEDULE_CACHE_MILLIS) {
+                return cachedScheduleResult;
+            }
+        }
+
+        try {
+            String[] startParts = startTimeStr.split(":");
+            String[] endParts = endTimeStr.split(":");
+            if (startParts.length < 2 || endParts.length < 2) {
+                return true;
+            }
+            int startMins = Integer.parseInt(startParts[0].trim()) * 60 + Integer.parseInt(startParts[1].trim());
+            int endMins = Integer.parseInt(endParts[0].trim()) * 60 + Integer.parseInt(endParts[1].trim());
+
+            Calendar calendar = Calendar.getInstance();
+            int curMins = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE);
+
+            boolean result;
+            if (startMins == endMins) {
+                result = true;
+            } else if (startMins < endMins) {
+                result = curMins >= startMins && curMins < endMins;
+            } else {
+                result = curMins >= startMins || curMins < endMins;
+            }
+            synchronized (PixelAodClockView.class) {
+                cachedScheduleCheckedAt = now;
+                cachedScheduleKey = key;
+                cachedScheduleResult = result;
+            }
+            if (scheduleLogCount < 8) {
+                scheduleLogCount++;
+                PixelAodLog.log("AOD schedule check: start=" + startTimeStr + " (" + startMins
+                        + "m), end=" + endTimeStr + " (" + endMins + "m), current="
+                        + curMins + "m, result=" + result);
+            }
+            return result;
+        } catch (Throwable t) {
+            PixelAodLog.e("failed to parse AOD schedule times: start=" + startTimeStr + " end=" + endTimeStr, t);
+            return true;
+        }
     }
 
     private boolean isInsideExpandedSystemShade() {

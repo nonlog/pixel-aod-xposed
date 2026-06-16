@@ -62,6 +62,7 @@ final class PixelAodHook {
     private static final boolean ENABLE_EXPENSIVE_DEBUG_REAPPLY = false;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_DUMPS = false;
     private static final boolean ENABLE_NOTIFICATION_VIEW_REFLECTION_DUMP = false;
+    private static final boolean ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS = false;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final Set<String> LOGGED_STATUS_CLASSES = new HashSet<>();
     private static final Set<String> LOGGED_VIEW_TREE_KEYS = new HashSet<>();
@@ -112,7 +113,11 @@ final class PixelAodHook {
             hookNotificationView(classLoader);
             hookAodRecord(classLoader);
             hookSkipDozeOffState(context, classLoader);
-            hookStockClockVisibilityAndAlphaSuppression();
+            if (ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS) {
+                hookStockClockVisibilityAndAlphaSuppression();
+            } else {
+                PixelAodLog.log("skipped global stock View visibility/alpha hooks");
+            }
         }
         if (notificationIcons || customAod || lockscreenClock) {
             hookNotificationListenerService();

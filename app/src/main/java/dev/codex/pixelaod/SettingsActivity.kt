@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BugReport
@@ -137,6 +138,30 @@ private fun SettingsContent(modifier: Modifier = Modifier) {
     val pocketMode = remember {
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_POCKET_MODE, true))
     }
+    val aodScheduleEnabled = remember {
+        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, false))
+    }
+    val aodScheduleStartTime = remember {
+        mutableStateOf(prefs.getString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, "22:00") ?: "22:00")
+    }
+    val aodScheduleEndTime = remember {
+        mutableStateOf(prefs.getString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, "07:00") ?: "07:00")
+    }
+    val showTimePicker = { isStart: Boolean, currentTime: String ->
+        val parts = currentTime.split(":")
+        val hour = parts.getOrNull(0)?.toIntOrNull() ?: if (isStart) 22 else 7
+        val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        android.app.TimePickerDialog(context, { _, h, m ->
+            val formatted = String.format("%02d:%02d", h, m)
+            if (isStart) {
+                aodScheduleStartTime.value = formatted
+                prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, formatted).apply()
+            } else {
+                aodScheduleEndTime.value = formatted
+                prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, formatted).apply()
+            }
+        }, hour, minute, true).show()
+    }
     val clockScale = remember {
         mutableFloatStateOf(
             prefs.getFloat(PixelAodSettings.KEY_CLOCK_SCALE, PixelAodSettings.DEFAULT_CLOCK_SCALE)
@@ -188,6 +213,26 @@ private fun SettingsContent(modifier: Modifier = Modifier) {
         ToggleCard(Icons.Outlined.Policy, stringResource(R.string.title_pocket_mode), stringResource(R.string.desc_pocket_mode), pocketMode.value) {
             pocketMode.value = it
             prefs.edit().putBoolean(PixelAodSettings.KEY_POCKET_MODE, it).apply()
+        }
+        ToggleCard(Icons.Outlined.Schedule, stringResource(R.string.title_aod_schedule), stringResource(R.string.desc_aod_schedule), aodScheduleEnabled.value) {
+            aodScheduleEnabled.value = it
+            prefs.edit().putBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, it).apply()
+        }
+        if (aodScheduleEnabled.value) {
+            TimePickerCard(
+                icon = Icons.Outlined.Schedule,
+                title = stringResource(R.string.title_schedule_start_time),
+                timeText = aodScheduleStartTime.value
+            ) {
+                showTimePicker(true, aodScheduleStartTime.value)
+            }
+            TimePickerCard(
+                icon = Icons.Outlined.Schedule,
+                title = stringResource(R.string.title_schedule_end_time),
+                timeText = aodScheduleEndTime.value
+            ) {
+                showTimePicker(false, aodScheduleEndTime.value)
+            }
         }
         SliderCard(
             icon = Icons.Outlined.Bolt,
@@ -298,3 +343,37 @@ private fun SliderCard(
         }
     }
 }
+
+@Composable
+private fun TimePickerCard(
+    icon: ImageVector,
+    title: String,
+    timeText: String,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        modifier = Modifier.fillMaxWidth().clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+            }
+            Text(
+                timeText,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
