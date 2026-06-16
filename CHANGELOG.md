@@ -1,13 +1,10 @@
 # Changelog
 
-## [0.1.99c] - 2026-06-16
+## [0.1.99d] - 2026-06-16
 ### Bug Fixes
-- **Fix USB Notification layout trigger:** Restored notification list presence check to compact layout calculation so that connecting USB instantly triggers the compact clock layout.
-- **Fix AOD to Lockscreen clock layout jump:** Restored active notifications list check to the initial layout frame evaluation, eliminating the jump from small clock to large clock and back to small clock during screen wake-up.
-- **Fix Font Weight thickness issues:**
-  - Resolved double-drawing/overlapping clock views by replacing generic `"header"` string checks in stock clock suppression bypasses with precise Quick Settings and shade header identifiers.
-  - Explicitly set `fontVariationSettings` on `TextView` objects even when custom `Typeface` has been successfully set, ensuring OxygenOS/ColorOS devices correctly honor custom weights.
-- **Revert Visibility checks to standard shown state:** Restored standard `view.isShown()` checks in layout visibility helper functions.
+- **Fix Overlapping System AOD Clock:** Enhanced the stock clock draw suppression hook in `PixelAodHook.java`. Added standard and Oplus keyguard clock container classes (such as `KeyguardStatusView`, `KeyguardClockSwitch`, and `DateMessageView`) to the suppression class list and draw candidate checks. This ensures that the stock clock is completely blocked from rendering when the screen is in AOD mode, resolving the overlapping/double-clock issue.
+
+## [0.1.99c] - 2026-06-16
 
 ## [0.1.99b] - 2026-06-16
 

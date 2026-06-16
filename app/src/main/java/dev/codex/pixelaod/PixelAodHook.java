@@ -112,6 +112,7 @@ final class PixelAodHook {
             hookNotificationView(classLoader);
             hookAodRecord(classLoader);
             hookSkipDozeOffState(context, classLoader);
+            hookStockClockVisibilityAndAlphaSuppression();
         }
         if (notificationIcons || customAod || lockscreenClock) {
             hookNotificationListenerService();
@@ -186,6 +187,69 @@ final class PixelAodHook {
         return true;
     }
 
+    private static void hookStockClockVisibilityAndAlphaSuppression() {
+        try {
+            ModernHookBridge.hookBefore(View.class, "setVisibility", param -> {
+                if (!(param.thisObject instanceof View)) {
+                    return;
+                }
+                View view = (View) param.thisObject;
+                if (shouldSuppressStockClockByHook(view)) {
+                    int visibility = (int) param.args[0];
+                    if (visibility != View.GONE) {
+                        param.args[0] = View.GONE;
+                    }
+                }
+            }, int.class);
+            PixelAodLog.log("hooked stock AOD/keyguard clock setVisibility suppression");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook stock clock setVisibility suppression", t);
+        }
+
+        try {
+            ModernHookBridge.hookBefore(View.class, "setAlpha", param -> {
+                if (!(param.thisObject instanceof View)) {
+                    return;
+                }
+                View view = (View) param.thisObject;
+                if (shouldSuppressStockClockByHook(view)) {
+                    float alpha = (float) param.args[0];
+                    if (alpha != 0f) {
+                        param.args[0] = 0f;
+                    }
+                }
+            }, float.class);
+            PixelAodLog.log("hooked stock AOD/keyguard clock setAlpha suppression");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook stock clock setAlpha suppression", t);
+        }
+    }
+
+    private static boolean shouldSuppressStockClockByHook(View view) {
+        if (!PixelAodClockView.isAodActive()) {
+            return false;
+        }
+        if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
+                || hasCustomClockAncestor(view)) {
+            return false;
+        }
+        String className = view.getClass().getName();
+        if (!isStockDrawSuppressionClassCandidate(className)) {
+            return false;
+        }
+        Context context = view.getContext();
+        if (context == null) {
+            return false;
+        }
+        if (isChargingUiView(view)) {
+            return false;
+        }
+        String marker = markerFor(view);
+        return isStockAodDrawCandidate(marker, view)
+                || looksLikePluginBatteryView(marker)
+                || looksLikePluginNotificationView(marker);
+    }
+
     private static boolean isStockDrawSuppressionClassCandidate(String className) {
         if (className == null) {
             return false;
@@ -206,6 +270,11 @@ final class PixelAodHook {
                 || name.contains("clock")
                 || name.contains("timeview")
                 || name.contains("dateview")
+                || name.contains("datemessage")
+                || name.contains("date_message")
+                || name.contains("keyguardstatusview")
+                || name.contains("keyguardclockswitch")
+                || name.contains("keyguard")
                 || name.contains("weather")
                 || name.contains("temperature");
     }
@@ -226,6 +295,9 @@ final class PixelAodHook {
     private static boolean isStockAodDrawCandidate(String marker, View view) {
         if (looksLikeSystemAodMediaView(marker)) {
             return false;
+        }
+        if (looksLikeOplusKeyguardBigClock(marker)) {
+            return true;
         }
         if (looksLikeGenericStockAodVisual(marker, view)) {
             return true;
@@ -2470,7 +2542,17 @@ final class PixelAodHook {
         }
         return m.contains("aodscenemusicdefaulttimeviewgroup")
                 || m.contains("timeviewgroup")
-                || m.contains("clockviewgroup");
+                || m.contains("clockviewgroup")
+                || m.contains("keyguardstatusview")
+                || m.contains("keyguardclockswitch")
+                || m.contains("keyguard_status_view")
+                || m.contains("keyguard_clock_switch")
+                || m.contains("date")
+                || m.contains("weather")
+                || m.contains("temperature")
+                || m.contains("temp")
+                || m.contains("datemessage")
+                || m.contains("date_message");
     }
 
     private static boolean looksLikeGenericStockAodVisual(String marker, View view) {
