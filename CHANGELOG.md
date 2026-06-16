@@ -1,11 +1,15 @@
 # Changelog
 
-## [0.1.99b] - 2026-06-16
+## [0.1.99c] - 2026-06-16
 ### Bug Fixes
-- **Fix Lockscreen Clock stuck in compact mode**: Removed background media session check (`hasMediaSession`) from layout updates so that the clock correctly returns to the large layout when notifications are dismissed.
-- **Eliminate Notification Expand/Collapse Transition Delay**: Reduced layout verification interval to 80ms and replaced slow `isShown()` calls with instant visibility state checks during animations.
-- **Fix Pocket Mode / Proximity Sensor State Bypass**: Inspected state transition reasons to bypass AOD state overrides when pocket mode or proximity sensors request screen off.
-- **Support AOD Schedule Settings**: Added system settings schedule verification to respect OnePlus/OOS system AOD scheduling and modes (Always On, Scheduled, Power Saving).
+- **Fix USB Notification layout trigger:** Restored notification list presence check to compact layout calculation so that connecting USB instantly triggers the compact clock layout.
+- **Fix AOD to Lockscreen clock layout jump:** Restored active notifications list check to the initial layout frame evaluation, eliminating the jump from small clock to large clock and back to small clock during screen wake-up.
+- **Fix Font Weight thickness issues:**
+  - Resolved double-drawing/overlapping clock views by replacing generic `"header"` string checks in stock clock suppression bypasses with precise Quick Settings and shade header identifiers.
+  - Explicitly set `fontVariationSettings` on `TextView` objects even when custom `Typeface` has been successfully set, ensuring OxygenOS/ColorOS devices correctly honor custom weights.
+- **Revert Visibility checks to standard shown state:** Restored standard `view.isShown()` checks in layout visibility helper functions.
+
+## [0.1.99b] - 2026-06-16
 
 ## [0.1.99a] - 2026-06-15
 ### Bug Fixes

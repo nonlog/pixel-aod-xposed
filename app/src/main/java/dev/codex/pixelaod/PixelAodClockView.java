@@ -1754,7 +1754,7 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static boolean isLikelySilentNotification(Notification notification, RankingSnapshot ranking) {
         if (ranking != null && ranking.importance != NotificationManagerImportance.UNKNOWN
-                && ranking.importance < NotificationManagerImportance.DEFAULT) {
+                && ranking.importance < NotificationManagerImportance.LOW) {
             return true;
         }
         return (notification.flags & NOTIFICATION_FLAG_SILENT) != 0;
@@ -2871,7 +2871,7 @@ public final class PixelAodClockView extends FrameLayout {
             Typeface typeface = resolveClockTypeface(context, normalizeClockWeight(weight));
             if (typeface != null) {
                 textView.setTypeface(typeface);
-                clearTextViewFontVariation(textView);
+                applySharedFontVariation(textView, weight);
                 appliedWeightedTypeface = true;
             } else {
                 textView.setTypeface(resolveClockTypeface(context));
@@ -3748,6 +3748,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static final class NotificationManagerImportance {
         static final int UNKNOWN = Integer.MIN_VALUE;
         static final int NONE = 0;
+        static final int LOW = 2;
         static final int DEFAULT = 3;
     }
 

@@ -2089,7 +2089,7 @@ final class PixelAodHook {
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
                 return false;
             }
-            if (view.getVisibility() != View.VISIBLE) {
+            if (!view.isShown()) {
                 return false;
             }
             String marker = markerFor(view);
@@ -2108,7 +2108,7 @@ final class PixelAodHook {
     }
 
     static boolean hasExpandedSystemNotificationShadeContent(ViewGroup root) {
-        if (root == null || root.getVisibility() != View.VISIBLE) {
+        if (root == null || !root.isShown()) {
             return false;
         }
         return hasVisibleShadeDismissButton(root);
@@ -2119,7 +2119,7 @@ final class PixelAodHook {
     }
 
     static boolean hasExpandedLockscreenNotificationContentIn(ViewGroup root) {
-        if (root == null || root.getVisibility() != View.VISIBLE) {
+        if (root == null || !root.isShown()) {
             return false;
         }
         final boolean[] found = {false};
@@ -2128,7 +2128,7 @@ final class PixelAodHook {
                 return false;
             }
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
-                    || view.getVisibility() != View.VISIBLE) {
+                    || !view.isShown()) {
                 return false;
             }
             if (isInsideMediaNotificationSurface(view)) {
@@ -2151,7 +2151,7 @@ final class PixelAodHook {
     }
 
     static boolean hasVisibleKeyguardBouncer(ViewGroup root) {
-        if (root == null || root.getVisibility() != View.VISIBLE) {
+        if (root == null || !root.isShown()) {
             return false;
         }
         final boolean[] found = {false};
@@ -2160,7 +2160,7 @@ final class PixelAodHook {
                 return false;
             }
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
-                    || view.getVisibility() != View.VISIBLE) {
+                    || !view.isShown()) {
                 return false;
             }
             String marker = markerFor(view).toLowerCase(Locale.US);
@@ -2188,7 +2188,7 @@ final class PixelAodHook {
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
                 return false;
             }
-            if (view.getVisibility() != View.VISIBLE || view.getWidth() < dp(view.getContext(), 36)
+            if (!view.isShown() || view.getWidth() < dp(view.getContext(), 36)
                     || view.getHeight() < dp(view.getContext(), 36)) {
                 return true;
             }
@@ -2318,7 +2318,7 @@ final class PixelAodHook {
     }
 
     private static boolean containsVisibleLockscreenSurfaceChrome(ViewGroup root) {
-        if (root == null || root.getVisibility() != View.VISIBLE) {
+        if (root == null || !root.isShown()) {
             return false;
         }
         final boolean[] found = {false};
@@ -2327,7 +2327,7 @@ final class PixelAodHook {
                 return false;
             }
             if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
-                    || view.getVisibility() != View.VISIBLE) {
+                    || !view.isShown()) {
                 return false;
             }
             String marker = markerFor(view).toLowerCase(Locale.US);
@@ -2483,11 +2483,7 @@ final class PixelAodHook {
                 || m.contains("notification") || m.contains("notif")
                 || m.contains("battery") || m.contains("charging")
                 || m.contains("media") || m.contains("music")
-                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")
-                || m.contains("statusbar") || m.contains("status_bar")
-                || m.contains("quicksettings") || m.contains("quick_settings")
-                || m.contains("policy.clock") || m.contains("header") || m.contains("bouncer")
-                || m.contains("emergency") || m.contains("carrier")) {
+                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")) {
             return false;
         }
         if (!m.contains("aod") && !hasAodAncestor(view)) {
@@ -2543,8 +2539,7 @@ final class PixelAodHook {
                 || m.contains("bottomaffordance") || m.contains("bottom_affordance")
                 || m.contains("camera") || m.contains("flashlight") || m.contains("quickaffordance")
                 || m.contains("carrier") || m.contains("quicksettings") || m.contains("quick_settings")
-                || m.contains("statusbar") || m.contains("status_bar")
-                || m.contains("policy.clock") || m.contains("header")) {
+                || m.contains("statusbar") || m.contains("status_bar")) {
             return false;
         }
         return m.contains("customopluskeyguardstyleclock")
@@ -2885,10 +2880,7 @@ final class PixelAodHook {
         String m = marker.toLowerCase(Locale.US);
         if (looksLikeSystemAodMediaView(marker)
                 || m.contains("notification") || m.contains("notif") || m.contains("battery") || m.contains("charging")
-                || m.contains("statusbar") || m.contains("status_bar")
-                || m.contains("quicksettings") || m.contains("quick_settings")
-                || m.contains("policy.clock") || m.contains("header") || m.contains("bouncer")
-                || m.contains("emergency") || m.contains("carrier")) {
+                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")) {
             return false;
         }
         if (m.contains("time") || m.contains("clock") || m.contains("date")) {
@@ -2905,11 +2897,7 @@ final class PixelAodHook {
         String m = marker.toLowerCase(Locale.US);
         if (looksLikeSystemAodMediaView(marker)
                 || m.contains("notification") || m.contains("notif") || m.contains("battery") || m.contains("charging")
-                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")
-                || m.contains("statusbar") || m.contains("status_bar")
-                || m.contains("quicksettings") || m.contains("quick_settings")
-                || m.contains("policy.clock") || m.contains("header") || m.contains("bouncer")
-                || m.contains("emergency") || m.contains("carrier")) {
+                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")) {
             return false;
         }
         return m.contains("timeview") || m.contains("dateview") || m.contains("clockview")
@@ -2922,11 +2910,7 @@ final class PixelAodHook {
                 || m.contains("notification") || m.contains("notif")
                 || m.contains("battery") || m.contains("charging")
                 || m.contains("media") || m.contains("music")
-                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")
-                || m.contains("statusbar") || m.contains("status_bar")
-                || m.contains("quicksettings") || m.contains("quick_settings")
-                || m.contains("policy.clock") || m.contains("header") || m.contains("bouncer")
-                || m.contains("emergency") || m.contains("carrier")) {
+                || m.contains("finger") || m.contains("biometric") || m.contains("udfps")) {
             return false;
         }
         if (m.contains("weather")
@@ -3052,7 +3036,9 @@ final class PixelAodHook {
         if (marker.contains("statusbar") || marker.contains("status_bar")
                 || marker.contains("quicksettings") || marker.contains("quick_settings")
                 || marker.contains(".qs.") || marker.contains("/qs") || marker.contains("_qs") || marker.contains("qs_")
-                || marker.contains("header") || marker.contains("policy.clock")
+                || marker.contains("qsheader") || marker.contains("shadeheader") || marker.contains("shade_header")
+                || marker.contains("quickstatusheader") || marker.contains("splitshadeheader")
+                || marker.contains("policy.clock")
                 || marker.contains("bouncer") || marker.contains("emergency") || marker.contains("carrier")) {
             return true;
         }
@@ -3062,8 +3048,9 @@ final class PixelAodHook {
             String name = parent.getClass().getName().toLowerCase(Locale.US);
             if (name.contains(".qs.") || name.contains("quicksettings") || name.contains("quick_settings")
                     || name.contains("statusbar") || name.contains("status_bar")
-                    || name.contains("header") || name.contains("bouncer")
-                    || name.contains("emergency") || name.contains("carrier")) {
+                    || name.contains("qsheader") || name.contains("shadeheader") || name.contains("shade_header")
+                    || name.contains("quickstatusheader") || name.contains("splitshadeheader")
+                    || name.contains("bouncer") || name.contains("emergency") || name.contains("carrier")) {
                 return true;
             }
             int id = ((View) parent).getId();
@@ -3073,8 +3060,9 @@ final class PixelAodHook {
                     if (idName.contains("/qs") || idName.contains("_qs") || idName.contains("qs_")
                             || idName.contains("quicksettings") || idName.contains("quick_settings")
                             || idName.contains("statusbar") || idName.contains("status_bar")
-                            || idName.contains("header") || idName.contains("bouncer")
-                            || idName.contains("emergency") || idName.contains("carrier")) {
+                            || idName.contains("qsheader") || idName.contains("shadeheader") || idName.contains("shade_header")
+                            || idName.contains("quickstatusheader") || idName.contains("splitshadeheader")
+                            || idName.contains("bouncer") || idName.contains("emergency") || idName.contains("carrier")) {
                         return true;
                     }
                 } catch (Throwable ignored) {
