@@ -26,6 +26,10 @@ public final class PixelAodSettings {
     public static final String KEY_AOD_SCHEDULE_ENABLED = "aod_schedule_enabled";
     public static final String KEY_AOD_SCHEDULE_START_TIME = "aod_schedule_start_time";
     public static final String KEY_AOD_SCHEDULE_END_TIME = "aod_schedule_end_time";
+    public static final String KEY_LANGUAGE = "ui_language";
+    public static final String LANGUAGE_SYSTEM = "system";
+    public static final String LANGUAGE_CHINESE = "zh";
+    public static final String LANGUAGE_ENGLISH = "en";
     public static final float DEFAULT_CLOCK_SCALE = 1.0f;
     public static final float DEFAULT_AOD_WEIGHT = 280f;
     public static final float DEFAULT_LOCKSCREEN_WEIGHT = 520f;

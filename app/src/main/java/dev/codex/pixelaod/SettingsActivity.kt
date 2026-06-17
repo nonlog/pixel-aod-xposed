@@ -1,10 +1,13 @@
 package dev.codex.pixelaod
 
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,60 +18,95 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Policy
+import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 
 class SettingsActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(applyLanguage(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            PixelAodSettingsScreen()
+            PixelAodSettingsScreen(onLanguageChanged = { recreate() })
+        }
+    }
+
+    companion object {
+        /**
+         * Wraps [base] with the user-selected UI locale. "system" leaves the device
+         * locale untouched; "zh"/"en" force Simplified Chinese / English so the
+         * settings app can be read independently of the system language.
+         */
+        fun applyLanguage(base: Context): Context {
+            val lang = PixelAodSettings.getSharedPreferences(base)
+                .getString(PixelAodSettings.KEY_LANGUAGE, PixelAodSettings.LANGUAGE_SYSTEM)
+                ?: PixelAodSettings.LANGUAGE_SYSTEM
+            val locale = when (lang) {
+                PixelAodSettings.LANGUAGE_CHINESE -> Locale.SIMPLIFIED_CHINESE
+                PixelAodSettings.LANGUAGE_ENGLISH -> Locale.ENGLISH
+                else -> return base
+            }
+            Locale.setDefault(locale)
+            val config = Configuration(base.resources.configuration)
+            config.setLocale(locale)
+            return base.createConfigurationContext(config)
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PixelAodSettingsScreen() {
+private fun PixelAodSettingsScreen(onLanguageChanged: () -> Unit) {
     val context = LocalContext.current
-    val dark = false
+    val dark = isSystemInDarkTheme()
     val colors = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && dark -> dynamicDarkColorScheme(context)
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> dynamicLightColorScheme(context)
@@ -90,13 +128,23 @@ private fun PixelAodSettingsScreen() {
                                 )
                             }
                         },
-                        colors = TopAppBarDefaults.largeTopAppBarColors(
+                        colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.surface
-                        )
+                        ),
+                        actions = {
+                            IconButton(onClick = { restartSystemUi() }) {
+                                Icon(
+                                    Icons.Outlined.RestartAlt,
+                                    contentDescription = stringResource(R.string.restart_systemui),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                     )
                 }
             ) { padding ->
                 SettingsContent(
+                    onLanguageChanged = onLanguageChanged,
                     modifier = Modifier
                         .padding(padding)
                         .verticalScroll(rememberScrollState())
@@ -108,7 +156,10 @@ private fun PixelAodSettingsScreen() {
 }
 
 @Composable
-private fun SettingsContent(modifier: Modifier = Modifier) {
+private fun SettingsContent(
+    onLanguageChanged: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val prefs = remember {
         PixelAodSettings.getSharedPreferences(context)
@@ -147,6 +198,12 @@ private fun SettingsContent(modifier: Modifier = Modifier) {
     val aodScheduleEndTime = remember {
         mutableStateOf(prefs.getString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, "07:00") ?: "07:00")
     }
+    val language = remember {
+        mutableStateOf(
+            prefs.getString(PixelAodSettings.KEY_LANGUAGE, PixelAodSettings.LANGUAGE_SYSTEM)
+                ?: PixelAodSettings.LANGUAGE_SYSTEM
+        )
+    }
     val showTimePicker = { isStart: Boolean, currentTime: String ->
         val parts = currentTime.split(":")
         val hour = parts.getOrNull(0)?.toIntOrNull() ?: if (isStart) 22 else 7
@@ -181,102 +238,200 @@ private fun SettingsContent(modifier: Modifier = Modifier) {
         )
     }
 
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        ToggleCard(Icons.Outlined.Palette, stringResource(R.string.title_custom_aod), stringResource(R.string.desc_custom_aod), customAod.value) {
-            customAod.value = it
-            prefs.edit().putBoolean(PixelAodSettings.KEY_CUSTOM_AOD, it).apply()
-        }
-        ToggleCard(Icons.Outlined.Bolt, stringResource(R.string.title_skip_doze_off_state), stringResource(R.string.desc_skip_doze_off_state), skipDozeOffState.value) {
-            skipDozeOffState.value = it
-            prefs.edit().putBoolean(PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, it).apply()
-        }
-        ToggleCard(Icons.Outlined.Schedule, stringResource(R.string.title_lockscreen_clock), stringResource(R.string.desc_lockscreen_clock), lockscreenClock.value) {
-            lockscreenClock.value = it
-            prefs.edit().putBoolean(PixelAodSettings.KEY_LOCKSCREEN_CLOCK, it).apply()
-        }
-        ToggleCard(Icons.Outlined.Cloud, stringResource(R.string.title_weather), stringResource(R.string.desc_weather), weather.value) {
-            weather.value = it
-            prefs.edit().putBoolean(PixelAodSettings.KEY_WEATHER, it).apply()
-        }
-        ToggleCard(Icons.Outlined.Notifications, stringResource(R.string.title_notification_icons), stringResource(R.string.desc_notification_icons), notificationIcons.value) {
-            notificationIcons.value = it
-            prefs.edit().putBoolean(PixelAodSettings.KEY_NOTIFICATION_ICONS, it).apply()
-        }
-        ToggleCard(Icons.Outlined.Policy, stringResource(R.string.title_lockscreen_policy), stringResource(R.string.desc_lockscreen_policy), lockscreenPolicy.value) {
-            lockscreenPolicy.value = it
-            prefs.edit().putBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, it).apply()
-        }
-        ToggleCard(Icons.Outlined.BugReport, stringResource(R.string.title_debug_logging), stringResource(R.string.desc_debug_logging), debugLogging.value) {
-            debugLogging.value = it
-            prefs.edit().putBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, it).apply()
-        }
-        ToggleCard(Icons.Outlined.Policy, stringResource(R.string.title_pocket_mode), stringResource(R.string.desc_pocket_mode), pocketMode.value) {
-            pocketMode.value = it
-            prefs.edit().putBoolean(PixelAodSettings.KEY_POCKET_MODE, it).apply()
-        }
-        ToggleCard(Icons.Outlined.Schedule, stringResource(R.string.title_aod_schedule), stringResource(R.string.desc_aod_schedule), aodScheduleEnabled.value) {
-            aodScheduleEnabled.value = it
-            prefs.edit().putBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, it).apply()
-        }
-        if (aodScheduleEnabled.value) {
-            TimePickerCard(
-                icon = Icons.Outlined.Schedule,
-                title = stringResource(R.string.title_schedule_start_time),
-                timeText = aodScheduleStartTime.value
+    var showLanguageDialog by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        SettingsSection(stringResource(R.string.section_appearance)) {
+            ChoiceCard(
+                icon = Icons.Outlined.Language,
+                title = stringResource(R.string.title_language),
+                valueText = languageLabel(language.value)
             ) {
-                showTimePicker(true, aodScheduleStartTime.value)
+                showLanguageDialog = true
             }
-            TimePickerCard(
-                icon = Icons.Outlined.Schedule,
-                title = stringResource(R.string.title_schedule_end_time),
-                timeText = aodScheduleEndTime.value
-            ) {
-                showTimePicker(false, aodScheduleEndTime.value)
+            ToggleCard(Icons.Outlined.Palette, stringResource(R.string.title_custom_aod), stringResource(R.string.desc_custom_aod), customAod.value) {
+                customAod.value = it
+                prefs.edit().putBoolean(PixelAodSettings.KEY_CUSTOM_AOD, it).apply()
+            }
+            ToggleCard(Icons.Outlined.Schedule, stringResource(R.string.title_lockscreen_clock), stringResource(R.string.desc_lockscreen_clock), lockscreenClock.value) {
+                lockscreenClock.value = it
+                prefs.edit().putBoolean(PixelAodSettings.KEY_LOCKSCREEN_CLOCK, it).apply()
             }
         }
-        SliderCard(
-            icon = Icons.Outlined.Bolt,
-            title = stringResource(R.string.title_clock_scale),
-            valueText = "%.0f%%".format(clockScale.floatValue * 100f),
-            value = clockScale.floatValue,
-            valueRange = 0.9f..1.15f
-        ) {
-            clockScale.floatValue = it
-            prefs.edit().putFloat(PixelAodSettings.KEY_CLOCK_SCALE, it).apply()
+
+        SettingsSection(stringResource(R.string.section_clock)) {
+            SliderCard(
+                icon = Icons.Outlined.Bolt,
+                title = stringResource(R.string.title_clock_scale),
+                valueText = "%.0f%%".format(clockScale.floatValue * 100f),
+                value = clockScale.floatValue,
+                valueRange = 0.9f..1.15f
+            ) {
+                clockScale.floatValue = it
+                prefs.edit().putFloat(PixelAodSettings.KEY_CLOCK_SCALE, it).apply()
+            }
+            SliderCard(
+                icon = Icons.Outlined.Schedule,
+                title = stringResource(R.string.title_aod_weight),
+                valueText = aodWeight.floatValue.toInt().toString(),
+                value = aodWeight.floatValue,
+                valueRange = 100f..500f
+            ) {
+                aodWeight.floatValue = it
+                prefs.edit().putFloat(PixelAodSettings.KEY_AOD_WEIGHT, it).apply()
+            }
+            SliderCard(
+                icon = Icons.Outlined.Palette,
+                title = stringResource(R.string.title_lockscreen_weight),
+                valueText = lockscreenWeight.floatValue.toInt().toString(),
+                value = lockscreenWeight.floatValue,
+                valueRange = 100f..500f
+            ) {
+                lockscreenWeight.floatValue = it
+                prefs.edit().putFloat(PixelAodSettings.KEY_LOCKSCREEN_WEIGHT, it).apply()
+            }
         }
-        SliderCard(
-            icon = Icons.Outlined.Schedule,
-            title = stringResource(R.string.title_aod_weight),
-            valueText = aodWeight.floatValue.toInt().toString(),
-            value = aodWeight.floatValue,
-            valueRange = 100f..500f
-        ) {
-            aodWeight.floatValue = it
-            prefs.edit().putFloat(PixelAodSettings.KEY_AOD_WEIGHT, it).apply()
-        }
-        SliderCard(
-            icon = Icons.Outlined.Palette,
-            title = stringResource(R.string.title_lockscreen_weight),
-            valueText = lockscreenWeight.floatValue.toInt().toString(),
-            value = lockscreenWeight.floatValue,
-            valueRange = 100f..500f
-        ) {
-            lockscreenWeight.floatValue = it
-            prefs.edit().putFloat(PixelAodSettings.KEY_LOCKSCREEN_WEIGHT, it).apply()
-        }
-        Spacer(modifier = Modifier.height(6.dp))
-        Button(
-            onClick = {
-                try {
-                    Runtime.getRuntime().exec(arrayOf("su", "-c", "pkill -f com.android.systemui"))
-                } catch (e: Exception) {
-                    e.printStackTrace()
+
+        SettingsSection(stringResource(R.string.section_behavior)) {
+            ToggleCard(Icons.Outlined.Cloud, stringResource(R.string.title_weather), stringResource(R.string.desc_weather), weather.value) {
+                weather.value = it
+                prefs.edit().putBoolean(PixelAodSettings.KEY_WEATHER, it).apply()
+            }
+            ToggleCard(Icons.Outlined.Notifications, stringResource(R.string.title_notification_icons), stringResource(R.string.desc_notification_icons), notificationIcons.value) {
+                notificationIcons.value = it
+                prefs.edit().putBoolean(PixelAodSettings.KEY_NOTIFICATION_ICONS, it).apply()
+            }
+            ToggleCard(Icons.Outlined.Policy, stringResource(R.string.title_lockscreen_policy), stringResource(R.string.desc_lockscreen_policy), lockscreenPolicy.value) {
+                lockscreenPolicy.value = it
+                prefs.edit().putBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, it).apply()
+            }
+            ToggleCard(Icons.Outlined.Policy, stringResource(R.string.title_pocket_mode), stringResource(R.string.desc_pocket_mode), pocketMode.value) {
+                pocketMode.value = it
+                prefs.edit().putBoolean(PixelAodSettings.KEY_POCKET_MODE, it).apply()
+            }
+            ToggleCard(Icons.Outlined.Schedule, stringResource(R.string.title_aod_schedule), stringResource(R.string.desc_aod_schedule), aodScheduleEnabled.value) {
+                aodScheduleEnabled.value = it
+                prefs.edit().putBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, it).apply()
+            }
+            if (aodScheduleEnabled.value) {
+                TimePickerCard(
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_schedule_start_time),
+                    timeText = aodScheduleStartTime.value
+                ) {
+                    showTimePicker(true, aodScheduleStartTime.value)
                 }
-            },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
-        ) {
-            Text(stringResource(R.string.restart_systemui))
+                TimePickerCard(
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_schedule_end_time),
+                    timeText = aodScheduleEndTime.value
+                ) {
+                    showTimePicker(false, aodScheduleEndTime.value)
+                }
+            }
         }
+
+        SettingsSection(stringResource(R.string.section_advanced)) {
+            ToggleCard(Icons.Outlined.Bolt, stringResource(R.string.title_skip_doze_off_state), stringResource(R.string.desc_skip_doze_off_state), skipDozeOffState.value) {
+                skipDozeOffState.value = it
+                prefs.edit().putBoolean(PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, it).apply()
+            }
+            ToggleCard(Icons.Outlined.BugReport, stringResource(R.string.title_debug_logging), stringResource(R.string.desc_debug_logging), debugLogging.value) {
+                debugLogging.value = it
+                prefs.edit().putBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, it).apply()
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+
+    if (showLanguageDialog) {
+        LanguageDialog(
+            current = language.value,
+            onDismiss = { showLanguageDialog = false },
+            onSelected = { selected ->
+                showLanguageDialog = false
+                if (selected != language.value) {
+                    language.value = selected
+                    prefs.edit().putString(PixelAodSettings.KEY_LANGUAGE, selected).apply()
+                    onLanguageChanged()
+                }
+            }
+        )
+    }
+}
+
+private fun restartSystemUi() {
+    try {
+        Runtime.getRuntime().exec(arrayOf("su", "-c", "pkill -f com.android.systemui"))
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
+@Composable
+private fun languageLabel(value: String): String = when (value) {
+    PixelAodSettings.LANGUAGE_CHINESE -> stringResource(R.string.language_chinese)
+    PixelAodSettings.LANGUAGE_ENGLISH -> stringResource(R.string.language_english)
+    else -> stringResource(R.string.language_system)
+}
+
+@Composable
+private fun LanguageDialog(
+    current: String,
+    onDismiss: () -> Unit,
+    onSelected: (String) -> Unit
+) {
+    val options = listOf(
+        PixelAodSettings.LANGUAGE_SYSTEM to stringResource(R.string.language_system),
+        PixelAodSettings.LANGUAGE_CHINESE to stringResource(R.string.language_chinese),
+        PixelAodSettings.LANGUAGE_ENGLISH to stringResource(R.string.language_english)
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.title_language)) },
+        text = {
+            Column {
+                options.forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = value == current,
+                                onClick = { onSelected(value) }
+                            )
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = value == current,
+                            onClick = { onSelected(value) }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(label, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun SettingsSection(title: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(start = 12.dp, bottom = 2.dp)
+        )
+        content()
     }
 }
 
@@ -289,14 +444,15 @@ private fun ToggleCard(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .clickable { onCheckedChange(!checked) }
+                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -324,11 +480,11 @@ private fun SliderCard(
     onValueChange: (Float) -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(16.dp))
@@ -352,14 +508,14 @@ private fun TimePickerCard(
     onClick: () -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = Modifier.fillMaxWidth().clickable { onClick() }
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -377,3 +533,35 @@ private fun TimePickerCard(
     }
 }
 
+@Composable
+private fun ChoiceCard(
+    icon: ImageVector,
+    title: String,
+    valueText: String,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        modifier = Modifier.fillMaxWidth().clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+            }
+            Text(
+                valueText,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}

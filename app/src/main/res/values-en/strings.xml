@@ -25,4 +25,12 @@
     <string name="desc_aod_schedule">Only display AOD during specified time range</string>
     <string name="title_schedule_start_time">Start Time</string>
     <string name="title_schedule_end_time">End Time</string>
+    <string name="section_appearance">Appearance</string>
+    <string name="section_clock">Clock Style</string>
+    <string name="section_behavior">Behavior</string>
+    <string name="section_advanced">Advanced</string>
+    <string name="title_language">Language</string>
+    <string name="language_system">Follow system</string>
+    <string name="language_chinese">中文</string>
+    <string name="language_english">English</string>
 </resources>

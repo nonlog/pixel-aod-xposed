@@ -25,4 +25,12 @@
     <string name="desc_aod_schedule">仅在指定的时间段内显示 AOD</string>
     <string name="title_schedule_start_time">开始时间</string>
     <string name="title_schedule_end_time">结束时间</string>
+    <string name="section_appearance">外观</string>
+    <string name="section_clock">时钟样式</string>
+    <string name="section_behavior">行为</string>
+    <string name="section_advanced">高级</string>
+    <string name="title_language">语言</string>
+    <string name="language_system">跟随系统</string>
+    <string name="language_chinese">中文</string>
+    <string name="language_english">English</string>
 </resources>

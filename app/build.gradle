@@ -13,8 +13,8 @@ android {
         applicationId "dev.codex.pixelaod"
         minSdk 26
         targetSdk 36
-        versionCode 106
-        versionName "0.1.99f"
+        versionCode 107
+        versionName "0.1.100"
     }
 
     buildTypes {
@@ -47,7 +47,7 @@ android {
 }
 
 dependencies {
-    def composeBom = platform("androidx.compose:compose-bom:2024.10.00")
+    def composeBom = platform("androidx.compose:compose-bom:2026.05.01")
     implementation(composeBom)
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.foundation:foundation")

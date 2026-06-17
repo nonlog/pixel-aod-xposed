@@ -1508,38 +1508,33 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void updateMediaLine(String source) {
-        if (!hasPlayingMedia()) {
-            currentMediaNotificationKey = null;
-            mediaView.setText("");
-            mediaIconView.setImageDrawable(null);
-            mediaRow.setVisibility(View.GONE);
-            rebuildNotificationIcons(source);
+        MediaController controller = chooseVisibleMediaController();
+        if (controller == null) {
+            clearMediaLine(source);
             return;
         }
-        MediaController controller = chooseVisibleMediaController();
-        StatusBarNotification mediaNotification = controller != null
-                ? findMediaNotification(controller)
-                : latestMediaNotificationCandidate();
+        StatusBarNotification mediaNotification = findMediaNotification(controller);
         String notificationText = formatMediaNotificationText(mediaNotification);
         String mediaText = !TextUtils.isEmpty(notificationText)
                 ? notificationText
-                : controller != null ? formatMediaText(controller.getMetadata()) : "";
+                : formatMediaText(controller.getMetadata());
         String mediaKey = mediaNotification != null ? mediaNotification.getKey() : "";
-        String iconSignature = mediaKey + "|" + (controller != null ? controller.getPackageName() : "");
+        String iconSignature = mediaKey + "|" + controller.getPackageName();
         if (TextUtils.equals(lastMediaLineText, mediaText)
                 && TextUtils.equals(lastMediaLineKey, mediaKey)
                 && TextUtils.equals(lastMediaIconSignature, iconSignature)) {
+            // Content is unchanged, but the row may have been hidden by a prior
+            // pause/stop. Re-assert visibility so resuming the same track shows again.
+            if (!TextUtils.isEmpty(mediaText) && mediaRow.getVisibility() != View.VISIBLE) {
+                mediaRow.setVisibility(View.VISIBLE);
+            }
             return;
         }
         lastMediaLineText = mediaText;
         lastMediaLineKey = mediaKey;
         lastMediaIconSignature = iconSignature;
         if (TextUtils.isEmpty(mediaText)) {
-            currentMediaNotificationKey = null;
-            mediaView.setText("");
-            mediaIconView.setImageDrawable(null);
-            mediaRow.setVisibility(View.GONE);
-            rebuildNotificationIcons(source);
+            clearMediaLine(source);
             return;
         }
         currentMediaNotificationKey = mediaNotification != null ? mediaNotification.getKey() : null;
@@ -1561,31 +1556,59 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
-    private boolean hasPlayingMedia() {
-        for (MediaController controller : mediaControllers) {
-            if (controller == null) {
-                continue;
-            }
-            PlaybackState state = null;
-            try {
-                state = controller.getPlaybackState();
-            } catch (Throwable ignored) {
-                // Ignore
-            }
-            if (state != null) {
-                int st = state.getState();
-                if (st == PlaybackState.STATE_PLAYING || st == PlaybackState.STATE_BUFFERING
-                        || st == PlaybackState.STATE_CONNECTING
-                        || st == PlaybackState.STATE_FAST_FORWARDING || st == PlaybackState.STATE_REWINDING
-                        || st == PlaybackState.STATE_SKIPPING_TO_NEXT || st == PlaybackState.STATE_SKIPPING_TO_PREVIOUS) {
-                    return true;
-                }
-            }
+    private void clearMediaLine(String source) {
+        currentMediaNotificationKey = null;
+        // Reset the dedupe signature so that resuming the SAME track later is not
+        // mistaken for an unchanged state and silently skipped (which previously
+        // left the media row hidden until the player was swiped away and reopened).
+        lastMediaLineText = "";
+        lastMediaLineKey = "";
+        lastMediaIconSignature = "";
+        mediaView.setText("");
+        mediaIconView.setImageDrawable(null);
+        mediaRow.setVisibility(View.GONE);
+        rebuildNotificationIcons(source);
+    }
+
+    private static boolean isStoppedPlaybackState(PlaybackState state) {
+        if (state == null) {
+            return false;
         }
-        return false;
+        int st = state.getState();
+        return st == PlaybackState.STATE_STOPPED || st == PlaybackState.STATE_ERROR;
+    }
+
+    private static boolean isPlayingPlaybackState(PlaybackState state) {
+        if (state == null) {
+            return false;
+        }
+        int st = state.getState();
+        return st == PlaybackState.STATE_PLAYING
+                || st == PlaybackState.STATE_BUFFERING
+                || st == PlaybackState.STATE_CONNECTING
+                || st == PlaybackState.STATE_FAST_FORWARDING
+                || st == PlaybackState.STATE_REWINDING;
+    }
+
+    // True when the controller can produce a non-empty media line (either from a
+    // matching media notification or from its own metadata).
+    private boolean hasDisplayableMedia(MediaController controller) {
+        if (controller == null) {
+            return false;
+        }
+        StatusBarNotification notification = findMediaNotification(controller);
+        if (!TextUtils.isEmpty(formatMediaNotificationText(notification))) {
+            return true;
+        }
+        try {
+            return !TextUtils.isEmpty(formatMediaText(controller.getMetadata()));
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private MediaController chooseVisibleMediaController() {
+        // Prefer an actively playing session that also has displayable content.
         for (MediaController controller : mediaControllers) {
             if (controller == null) {
                 continue;
@@ -1596,15 +1619,23 @@ public final class PixelAodClockView extends FrameLayout {
             } catch (Throwable ignored) {
                 // Try the next controller.
             }
-            if (state == null) {
+            if (isPlayingPlaybackState(state) && hasDisplayableMedia(controller)) {
+                return controller;
+            }
+        }
+        // Otherwise fall back to a paused (or NONE-state) session that still holds a
+        // track, so the media line keeps showing instead of vanishing on pause.
+        for (MediaController controller : mediaControllers) {
+            if (controller == null) {
                 continue;
             }
-            int playbackState = state.getState();
-            if (playbackState == PlaybackState.STATE_PLAYING
-                    || playbackState == PlaybackState.STATE_BUFFERING
-                    || playbackState == PlaybackState.STATE_CONNECTING
-                    || playbackState == PlaybackState.STATE_FAST_FORWARDING
-                    || playbackState == PlaybackState.STATE_REWINDING) {
+            PlaybackState state = null;
+            try {
+                state = controller.getPlaybackState();
+            } catch (Throwable ignored) {
+                // Try the next controller.
+            }
+            if (!isStoppedPlaybackState(state) && hasDisplayableMedia(controller)) {
                 return controller;
             }
         }
@@ -2019,21 +2050,6 @@ public final class PixelAodClockView extends FrameLayout {
             }
         }
         return categoryCandidate != null ? categoryCandidate : packageCandidate;
-    }
-
-    private static StatusBarNotification latestMediaNotificationCandidate() {
-        synchronized (PixelAodClockView.class) {
-            StatusBarNotification latest = null;
-            for (StatusBarNotification sbn : mediaNotificationCache.values()) {
-                Notification notification = sbn != null ? sbn.getNotification() : null;
-                if (notification != null
-                        && (Notification.CATEGORY_TRANSPORT.equals(notification.category)
-                        || hasMediaSessionExtra(notification))) {
-                    latest = sbn;
-                }
-            }
-            return latest;
-        }
     }
 
     private static boolean hasMediaSessionExtra(Notification notification) {

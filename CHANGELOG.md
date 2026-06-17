@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.100] - 2026-06-17
+### Bug Fixes
+- **Fix AOD media info disappearing on pause**: The media row used to hide the moment playback left the PLAYING state and never reset its dedupe cache, so resuming the same track was skipped as "unchanged" and the row stayed hidden until the player was swiped away and reopened. Media visibility is now driven by whether the session still has a displayable track (any state except STOPPED/ERROR), and the cache is reset when the row is cleared. Verified on-device across play → pause → resume (PixelPlay reports both PAUSED and NONE on pause; both are now kept).
+### UI
+- **Settings app redesign (Material 3 / Expressive)**: Grouped cards (Appearance / Clock / Behavior / Advanced), larger rounded corners, dynamic color.
+- **Follow system light/dark theme** instead of a hardcoded light theme.
+- **Language switch (Follow system / 中文 / English)**, defaulting to the system language, applied via `attachBaseContext`.
+- Moved the "Restart SystemUI" action from a bottom button to a small restart icon in the top app bar.
+### Build
+- Bump Android Gradle Plugin to 8.6.0 and Compose BOM to 2026.05.01 (Material3 1.4.0), required by the Expressive components.
+
 ## [0.1.99f] - 2026-06-16
 ### Stability
 - Disable global `View#setVisibility` / `View#setAlpha` stock-clock hooks by default to avoid SystemUI-wide hot-path interception.
