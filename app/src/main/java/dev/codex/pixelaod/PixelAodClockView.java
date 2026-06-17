@@ -3273,7 +3273,7 @@ public final class PixelAodClockView extends FrameLayout {
                 return COMPACT_CLOCK_LETTER_SPACING;
             }
             float adjusted = COMPACT_CLOCK_LETTER_SPACING
-                    + ((targetWidth - currentWidth) / ((length - 1) * textSizePx));
+                    + ((targetWidth - currentWidth) / (length * textSizePx));
             return Math.max(-0.08f, Math.min(0.08f, adjusted));
         } catch (Throwable ignored) {
             return COMPACT_CLOCK_LETTER_SPACING;
