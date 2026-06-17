@@ -191,7 +191,7 @@ private fun SettingsContent(
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, false))
     }
     val pocketMode = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_POCKET_MODE, false))
+        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_POCKET_MODE, true))
     }
     val weatherIconPack = remember {
         mutableStateOf(prefs.getString(PixelAodSettings.KEY_WEATHER_ICON_PACK, "") ?: "")
@@ -474,15 +474,15 @@ private fun getAvailableIconPacks(context: Context): List<Pair<String, String>> 
     val packs = mutableListOf<Pair<String, String>>()
     packs.add("" to context.getString(R.string.default_weather_icon_pack))
     val pm = context.packageManager
-    
+
     val intents = listOf(
         Intent("org.breezyweather.ICON_PROVIDER"),
         Intent("com.dvtonder.chronus.ICON_PACK"),
         Intent("com.dvtonder.chronus.ICON_PACK_THEME")
     )
-    
+
     val allPackages = mutableSetOf<String>()
-    
+
     for (intent in intents) {
         val resolveInfos = pm.queryIntentActivities(intent, 0) + pm.queryBroadcastReceivers(intent, 0)
         for (info in resolveInfos) {

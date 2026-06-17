@@ -2148,7 +2148,8 @@ final class PixelAodHook {
                 return true;
             }
 
-            if (looksLikeOplusKeyguardBigClock(marker)) {
+            if (looksLikeOplusKeyguardBigClock(marker)
+                    || isStockKeyguardClockDrawCandidate(marker, view)) {
                 hideView(view, marker);
                 return false;
             }
