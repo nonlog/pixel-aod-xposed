@@ -171,12 +171,14 @@ final class PixelAodHook {
         if (isChargingUiView(view)) {
             return false;
         }
-        if (PixelAodClockView.isDeviceInteractive(context)) {
+        boolean interactive = PixelAodClockView.isDeviceInteractive(context);
+        if (interactive && !PixelLockscreenClockView.isSystemKeyguardLocked(context)) {
             return false;
         }
         String marker = markerFor(view);
         boolean suppress = false;
         if (isStockAodDrawCandidate(marker, view)
+                || isStockKeyguardClockDrawCandidate(marker, view)
                 || looksLikePluginBatteryView(marker)
                 || looksLikePluginNotificationView(marker)) {
             suppress = true;
