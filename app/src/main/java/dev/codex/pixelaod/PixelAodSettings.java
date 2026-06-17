@@ -14,6 +14,7 @@ public final class PixelAodSettings {
     public static final String KEY_SKIP_DOZE_OFF_STATE = "skip_doze_off_state";
     public static final String KEY_LOCKSCREEN_CLOCK = "lockscreen_clock";
     public static final String KEY_WEATHER = "weather";
+    public static final String KEY_WEATHER_ICON_PACK = "weather_icon_pack";
     public static final String KEY_NOTIFICATION_ICONS = "notification_icons";
     public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY = "lockscreen_notification_policy";
     public static final String KEY_DEBUG_LOGGING = "debug_logging";

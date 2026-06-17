@@ -7,8 +7,10 @@
     <string name="desc_skip_doze_off_state">Experimental: skip AOD entry black and suspend states</string>
     <string name="title_lockscreen_clock">Lockscreen Clock</string>
     <string name="desc_lockscreen_clock">Unified lockscreen &amp; AOD style</string>
-    <string name="title_weather">Weather Info</string>
+    <string name="title_weather">Weather</string>
     <string name="desc_weather">Breezy Weather / Gadgetbridge</string>
+    <string name="title_weather_icon_pack">Weather Icon Pack</string>
+    <string name="default_weather_icon_pack">Default (Built-in)</string>
     <string name="title_notification_icons">Notification Icons</string>
     <string name="desc_notification_icons">Monochrome AOD icons</string>
     <string name="title_lockscreen_policy">Lockscreen Policy</string>

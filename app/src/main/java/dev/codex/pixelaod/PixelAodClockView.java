@@ -2747,6 +2747,125 @@ public final class PixelAodClockView extends FrameLayout {
         return textView;
     }
 
+    private static Drawable getExternalWeatherIconDrawable(Context context, int weatherCode) {
+        String packageName = PixelAodSettings.getString(context, PixelAodSettings.KEY_WEATHER_ICON_PACK, "");
+        if (TextUtils.isEmpty(packageName)) {
+            return null;
+        }
+        try {
+            PackageManager pm = context.getPackageManager();
+            android.content.res.Resources res = pm.getResourcesForApplication(packageName);
+
+            java.util.Calendar c = java.util.Calendar.getInstance();
+            int hour = c.get(java.util.Calendar.HOUR_OF_DAY);
+            boolean isNight = hour < 6 || hour >= 18;
+            String breezyName = getBreezyWeatherIconName(weatherCode, isNight);
+
+            int xmlId = 0;
+            try {
+                android.content.pm.ApplicationInfo appInfo = pm.getApplicationInfo(packageName, PackageManager.GET_META_DATA);
+                if (appInfo.metaData != null && appInfo.metaData.containsKey("org.breezyweather.DRAWABLE_FILTER")) {
+                    xmlId = appInfo.metaData.getInt("org.breezyweather.DRAWABLE_FILTER", 0);
+                }
+            } catch (Exception e) {
+                // Ignore
+            }
+            if (xmlId == 0) {
+                xmlId = res.getIdentifier("drawable_filter", "xml", packageName);
+            }
+
+            if (xmlId != 0) {
+                try (android.content.res.XmlResourceParser parser = res.getXml(xmlId)) {
+                    int eventType = parser.getEventType();
+                    String mappedName = null;
+                    while (eventType != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+                        if (eventType == org.xmlpull.v1.XmlPullParser.START_TAG && "item".equals(parser.getName())) {
+                            String name = parser.getAttributeValue(null, "name");
+                            if (breezyName.equals(name)) {
+                                mappedName = parser.getAttributeValue(null, "value");
+                                break;
+                            }
+                        }
+                        eventType = parser.next();
+                    }
+                    if (mappedName != null) {
+                        int resId = res.getIdentifier(mappedName, "drawable", packageName);
+                        if (resId != 0) {
+                            return res.getDrawable(resId, null);
+                        }
+                    }
+                } catch (Exception e) {
+                    PixelAodLog.e("Failed to parse drawable_filter.xml", e);
+                }
+            }
+
+            int directId = res.getIdentifier(breezyName, "drawable", packageName);
+            if (directId != 0) {
+                return res.getDrawable(directId, null);
+            }
+
+            int chronusCode = getChronusWeatherCode(weatherCode, isNight);
+            String[] prefixes = {"weather_", "ic_weather_", "condition_", "outline_", "color_"};
+            for (String prefix : prefixes) {
+                int resId = res.getIdentifier(prefix + chronusCode, "drawable", packageName);
+                if (resId != 0) {
+                    return res.getDrawable(resId, null);
+                }
+            }
+
+            int fallbackId = res.getIdentifier("weather_na", "drawable", packageName);
+            if (fallbackId == 0) fallbackId = res.getIdentifier("weather_0", "drawable", packageName);
+            if (fallbackId != 0) return res.getDrawable(fallbackId, null);
+
+        } catch (Exception e) {
+            PixelAodLog.e("Failed to load external weather icon from " + packageName, e);
+        }
+        return null;
+    }
+
+    private static String getBreezyWeatherIconName(int code, boolean isNight) {
+        String suffix = isNight ? "_night" : "_day";
+        if (code >= 200 && code < 300) return "weather_thunderstorm" + suffix;
+        if (code >= 300 && code < 400) return "weather_rain" + suffix;
+        if (code >= 500 && code < 600) {
+            if (code == 511 || code == 512) return "weather_sleet" + suffix;
+            return "weather_rain" + suffix;
+        }
+        if (code >= 600 && code < 700) {
+            if (code == 611 || code == 612 || code == 615 || code == 616) return "weather_sleet" + suffix;
+            return "weather_snow" + suffix;
+        }
+        if (code == 701 || code == 741) return "weather_fog" + suffix;
+        if (code == 711 || code == 721 || code == 731 || code == 751 || code == 761 || code == 762) return "weather_haze" + suffix;
+        if (code == 771 || code == 781) return "weather_wind" + suffix;
+        if (code == 800) return "weather_clear" + suffix;
+        if (code == 801 || code == 802) return "weather_partly_cloudy" + suffix;
+        if (code == 803 || code == 804) return "weather_cloudy" + suffix;
+        return "weather_cloudy" + suffix;
+    }
+
+    private static int getChronusWeatherCode(int code, boolean isNight) {
+        if (code >= 200 && code < 300) return 4;
+        if (code >= 300 && code < 400) return 9;
+        if (code >= 500 && code < 600) {
+            if (code == 511) return 10;
+            return 11;
+        }
+        if (code >= 600 && code < 700) {
+            if (code == 611 || code == 612 || code == 615 || code == 616) return 18;
+            return 16;
+        }
+        if (code == 701 || code == 741) return 20;
+        if (code == 711) return 22;
+        if (code == 721) return 21;
+        if (code == 731 || code == 751 || code == 761 || code == 762) return 19;
+        if (code == 771 || code == 781) return 24;
+        if (code == 800) return isNight ? 31 : 32;
+        if (code == 801 || code == 802) return isNight ? 29 : 30;
+        if (code == 803 || code == 804) return 26;
+        return 3200;
+    }
+
     static void applyWeatherIcon(TextView textView, WeatherSnapshot weather, int color) {
         if (textView == null) {
             return;
@@ -2757,7 +2876,13 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         int size = dp(textView.getContext(), WEATHER_ICON_SIZE_DP);
-        WeatherIconDrawable drawable = new WeatherIconDrawable(weather.weatherCode, color);
+        Drawable drawable = getExternalWeatherIconDrawable(textView.getContext(), weather.weatherCode);
+        if (drawable == null) {
+            drawable = new WeatherIconDrawable(weather.weatherCode, color);
+        } else {
+            // Unlink original to avoid mutating shared state across views
+            drawable = drawable.mutate();
+        }
         drawable.setBounds(0, 0, size, size);
         textView.setCompoundDrawablePadding(dp(textView.getContext(), WEATHER_ICON_PADDING_DP));
         textView.setCompoundDrawablesRelative(null, null, drawable, null);

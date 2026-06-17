@@ -62,6 +62,8 @@ public final class PixelAodSettingsProvider extends ContentProvider {
                 prefs.getString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, "22:00"));
         putString(cursor, PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME,
                 prefs.getString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, "07:00"));
+        putString(cursor, PixelAodSettings.KEY_WEATHER_ICON_PACK,
+                prefs.getString(PixelAodSettings.KEY_WEATHER_ICON_PACK, ""));
         return cursor;
     }
 

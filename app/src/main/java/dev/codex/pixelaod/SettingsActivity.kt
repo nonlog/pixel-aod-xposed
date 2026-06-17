@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
@@ -190,7 +191,10 @@ private fun SettingsContent(
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, false))
     }
     val pocketMode = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_POCKET_MODE, true))
+        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_POCKET_MODE, false))
+    }
+    val weatherIconPack = remember {
+        mutableStateOf(prefs.getString(PixelAodSettings.KEY_WEATHER_ICON_PACK, "") ?: "")
     }
     val aodScheduleEnabled = remember {
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, false))
@@ -242,6 +246,7 @@ private fun SettingsContent(
     }
 
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showIconPackDialog by remember { mutableStateOf(false) }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(18.dp)) {
         SettingsSection(stringResource(R.string.section_appearance)) {
@@ -299,6 +304,18 @@ private fun SettingsContent(
             ToggleCard(Icons.Outlined.Cloud, stringResource(R.string.title_weather), stringResource(R.string.desc_weather), weather.value) {
                 weather.value = it
                 prefs.edit().putBoolean(PixelAodSettings.KEY_WEATHER, it).apply()
+            }
+            if (weather.value) {
+                val availablePacks = remember { getAvailableIconPacks(context) }
+                val currentLabel = availablePacks.find { it.first == weatherIconPack.value }?.second ?: stringResource(R.string.default_weather_icon_pack)
+
+                ChoiceCard(
+                    icon = Icons.Outlined.Cloud,
+                    title = stringResource(R.string.title_weather_icon_pack),
+                    valueText = currentLabel
+                ) {
+                    showIconPackDialog = true
+                }
             }
             ToggleCard(Icons.Outlined.Notifications, stringResource(R.string.title_notification_icons), stringResource(R.string.desc_notification_icons), notificationIcons.value) {
                 notificationIcons.value = it
@@ -362,6 +379,22 @@ private fun SettingsContent(
             }
         )
     }
+
+    if (showIconPackDialog) {
+        val availablePacks = remember { getAvailableIconPacks(context) }
+        IconPackDialog(
+            current = weatherIconPack.value,
+            options = availablePacks,
+            onDismiss = { showIconPackDialog = false },
+            onSelected = { selected ->
+                showIconPackDialog = false
+                if (selected != weatherIconPack.value) {
+                    weatherIconPack.value = selected
+                    prefs.edit().putString(PixelAodSettings.KEY_WEATHER_ICON_PACK, selected).apply()
+                }
+            }
+        )
+    }
 }
 
 private fun restartSystemUi(context: Context) {
@@ -406,6 +439,77 @@ private fun LanguageDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.title_language)) },
+        text = {
+            Column {
+                options.forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = value == current,
+                                onClick = { onSelected(value) }
+                            )
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = value == current,
+                            onClick = { onSelected(value) }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(label, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        }
+    )
+}
+
+private fun getAvailableIconPacks(context: Context): List<Pair<String, String>> {
+    val packs = mutableListOf<Pair<String, String>>()
+    packs.add("" to context.getString(R.string.default_weather_icon_pack))
+    val pm = context.packageManager
+    
+    val intents = listOf(
+        Intent("org.breezyweather.ICON_PROVIDER"),
+        Intent("com.dvtonder.chronus.ICON_PACK"),
+        Intent("com.dvtonder.chronus.ICON_PACK_THEME")
+    )
+    
+    val allPackages = mutableSetOf<String>()
+    
+    for (intent in intents) {
+        val resolveInfos = pm.queryIntentActivities(intent, 0) + pm.queryBroadcastReceivers(intent, 0)
+        for (info in resolveInfos) {
+            val packageName = info.activityInfo?.packageName ?: continue
+            if (allPackages.add(packageName)) {
+                try {
+                    val appInfo = pm.getApplicationInfo(packageName, 0)
+                    val label = pm.getApplicationLabel(appInfo).toString()
+                    packs.add(packageName to label)
+                } catch (e: Exception) {
+                }
+            }
+        }
+    }
+    return packs
+}
+
+@Composable
+private fun IconPackDialog(
+    current: String,
+    options: List<Pair<String, String>>,
+    onDismiss: () -> Unit,
+    onSelected: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.title_weather_icon_pack)) },
         text = {
             Column {
                 options.forEach { (value, label) ->

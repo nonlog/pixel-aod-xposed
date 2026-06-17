@@ -9,6 +9,8 @@
     <string name="desc_lockscreen_clock">锁屏与 AOD 统一样式</string>
     <string name="title_weather">天气信息</string>
     <string name="desc_weather">Breezy Weather / Gadgetbridge</string>
+    <string name="title_weather_icon_pack">天气图标包</string>
+    <string name="default_weather_icon_pack">默认 (内置单色)</string>
     <string name="title_notification_icons">通知图标</string>
     <string name="desc_notification_icons">AOD 单色通知图标</string>
     <string name="title_lockscreen_policy">锁屏通知策略</string>
