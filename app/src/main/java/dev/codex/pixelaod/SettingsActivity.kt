@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
@@ -132,7 +135,7 @@ private fun PixelAodSettingsScreen(onLanguageChanged: () -> Unit) {
                             containerColor = MaterialTheme.colorScheme.surface
                         ),
                         actions = {
-                            IconButton(onClick = { restartSystemUi() }) {
+                            IconButton(onClick = { restartSystemUi(context) }) {
                                 Icon(
                                     Icons.Outlined.RestartAlt,
                                     contentDescription = stringResource(R.string.restart_systemui),
@@ -361,12 +364,25 @@ private fun SettingsContent(
     }
 }
 
-private fun restartSystemUi() {
-    try {
-        Runtime.getRuntime().exec(arrayOf("su", "-c", "pkill -f com.android.systemui"))
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
+private fun restartSystemUi(context: Context) {
+    val appContext = context.applicationContext
+    Thread {
+        val messageRes = try {
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "pkill -f com.android.systemui"))
+            val exitCode = process.waitFor()
+            if (exitCode == 0) {
+                R.string.restart_systemui_success
+            } else {
+                R.string.restart_systemui_failed
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            R.string.restart_systemui_failed
+        }
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(appContext, appContext.getString(messageRes), Toast.LENGTH_SHORT).show()
+        }
+    }.start()
 }
 
 @Composable
@@ -465,7 +481,7 @@ private fun ToggleCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            Switch(checked = checked, onCheckedChange = null)
         }
     }
 }

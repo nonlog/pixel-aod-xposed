@@ -19,6 +19,8 @@
     <string name="title_aod_weight">AOD Weight</string>
     <string name="title_lockscreen_weight">Lockscreen Weight</string>
     <string name="restart_systemui">Restart SystemUI (Needs Root)</string>
+    <string name="restart_systemui_success">Requested SystemUI restart</string>
+    <string name="restart_systemui_failed">Failed to restart SystemUI</string>
     <string name="title_pocket_mode">Pocket Mode</string>
     <string name="desc_pocket_mode">Stop displaying AOD when device is in a pocket or proximity sensor is covered</string>
     <string name="title_aod_schedule">AOD Schedule</string>

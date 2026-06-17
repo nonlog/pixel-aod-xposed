@@ -1587,7 +1587,24 @@ public final class PixelAodClockView extends FrameLayout {
                 || st == PlaybackState.STATE_BUFFERING
                 || st == PlaybackState.STATE_CONNECTING
                 || st == PlaybackState.STATE_FAST_FORWARDING
-                || st == PlaybackState.STATE_REWINDING;
+                || st == PlaybackState.STATE_REWINDING
+                || st == PlaybackState.STATE_SKIPPING_TO_NEXT
+                || st == PlaybackState.STATE_SKIPPING_TO_PREVIOUS
+                || st == PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM;
+    }
+
+    private static boolean isPausedPlaybackState(PlaybackState state) {
+        if (state == null) {
+            return false;
+        }
+        return state.getState() == PlaybackState.STATE_PAUSED;
+    }
+
+    private static boolean isNonePlaybackState(PlaybackState state) {
+        if (state == null) {
+            return false;
+        }
+        return state.getState() == PlaybackState.STATE_NONE;
     }
 
     // True when the controller can produce a non-empty media line (either from a
@@ -1607,6 +1624,19 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    private boolean shouldKeepInactiveMediaController(MediaController controller, PlaybackState state) {
+        if (controller == null || isStoppedPlaybackState(state) || !hasDisplayableMedia(controller)) {
+            return false;
+        }
+        if (isPausedPlaybackState(state)) {
+            return true;
+        }
+        if (isNonePlaybackState(state) || state == null) {
+            return findMediaNotification(controller) != null;
+        }
+        return false;
+    }
+
     private MediaController chooseVisibleMediaController() {
         // Prefer an actively playing session that also has displayable content.
         for (MediaController controller : mediaControllers) {
@@ -1623,8 +1653,9 @@ public final class PixelAodClockView extends FrameLayout {
                 return controller;
             }
         }
-        // Otherwise fall back to a paused (or NONE-state) session that still holds a
-        // track, so the media line keeps showing instead of vanishing on pause.
+        // Otherwise keep a paused session, or an idle/null-state session only while
+        // it still has a matching notification. This avoids stale metadata lingering
+        // after the player has already torn down its media notification.
         for (MediaController controller : mediaControllers) {
             if (controller == null) {
                 continue;
@@ -1635,7 +1666,7 @@ public final class PixelAodClockView extends FrameLayout {
             } catch (Throwable ignored) {
                 // Try the next controller.
             }
-            if (!isStoppedPlaybackState(state) && hasDisplayableMedia(controller)) {
+            if (shouldKeepInactiveMediaController(controller, state)) {
                 return controller;
             }
         }
