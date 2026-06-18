@@ -577,6 +577,9 @@ public final class PixelAodClockView extends FrameLayout {
                     }
                 }
             }
+            if (active) {
+                PixelAodHook.refreshKnownAodHostVisibility(source + "#active");
+            }
         });
         PixelAodLog.log("Pixel AOD active=" + active + " changed=" + changed
                 + " source=" + source
@@ -643,6 +646,12 @@ public final class PixelAodClockView extends FrameLayout {
             if (TextUtils.isEmpty(lastAodTraceId)) {
                 startAodTraceLocked("auto");
             }
+            return lastAodTraceId;
+        }
+    }
+
+    static String peekAodTraceId() {
+        synchronized (PixelAodClockView.class) {
             return lastAodTraceId;
         }
     }

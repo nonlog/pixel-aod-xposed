@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.108] - 2026-06-18
+### Bug Fixes
+- Guard the delayed stock AOD/keyguard restore with the originating AOD trace and refresh known host visibility after AOD activation, preventing an old transition from resurrecting stock AOD views into a new cycle.
+
 ## [0.1.107] - 2026-06-18
 ### Diagnostics
 - Remove the 60-per-minute debug log throttle and keep full AOD / lockscreen decision traces, including trace ids, state snapshots, transition reasons, and notification rebuild decisions.

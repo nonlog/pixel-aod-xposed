@@ -13,6 +13,7 @@ import android.view.Display;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
+import android.text.TextUtils;
 import android.widget.TextView;
 
 import java.lang.reflect.Array;
@@ -880,16 +881,19 @@ final class PixelAodHook {
             }), boolean.class);
             ModernHookBridge.hookBefore(recordClass, "onDreamingStopped",
                     param -> runAtFrontOfMain(() -> {
-                        PixelLockscreenClockView.prepareAodToLockscreenTransition(
-                                "AodRecord#onDreamingStopped");
-                        PixelAodClockView.hideAllAodOverlays("AodRecord#onDreamingStopped");
+                        String transitionSource = "AodRecord#onDreamingStopped";
+                        PixelLockscreenClockView.prepareAodToLockscreenTransition(transitionSource);
+                        PixelAodClockView.hideAllAodOverlays(transitionSource);
+                        String transitionTrace = PixelAodClockView.peekAodTraceId();
+                        PixelAodLog.log("AodRecord#onDreamingStopped trace=" + transitionTrace
+                                + " state={" + PixelAodClockView.describeAodState(null) + "}");
                         PixelAodClockView.stopAllInstances();
                         restoreAdjustedStatusViews();
                         if (PixelLockscreenClockView.shouldShowOnKnownContext()) {
-                            applyLockscreenClockReplacementFromLastHosts("AodRecord#onDreamingStopped");
+                            applyLockscreenClockReplacementFromLastHosts(transitionSource);
                         } else {
-                            suppressSystemAodDuringLockscreenTransition("AodRecord#onDreamingStopped");
-                            restoreHiddenStockViewsAfterTransition("AodRecord#onDreamingStopped");
+                            suppressSystemAodDuringLockscreenTransition(transitionSource);
+                            restoreHiddenStockViewsAfterTransition(transitionSource, transitionTrace);
                         }
                     }));
             PixelAodLog.log("hooked " + AOD_RECORD + " lifecycle/root");
@@ -1565,6 +1569,29 @@ final class PixelAodHook {
         });
     }
 
+    static void refreshKnownAodHostVisibility(String source) {
+        runAtFrontOfMain(() -> {
+            ViewGroup stockHost = lastStockHost.get();
+            ViewGroup pixelHost = lastPixelHost.get();
+            ViewGroup shadeHost = lastShadeHost.get();
+            ViewGroup host = stockHost != null ? stockHost : pixelHost != null ? pixelHost : shadeHost;
+            Context context = host != null ? host.getContext() : null;
+            String trace = PixelAodClockView.peekAodTraceId();
+            String state = context != null ? PixelAodClockView.describeAodState(context) : "context=null";
+            PixelAodLog.log("refreshing known AOD host visibility source=" + source
+                    + " stockHost=" + hostSummary(stockHost)
+                    + " pixelHost=" + hostSummary(pixelHost)
+                    + " shadeHost=" + hostSummary(shadeHost)
+                    + " host=" + hostSummary(host)
+                    + " trace=" + trace
+                    + " state={" + state + "}");
+            if (host == null || context == null) {
+                return;
+            }
+            handleClockHost(context, host, source + "#refresh");
+        });
+    }
+
     private static boolean shouldTouchLockscreenHost(ViewGroup host) {
         long now = android.os.SystemClock.uptimeMillis();
         synchronized (LOCKSCREEN_HOST_TOUCH_TIMES) {
@@ -2131,11 +2158,26 @@ final class PixelAodHook {
         });
     }
 
-    private static void restoreHiddenStockViewsAfterTransition(String source) {
+    private static void restoreHiddenStockViewsAfterTransition(String source, String expectedTrace) {
         MAIN.postDelayed(() -> {
-            Context context = null;
             ViewGroup pixelHost = lastPixelHost.get();
             ViewGroup stockHost = lastStockHost.get();
+            String currentTrace = PixelAodClockView.peekAodTraceId();
+            if (!TextUtils.isEmpty(expectedTrace)
+                    && !TextUtils.equals(expectedTrace, currentTrace)) {
+                Context context = pixelHost != null ? pixelHost.getContext()
+                        : stockHost != null ? stockHost.getContext() : null;
+                String state = context != null ? PixelAodClockView.describeAodState(context)
+                        : "context=null";
+                PixelAodLog.log("skipped restoring stock AOD/keyguard views after transition from "
+                        + source + " reason=trace-mismatch expectedTrace=" + expectedTrace
+                        + " currentTrace=" + currentTrace
+                        + " stockHost=" + hostSummary(stockHost)
+                        + " pixelHost=" + hostSummary(pixelHost)
+                        + " state={" + state + "}");
+                return;
+            }
+            Context context = null;
             if (pixelHost != null) {
                 context = pixelHost.getContext();
             } else if (stockHost != null) {
@@ -2146,14 +2188,16 @@ final class PixelAodHook {
                 PixelAodLog.log("kept stock AOD/keyguard views hidden after transition from "
                         + source + " stockHost=" + hostSummary(stockHost)
                         + " pixelHost=" + hostSummary(pixelHost)
-                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " trace=" + currentTrace
+                        + " expectedTrace=" + expectedTrace
                         + " state={" + PixelAodClockView.describeAodState(context) + "}");
                 return;
             }
             PixelAodLog.log("restoring stock AOD/keyguard views after transition from " + source
                     + " stockHost=" + hostSummary(stockHost)
                     + " pixelHost=" + hostSummary(pixelHost)
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " trace=" + currentTrace
+                    + " expectedTrace=" + expectedTrace
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
             restoreHiddenStockViews();
         }, 900L);
