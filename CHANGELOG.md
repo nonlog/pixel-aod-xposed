@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.104] - 2026-06-18
+### Bug Fixes
+- Fallback third-party push notifications to the original tinted small icon on AOD when the app does not provide a monochrome adaptive icon, so blocky/tiny icons such as Taobao no longer disappear from AOD.
+
 ## [0.1.103] - 2026-06-18
 ### Diagnostics
 - Added low-noise AOD suppression trace logs for entry-state snapshots, stock hide passes, and transition restore decisions to help diagnose intermittent system AOD overlap.

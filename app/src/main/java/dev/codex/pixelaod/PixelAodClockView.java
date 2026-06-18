@@ -2288,9 +2288,13 @@ public final class PixelAodClockView extends FrameLayout {
                     logNotificationIconChoice(sbn.getPackageName(), "app-monochrome-fallback");
                     return monochrome;
                 }
+                Drawable tinted = drawable.mutate();
+                tinted.setTint(resolveMaterialInfoColor(context));
+                tinted.setTintMode(PorterDuff.Mode.SRC_IN);
                 logNotificationIconChoice(sbn.getPackageName(),
-                        "dropped-blocky-smallIcon filled=" + filledMask + " tiny=" + tinyForeground);
-                return null;
+                        "app-original-tint-fallback filled=" + filledMask
+                                + " tiny=" + tinyForeground);
+                return tinted;
             }
             Drawable mutated = drawable.mutate();
             mutated.setTint(resolveMaterialInfoColor(context));
