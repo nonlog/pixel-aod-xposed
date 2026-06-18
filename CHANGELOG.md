@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.106] - 2026-06-18
+### Bug Fixes
+- Replace the self-drawn USB and tether/hotspot notification icons with native AOSP system drawables loaded from framework resources.
+- Remove the self-drawn module update glyph and keep module-package notifications logged when they are filtered out of lockscreen/AOD visibility.
+
 ## [0.1.105] - 2026-06-18
 ### Bug Fixes
 - Third-party AOD notifications without a monochrome icon now fall back to the application's launcher icon instead of tinting the raw small icon into a white block.

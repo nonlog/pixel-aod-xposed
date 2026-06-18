@@ -1038,6 +1038,10 @@ final class PixelAodHook {
         boolean testNotification = MODULE_PACKAGE.equals(pkg)
                 && TestNotificationReceiver.TEST_TAG.equals(sbn.getTag());
         if (MODULE_PACKAGE.equals(pkg) && !testNotification) {
+            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+                    + " key=" + sbn.getKey()
+                    + " source=" + source
+                    + " reason=module-package-not-test-notification");
             return false;
         }
         if ("android".equals(pkg) || "com.android.systemui".equals(pkg)) {
