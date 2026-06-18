@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.105] - 2026-06-18
+### Bug Fixes
+- Third-party AOD notifications without a monochrome icon now fall back to the application's launcher icon instead of tinting the raw small icon into a white block.
+
 ## [0.1.104] - 2026-06-18
 ### Bug Fixes
 - Fallback third-party push notifications to the original tinted small icon on AOD when the app does not provide a monochrome adaptive icon, so blocky/tiny icons such as Taobao no longer disappear from AOD.
