@@ -583,7 +583,8 @@ public final class PixelAodClockView extends FrameLayout {
             }
         });
         if (changed) {
-            PixelAodLog.log("Pixel AOD active=" + active + " source=" + source);
+            PixelAodLog.log("Pixel AOD active=" + active + " source=" + source
+                    + " state={" + describeAodState(appContext) + "}");
         }
     }
 
@@ -591,6 +592,40 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             return aodActive;
         }
+    }
+
+    static String describeAodState(Context context) {
+        long now = SystemClock.uptimeMillis();
+        boolean active;
+        long screenOffAt;
+        long aodActivatedAt;
+        long overlayVisibleAt;
+        synchronized (PixelAodClockView.class) {
+            active = aodActive;
+            screenOffAt = lastScreenOffAt;
+            aodActivatedAt = lastAodActivatedAt;
+            overlayVisibleAt = lastAodOverlayVisibleAt;
+        }
+        int displayState = currentDisplayState(context);
+        boolean interactive = isDeviceInteractive(context);
+        boolean displayAod = displayState == Display.STATE_DOZE
+                || displayState == Display.STATE_DOZE_SUSPEND;
+        boolean entryDelay = isAllowedAodEntryDelay(now, screenOffAt)
+                || isAllowedAodEntryDelay(now, aodActivatedAt);
+        boolean graceWindow = isAllowedAodEntryAge(now, screenOffAt)
+                || isAllowedAodEntryAge(now, aodActivatedAt);
+        boolean customizeNow = context != null
+                && !interactive
+                && (displayAod || entryDelay || (active && graceWindow));
+        return "active=" + active
+                + " customizeNow=" + customizeNow
+                + " interactive=" + interactive
+                + " display=" + displayStateLabel(displayState)
+                + " screenOffAgeMs=" + ageSince(now, screenOffAt)
+                + " aodAgeMs=" + ageSince(now, aodActivatedAt)
+                + " overlayAgeMs=" + ageSince(now, overlayVisibleAt)
+                + " entryDelay=" + entryDelay
+                + " graceWindow=" + graceWindow;
     }
 
     static void hideAllAodOverlays(String source) {
@@ -611,7 +646,8 @@ public final class PixelAodClockView extends FrameLayout {
                     view.stop();
                 }
             }
-            PixelAodLog.log("hid Pixel AOD overlays from " + source + " count=" + hidden);
+            PixelAodLog.log("hid Pixel AOD overlays from " + source + " count=" + hidden
+                    + " state={" + describeAodState(appContext) + "}");
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
             task.run();
@@ -744,7 +780,15 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static boolean isDisplayInAodState(Context context) {
+        int state = currentDisplayState(context);
+        return state == Display.STATE_DOZE || state == Display.STATE_DOZE_SUSPEND;
+    }
+
+    private static int currentDisplayState(Context context) {
         try {
+            if (context == null) {
+                return -1;
+            }
             Display display = null;
             if (Build.VERSION.SDK_INT >= 30) {
                 display = context.getDisplay();
@@ -757,13 +801,35 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
             if (display == null) {
-                return true;
+                return -1;
             }
-            int state = display.getState();
-            return state == Display.STATE_DOZE || state == Display.STATE_DOZE_SUSPEND;
+            return display.getState();
         } catch (Throwable ignored) {
-            return true;
+            return -1;
         }
+    }
+
+    private static String displayStateLabel(int state) {
+        switch (state) {
+            case Display.STATE_OFF:
+                return "OFF(" + state + ")";
+            case Display.STATE_ON:
+                return "ON(" + state + ")";
+            case Display.STATE_DOZE:
+                return "DOZE(" + state + ")";
+            case Display.STATE_DOZE_SUSPEND:
+                return "DOZE_SUSPEND(" + state + ")";
+            default:
+                return "STATE_" + state;
+        }
+    }
+
+    private static long ageSince(long now, long then) {
+        if (then <= 0L) {
+            return -1L;
+        }
+        long age = now - then;
+        return age >= 0L ? age : -1L;
     }
 
     static void updateRankingMap(NotificationListenerService.RankingMap rankingMap) {
