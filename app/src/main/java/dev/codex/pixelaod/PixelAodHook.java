@@ -64,7 +64,7 @@ final class PixelAodHook {
     private static final boolean ENABLE_NOTIFICATION_VIEW_REFLECTION_DUMP = false;
     private static final boolean ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS = false;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
-    private static final Set<String> LOGGED_STATUS_CLASSES = new HashSet<>();
+    private static final Set<String> LOGGED_INSPECTION_CLASSES = java.util.Collections.synchronizedSet(new HashSet<>());
     private static final Set<String> LOGGED_VIEW_TREE_KEYS = new HashSet<>();
     private static final Set<String> HOOKED_NOTIFICATION_VIEW_CLASSES = new HashSet<>();
     private static final Set<View> INSPECTED_PLUGIN_NOTIFICATION_VIEWS =
@@ -80,9 +80,6 @@ final class PixelAodHook {
     private static final Pattern NOTIFICATION_CLOCK_TIME_PATTERN =
             Pattern.compile("\\b\\d{1,2}:\\d{2}\\b");
     private static NotificationListenerService lastNotificationListener;
-    private static int listenerRefreshLogCount;
-    private static int stockDrawSuppressionLogCount;
-    private static int aodStateRewriteLogCount;
     private static WeakReference<ViewGroup> lastStockHost = new WeakReference<>(null);
     private static WeakReference<ViewGroup> lastPixelHost = new WeakReference<>(null);
     private static WeakReference<ViewGroup> lastShadeHost = new WeakReference<>(null);
@@ -195,10 +192,9 @@ final class PixelAodHook {
             return false;
         }
         view.setAlpha(0f);
-        if (stockDrawSuppressionLogCount < 20) {
-            stockDrawSuppressionLogCount++;
-            PixelAodLog.log("suppressed stock clock draw " + marker);
-        }
+        PixelAodLog.log("suppressed stock clock draw marker=" + marker
+                + " trace=" + PixelAodClockView.currentAodTraceId()
+                + " state={" + PixelAodClockView.describeAodState(context) + "}");
         return true;
     }
 
@@ -277,12 +273,6 @@ final class PixelAodHook {
             return;
         }
         String marker = markerFor(view);
-        String key = "stockSuppressMiss|" + path + "|" + reason + "|" + marker;
-        synchronized (LOGGED_STATUS_CLASSES) {
-            if (!LOGGED_STATUS_CLASSES.add(key)) {
-                return;
-            }
-        }
         PixelAodLog.log("stock suppression miss path=" + path
                 + " reason=" + reason
                 + " marker=" + marker
@@ -660,19 +650,17 @@ final class PixelAodHook {
             return;
         }
         lastNotificationListener = (NotificationListenerService) candidate;
-        if (LOGGED_STATUS_CLASSES.add("listener|" + candidate.getClass().getName())) {
-            PixelAodLog.log("remembered notification listener from " + source
-                    + " class=" + candidate.getClass().getName());
-        }
+        PixelAodLog.log("remembered notification listener from " + source
+                + " class=" + candidate.getClass().getName()
+                + " trace=" + PixelAodClockView.currentAodTraceId()
+                + " state={" + PixelAodClockView.describeAodState(null) + "}");
     }
 
     private static void refreshNotificationsFromLastListener(String source) {
         NotificationListenerService service = lastNotificationListener;
         if (service == null) {
-            if (listenerRefreshLogCount < 6) {
-                listenerRefreshLogCount++;
-                PixelAodLog.log("no cached notification listener for " + source);
-            }
+            PixelAodLog.log("no cached notification listener for " + source
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
             return;
         }
         publishNotificationsFromListener(service, source);
@@ -700,7 +688,9 @@ final class PixelAodHook {
             PixelAodClockView.setActiveNotifications(notifications);
             PixelAodClockView.setMediaNotificationCandidates(notifications, source);
             PixelAodLog.log("captured active notifications from " + source
-                    + " count=" + notifications.length);
+                    + " count=" + notifications.length
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(null) + "}");
         } catch (Throwable t) {
             PixelAodLog.log("failed to capture active notifications from " + source, t);
         }
@@ -715,10 +705,12 @@ final class PixelAodHook {
             }
             PixelAodClockView.setActiveNotifications(snapshot);
             PixelAodClockView.cacheMediaNotificationCandidate(sbn, source);
-            if (LOGGED_STATUS_CLASSES.add("fallbackNotification|" + source)) {
-                PixelAodLog.log("cached notification from " + source
-                        + " pkg=" + sbn.getPackageName() + " count=" + snapshot.length);
-            }
+            PixelAodLog.log("cached notification from " + source
+                    + " pkg=" + sbn.getPackageName()
+                    + " key=" + sbn.getKey()
+                    + " count=" + snapshot.length
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(null) + "}");
         } catch (Throwable t) {
             PixelAodLog.log("failed to cache notification from " + source, t);
         }
@@ -733,10 +725,12 @@ final class PixelAodHook {
             }
             PixelAodClockView.setActiveNotifications(snapshot);
             PixelAodClockView.removeMediaNotificationCandidate(sbn, source);
-            if (LOGGED_STATUS_CLASSES.add("fallbackNotification|" + source)) {
-                PixelAodLog.log("removed notification from " + source
-                        + " pkg=" + sbn.getPackageName() + " count=" + snapshot.length);
-            }
+            PixelAodLog.log("removed notification from " + source
+                    + " pkg=" + sbn.getPackageName()
+                    + " key=" + sbn.getKey()
+                    + " count=" + snapshot.length
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(null) + "}");
         } catch (Throwable t) {
             PixelAodLog.log("failed to remove notification from " + source, t);
         }
@@ -793,10 +787,11 @@ final class PixelAodHook {
             } else {
                 PixelAodClockView.setActiveNotifications(snapshot);
             }
-            if (LOGGED_STATUS_CLASSES.add("notifications|" + source)) {
-                PixelAodLog.log("merged OPlus AOD notification subset from " + source
-                        + " subset=" + notifications.length + " cache=" + snapshot.length);
-            }
+            PixelAodLog.log("merged OPlus AOD notification subset from " + source
+                    + " subset=" + notifications.length
+                    + " cache=" + snapshot.length
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(null) + "}");
         } catch (Throwable t) {
             PixelAodLog.log("failed to publish AOD notifications from " + source, t);
         }
@@ -833,16 +828,18 @@ final class PixelAodHook {
         try {
             if (lastNotificationListener != null) {
                 refreshNotificationsFromLastListener(source);
-                if (LOGGED_STATUS_CLASSES.add("clearRefresh|" + source)) {
-                    PixelAodLog.log("refreshed fallback native AOD notification icons from " + source);
-                }
+                PixelAodLog.log("refreshed fallback native AOD notification icons from " + source
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(null) + "}");
                 return;
             }
             synchronized (NOTIFICATION_CACHE) {
                 NOTIFICATION_CACHE.clear();
             }
             PixelAodClockView.clearActiveNotifications();
-            PixelAodLog.log("cleared fallback native AOD notification icons from " + source);
+            PixelAodLog.log("cleared fallback native AOD notification icons from " + source
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(null) + "}");
         } catch (Throwable t) {
             PixelAodLog.log("failed to clear cached notifications from " + source, t);
         }
@@ -856,7 +853,9 @@ final class PixelAodHook {
             }
             PixelAodClockView.setActiveNotifications(snapshot);
             PixelAodLog.log("kept fallback native AOD notification icons from "
-                    + source + " count=" + snapshot.length);
+                    + source + " count=" + snapshot.length
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(null) + "}");
         } catch (Throwable t) {
             PixelAodLog.log("failed to publish cached notifications from " + source, t);
         }
@@ -1041,31 +1040,63 @@ final class PixelAodHook {
             PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
                     + " key=" + sbn.getKey()
                     + " source=" + source
-                    + " reason=module-package-not-test-notification");
+                    + " reason=module-package-not-test-notification"
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(null) + "}");
             return false;
         }
         if ("android".equals(pkg) || "com.android.systemui".equals(pkg)) {
+            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+                    + " key=" + sbn.getKey()
+                    + " source=" + source
+                    + " reason=system-package"
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
             return false;
         }
         if (Notification.CATEGORY_TRANSPORT.equals(notification.category)) {
+            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+                    + " key=" + sbn.getKey()
+                    + " source=" + source
+                    + " reason=transport-category"
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
             return false;
         }
         if (notification.visibility == Notification.VISIBILITY_SECRET) {
+            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+                    + " key=" + sbn.getKey()
+                    + " source=" + source
+                    + " reason=secret-visibility"
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
             return false;
         }
         if (rankingVisibilitySecret(ranking)) {
+            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+                    + " key=" + sbn.getKey()
+                    + " source=" + source
+                    + " reason=ranking-secret"
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
             return false;
         }
         int importance = rankingImportance(ranking);
         if (!testNotification && (importance == 0 || importance > 0 && importance < 3
                 || (notification.flags & NOTIFICATION_FLAG_SILENT) != 0)) {
+            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+                    + " key=" + sbn.getKey()
+                    + " source=" + source
+                    + " reason=low-importance-or-silent"
+                    + " importance=" + importance
+                    + " flags=0x" + Integer.toHexString(notification.flags)
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
             return false;
         }
-        if (LOGGED_STATUS_CLASSES.add("lockscreenPolicy|" + sbn.getKey())) {
-            PixelAodLog.log("allowing lockscreen notification through OOS policy pkg="
-                    + pkg + " key=" + sbn.getKey() + " importance=" + importance
-                    + " source=" + source);
-        }
+        PixelAodLog.log("allowing lockscreen notification through OOS policy pkg="
+                + pkg + " key=" + sbn.getKey() + " importance=" + importance
+                + " source=" + source
+                + " category=" + notification.category
+                + " visibility=" + notification.visibility
+                + " flags=0x" + Integer.toHexString(notification.flags)
+                + " trace=" + PixelAodClockView.currentAodTraceId()
+                + " state={" + PixelAodClockView.describeAodState(null) + "}");
         return true;
     }
 
@@ -1136,7 +1167,16 @@ final class PixelAodHook {
 
     private static void handleOuterRootLayout(ViewGroup host, String source) {
         try {
-            if (!isAodRootLayout(host) || isChargingUiView(host)) {
+            if (!isAodRootLayout(host)) {
+                PixelAodLog.log("ignored AOD outer root from " + source
+                        + " reason=not-aod-root host=" + hostSummary(host)
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
+                return;
+            }
+            if (isChargingUiView(host)) {
+                PixelAodLog.log("ignored AOD outer root from " + source
+                        + " reason=charging-ui host=" + hostSummary(host)
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
                 return;
             }
             PixelAodLog.log("observed AOD outer root from " + source + " host="
@@ -1307,15 +1347,28 @@ final class PixelAodHook {
             return;
         }
         if (context != null && PixelAodClockView.isDeviceInteractive(context)) {
+            PixelAodLog.log("skipped AOD rewrite source=" + source
+                    + " requestedState=" + requestedState
+                    + " reason=interactive"
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
             return;
         }
 
         if (context != null && !isAodAllowedBySystemSettings(context)) {
-            PixelAodLog.log("Bypassing AOD rewrite because AOD is disabled or outside scheduled time by system settings");
+            PixelAodLog.log("skipped AOD rewrite source=" + source
+                    + " requestedState=" + requestedState
+                    + " reason=system-settings"
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
             return;
         }
         if (shouldBypassStateRewrite(args)) {
-            PixelAodLog.log("Bypassing AOD rewrite because reason matches bypass keywords");
+            PixelAodLog.log("skipped AOD rewrite source=" + source
+                    + " requestedState=" + requestedState
+                    + " reason=bypass-keywords"
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
             return;
         }
 
@@ -1324,6 +1377,11 @@ final class PixelAodHook {
         }
         if (!PixelAodClockView.isInAodEntryTransitionWindow(
                 AOD_ENTRY_STATE_REWRITE_WINDOW_MILLIS)) {
+            PixelAodLog.log("skipped AOD rewrite source=" + source
+                    + " requestedState=" + requestedState
+                    + " reason=outside-entry-window"
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
             return;
         }
         args[stateIndex] = Display.STATE_DOZE;
@@ -1331,14 +1389,12 @@ final class PixelAodHook {
     }
 
     private static void logAodStateRewrite(String source, int requestedState) {
-        if (aodStateRewriteLogCount >= 16) {
-            return;
-        }
-        aodStateRewriteLogCount++;
         String stateName = requestedState == Display.STATE_DOZE_SUSPEND
                 ? "DOZE_SUSPEND"
                 : "OFF";
-        PixelAodLog.log("rewrote " + source + " " + stateName + "->DOZE during AOD entry");
+        PixelAodLog.log("rewrote " + source + " " + stateName + "->DOZE during AOD entry"
+                + " trace=" + PixelAodClockView.currentAodTraceId()
+                + " state={" + PixelAodClockView.describeAodState(null) + "}");
     }
 
     private static void inspectLockscreenClockCandidate(Object candidate, String source) {
@@ -1395,7 +1451,16 @@ final class PixelAodHook {
             if (screenOff && !PixelAodClockView.shouldCustomizeAodNow(context)) {
                 PixelAodClockView.setAodActive(true, source + "#host-ready");
             }
-            if (screenOff || PixelAodClockView.shouldCustomizeAodNow(context)) {
+            boolean customizeNow = PixelAodClockView.shouldCustomizeAodNow(context);
+            PixelAodLog.log("AOD host decision source=" + source
+                    + " screenOff=" + screenOff
+                    + " customizeNow=" + customizeNow
+                    + " lockscreenVisible=" + lockscreenVisible
+                    + " stockHost=" + hostSummary(host)
+                    + " pixelHost=" + hostSummary(pixelHost)
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            if (screenOff || customizeNow) {
                 refreshNotificationsFromLastListener(source);
                 hideStockClockViews(host);
                 adjustPluginStatusViews(context, host);
@@ -1422,8 +1487,15 @@ final class PixelAodHook {
     private static void handleLockscreenHost(Context context, ViewGroup host, String source) {
         try {
             lastShadeHost = new WeakReference<>(host);
-            if (PixelAodClockView.isDeviceInteractive(context)
-                    && !PixelAodClockView.shouldCustomizeAodNow(context)) {
+            boolean interactive = PixelAodClockView.isDeviceInteractive(context);
+            boolean customizeNow = PixelAodClockView.shouldCustomizeAodNow(context);
+            PixelAodLog.log("lockscreen host snapshot source=" + source
+                    + " interactive=" + interactive
+                    + " customizeNow=" + customizeNow
+                    + " host=" + hostSummary(host)
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            if (interactive && !customizeNow) {
                 PixelAodClockView.hideAllAodOverlays(source + "#interactive-shade");
                 if (!PixelLockscreenClockView.isSystemKeyguardLocked(context)) {
                     PixelLockscreenClockView.setLockscreenSurfaceVisible(false,
@@ -1435,6 +1507,9 @@ final class PixelAodHook {
                 }
             }
             if (!shouldTouchLockscreenHost(host)) {
+                PixelAodLog.log("skipped lockscreen host touch source=" + source
+                        + " reason=throttled host=" + hostSummary(host)
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
                 return;
             }
             lastPixelHost = new WeakReference<>(host);
@@ -1450,7 +1525,9 @@ final class PixelAodHook {
             }
             PixelAodLog.log("prepared Pixel lockscreen host from " + source
                     + " host=" + markerFor(host)
-                    + " children=" + host.getChildCount());
+                    + " children=" + host.getChildCount()
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
         } catch (Throwable t) {
             PixelAodLog.log("prepare Pixel lockscreen host failed from " + source, t);
         }
@@ -1583,11 +1660,10 @@ final class PixelAodHook {
                 }
                 hideStockClockViews(host);
                 adjustPluginStatusViews(host.getContext(), host);
-                if (LOGGED_STATUS_CLASSES.add("stockSuppressionReapply|" + source + "+" + delayMillis)) {
-                    PixelAodLog.log("reapplied stock AOD suppression from " + source
-                            + "+" + delayMillis + " children=" + host.getChildCount()
-                            + " state={" + PixelAodClockView.describeAodState(host.getContext()) + "}");
-                }
+                PixelAodLog.log("reapplied stock AOD suppression from " + source
+                        + "+" + delayMillis + " children=" + host.getChildCount()
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(host.getContext()) + "}");
             } catch (Throwable t) {
                 PixelAodLog.log("delayed stock AOD suppression failed", t);
             }
@@ -1664,6 +1740,7 @@ final class PixelAodHook {
             PixelAodLog.log("lockscreen replacement skipped from " + source
                     + " surfaceVisible=false stockHost=" + hostSummary(stockHost)
                     + " pixelHost=" + hostSummary(pixelHost)
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
             restoreAdjustedStatusViews();
             restoreHiddenStockViews();
@@ -1692,6 +1769,7 @@ final class PixelAodHook {
                 + " hasNotificationCards=" + hasNotificationCards
                 + " stockHost=" + hostSummary(stockHost)
                 + " pixelHost=" + hostSummary(pixelHost)
+                + " trace=" + PixelAodClockView.currentAodTraceId()
                 + " state={" + PixelAodClockView.describeAodState(context) + "}");
         PixelLockscreenClockView.setVisibleLockscreenNotificationCards(hasNotificationCards, source);
     }
@@ -1788,14 +1866,16 @@ final class PixelAodHook {
                 } else {
                     PixelAodClockView.setActiveNotifications(snapshot);
                 }
-                if (LOGGED_STATUS_CLASSES.add("notificationsFromView|" + view.getClass().getName())) {
-                    PixelAodLog.log("merged AOD notifications from runtime view subset="
-                            + array.length + " cache=" + snapshot.length
-                            + " marker=" + marker + " fields=" + fieldSummary);
-                }
-            } else if (LOGGED_STATUS_CLASSES.add("notificationsFromViewEmpty|" + view.getClass().getName())) {
+                PixelAodLog.log("merged AOD notifications from runtime view subset="
+                        + array.length + " cache=" + snapshot.length
+                        + " marker=" + marker + " fields=" + fieldSummary
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(null) + "}");
+            } else {
                 PixelAodLog.log("no StatusBarNotification objects found in runtime NotificationView "
-                        + marker);
+                        + marker
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(null) + "}");
             }
         } catch (Throwable t) {
             PixelAodLog.log("failed to inspect runtime NotificationView notifications " + marker, t);
@@ -1905,14 +1985,16 @@ final class PixelAodHook {
         moveTarget.setTranslationY(targetY - moveTarget.getY());
         moveTarget.setAlpha(0.92f);
         moveTarget.bringToFront();
-        if (LOGGED_STATUS_CLASSES.add("move|" + marker)) {
-            PixelAodLog.log("moved AOD notification view " + marker);
-        }
+        PixelAodLog.log("moved AOD notification view " + marker
+                + " targetX=" + Math.round(targetX)
+                + " targetY=" + Math.round(targetY)
+                + " trace=" + PixelAodClockView.currentAodTraceId()
+                + " state={" + PixelAodClockView.describeAodState(context) + "}");
     }
 
     private static void logNotificationViewShape(View view, String marker) {
         String key = "inspect|" + view.getClass().getName();
-        if (!LOGGED_STATUS_CLASSES.add(key)) {
+        if (!LOGGED_INSPECTION_CLASSES.add(key)) {
             return;
         }
         try {
@@ -2020,7 +2102,8 @@ final class PixelAodHook {
             PixelLockscreenClockView.refreshAll(source);
             PixelAodLog.log("lockscreen replacement skipped without remembered hosts from " + source
                     + " stockHost=" + hostSummary(stockHost)
-                    + " pixelHost=" + hostSummary(pixelHost));
+                    + " pixelHost=" + hostSummary(pixelHost)
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
             return;
         }
         applyLockscreenClockReplacement(context, stockHost, pixelHost, source);
@@ -2036,6 +2119,7 @@ final class PixelAodHook {
             PixelAodLog.log("suppressing system AOD during lockscreen transition source=" + source
                     + " stockHost=" + hostSummary(stockHost)
                     + " pixelHost=" + hostSummary(pixelHost)
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
             if (stockHost != null) {
                 hideStockClockViews(stockHost);
@@ -2062,12 +2146,14 @@ final class PixelAodHook {
                 PixelAodLog.log("kept stock AOD/keyguard views hidden after transition from "
                         + source + " stockHost=" + hostSummary(stockHost)
                         + " pixelHost=" + hostSummary(pixelHost)
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
                         + " state={" + PixelAodClockView.describeAodState(context) + "}");
                 return;
             }
             PixelAodLog.log("restoring stock AOD/keyguard views after transition from " + source
                     + " stockHost=" + hostSummary(stockHost)
                     + " pixelHost=" + hostSummary(pixelHost)
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
             restoreHiddenStockViews();
         }, 900L);
@@ -2186,9 +2272,9 @@ final class PixelAodHook {
                         || looksLikeGenericStockAodVisual(marker, view)) {
                     if (containsSystemAodMediaView((ViewGroup) view)) {
                         stats[1]++;
-                        if (LOGGED_STATUS_CLASSES.add("preserveMediaSubtree|" + marker)) {
-                            PixelAodLog.log("preserved stock AOD container with media subtree " + marker);
-                        }
+                        PixelAodLog.log("preserved stock AOD container with media subtree " + marker
+                                + " trace=" + PixelAodClockView.currentAodTraceId()
+                                + " state={" + PixelAodClockView.describeAodState(view.getContext()) + "}");
                         return true;
                     } else {
                         stats[0]++;
@@ -2284,11 +2370,11 @@ final class PixelAodHook {
             String marker = markerFor(view);
             if (looksLikeVisibleLockscreenNotificationCard(marker, view)) {
                 found[0] = true;
-                if (LOGGED_STATUS_CLASSES.add("lockscreenNotificationCard|" + marker)) {
-                    PixelAodLog.log("detected visible lockscreen notification card " + marker
-                            + " size=" + view.getWidth() + "x" + view.getHeight()
-                            + " screen=" + screenLocationFor(view));
-                }
+                PixelAodLog.log("detected visible lockscreen notification card " + marker
+                        + " size=" + view.getWidth() + "x" + view.getHeight()
+                        + " screen=" + screenLocationFor(view)
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(view.getContext()) + "}");
                 return false;
             }
             return true;
@@ -2326,12 +2412,12 @@ final class PixelAodHook {
             if (looksLikeExpandedNotificationControl(view)
                     || looksLikeExpandedNotificationCard(markerFor(view), view)) {
                 found[0] = true;
-                if (LOGGED_STATUS_CLASSES.add("expandedLockscreenNotification|" + markerFor(view))) {
-                    PixelAodLog.log("detected expanded lockscreen notification content "
-                            + markerFor(view) + " size=" + view.getWidth() + "x" + view.getHeight()
-                            + " screen=" + screenLocationFor(view)
-                            + textMarkerFor(view));
-                }
+                PixelAodLog.log("detected expanded lockscreen notification content "
+                        + markerFor(view) + " size=" + view.getWidth() + "x" + view.getHeight()
+                        + " screen=" + screenLocationFor(view)
+                        + textMarkerFor(view)
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(view.getContext()) + "}");
                 return false;
             }
             return true;
@@ -2355,12 +2441,12 @@ final class PixelAodHook {
             String marker = markerFor(view).toLowerCase(Locale.US);
             if (looksLikeVisibleKeyguardBouncer(marker, view)) {
                 found[0] = true;
-                if (LOGGED_STATUS_CLASSES.add("keyguardBouncer|" + marker)) {
-                    PixelAodLog.log("detected visible keyguard bouncer " + marker
-                            + " size=" + view.getWidth() + "x" + view.getHeight()
-                            + " screen=" + screenLocationFor(view)
-                            + textMarkerFor(view));
-                }
+                PixelAodLog.log("detected visible keyguard bouncer " + marker
+                        + " size=" + view.getWidth() + "x" + view.getHeight()
+                        + " screen=" + screenLocationFor(view)
+                        + textMarkerFor(view)
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(view.getContext()) + "}");
                 return false;
             }
             return true;
@@ -2386,11 +2472,11 @@ final class PixelAodHook {
                     || marker.contains("clearall"))
                     && marker.contains("notification")) {
                 found[0] = true;
-                if (LOGGED_STATUS_CLASSES.add("shadeDismiss|" + marker)) {
-                    PixelAodLog.log("detected expanded notification shade dismiss control "
-                            + marker + " size=" + view.getWidth() + "x" + view.getHeight()
-                            + " screen=" + screenLocationFor(view));
-                }
+                PixelAodLog.log("detected expanded notification shade dismiss control "
+                        + marker + " size=" + view.getWidth() + "x" + view.getHeight()
+                        + " screen=" + screenLocationFor(view)
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(view.getContext()) + "}");
                 return false;
             }
             return true;
@@ -2492,13 +2578,13 @@ final class PixelAodHook {
             String marker = markerFor(view);
             if (looksLikeOplusKeyguardBigClock(marker)) {
                 found[0] = true;
-                if (LOGGED_STATUS_CLASSES.add("stockKeyguardClock|" + marker)) {
-                    PixelAodLog.log("detected stock keyguard clock " + marker
-                            + " visibility=" + view.getVisibility()
-                            + " shown=" + view.isShown()
-                            + " size=" + view.getWidth() + "x" + view.getHeight()
-                            + " screen=" + screenLocationFor(view));
-                }
+                PixelAodLog.log("detected stock keyguard clock " + marker
+                        + " visibility=" + view.getVisibility()
+                        + " shown=" + view.isShown()
+                        + " size=" + view.getWidth() + "x" + view.getHeight()
+                        + " screen=" + screenLocationFor(view)
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(view.getContext()) + "}");
                 return false;
             }
             return true;
@@ -2522,11 +2608,11 @@ final class PixelAodHook {
             String marker = markerFor(view).toLowerCase(Locale.US);
             if (looksLikeVisibleLockscreenSurfaceChrome(marker, view)) {
                 found[0] = true;
-                if (LOGGED_STATUS_CLASSES.add("lockscreenSurfaceChrome|" + marker)) {
-                    PixelAodLog.log("detected lockscreen surface chrome " + marker
-                            + " size=" + view.getWidth() + "x" + view.getHeight()
-                            + " screen=" + screenLocationFor(view));
-                }
+                PixelAodLog.log("detected lockscreen surface chrome " + marker
+                        + " size=" + view.getWidth() + "x" + view.getHeight()
+                        + " screen=" + screenLocationFor(view)
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(view.getContext()) + "}");
                 return false;
             }
             return true;
@@ -2576,9 +2662,9 @@ final class PixelAodHook {
 
     private static void hideView(View view, String marker) {
         if (looksLikeSystemAodMediaView(marker)) {
-            if (LOGGED_STATUS_CLASSES.add("preserveMedia|" + marker)) {
-                PixelAodLog.log("preserved system AOD media view " + marker);
-            }
+            PixelAodLog.log("preserved system AOD media view " + marker
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(view.getContext()) + "}");
             return;
         }
         boolean firstHide = false;
@@ -3221,10 +3307,10 @@ final class PixelAodHook {
     }
 
     private static void logAtAGlanceCandidate(String marker, String value) {
-        if (LOGGED_STATUS_CLASSES.add("ataglance|" + marker + "|" + value)) {
-            PixelAodLog.log("captured stock AOD At a Glance candidate value="
-                    + value + " marker=" + marker);
-        }
+        PixelAodLog.log("captured stock AOD At a Glance candidate value="
+                + value + " marker=" + marker
+                + " trace=" + PixelAodClockView.currentAodTraceId()
+                + " state={" + PixelAodClockView.describeAodState(null) + "}");
     }
 
     private static boolean isSystemUiHeaderOrQsView(View view) {

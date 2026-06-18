@@ -62,8 +62,6 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     private static StatusBarNotification[] activeNotifications = EMPTY_NOTIFICATIONS;
     private static Context appContext;
-    private static int modeLogCount;
-    private static int nonKeyguardSuppressionLogCount;
     private static boolean hasVisibleLockscreenNotificationCards;
     private static boolean lockscreenSurfaceVisible;
     private static long pendingAodToLockscreenTransitionAt;
@@ -211,10 +209,9 @@ final class PixelLockscreenClockView extends FrameLayout {
         if (!shouldShowOnLockscreen(getContext())) {
             if (getVisibility() != View.GONE) {
                 setVisibility(View.GONE);
-            }
-            if (nonKeyguardSuppressionLogCount < 12) {
-                nonKeyguardSuppressionLogCount++;
-                PixelAodLog.log("suppressed Pixel lockscreen clock outside keyguard");
+                PixelAodLog.log("suppressed Pixel lockscreen clock outside keyguard trace="
+                        + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
             }
             return;
         }
@@ -339,9 +336,12 @@ final class PixelLockscreenClockView extends FrameLayout {
             pendingAodToLockscreenTranslationX = offset.translationX;
             pendingAodToLockscreenTranslationY = offset.translationY;
         }
-        PixelAodLog.log("prepared Pixel lockscreen clock weight transition source="
-                + source + " x=" + Math.round(offset.translationX)
-                + " y=" + Math.round(offset.translationY));
+        PixelAodLog.log("prepared Pixel lockscreen clock weight transition trace="
+                + PixelAodClockView.currentAodTraceId()
+                + " source=" + source
+                + " x=" + Math.round(offset.translationX)
+                + " y=" + Math.round(offset.translationY)
+                + " state={" + PixelAodClockView.describeAodState(appContext, false, -1) + "}");
     }
 
     static void refreshAll(String source) {
@@ -355,13 +355,7 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     static boolean shouldShowOnLockscreen(Context context) {
-        if (context == null) {
-            return false;
-        }
-        if (!PixelAodClockView.isDeviceInteractive(context)) {
-            return shouldBridgeLockscreenToAod(context);
-        }
-        return isSystemKeyguardLockedRaw(context);
+        return shouldShowOnLockscreen(context, "direct");
     }
 
     static boolean isSystemKeyguardLocked(Context context) {
@@ -369,6 +363,39 @@ final class PixelLockscreenClockView extends FrameLayout {
             return false;
         }
         return isSystemKeyguardLockedRaw(context);
+    }
+
+    private static boolean shouldShowOnLockscreen(Context context, String source) {
+        if (context == null) {
+            PixelAodLog.log("lockscreen visibility decision source=" + source
+                    + " visible=false reason=no-context trace=" + PixelAodClockView.currentAodTraceId());
+            return false;
+        }
+        boolean interactive = PixelAodClockView.isDeviceInteractive(context);
+        boolean locked = isSystemKeyguardLockedRaw(context);
+        boolean bridge = !interactive && shouldBridgeLockscreenToAod(context);
+        boolean visible = interactive ? locked : bridge;
+        String reason;
+        if (interactive) {
+            reason = locked ? "interactive-keyguard-locked" : "interactive-unlocked";
+        } else if (bridge) {
+            reason = "bridge-to-aod";
+        } else if (!locked) {
+            reason = "noninteractive-unlocked";
+        } else {
+            reason = "noninteractive-outside-aod-window";
+        }
+        if (!"direct".equals(source)) {
+            PixelAodLog.log("lockscreen visibility decision source=" + source
+                    + " visible=" + visible
+                    + " reason=" + reason
+                    + " interactive=" + interactive
+                    + " locked=" + locked
+                    + " bridge=" + bridge
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+        }
+        return visible;
     }
 
     private static boolean shouldBridgeLockscreenToAod(Context context) {
@@ -410,7 +437,9 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     private void updatePresentation(String source) {
-        boolean visible = shouldShowOnLockscreen(getContext()) && !isBouncerVisible();
+        boolean shouldShow = shouldShowOnLockscreen(getContext(), source);
+        boolean bouncerVisible = isBouncerVisible();
+        boolean visible = shouldShow && !bouncerVisible;
         boolean firstVisibleFrame = visible && getVisibility() != View.VISIBLE;
         TransitionInfo transition = visible ? consumeRecentAodToLockscreenTransition(source) : null;
         if (transition == null && visible) {
@@ -420,6 +449,18 @@ final class PixelLockscreenClockView extends FrameLayout {
         int aodWeight = PixelAodClockView.aodClockWeight(getContext());
         int lockscreenWeight = PixelAodClockView.lockscreenClockWeight(getContext());
         boolean animateWeight = hasTransition && aodWeight != lockscreenWeight;
+        PixelAodLog.log("lockscreen presentation decision trace=" + PixelAodClockView.currentAodTraceId()
+                + " source=" + source
+                + " shouldShow=" + shouldShow
+                + " bouncerVisible=" + bouncerVisible
+                + " visible=" + visible
+                + " firstVisibleFrame=" + firstVisibleFrame
+                + " transition=" + (transition != null ? transition.source : "none")
+                + " hasTransition=" + hasTransition
+                + " animateWeight=" + animateWeight
+                + " aodWeight=" + aodWeight
+                + " lockscreenWeight=" + lockscreenWeight
+                + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
         if (!clockWeightTransitionPending) {
             setClockWeight(animateWeight ? aodWeight : lockscreenWeight);
         }
@@ -428,12 +469,21 @@ final class PixelLockscreenClockView extends FrameLayout {
             clearInteractiveLockscreenVisibleIfNeeded();
             resetTransitionState();
             setExpandedNotificationSuppressed(false);
+            PixelAodLog.log("lockscreen presentation hidden trace=" + PixelAodClockView.currentAodTraceId()
+                    + " source=" + source
+                    + " reason=" + (bouncerVisible ? "bouncer-visible" : "should-not-show")
+                    + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
             return;
         }
         markInteractiveLockscreenVisibleIfNeeded();
         boolean playingMedia = hasPlayingMediaLocally();
         if (hasExpandedLockscreenNotificationContent(firstVisibleFrame)) {
             setExpandedNotificationSuppressed(true);
+            PixelAodLog.log("lockscreen presentation suppressed trace=" + PixelAodClockView.currentAodTraceId()
+                    + " source=" + source
+                    + " reason=expanded-notification-content"
+                    + " firstVisibleFrame=" + firstVisibleFrame
+                    + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
             return;
         }
         setExpandedNotificationSuppressed(false);
@@ -451,12 +501,15 @@ final class PixelLockscreenClockView extends FrameLayout {
             setTranslationX(0f);
             setTranslationY(0f);
         }
-        if (modeLogCount < 12) {
-            modeLogCount++;
-            PixelAodLog.log("Pixel lockscreen clock visible compact="
-                    + compactClock + " notifications=" + currentNotifications().size()
-                    + " firstVisible=" + firstVisibleFrame + " source=" + source);
-        }
+        PixelAodLog.log("lockscreen presentation visible trace=" + PixelAodClockView.currentAodTraceId()
+                + " source=" + source
+                + " compact=" + compactClock
+                + " notifications=" + notifications.size()
+                + " hasCards=" + hasCards
+                + " playingMedia=" + playingMedia
+                + " firstVisibleFrame=" + firstVisibleFrame
+                + " transition=" + (transition != null ? transition.source : "none")
+                + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
     }
 
     private boolean isBouncerVisible() {
@@ -536,7 +589,9 @@ final class PixelLockscreenClockView extends FrameLayout {
         dateView.setVisibility(suppressed ? View.GONE : View.VISIBLE);
         notificationIconRow.setVisibility(View.GONE);
         if (changed) {
-            PixelAodLog.log("Pixel lockscreen clock expanded-notification suppression=" + suppressed);
+            PixelAodLog.log("Pixel lockscreen clock expanded-notification suppression=" + suppressed
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
             if (suppressed) {
                 scheduleSuppressionRefresh(300L);
                 scheduleSuppressionRefresh(900L);
@@ -561,9 +616,12 @@ final class PixelLockscreenClockView extends FrameLayout {
         if (offset == null) {
             return;
         }
-        PixelAodLog.log("consumed recent Pixel AOD fallback transition update=dispatchDraw"
+        PixelAodLog.log("consumed recent Pixel AOD fallback transition trace="
+                + PixelAodClockView.currentAodTraceId()
+                + " update=dispatchDraw"
                 + " x=" + Math.round(offset.translationX)
-                + " y=" + Math.round(offset.translationY));
+                + " y=" + Math.round(offset.translationY)
+                + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
         beginClockTransition("dispatchDraw", new TransitionInfo(
                 "recent-aod-draw", offset.translationX, offset.translationY));
     }
@@ -572,10 +630,21 @@ final class PixelLockscreenClockView extends FrameLayout {
         synchronized (PixelLockscreenClockView.class) {
             long markedAt = pendingAodToLockscreenTransitionAt;
             if (markedAt <= 0L) {
+                PixelAodLog.log("lockscreen transition consume miss trace="
+                        + PixelAodClockView.currentAodTraceId()
+                        + " update=" + updateSource
+                        + " reason=no-pending-transition");
                 return null;
             }
             long age = android.os.SystemClock.uptimeMillis() - markedAt;
             if (age < 0L || age > AOD_TRANSITION_ANIMATION_WINDOW_MS) {
+                PixelAodLog.log("lockscreen transition consume miss trace="
+                        + PixelAodClockView.currentAodTraceId()
+                        + " update=" + updateSource
+                        + " reason=expired ageMs=" + age
+                        + " source=" + pendingAodToLockscreenTransitionSource
+                        + " translationX=" + Math.round(pendingAodToLockscreenTranslationX)
+                        + " translationY=" + Math.round(pendingAodToLockscreenTranslationY));
                 pendingAodToLockscreenTransitionAt = 0L;
                 pendingAodToLockscreenTransitionSource = "";
                 pendingAodToLockscreenTranslationX = 0f;
@@ -589,9 +658,14 @@ final class PixelLockscreenClockView extends FrameLayout {
             pendingAodToLockscreenTransitionSource = "";
             pendingAodToLockscreenTranslationX = 0f;
             pendingAodToLockscreenTranslationY = 0f;
-            PixelAodLog.log("consumed Pixel lockscreen clock weight transition from="
-                    + source + " update=" + updateSource + " ageMs=" + age
-                    + " x=" + Math.round(translationX) + " y=" + Math.round(translationY));
+            PixelAodLog.log("consumed Pixel lockscreen clock weight transition trace="
+                    + PixelAodClockView.currentAodTraceId()
+                    + " from=" + source
+                    + " update=" + updateSource
+                    + " ageMs=" + age
+                    + " x=" + Math.round(translationX)
+                    + " y=" + Math.round(translationY)
+                    + " state={" + PixelAodClockView.describeAodState(appContext, false, -1) + "}");
             return new TransitionInfo(source, translationX, translationY);
         }
     }
@@ -600,11 +674,19 @@ final class PixelLockscreenClockView extends FrameLayout {
         PixelAodClockView.BurnInOffset offset =
                 PixelAodClockView.consumeRecentBurnInOffset(RECENT_AOD_FALLBACK_WINDOW_MS);
         if (offset == null) {
+            PixelAodLog.log("lockscreen fallback transition miss trace="
+                    + PixelAodClockView.currentAodTraceId()
+                    + " update=" + updateSource
+                    + " reason=no-recent-burn-in-offset"
+                    + " state={" + PixelAodClockView.describeAodState(appContext, false, -1) + "}");
             return null;
         }
-        PixelAodLog.log("consumed recent Pixel AOD fallback transition update="
-                + updateSource + " x=" + Math.round(offset.translationX)
-                + " y=" + Math.round(offset.translationY));
+        PixelAodLog.log("consumed recent Pixel AOD fallback transition trace="
+                + PixelAodClockView.currentAodTraceId()
+                + " update=" + updateSource
+                + " x=" + Math.round(offset.translationX)
+                + " y=" + Math.round(offset.translationY)
+                + " state={" + PixelAodClockView.describeAodState(appContext, false, -1) + "}");
         return new TransitionInfo("recent-aod", offset.translationX, offset.translationY);
     }
 
@@ -661,17 +743,33 @@ final class PixelLockscreenClockView extends FrameLayout {
         clockView.setLayoutParams(clockParams);
         dateView.setLayoutParams(dateParams);
         notificationIconRow.setLayoutParams(notificationParams);
+        PixelAodLog.log("applied Pixel lockscreen clock mode trace="
+                + PixelAodClockView.currentAodTraceId()
+                + " compact=" + compact
+                + " changed=" + changed
+                + " weight=" + currentClockWeight
+                + " clockTop=" + clockParams.topMargin
+                + " dateTop=" + dateParams.topMargin
+                + " notificationTop=" + notificationParams.topMargin
+                + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
         if (changed) {
             PixelAodLog.log("applied Pixel lockscreen clock style source=mode-change compact="
                     + compact + " weight=" + currentClockWeight
                     + " variation=" + PixelAodClockView.sharedClockFontVariationSettings(currentClockWeight)
-                    + " typeface=builder");
+                    + " typeface=builder"
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
         }
     }
 
     private void rebuildNotificationIcons(List<StatusBarNotification> notifications) {
         notificationIconRow.removeAllViews();
         notificationIconRow.setVisibility(View.GONE);
+        PixelAodLog.log("rebuilt Pixel lockscreen notification icons trace="
+                + PixelAodClockView.currentAodTraceId()
+                + " count=" + (notifications != null ? notifications.size() : 0)
+                + " compact=" + compactClock
+                + " weight=" + currentClockWeight
+                + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
     }
 
     private void applyMaterialColors() {
@@ -686,11 +784,15 @@ final class PixelLockscreenClockView extends FrameLayout {
     private void beginClockTransition(String source, TransitionInfo transition) {
         if (clockWeightTransitionPending && clockWeightAnimator != null
                 && clockWeightAnimator.isRunning()) {
-            PixelAodLog.log("ignored duplicate Pixel lockscreen transition source=" + source);
+            PixelAodLog.log("ignored duplicate Pixel lockscreen transition trace="
+                    + PixelAodClockView.currentAodTraceId()
+                    + " source=" + source
+                    + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
             return;
         }
         if (clockWeightAnimator != null) {
             clockWeightAnimator.cancel();
+            clockWeightAnimator = null;
         }
         clockWeightTransitionPending = true;
         lastClockTransitionStartedAt = android.os.SystemClock.uptimeMillis();
@@ -717,8 +819,13 @@ final class PixelLockscreenClockView extends FrameLayout {
             setTranslationY(0f);
             clockWeightTransitionPending = false;
             clockWeightAnimator = null;
-            PixelAodLog.log("skipped Pixel lockscreen transition source=" + source
-                    + " weight=" + toWeight + " x=0 y=0");
+            PixelAodLog.log("skipped Pixel lockscreen transition trace="
+                    + PixelAodClockView.currentAodTraceId()
+                    + " source=" + source
+                    + " reason=no-weight-or-position-change"
+                    + " weight=" + toWeight
+                    + " x=0 y=0"
+                    + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
             return;
         }
         setClockWeight(fromWeight);
@@ -727,6 +834,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         clockWeightAnimator = ValueAnimator.ofFloat(0f, 1f);
         clockWeightAnimator.setDuration(700L);
         clockWeightAnimator.setInterpolator(new android.view.animation.DecelerateInterpolator(1.4f));
+        final boolean[] cancelled = {false};
         clockWeightAnimator.addUpdateListener(animation -> {
             Object animated = animation.getAnimatedValue();
             if (animated instanceof Float) {
@@ -743,23 +851,49 @@ final class PixelLockscreenClockView extends FrameLayout {
         });
         clockWeightAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override
+            public void onAnimationCancel(android.animation.Animator animation) {
+                cancelled[0] = true;
+                clockWeightTransitionPending = false;
+                lastClockTransitionStartedAt = 0L;
+                clockWeightAnimator = null;
+                PixelAodLog.log("cancelled Pixel lockscreen transition trace="
+                        + PixelAodClockView.currentAodTraceId()
+                        + " source=" + source
+                        + " fromWeight=" + fromWeight
+                        + " toWeight=" + toWeight
+                        + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
+            }
+
+            @Override
             public void onAnimationEnd(android.animation.Animator animation) {
+                if (cancelled[0]) {
+                    return;
+                }
                 setClockWeight(toWeight);
                 setTranslationX(0f);
                 setTranslationY(0f);
                 clockWeightTransitionPending = false;
                 lastClockTransitionStartedAt = 0L;
+                clockWeightAnimator = null;
+                PixelAodLog.log("finished Pixel lockscreen transition trace="
+                        + PixelAodClockView.currentAodTraceId()
+                        + " source=" + source
+                        + " toWeight=" + toWeight
+                        + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
             }
         });
         clockWeightAnimator.start();
-        PixelAodLog.log("started Pixel lockscreen transition source=" + source
+        PixelAodLog.log("started Pixel lockscreen transition trace="
+                + PixelAodClockView.currentAodTraceId()
+                + " source=" + source
                 + " fromWeight=" + fromWeight
                 + " fromVariation=" + PixelAodClockView.sharedClockFontVariationSettings(fromWeight)
                 + " toWeight=" + toWeight
                 + " toVariation=" + PixelAodClockView.sharedClockFontVariationSettings(toWeight)
                 + " typeface=builder"
                 + " x=" + Math.round(fromTranslationX)
-                + " y=" + Math.round(fromTranslationY));
+                + " y=" + Math.round(fromTranslationY)
+                + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
     }
 
     private void resetTransitionState() {
@@ -771,6 +905,9 @@ final class PixelLockscreenClockView extends FrameLayout {
         lastClockTransitionStartedAt = 0L;
         setTranslationX(0f);
         setTranslationY(0f);
+        PixelAodLog.log("reset Pixel lockscreen transition state trace="
+                + PixelAodClockView.currentAodTraceId()
+                + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
     }
 
     private void setClockWeight(int weight) {

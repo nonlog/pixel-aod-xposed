@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.107] - 2026-06-18
+### Diagnostics
+- Remove the 60-per-minute debug log throttle and keep full AOD / lockscreen decision traces, including trace ids, state snapshots, transition reasons, and notification rebuild decisions.
+
 ## [0.1.106] - 2026-06-18
 ### Bug Fixes
 - Replace the self-drawn USB and tether/hotspot notification icons with native AOSP system drawables loaded from framework resources.

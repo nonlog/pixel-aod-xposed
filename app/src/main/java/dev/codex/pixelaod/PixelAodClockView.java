@@ -151,21 +151,12 @@ public final class PixelAodClockView extends FrameLayout {
     private static String modulePath;
     private static Context appContext;
     private static boolean aodActive;
-    private static int notificationUpdateLogCount;
-    private static int notificationRebuildLogCount;
-    private static int mediaIconLogCount;
-    private static int mediaIconRejectLogCount;
-    private static int mediaNotificationLogCount;
-    private static int notificationIconLogCount;
-    private static int notificationFilterLogCount;
-    private static int notificationKeepLogCount;
-    private static int atAGlanceLogCount;
-    private static int breezyWeatherLogCount;
-    private static int activeSnapshotDirectLogCount;
-    private static int instanceRefreshLogCount;
-    private static int shadeSuppressionLogCount;
-    private static int burnInLogCount;
-    private static int recentAodVisibleLogCount;
+    private static long aodTraceSequence;
+    private static String lastAodTraceId = "";
+    private static String lastAodTraceSource = "";
+    private static long lastAodTraceAt;
+    private static boolean lastAodCompactClock;
+    private static int lastAodClockWeight = -1;
     private static float lastBurnInTranslationX;
     private static float lastBurnInTranslationY;
     private static long lastAodOverlayVisibleAt;
@@ -181,7 +172,6 @@ public final class PixelAodClockView extends FrameLayout {
     private static long cachedScheduleCheckedAt;
     private static boolean cachedScheduleResult = true;
     private static String cachedScheduleKey = "";
-    private static int scheduleLogCount;
     private static final Map<String, RankingSnapshot> notificationRankings = new HashMap<>();
 
     private static SensorManager proximitySensorManager;
@@ -517,20 +507,20 @@ public final class PixelAodClockView extends FrameLayout {
             lastNotificationSnapshotSignature = signature;
             usableCount = activeNotifications.length;
             packageSummary = describeNotificationPackages(activeNotifications);
-            if (notificationUpdateLogCount < 10) {
-                notificationUpdateLogCount++;
-                PixelAodLog.log("updated native AOD notification snapshot raw="
-                        + rawCount
-                        + " usable=" + usableCount
-                        + " media=" + mediaCandidateCount
-                        + " packages=" + packageSummary);
-            }
-            if (activeSnapshotDirectLogCount < 16) {
-                activeSnapshotDirectLogCount++;
-                PixelAodLog.log("AOD notification snapshot direct raw="
-                        + rawCount
-                        + " usable=" + usableCount);
-            }
+            String trace = currentAodTraceId();
+            String state = describeAodState(appContext);
+            PixelAodLog.log("updated native AOD notification snapshot raw="
+                    + rawCount
+                    + " usable=" + usableCount
+                    + " media=" + mediaCandidateCount
+                    + " packages=" + packageSummary
+                    + " trace=" + trace
+                    + " state={" + state + "}");
+            PixelAodLog.log("AOD notification snapshot direct raw="
+                    + rawCount
+                    + " usable=" + usableCount
+                    + " trace=" + trace
+                    + " state={" + state + "}");
         }
         refreshInstancesFromNotificationSnapshot("setActiveNotifications");
         PixelLockscreenClockView.setActiveNotifications(activeNotifications);
@@ -541,7 +531,8 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             rawSnapshot = rawNotifications;
         }
-        PixelAodLog.log("refreshing AOD notification filtering from " + source);
+        PixelAodLog.log("refreshing AOD notification filtering trace=" + currentAodTraceId()
+                + " source=" + source + " state={" + describeAodState(appContext) + "}");
         setActiveNotifications(rawSnapshot);
     }
 
@@ -557,6 +548,9 @@ public final class PixelAodClockView extends FrameLayout {
             } else {
                 lastAodActivatedAt = 0L;
             }
+        }
+        if (changed) {
+            startAodTrace(source);
         }
         if (active) {
             markRecentAodOverlayVisible(source + "#active");
@@ -584,10 +578,10 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
         });
-        if (changed) {
-            PixelAodLog.log("Pixel AOD active=" + active + " source=" + source
-                    + " state={" + describeAodState(appContext) + "}");
-        }
+        PixelAodLog.log("Pixel AOD active=" + active + " changed=" + changed
+                + " source=" + source
+                + " trace=" + currentAodTraceId()
+                + " state={" + describeAodState(appContext) + "}");
     }
 
     static boolean isAodActive() {
@@ -597,16 +591,25 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static String describeAodState(Context context) {
+        return describeAodState(context, lastAodCompactClock, lastAodClockWeight);
+    }
+
+    static String describeAodState(Context context, boolean compact, int weight) {
         long now = SystemClock.uptimeMillis();
         boolean active;
         long screenOffAt;
         long aodActivatedAt;
         long overlayVisibleAt;
+        String traceId = currentAodTraceId();
+        String traceSource;
+        long traceAt;
         synchronized (PixelAodClockView.class) {
             active = aodActive;
             screenOffAt = lastScreenOffAt;
             aodActivatedAt = lastAodActivatedAt;
             overlayVisibleAt = lastAodOverlayVisibleAt;
+            traceSource = lastAodTraceSource;
+            traceAt = lastAodTraceAt;
         }
         int displayState = currentDisplayState(context);
         boolean interactive = isDeviceInteractive(context);
@@ -622,12 +625,67 @@ public final class PixelAodClockView extends FrameLayout {
         return "active=" + active
                 + " customizeNow=" + customizeNow
                 + " interactive=" + interactive
-                + " display=" + displayStateLabel(displayState)
+                + " displayState=" + displayStateLabel(displayState)
                 + " screenOffAgeMs=" + ageSince(now, screenOffAt)
                 + " aodAgeMs=" + ageSince(now, aodActivatedAt)
                 + " overlayAgeMs=" + ageSince(now, overlayVisibleAt)
+                + " trace=" + traceId
+                + " traceSource=" + traceSource
+                + " traceAgeMs=" + ageSince(now, traceAt)
+                + " compact=" + compact
+                + " weight=" + weight
                 + " entryDelay=" + entryDelay
                 + " graceWindow=" + graceWindow;
+    }
+
+    static String currentAodTraceId() {
+        synchronized (PixelAodClockView.class) {
+            if (TextUtils.isEmpty(lastAodTraceId)) {
+                startAodTraceLocked("auto");
+            }
+            return lastAodTraceId;
+        }
+    }
+
+    static String currentAodTraceSource() {
+        synchronized (PixelAodClockView.class) {
+            if (TextUtils.isEmpty(lastAodTraceId)) {
+                startAodTraceLocked("auto");
+            }
+            return lastAodTraceSource;
+        }
+    }
+
+    private static String startAodTrace(String source) {
+        synchronized (PixelAodClockView.class) {
+            return startAodTraceLocked(source);
+        }
+    }
+
+    private static String ensureAodTrace(String source) {
+        synchronized (PixelAodClockView.class) {
+            if (TextUtils.isEmpty(lastAodTraceId)) {
+                return startAodTraceLocked(source);
+            }
+            return lastAodTraceId;
+        }
+    }
+
+    private static String startAodTraceLocked(String source) {
+        long now = SystemClock.uptimeMillis();
+        aodTraceSequence++;
+        lastAodTraceId = "aod-" + Long.toHexString(aodTraceSequence)
+                + "-" + Long.toHexString(now);
+        lastAodTraceSource = source != null ? source : "";
+        lastAodTraceAt = now;
+        return lastAodTraceId;
+    }
+
+    private static void setAodPresentationState(boolean compact, int weight) {
+        synchronized (PixelAodClockView.class) {
+            lastAodCompactClock = compact;
+            lastAodClockWeight = weight;
+        }
     }
 
     static void hideAllAodOverlays(String source) {
@@ -636,6 +694,7 @@ public final class PixelAodClockView extends FrameLayout {
             lastScreenOffAt = 0L;
             lastAodActivatedAt = 0L;
         }
+        startAodTrace(source);
         Runnable task = () -> {
             int hidden = 0;
             for (PixelAodClockView view : INSTANCES) {
@@ -648,7 +707,8 @@ public final class PixelAodClockView extends FrameLayout {
                     view.stop();
                 }
             }
-            PixelAodLog.log("hid Pixel AOD overlays from " + source + " count=" + hidden
+            PixelAodLog.log("hid Pixel AOD overlays trace=" + currentAodTraceId()
+                    + " source=" + source + " count=" + hidden
                     + " state={" + describeAodState(appContext) + "}");
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -662,10 +722,9 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             lastScreenOffAt = android.os.SystemClock.uptimeMillis();
         }
-        if (recentAodVisibleLogCount < 16) {
-            recentAodVisibleLogCount++;
-            PixelAodLog.log("noted Pixel AOD screen-off source=" + source);
-        }
+        startAodTrace(source);
+        PixelAodLog.log("noted Pixel AOD screen-off trace=" + currentAodTraceId()
+                + " source=" + source + " state={" + describeAodState(appContext) + "}");
     }
 
     static void noteScreenOffIfUnset(String source) {
@@ -676,9 +735,10 @@ public final class PixelAodClockView extends FrameLayout {
                 noted = true;
             }
         }
-        if (noted && recentAodVisibleLogCount < 16) {
-            recentAodVisibleLogCount++;
-            PixelAodLog.log("seeded Pixel AOD screen-off source=" + source);
+        if (noted) {
+            startAodTrace(source);
+            PixelAodLog.log("seeded Pixel AOD screen-off trace=" + currentAodTraceId()
+                    + " source=" + source + " state={" + describeAodState(appContext) + "}");
         }
     }
 
@@ -707,11 +767,11 @@ public final class PixelAodClockView extends FrameLayout {
             x = lastBurnInTranslationX;
             y = lastBurnInTranslationY;
         }
-        if (recentAodVisibleLogCount < 16) {
-            recentAodVisibleLogCount++;
-            PixelAodLog.log("marked recent Pixel AOD visible source=" + source
-                    + " x=" + Math.round(x) + " y=" + Math.round(y));
-        }
+        ensureAodTrace(source);
+        PixelAodLog.log("marked recent Pixel AOD visible trace=" + currentAodTraceId()
+                + " source=" + source
+                + " x=" + Math.round(x) + " y=" + Math.round(y)
+                + " state={" + describeAodState(appContext) + "}");
     }
 
     static boolean shouldCustomizeAodNow(Context context) {
@@ -1132,11 +1192,8 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static void logBreezyWeather(String message) {
-        if (breezyWeatherLogCount >= 16) {
-            return;
-        }
-        breezyWeatherLogCount++;
-        PixelAodLog.log(message);
+        PixelAodLog.log(message + " trace=" + currentAodTraceId()
+                + " state={" + describeAodState(appContext) + "}");
     }
 
     static void setAtAGlanceExtra(String extra) {
@@ -1155,10 +1212,9 @@ public final class PixelAodClockView extends FrameLayout {
         if (!changed) {
             return;
         }
-        if (atAGlanceLogCount < 12) {
-            atAGlanceLogCount++;
-            PixelAodLog.log("updated Pixel AOD At a Glance extra=" + normalized);
-        }
+        PixelAodLog.log("updated Pixel AOD At a Glance extra=" + normalized
+                + " trace=" + currentAodTraceId()
+                + " state={" + describeAodState(appContext) + "}");
         mainHandler().post(() -> {
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
@@ -1250,11 +1306,9 @@ public final class PixelAodClockView extends FrameLayout {
                     view.updateMediaLine("snapshot-" + source);
                 }
             }
-            if (instanceRefreshLogCount < 16) {
-                instanceRefreshLogCount++;
-                PixelAodLog.log("refreshed Pixel AOD instances from "
-                        + source + " count=" + count);
-            }
+            PixelAodLog.log("refreshed Pixel AOD instances trace=" + currentAodTraceId()
+                    + " source=" + source + " count=" + count
+                    + " state={" + describeAodState(appContext) + "}");
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
             task.run();
@@ -1356,6 +1410,12 @@ public final class PixelAodClockView extends FrameLayout {
     private void updateAodVisibility(String source) {
         boolean visible = shouldDrawAodOverlay(source);
         int desiredVisibility = visible ? View.VISIBLE : View.GONE;
+        PixelAodLog.log("AOD overlay visibility decision trace=" + currentAodTraceId()
+                + " source=" + source
+                + " visible=" + visible
+                + " desiredVisibility=" + desiredVisibility
+                + " currentVisibility=" + getVisibility()
+                + " state={" + describeAodState(getContext()) + "}");
         if (getVisibility() != desiredVisibility) {
             setVisibility(desiredVisibility);
             if (visible) {
@@ -1372,7 +1432,9 @@ public final class PixelAodClockView extends FrameLayout {
             }
             PixelAodLog.log("Pixel AOD overlay visibility="
                     + (visible ? "visible" : "hidden")
-                    + " source=" + source);
+                    + " source=" + source
+                    + " trace=" + currentAodTraceId()
+                    + " state={" + describeAodState(getContext()) + "}");
         }
         if (visible) {
             markRecentAodOverlayVisible(source);
@@ -1388,23 +1450,42 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private boolean shouldDrawAodOverlay(String source) {
+        String trace = ensureAodTrace(source);
         if (!shouldCustomizeAodNow(getContext())) {
+            PixelAodLog.log("AOD overlay decision trace=" + trace
+                    + " source=" + source
+                    + " visible=false reason=shouldCustomizeAodNow=false"
+                    + " state={" + describeAodState(getContext()) + "}");
             return false;
         }
         if (!isWithinAodSchedule()) {
+            PixelAodLog.log("AOD overlay decision trace=" + trace
+                    + " source=" + source
+                    + " visible=false reason=outside-schedule"
+                    + " state={" + describeAodState(getContext()) + "}");
             return false;
         }
         if (proximityNear) {
+            PixelAodLog.log("AOD overlay decision trace=" + trace
+                    + " source=" + source
+                    + " visible=false reason=proximity-near"
+                    + " state={" + describeAodState(getContext()) + "}");
             return false;
         }
         if (isInsideExpandedSystemShade()) {
-            if (shadeSuppressionLogCount < 12) {
-                shadeSuppressionLogCount++;
-                PixelAodLog.log("suppressed Pixel AOD overlay in expanded shade source="
-                        + source);
-            }
+            PixelAodLog.log("suppressed Pixel AOD overlay in expanded shade trace=" + trace
+                    + " source=" + source
+                    + " state={" + describeAodState(getContext()) + "}");
+            PixelAodLog.log("AOD overlay decision trace=" + trace
+                    + " source=" + source
+                    + " visible=false reason=expanded-system-shade"
+                    + " state={" + describeAodState(getContext()) + "}");
             return false;
         }
+        PixelAodLog.log("AOD overlay decision trace=" + trace
+                + " source=" + source
+                + " visible=true reason=all-checks-passed"
+                + " state={" + describeAodState(getContext()) + "}");
         return true;
     }
 
@@ -1418,6 +1499,8 @@ public final class PixelAodClockView extends FrameLayout {
                 cachedScheduleKey = "";
                 cachedScheduleResult = true;
             }
+            PixelAodLog.log("AOD schedule check disabled result=true state={"
+                    + describeAodState(ctx) + "}");
             return true;
         }
         String startTimeStr = PixelAodSettings.getString(ctx, PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, "22:00");
@@ -1427,6 +1510,10 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             if (key.equals(cachedScheduleKey)
                     && now - cachedScheduleCheckedAt < SCHEDULE_CACHE_MILLIS) {
+                PixelAodLog.log("AOD schedule cache hit key=" + key
+                        + " result=" + cachedScheduleResult
+                        + " ageMs=" + (now - cachedScheduleCheckedAt)
+                        + " state={" + describeAodState(ctx) + "}");
                 return cachedScheduleResult;
             }
         }
@@ -1456,12 +1543,11 @@ public final class PixelAodClockView extends FrameLayout {
                 cachedScheduleKey = key;
                 cachedScheduleResult = result;
             }
-            if (scheduleLogCount < 8) {
-                scheduleLogCount++;
-                PixelAodLog.log("AOD schedule check: start=" + startTimeStr + " (" + startMins
-                        + "m), end=" + endTimeStr + " (" + endMins + "m), current="
-                        + curMins + "m, result=" + result);
-            }
+            PixelAodLog.log("AOD schedule check: start=" + startTimeStr + " (" + startMins
+                    + "m), end=" + endTimeStr + " (" + endMins + "m), current="
+                    + curMins + "m, result=" + result
+                    + " key=" + key
+                    + " state={" + describeAodState(ctx) + "}");
             return result;
         } catch (Throwable t) {
             PixelAodLog.e("failed to parse AOD schedule times: start=" + startTimeStr + " end=" + endTimeStr, t);
@@ -1817,6 +1903,11 @@ public final class PixelAodClockView extends FrameLayout {
         String signature = notificationSignature(notifications.toArray(new StatusBarNotification[0]))
                 + "|media=" + currentMediaNotificationKey;
         if (TextUtils.equals(lastNotificationIconSignature, signature)) {
+            PixelAodLog.log("skipped native AOD notification icon rebuild trace=" + currentAodTraceId()
+                    + " source=" + source
+                    + " reason=unchanged-signature"
+                    + " signature=" + signature
+                    + " state={" + describeAodState(getContext()) + "}");
             return;
         }
         lastNotificationIconSignature = signature;
@@ -1824,10 +1915,10 @@ public final class PixelAodClockView extends FrameLayout {
         if (notifications.isEmpty()) {
             notificationIconRow.setVisibility(View.GONE);
             applyClockMode(false);
-            if (notificationRebuildLogCount < 4) {
-                notificationRebuildLogCount++;
-                PixelAodLog.log("rebuilt native AOD notification icons input=0 emitted=0");
-            }
+            PixelAodLog.log("rebuilt native AOD notification icons trace=" + currentAodTraceId()
+                    + " source=" + source
+                    + " input=0 emitted=0"
+                    + " state={" + describeAodState(getContext()) + "}");
             return;
         }
         int emitted = 0;
@@ -1840,14 +1931,29 @@ public final class PixelAodClockView extends FrameLayout {
             }
             if (isNotificationForCurrentMedia(sbn)) {
                 skippedMedia++;
+                PixelAodLog.log("skipped AOD notification icon trace=" + currentAodTraceId()
+                        + " source=" + source
+                        + " reason=current-media pkg=" + sbn.getPackageName()
+                        + " key=" + sbn.getKey()
+                        + " state={" + describeAodState(getContext()) + "}");
                 continue;
             }
             if (!seenPackages.add(sbn.getPackageName())) {
+                PixelAodLog.log("skipped AOD notification icon trace=" + currentAodTraceId()
+                        + " source=" + source
+                        + " reason=duplicate-package pkg=" + sbn.getPackageName()
+                        + " key=" + sbn.getKey()
+                        + " state={" + describeAodState(getContext()) + "}");
                 continue;
             }
             Drawable drawable = loadSmallIconDrawable(getContext(), sbn);
             if (drawable == null) {
                 loadFailures++;
+                PixelAodLog.log("failed AOD notification icon load trace=" + currentAodTraceId()
+                        + " source=" + source
+                        + " reason=drawable-null pkg=" + sbn.getPackageName()
+                        + " key=" + sbn.getKey()
+                        + " state={" + describeAodState(getContext()) + "}");
                 continue;
             }
             ImageView iconView = new ImageView(getContext());
@@ -1868,15 +1974,14 @@ public final class PixelAodClockView extends FrameLayout {
         }
         notificationIconRow.setVisibility(emitted > 0 ? View.VISIBLE : View.GONE);
         applyClockMode(emitted > 0);
-        if (notificationRebuildLogCount < 4) {
-            notificationRebuildLogCount++;
-            PixelAodLog.log("rebuilt native AOD notification icons input="
-                    + notifications.size() + " emitted=" + emitted
-                    + " skippedMedia=" + skippedMedia
-                    + " loadFailures=" + loadFailures
-                    + " packages=" + describeNotificationPackages(notifications)
-                    + " source=" + source);
-        }
+        PixelAodLog.log("rebuilt native AOD notification icons trace=" + currentAodTraceId()
+                + " source=" + source
+                + " input=" + notifications.size()
+                + " emitted=" + emitted
+                + " skippedMedia=" + skippedMedia
+                + " loadFailures=" + loadFailures
+                + " packages=" + describeNotificationPackages(notifications)
+                + " state={" + describeAodState(getContext()) + "}");
     }
 
     private boolean isNotificationForCurrentMedia(StatusBarNotification sbn) {
@@ -2105,8 +2210,13 @@ public final class PixelAodClockView extends FrameLayout {
                 logMediaIconChoice(notification.getPackageName(), "notification-smallIcon");
                 return smallIcon;
             }
+            PixelAodLog.log("AOD media icon fallback from notification pkg="
+                    + notification.getPackageName()
+                    + " reason=notification-smallIcon-unavailable"
+                    + " trace=" + currentAodTraceId());
         }
         if (controller == null) {
+            PixelAodLog.log("AOD media icon skipped reason=no-controller trace=" + currentAodTraceId());
             return null;
         }
         Drawable monochrome = loadApplicationMonochromeIcon(context, controller.getPackageName());
@@ -2114,6 +2224,9 @@ public final class PixelAodClockView extends FrameLayout {
             logMediaIconChoice(controller.getPackageName(), "app-monochrome-fallback");
             return monochrome;
         }
+        PixelAodLog.log("AOD media icon fallback pkg=" + controller.getPackageName()
+                + " reason=app-monochrome-unavailable"
+                + " trace=" + currentAodTraceId());
         return null;
     }
 
@@ -2178,10 +2291,16 @@ public final class PixelAodClockView extends FrameLayout {
         try {
             Notification notification = sbn.getNotification();
             if (notification == null || notification.getSmallIcon() == null) {
+                PixelAodLog.log("AOD media notification smallIcon unavailable pkg="
+                        + sbn.getPackageName()
+                        + " trace=" + currentAodTraceId());
                 return null;
             }
             Drawable drawable = loadIconDrawable(context, sbn.getPackageName(), notification.getSmallIcon());
             if (drawable == null) {
+                PixelAodLog.log("AOD media notification smallIcon drawable missing pkg="
+                        + sbn.getPackageName()
+                        + " trace=" + currentAodTraceId());
                 return null;
             }
             Drawable result = drawable.mutate();
@@ -2206,13 +2325,15 @@ public final class PixelAodClockView extends FrameLayout {
             }
             Drawable monochrome = ((AdaptiveIconDrawable) drawable).getMonochrome();
             if (monochrome == null) {
+                logRejectedMediaIcon(packageName, "adaptive-icon-no-monochrome");
                 return null;
             }
             Drawable result = monochrome.mutate();
             result.setTint(resolveMaterialInfoColor(context));
             result.setTintMode(PorterDuff.Mode.SRC_IN);
             if (looksLikeFilledMonochromeMask(result) || looksLikeTinyForeground(result)) {
-                logRejectedMediaIcon(packageName);
+                logRejectedMediaIcon(packageName,
+                        looksLikeFilledMonochromeMask(result) ? "filled-mask" : "tiny-foreground");
                 return null;
             }
             return result;
@@ -2255,14 +2376,23 @@ public final class PixelAodClockView extends FrameLayout {
         try {
             Notification notification = sbn.getNotification();
             if (notification == null) {
+                PixelAodLog.log("AOD notification icon skipped pkg=" + sbn.getPackageName()
+                        + " reason=no-notification"
+                        + " trace=" + currentAodTraceId());
                 return null;
             }
             Icon icon = notification.getSmallIcon();
             if (icon == null) {
+                PixelAodLog.log("AOD notification icon skipped pkg=" + sbn.getPackageName()
+                        + " reason=no-small-icon"
+                        + " trace=" + currentAodTraceId());
                 return null;
             }
             Drawable drawable = loadIconDrawable(context, sbn.getPackageName(), icon);
             if (drawable == null) {
+                PixelAodLog.log("AOD notification icon skipped pkg=" + sbn.getPackageName()
+                        + " reason=icon-drawable-null"
+                        + " trace=" + currentAodTraceId());
                 return null;
             }
             boolean filledMask = looksLikeFilledNotificationMask(drawable);
@@ -2632,60 +2762,45 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static void logFilteredNotification(StatusBarNotification sbn, String reason) {
-        if (notificationFilterLogCount >= 6) {
-            return;
-        }
-        notificationFilterLogCount++;
         PixelAodLog.log("filtered AOD notification pkg=" + sbn.getPackageName()
                 + " key=" + sbn.getKey()
                 + " category=" + sbn.getNotification().category
                 + " visibility=" + sbn.getNotification().visibility
-                + " reason=" + reason);
+                + " reason=" + reason
+                + " trace=" + currentAodTraceId());
     }
 
     private static void logKeptNotification(StatusBarNotification sbn, RankingSnapshot ranking) {
-        if (notificationKeepLogCount >= 6) {
-            return;
-        }
-        notificationKeepLogCount++;
         PixelAodLog.log("kept AOD notification pkg=" + sbn.getPackageName()
                 + " key=" + sbn.getKey()
                 + " category=" + sbn.getNotification().category
                 + " visibility=" + sbn.getNotification().visibility
-                + " ranking=" + ranking);
+                + " ranking=" + ranking
+                + " trace=" + currentAodTraceId());
     }
 
     private static void logNotificationIconChoice(String packageName, String mode) {
-        if (notificationIconLogCount >= 6) {
-            return;
-        }
-        notificationIconLogCount++;
-        PixelAodLog.log("AOD notification icon mode=" + mode + " pkg=" + packageName);
+        PixelAodLog.log("AOD notification icon choice pkg=" + packageName
+                + " mode=" + mode
+                + " trace=" + currentAodTraceId());
     }
 
     private static void logMediaIconChoice(String packageName, String mode) {
-        if (mediaIconLogCount >= 6) {
-            return;
-        }
-        mediaIconLogCount++;
-        PixelAodLog.log("AOD media icon mode=" + mode + " pkg=" + packageName);
+        PixelAodLog.log("AOD media icon choice pkg=" + packageName
+                + " mode=" + mode
+                + " trace=" + currentAodTraceId());
     }
 
-    private static void logRejectedMediaIcon(String packageName) {
-        if (mediaIconRejectLogCount >= 8) {
-            return;
-        }
-        mediaIconRejectLogCount++;
-        PixelAodLog.log("ignored blocky AOD media monochrome icon pkg=" + packageName);
+    private static void logRejectedMediaIcon(String packageName, String reason) {
+        PixelAodLog.log("rejected AOD media monochrome icon pkg=" + packageName
+                + " reason=" + reason
+                + " trace=" + currentAodTraceId());
     }
 
     private static void logMediaNotificationCache(String action, String source, int count) {
-        if (mediaNotificationLogCount >= 4) {
-            return;
-        }
-        mediaNotificationLogCount++;
         PixelAodLog.log("AOD media notification cache " + action
-                + " source=" + source + " count=" + count);
+                + " source=" + source + " count=" + count
+                + " trace=" + currentAodTraceId());
     }
 
     private static void refreshMediaLines() {
@@ -3097,11 +3212,10 @@ public final class PixelAodClockView extends FrameLayout {
             lastBurnInTranslationX = x;
             lastBurnInTranslationY = y;
         }
-        if (burnInLogCount < 8) {
-            burnInLogCount++;
-            PixelAodLog.log("applied Pixel AOD burn-in offset x=" + Math.round(x)
-                    + " y=" + Math.round(y));
-        }
+        PixelAodLog.log("applied Pixel AOD burn-in offset trace=" + currentAodTraceId()
+                + " x=" + Math.round(x)
+                + " y=" + Math.round(y)
+                + " state={" + describeAodState(getContext()) + "}");
     }
 
     private void resetBurnInTranslation() {
@@ -3122,6 +3236,7 @@ public final class PixelAodClockView extends FrameLayout {
     private void applyClockMode(boolean compact) {
         boolean changed = compactClock != compact;
         compactClock = compact;
+        setAodPresentationState(compact, currentClockWeight);
         FrameLayout.LayoutParams clockParams = (FrameLayout.LayoutParams) clockView.getLayoutParams();
         if (compact) {
             applySharedClockTextStyle(clockView, getContext(), currentClockWeight,
@@ -3143,12 +3258,18 @@ public final class PixelAodClockView extends FrameLayout {
         clockView.setLayoutParams(clockParams);
         updateInfoStackLayout();
         updateTime();
+        PixelAodLog.log("applied Pixel AOD clock mode trace=" + currentAodTraceId()
+                + " compact=" + compact
+                + " changed=" + changed
+                + " weight=" + currentClockWeight
+                + " clockTop=" + clockParams.topMargin
+                + " state={" + describeAodState(getContext(), compactClock, currentClockWeight) + "}");
         if (changed) {
-            PixelAodLog.log("switched Pixel AOD clock mode compact=" + compact);
             PixelAodLog.log("applied Pixel AOD clock style source=mode-change compact=" + compact
                     + " weight=" + currentClockWeight
                     + " variation=" + sharedClockFontVariationSettings(currentClockWeight)
-                    + " typeface=builder");
+                    + " typeface=builder"
+                    + " trace=" + currentAodTraceId());
         }
     }
 
@@ -3162,7 +3283,9 @@ public final class PixelAodClockView extends FrameLayout {
         PixelAodLog.log("applied stable AOD clock weight source=" + source
                 + " weight=" + targetWeight
                 + " variation=" + sharedClockFontVariationSettings(targetWeight)
-                + " typeface=builder");
+                + " typeface=builder"
+                + " trace=" + currentAodTraceId()
+                + " state={" + describeAodState(getContext(), compactClock, targetWeight) + "}");
     }
 
     private void beginLockscreenToAodWeightTransition(String source) {
@@ -3173,12 +3296,17 @@ public final class PixelAodClockView extends FrameLayout {
         int toWeight = aodClockWeight(getContext());
         if (fromWeight == toWeight) {
             setClockWeight(toWeight);
+            PixelAodLog.log("skipped AOD clock weight transition source=" + source
+                    + " reason=equal-weight weight=" + toWeight
+                    + " trace=" + currentAodTraceId()
+                    + " state={" + describeAodState(getContext(), compactClock, toWeight) + "}");
             return;
         }
         setClockWeight(fromWeight);
         clockWeightAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f);
         clockWeightAnimator.setDuration(700L);
         clockWeightAnimator.setInterpolator(new android.view.animation.DecelerateInterpolator(1.4f));
+        final boolean[] cancelled = {false};
         clockWeightAnimator.addUpdateListener(animation -> {
             float progress = (Float) animation.getAnimatedValue();
             int weight = Math.round(fromWeight + ((toWeight - fromWeight) * progress));
@@ -3186,9 +3314,27 @@ public final class PixelAodClockView extends FrameLayout {
         });
         clockWeightAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override
+            public void onAnimationCancel(android.animation.Animator animation) {
+                cancelled[0] = true;
+                clockWeightAnimator = null;
+                PixelAodLog.log("cancelled AOD clock weight transition source=" + source
+                        + " fromWeight=" + fromWeight
+                        + " toWeight=" + toWeight
+                        + " trace=" + currentAodTraceId()
+                        + " state={" + describeAodState(getContext(), compactClock, currentClockWeight) + "}");
+            }
+
+            @Override
             public void onAnimationEnd(android.animation.Animator animation) {
+                if (cancelled[0]) {
+                    return;
+                }
                 setClockWeight(toWeight);
                 clockWeightAnimator = null;
+                PixelAodLog.log("finished AOD clock weight transition source=" + source
+                        + " toWeight=" + toWeight
+                        + " trace=" + currentAodTraceId()
+                        + " state={" + describeAodState(getContext(), compactClock, currentClockWeight) + "}");
             }
         });
         clockWeightAnimator.start();
@@ -3197,7 +3343,9 @@ public final class PixelAodClockView extends FrameLayout {
                 + " fromVariation=" + sharedClockFontVariationSettings(fromWeight)
                 + " toWeight=" + toWeight
                 + " toVariation=" + sharedClockFontVariationSettings(toWeight)
-                + " typeface=builder");
+                + " typeface=builder"
+                + " trace=" + currentAodTraceId()
+                + " state={" + describeAodState(getContext(), compactClock, fromWeight) + "}");
     }
 
     private void setClockWeight(int weight) {
@@ -3206,6 +3354,7 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         currentClockWeight = weight;
+        setAodPresentationState(compactClock, weight);
         applySharedClockTypeface(clockView, getContext(), weight);
         applySharedClockLetterSpacing(clockView, getContext(), weight, compactClock);
     }
