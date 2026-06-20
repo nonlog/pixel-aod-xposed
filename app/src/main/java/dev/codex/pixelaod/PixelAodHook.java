@@ -67,6 +67,8 @@ final class PixelAodHook {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final Set<String> LOGGED_INSPECTION_CLASSES = java.util.Collections.synchronizedSet(new HashSet<>());
     private static final Set<String> LOGGED_VIEW_TREE_KEYS = new HashSet<>();
+    private static final Set<String> LOGGED_STOCK_SUPPRESSION_MISS_KEYS =
+            Collections.synchronizedSet(new HashSet<>());
     private static final Set<String> HOOKED_NOTIFICATION_VIEW_CLASSES = new HashSet<>();
     private static final Set<View> INSPECTED_PLUGIN_NOTIFICATION_VIEWS =
             Collections.newSetFromMap(new WeakHashMap<>());
@@ -270,12 +272,20 @@ final class PixelAodHook {
     }
 
     private static void logStockSuppressionMiss(String path, View view, String reason) {
-        if (view == null) {
+        if (view == null || !PixelAodLog.isDebugEnabled()) {
             return;
         }
+        String className = view.getClass().getName();
         String marker = markerFor(view);
+        String key = path + '|' + reason + '|' + className + '|' + marker;
+        synchronized (LOGGED_STOCK_SUPPRESSION_MISS_KEYS) {
+            if (!LOGGED_STOCK_SUPPRESSION_MISS_KEYS.add(key)) {
+                return;
+            }
+        }
         PixelAodLog.log("stock suppression miss path=" + path
                 + " reason=" + reason
+                + " class=" + className
                 + " marker=" + marker
                 + " shown=" + view.isShown()
                 + " visibility=" + view.getVisibility()
@@ -1570,25 +1580,51 @@ final class PixelAodHook {
     }
 
     static void refreshKnownAodHostVisibility(String source) {
-        runAtFrontOfMain(() -> {
+        final String expectedTrace = PixelAodClockView.peekAodTraceId();
+        MAIN.post(() -> {
             ViewGroup stockHost = lastStockHost.get();
             ViewGroup pixelHost = lastPixelHost.get();
             ViewGroup shadeHost = lastShadeHost.get();
             ViewGroup host = stockHost != null ? stockHost : pixelHost != null ? pixelHost : shadeHost;
             Context context = host != null ? host.getContext() : null;
-            String trace = PixelAodClockView.peekAodTraceId();
+            String currentTrace = PixelAodClockView.peekAodTraceId();
             String state = context != null ? PixelAodClockView.describeAodState(context) : "context=null";
+            if (!TextUtils.isEmpty(expectedTrace)
+                    && !TextUtils.equals(expectedTrace, currentTrace)) {
+                PixelAodLog.log("skipped refreshing known AOD host visibility source=" + source
+                        + " reason=trace-mismatch expectedTrace=" + expectedTrace
+                        + " currentTrace=" + currentTrace
+                        + " stockHost=" + hostSummary(stockHost)
+                        + " pixelHost=" + hostSummary(pixelHost)
+                        + " shadeHost=" + hostSummary(shadeHost)
+                        + " state={" + state + "}");
+                return;
+            }
             PixelAodLog.log("refreshing known AOD host visibility source=" + source
                     + " stockHost=" + hostSummary(stockHost)
                     + " pixelHost=" + hostSummary(pixelHost)
                     + " shadeHost=" + hostSummary(shadeHost)
                     + " host=" + hostSummary(host)
-                    + " trace=" + trace
+                    + " trace=" + currentTrace
                     + " state={" + state + "}");
             if (host == null || context == null) {
                 return;
             }
-            handleClockHost(context, host, source + "#refresh");
+            if (!PixelAodClockView.isAodActive()) {
+                PixelAodLog.log("skipped refreshing known AOD host visibility source=" + source
+                        + " reason=aod-inactive"
+                        + " host=" + hostSummary(host)
+                        + " trace=" + currentTrace
+                        + " state={" + state + "}");
+                return;
+            }
+            hideStockClockViews(host);
+            hideStockKeyguardClockViews(highestParentGroup(host));
+            adjustPluginStatusViews(context, host);
+            PixelAodLog.log("refreshed known AOD host visibility source=" + source
+                    + " host=" + hostSummary(host)
+                    + " trace=" + currentTrace
+                    + " state={" + state + "}");
         });
     }
 

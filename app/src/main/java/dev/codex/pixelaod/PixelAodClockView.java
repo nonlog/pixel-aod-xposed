@@ -2173,26 +2173,8 @@ public final class PixelAodClockView extends FrameLayout {
             return false;
         }
         Notification notification = sbn.getNotification();
-        if (Notification.CATEGORY_TRANSPORT.equals(notification.category)) {
-            return true;
-        }
-        try {
-            Bundle extras = notification.extras;
-            if (hasMediaSessionExtra(notification)) {
-                return true;
-            }
-            if ("android".equals(sbn.getPackageName())
-                    || "com.android.systemui".equals(sbn.getPackageName())) {
-                return false;
-            }
-            CharSequence title = extras != null ? extras.getCharSequence(Notification.EXTRA_TITLE) : null;
-            CharSequence text = extras != null ? extras.getCharSequence(Notification.EXTRA_TEXT) : null;
-            boolean ongoing = (notification.flags & (Notification.FLAG_ONGOING_EVENT
-                    | Notification.FLAG_NO_CLEAR)) != 0;
-            return ongoing && !TextUtils.isEmpty(title) && !TextUtils.isEmpty(text);
-        } catch (Throwable ignored) {
-            return false;
-        }
+        return Notification.CATEGORY_TRANSPORT.equals(notification.category)
+                || hasMediaSessionExtra(notification);
     }
 
     private static boolean lockscreenNotificationsEnabled() {
@@ -2465,11 +2447,7 @@ public final class PixelAodClockView extends FrameLayout {
         }
         String text = systemNotificationText(sbn);
         if (text.contains("network status") || text.contains("hotspot") || text.contains("tether")) {
-            return loadTintedSystemDrawable(context, color,
-                    "stat_sys_tether_general",
-                    "stat_sys_tether_wifi",
-                    "stat_sys_tether_usb",
-                    "stat_sys_tether_bluetooth");
+            return loadTintedSystemDrawable(context, color, "stat_sys_tether_wifi");
         }
         return null;
     }

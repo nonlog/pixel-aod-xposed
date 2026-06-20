@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.109] - 2026-06-20
+### Bug Fixes
+- Keep stock AOD suppression-miss logging debug-only and deduplicated, refresh known AOD hosts without reinjecting the whole tree, and narrow the media classifier so ordinary ongoing notifications stay on the normal icon path.
+- Use the native AOSP tether Wi-Fi drawable for the system network fallback instead of the custom multi-name lookup.
+
 ## [0.1.108] - 2026-06-18
 ### Bug Fixes
 - Guard the delayed stock AOD/keyguard restore with the originating AOD trace and refresh known host visibility after AOD activation, preventing an old transition from resurrecting stock AOD views into a new cycle.
