@@ -2125,6 +2125,22 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    private static boolean isSystemUiUsbDebugNotification(StatusBarNotification sbn) {
+        try {
+            Notification notification = sbn.getNotification();
+            Bundle extras = notification != null ? notification.extras : null;
+            if (extras == null) {
+                return false;
+            }
+            String title = String.valueOf(extras.getCharSequence(Notification.EXTRA_TITLE, ""));
+            String text = String.valueOf(extras.getCharSequence(Notification.EXTRA_TEXT, ""));
+            String combined = (title + " " + text).toLowerCase(Locale.US);
+            return combined.contains("debug") || combined.contains("adb");
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private static boolean isSystemNotificationCandidate(StatusBarNotification sbn) {
         if (sbn == null || sbn.getNotification() == null) {
             return false;
@@ -2441,13 +2457,39 @@ public final class PixelAodClockView extends FrameLayout {
     private static Drawable loadSystemNotificationIcon(Context context, StatusBarNotification sbn) {
         int color = resolveMaterialInfoColor(context);
         if (isSystemUiUsbNotification(sbn)) {
-            return loadTintedSystemDrawable(context, color,
+            Drawable nativeIcon = loadTintedSystemDrawable(context, color,
                     "stat_sys_data_usb",
                     "stat_notify_sdcard_usb");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+            return loadSystemNotificationGlyph(context, sbn);
         }
         String text = systemNotificationText(sbn);
         if (text.contains("network status") || text.contains("hotspot") || text.contains("tether")) {
-            return loadTintedSystemDrawable(context, color, "stat_sys_tether_wifi");
+            Drawable nativeIcon = loadTintedSystemDrawable(context, color, "stat_sys_tether_wifi");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+            return loadSystemNotificationGlyph(context, sbn);
+        }
+        if (text.contains("module update")) {
+            return loadSystemNotificationGlyph(context, sbn);
+        }
+        return null;
+    }
+
+    private static Drawable loadSystemNotificationGlyph(Context context, StatusBarNotification sbn) {
+        int color = resolveMaterialInfoColor(context);
+        if (isSystemUiUsbNotification(sbn)) {
+            return new UsbNotificationDrawable(color, isSystemUiUsbDebugNotification(sbn));
+        }
+        String text = systemNotificationText(sbn);
+        if (text.contains("module update")) {
+            return new SystemNotificationGlyphDrawable(color, SystemNotificationGlyphDrawable.TYPE_CHECK);
+        }
+        if (text.contains("network status") || text.contains("hotspot") || text.contains("tether")) {
+            return new SystemNotificationGlyphDrawable(color, SystemNotificationGlyphDrawable.TYPE_NETWORK);
         }
         return null;
     }
@@ -4092,6 +4134,174 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             return isRecentUptime(now, lastScreenOffAt, BURN_IN_SETTLE_MILLIS)
                     || isRecentUptime(now, lastAodActivatedAt, BURN_IN_SETTLE_MILLIS);
+        }
+    }
+
+    private static final class SystemNotificationGlyphDrawable extends Drawable {
+        static final int TYPE_CHECK = 1;
+        static final int TYPE_NETWORK = 2;
+
+        private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int type;
+        private int alpha = 255;
+
+        SystemNotificationGlyphDrawable(int color, int type) {
+            this.type = type;
+            stroke.setColor(color);
+            stroke.setStyle(Paint.Style.STROKE);
+            stroke.setStrokeCap(Paint.Cap.ROUND);
+            stroke.setStrokeJoin(Paint.Join.ROUND);
+        }
+
+        @Override
+        public void draw(Canvas canvas) {
+            Rect bounds = getBounds();
+            float size = Math.min(bounds.width(), bounds.height());
+            if (size <= 0f) {
+                return;
+            }
+            int save = canvas.save();
+            canvas.translate(bounds.left + (bounds.width() - size) / 2f,
+                    bounds.top + (bounds.height() - size) / 2f);
+            stroke.setAlpha(alpha);
+            stroke.setStrokeWidth(Math.max(2.2f, size * 0.085f));
+            if (type == TYPE_NETWORK) {
+                drawNetwork(canvas, size);
+            } else {
+                drawCheck(canvas, size);
+            }
+            canvas.restoreToCount(save);
+        }
+
+        private void drawCheck(Canvas canvas, float size) {
+            canvas.drawCircle(size * 0.50f, size * 0.50f, size * 0.34f, stroke);
+            Path check = new Path();
+            check.moveTo(size * 0.34f, size * 0.51f);
+            check.lineTo(size * 0.46f, size * 0.63f);
+            check.lineTo(size * 0.68f, size * 0.38f);
+            canvas.drawPath(check, stroke);
+        }
+
+        private void drawNetwork(Canvas canvas, float size) {
+            RectF large = new RectF(size * 0.18f, size * 0.20f, size * 0.82f, size * 0.84f);
+            RectF middle = new RectF(size * 0.30f, size * 0.36f, size * 0.70f, size * 0.76f);
+            RectF small = new RectF(size * 0.42f, size * 0.52f, size * 0.58f, size * 0.68f);
+            canvas.drawArc(large, 220f, 100f, false, stroke);
+            canvas.drawArc(middle, 220f, 100f, false, stroke);
+            canvas.drawArc(small, 220f, 100f, false, stroke);
+            canvas.drawPoint(size * 0.50f, size * 0.78f, stroke);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            this.alpha = alpha;
+            invalidateSelf();
+        }
+
+        @Override
+        public void setColorFilter(ColorFilter colorFilter) {
+            stroke.setColorFilter(colorFilter);
+            invalidateSelf();
+        }
+
+        @Override
+        public int getOpacity() {
+            return PixelFormat.TRANSLUCENT;
+        }
+
+        @Override
+        public int getIntrinsicWidth() {
+            return 64;
+        }
+
+        @Override
+        public int getIntrinsicHeight() {
+            return 64;
+        }
+    }
+
+    private static final class UsbNotificationDrawable extends Drawable {
+        private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path triangle = new Path();
+        private final boolean debug;
+        private int alpha = 255;
+
+        UsbNotificationDrawable(int color, boolean debug) {
+            this.debug = debug;
+            stroke.setColor(color);
+            stroke.setStyle(Paint.Style.STROKE);
+            stroke.setStrokeCap(Paint.Cap.ROUND);
+            stroke.setStrokeJoin(Paint.Join.ROUND);
+            fill.setColor(color);
+            fill.setStyle(Paint.Style.FILL);
+        }
+
+        @Override
+        public void draw(Canvas canvas) {
+            Rect bounds = getBounds();
+            float size = Math.min(bounds.width(), bounds.height());
+            if (size <= 0f) {
+                return;
+            }
+            int save = canvas.save();
+            canvas.translate(bounds.left + (bounds.width() - size) / 2f,
+                    bounds.top + (bounds.height() - size) / 2f);
+            stroke.setAlpha(alpha);
+            fill.setAlpha(alpha);
+            stroke.setStrokeWidth(Math.max(2f, size * 0.075f));
+
+            float cx = size * 0.50f;
+            canvas.drawLine(cx, size * 0.18f, cx, size * 0.78f, stroke);
+            canvas.drawLine(cx, size * 0.42f, size * 0.28f, size * 0.42f, stroke);
+            canvas.drawLine(size * 0.28f, size * 0.42f, size * 0.28f, size * 0.58f, stroke);
+            canvas.drawLine(cx, size * 0.50f, size * 0.72f, size * 0.50f, stroke);
+            canvas.drawLine(size * 0.72f, size * 0.50f, size * 0.72f, size * 0.30f, stroke);
+
+            triangle.reset();
+            triangle.moveTo(cx, size * 0.08f);
+            triangle.lineTo(size * 0.42f, size * 0.24f);
+            triangle.lineTo(size * 0.58f, size * 0.24f);
+            triangle.close();
+            canvas.drawPath(triangle, fill);
+            canvas.drawCircle(size * 0.28f, size * 0.64f, size * 0.06f, fill);
+            canvas.drawRect(size * 0.66f, size * 0.20f, size * 0.78f, size * 0.32f, fill);
+
+            if (debug) {
+                canvas.drawCircle(cx, size * 0.84f, size * 0.085f, fill);
+            } else {
+                canvas.drawRect(cx - size * 0.075f, size * 0.76f,
+                        cx + size * 0.075f, size * 0.92f, fill);
+            }
+            canvas.restoreToCount(save);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            this.alpha = alpha;
+            invalidateSelf();
+        }
+
+        @Override
+        public void setColorFilter(ColorFilter colorFilter) {
+            stroke.setColorFilter(colorFilter);
+            fill.setColorFilter(colorFilter);
+            invalidateSelf();
+        }
+
+        @Override
+        public int getOpacity() {
+            return PixelFormat.TRANSLUCENT;
+        }
+
+        @Override
+        public int getIntrinsicWidth() {
+            return 64;
+        }
+
+        @Override
+        public int getIntrinsicHeight() {
+            return 64;
         }
     }
 

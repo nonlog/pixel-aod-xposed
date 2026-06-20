@@ -6,8 +6,13 @@ import io.github.libxposed.api.XposedInterface;
 
 final class PixelAodLog {
     static final String TAG = "PixelAodOPlus";
+    private static final int DEBUG_LOGS_PER_WINDOW = 240;
+    private static final long DEBUG_LOG_WINDOW_MS = 60_000L;
     private static volatile XposedInterface framework;
     private static volatile boolean debugEnabled;
+    private static long debugLogWindowStart;
+    private static int debugLogCount;
+    private static boolean debugLogSuppressed;
 
     private PixelAodLog() {
     }
@@ -36,8 +41,28 @@ final class PixelAodLog {
     }
 
     static void log(String message) {
-        if (debugEnabled) {
+        if (debugEnabled && shouldEmitDebugLog()) {
             i(message);
+        }
+    }
+
+    private static boolean shouldEmitDebugLog() {
+        long now = android.os.SystemClock.uptimeMillis();
+        synchronized (PixelAodLog.class) {
+            if (debugLogWindowStart <= 0L || now - debugLogWindowStart >= DEBUG_LOG_WINDOW_MS) {
+                debugLogWindowStart = now;
+                debugLogCount = 0;
+                debugLogSuppressed = false;
+            }
+            if (debugLogCount < DEBUG_LOGS_PER_WINDOW) {
+                debugLogCount++;
+                return true;
+            }
+            if (!debugLogSuppressed) {
+                debugLogSuppressed = true;
+                i("debug log budget exhausted; suppressing further debug logs for this window");
+            }
+            return false;
         }
     }
 
