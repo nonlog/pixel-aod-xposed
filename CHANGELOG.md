@@ -1,6 +1,9 @@
 # Changelog
 
 ## [0.1.109] - 2026-06-20
+### UI
+- Rework the launcher icon assets into a stable adaptive icon set: keep the rebuilt full icon as the adaptive foreground, switch the adaptive background to transparent to avoid a doubled card effect on OOS, and temporarily remove the broken monochrome layer export so the launcher icon renders correctly instead of collapsing into a washed-out bar.
+
 ### Bug Fixes
 - Keep stock AOD suppression-miss logging debug-only and deduplicated, refresh known AOD hosts without reinjecting the whole tree, and narrow the media classifier so ordinary ongoing notifications stay on the normal icon path.
 - Use the native AOSP tether Wi-Fi drawable for the system network fallback instead of the custom multi-name lookup.
