@@ -1377,6 +1377,15 @@ final class PixelAodHook {
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
             return;
         }
+        if (requestedState == Display.STATE_DOZE_SUSPEND
+                && PixelAodClockView.shouldKeepDozeScreenActive(context)) {
+            args[stateIndex] = Display.STATE_DOZE;
+            PixelAodLog.i("rewrote " + source
+                    + " DOZE_SUSPEND->DOZE while custom AOD needs live frames"
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            return;
+        }
         if (shouldBypassStateRewrite(args)) {
             PixelAodLog.log("skipped AOD rewrite source=" + source
                     + " requestedState=" + requestedState

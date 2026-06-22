@@ -137,11 +137,14 @@ public final class PixelAodClockView extends FrameLayout {
     private static final long AOD_ENTRY_GRACE_MILLIS = 1800L;
     private static final long AOD_ENTRY_DELAY_MILLIS = 650L;
     private static final long BURN_IN_SETTLE_MILLIS = 8000L;
+    private static final long AOD_FORCE_DOZE_RECENT_OVERLAY_MILLIS = 15_000L;
     private static final long WEATHER_STALE_MILLIS = 12L * 60L * 60L * 1000L;
     private static final long SCHEDULE_CACHE_MILLIS = 30_000L;
+    private static final long PAUSED_MEDIA_TIMEOUT_MILLIS = 10L * 60L * 1000L;
     private static final StatusBarNotification[] EMPTY_NOTIFICATIONS = new StatusBarNotification[0];
     private static final LinkedHashMap<String, StatusBarNotification> mediaNotificationCache =
             new LinkedHashMap<>();
+    private static final Set<String> expiredInactiveMediaPackages = new HashSet<>();
     private static final Set<String> loggedNativeSystemDrawableNames = new HashSet<>();
     private static StatusBarNotification[] rawNotifications = EMPTY_NOTIFICATIONS;
     private static StatusBarNotification[] activeNotifications = EMPTY_NOTIFICATIONS;
@@ -272,13 +275,17 @@ public final class PixelAodClockView extends FrameLayout {
     private String lastNotificationIconSignature = "";
     private final List<MediaController> mediaControllers = new ArrayList<>();
     private final Map<MediaController, MediaController.Callback> mediaCallbacks = new HashMap<>();
+    private final Map<String, Long> inactiveMediaStartedAt = new HashMap<>();
+    private final Map<String, Runnable> inactiveMediaTimeoutRunnables = new HashMap<>();
     private final MediaSessionManager.OnActiveSessionsChangedListener activeSessionsChangedListener =
             this::updateMediaControllers;
     private final Runnable ticker = new Runnable() {
         @Override
         public void run() {
             updateTime();
+            updateMediaLine("ticker");
             updateAodVisibility("ticker");
+            requestAodFrameRefresh("ticker");
             mainHandler().postDelayed(this, millisUntilNextMinute());
         }
     };
@@ -574,6 +581,7 @@ public final class PixelAodClockView extends FrameLayout {
                     view.updateAodVisibility(source);
                     if (active) {
                         view.refreshActiveMediaControllers();
+                        view.requestAodFrameRefresh(source + "#active");
                     }
                 }
             }
@@ -810,6 +818,19 @@ public final class PixelAodClockView extends FrameLayout {
         return active && isInAodEntryGraceWindow();
     }
 
+    static boolean shouldKeepDozeScreenActive(Context context) {
+        if (context == null || isDeviceInteractive(context)) {
+            return false;
+        }
+        long now = SystemClock.uptimeMillis();
+        synchronized (PixelAodClockView.class) {
+            if (isRecentUptime(now, lastAodOverlayVisibleAt, AOD_FORCE_DOZE_RECENT_OVERLAY_MILLIS)) {
+                return true;
+            }
+        }
+        return shouldCustomizeAodNow(context);
+    }
+
     private static boolean isInAodEntryGraceWindow() {
         long now = android.os.SystemClock.uptimeMillis();
         synchronized (PixelAodClockView.class) {
@@ -1032,6 +1053,7 @@ public final class PixelAodClockView extends FrameLayout {
                 for (PixelAodClockView view : INSTANCES) {
                     if (view != null) {
                         view.updateTime();
+                        view.requestAodFrameRefresh("weather");
                     }
                 }
                 PixelLockscreenClockView.refreshAll("weather");
@@ -1228,6 +1250,7 @@ public final class PixelAodClockView extends FrameLayout {
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
                     view.updateTime();
+                    view.requestAodFrameRefresh("at-a-glance");
                 }
             }
         });
@@ -1304,6 +1327,7 @@ public final class PixelAodClockView extends FrameLayout {
         updateTime();
         rebuildNotificationIcons("refreshPresentation");
         updateMediaLine("refreshPresentation");
+        requestAodFrameRefresh("refreshPresentation");
     }
 
     private static void refreshInstancesFromNotificationSnapshot(String source) {
@@ -1312,7 +1336,11 @@ public final class PixelAodClockView extends FrameLayout {
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
                     count++;
+                    view.updateTime();
+                    view.rebuildNotificationIcons("snapshot-" + source);
                     view.updateMediaLine("snapshot-" + source);
+                    view.updateAodVisibility("snapshot-" + source);
+                    view.requestAodFrameRefresh("snapshot-" + source);
                 }
             }
             PixelAodLog.log("refreshed Pixel AOD instances trace=" + currentAodTraceId()
@@ -1630,6 +1658,7 @@ public final class PixelAodClockView extends FrameLayout {
                 MediaController.Callback callback = new MediaController.Callback() {
                     @Override
                     public void onPlaybackStateChanged(PlaybackState state) {
+                        notePlaybackState(controller, state);
                         updateMediaLine("media-playback");
                     }
 
@@ -1640,10 +1669,13 @@ public final class PixelAodClockView extends FrameLayout {
 
                     @Override
                     public void onSessionDestroyed() {
+                        clearInactiveMediaTracking(controller, "media-destroyed");
                         refreshActiveMediaControllers();
+                        updateMediaLine("media-destroyed");
                     }
                 };
                 try {
+                    notePlaybackState(controller, controller.getPlaybackState());
                     controller.registerCallback(callback, mainHandler());
                     mediaCallbacks.put(controller, callback);
                 } catch (Throwable t) {
@@ -1690,6 +1722,7 @@ public final class PixelAodClockView extends FrameLayout {
             // pause/stop. Re-assert visibility so resuming the same track shows again.
             if (!TextUtils.isEmpty(mediaText) && mediaRow.getVisibility() != View.VISIBLE) {
                 mediaRow.setVisibility(View.VISIBLE);
+                requestAodFrameRefresh(source + "#media-visible");
             }
             return;
         }
@@ -1705,6 +1738,7 @@ public final class PixelAodClockView extends FrameLayout {
         mediaView.setText(mediaText);
         mediaRow.setVisibility(View.VISIBLE);
         rebuildNotificationIcons(source);
+        requestAodFrameRefresh(source + "#media");
     }
 
     private void updateMediaIcon(MediaController controller, StatusBarNotification notification) {
@@ -1731,6 +1765,7 @@ public final class PixelAodClockView extends FrameLayout {
         mediaIconView.setImageDrawable(null);
         mediaRow.setVisibility(View.GONE);
         rebuildNotificationIcons(source);
+        requestAodFrameRefresh(source + "#media-cleared");
     }
 
     private static boolean isStoppedPlaybackState(PlaybackState state) {
@@ -1789,13 +1824,25 @@ public final class PixelAodClockView extends FrameLayout {
 
     private boolean shouldKeepInactiveMediaController(MediaController controller, PlaybackState state) {
         if (controller == null || isStoppedPlaybackState(state) || !hasDisplayableMedia(controller)) {
+            if (isStoppedPlaybackState(state)) {
+                clearInactiveMediaTracking(controller, "media-stopped");
+            }
+            return false;
+        }
+        if (isExpiredInactiveMediaPackage(controller.getPackageName())) {
+            PixelAodLog.log("AOD media inactive suppressed pkg=" + controller.getPackageName()
+                    + " key=" + mediaControllerKey(controller)
+                    + " reason=package-timeout"
+                    + " state=" + playbackStateName(state)
+                    + " trace=" + currentAodTraceId());
             return false;
         }
         if (isPausedPlaybackState(state)) {
-            return true;
+            return isInactiveMediaWithinTimeout(controller, state, "paused");
         }
         if (isNonePlaybackState(state) || state == null) {
-            return findMediaNotification(controller) != null;
+            return findMediaNotification(controller) != null
+                    && isInactiveMediaWithinTimeout(controller, state, "idle");
         }
         return false;
     }
@@ -1812,8 +1859,11 @@ public final class PixelAodClockView extends FrameLayout {
             } catch (Throwable ignored) {
                 // Try the next controller.
             }
-            if (isPlayingPlaybackState(state) && hasDisplayableMedia(controller)) {
-                return controller;
+            if (isPlayingPlaybackState(state)) {
+                clearExpiredInactiveMediaPackage(controller.getPackageName(), "media-playing");
+                if (hasDisplayableMedia(controller)) {
+                    return controller;
+                }
             }
         }
         // Otherwise keep a paused session, or an idle/null-state session only while
@@ -1910,7 +1960,8 @@ public final class PixelAodClockView extends FrameLayout {
     private void rebuildNotificationIcons(String source) {
         List<StatusBarNotification> notifications = currentNotifications();
         String signature = notificationSignature(notifications.toArray(new StatusBarNotification[0]))
-                + "|media=" + currentMediaNotificationKey;
+                + "|media=" + currentMediaNotificationKey
+                + "|expiredMedia=" + expiredInactiveMediaPackageSignature();
         if (TextUtils.equals(lastNotificationIconSignature, signature)) {
             PixelAodLog.log("skipped native AOD notification icon rebuild trace=" + currentAodTraceId()
                     + " source=" + source
@@ -2239,6 +2290,11 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static StatusBarNotification findMediaNotification(MediaController controller) {
         String packageName = controller.getPackageName();
+        if (isExpiredInactiveMediaPackageForAnyInstance(packageName)) {
+            PixelAodLog.log("ignored AOD media notification lookup pkg=" + packageName
+                    + " reason=package-timeout trace=" + currentAodTraceId());
+            return null;
+        }
         ArrayList<StatusBarNotification> snapshot;
         synchronized (PixelAodClockView.class) {
             snapshot = new ArrayList<>(mediaNotificationCache.values());
@@ -2477,6 +2533,234 @@ public final class PixelAodClockView extends FrameLayout {
             return loadSystemNotificationGlyph(context, sbn);
         }
         return null;
+    }
+
+    private void notePlaybackState(MediaController controller, PlaybackState state) {
+        if (controller == null) {
+            return;
+        }
+        if (isPlayingPlaybackState(state)) {
+            clearExpiredInactiveMediaPackage(controller.getPackageName(), "media-playing");
+            clearInactiveMediaTracking(controller, "media-playing");
+            return;
+        }
+        if (isPausedPlaybackState(state) || isNonePlaybackState(state) || state == null) {
+            noteInactiveMediaState(controller, state,
+                    isPausedPlaybackState(state) ? "paused" : "idle");
+            return;
+        }
+        if (isStoppedPlaybackState(state)) {
+            clearInactiveMediaTracking(controller, "media-stopped");
+        }
+    }
+
+    private void noteInactiveMediaState(MediaController controller, PlaybackState state, String reason) {
+        String key = mediaControllerKey(controller);
+        if (TextUtils.isEmpty(key)) {
+            return;
+        }
+        long startedAt = inactiveMediaStartFromState(state);
+        if (startedAt <= 0L) {
+            Long existing = inactiveMediaStartedAt.get(key);
+            startedAt = existing != null ? existing : SystemClock.elapsedRealtime();
+        }
+        Long previous = inactiveMediaStartedAt.put(key, startedAt);
+        long age = SystemClock.elapsedRealtime() - startedAt;
+        PixelAodLog.log("AOD media inactive state pkg=" + controller.getPackageName()
+                + " key=" + key
+                + " reason=" + reason
+                + " state=" + playbackStateName(state)
+                + " startedAt=" + startedAt
+                + " previous=" + previous
+                + " ageMs=" + age
+                + " trace=" + currentAodTraceId());
+        scheduleInactiveMediaTimeoutCheck(controller, key);
+    }
+
+    private boolean isInactiveMediaWithinTimeout(MediaController controller, PlaybackState state,
+            String reason) {
+        if (controller == null) {
+            return false;
+        }
+        String key = mediaControllerKey(controller);
+        if (TextUtils.isEmpty(key)) {
+            return false;
+        }
+        long now = SystemClock.elapsedRealtime();
+        Long startedAt = inactiveMediaStartedAt.get(key);
+        if (startedAt == null) {
+            long stateStart = inactiveMediaStartFromState(state);
+            startedAt = stateStart > 0L ? stateStart : now;
+            inactiveMediaStartedAt.put(key, startedAt);
+            scheduleInactiveMediaTimeoutCheck(controller, key);
+        }
+        long age = now - startedAt;
+        boolean within = age >= 0L && age < PAUSED_MEDIA_TIMEOUT_MILLIS;
+        PixelAodLog.log("AOD media inactive keep pkg=" + controller.getPackageName()
+                + " key=" + key
+                + " reason=" + reason
+                + " state=" + playbackStateName(state)
+                + " within=" + within
+                + " ageMs=" + age
+                + " timeoutMs=" + PAUSED_MEDIA_TIMEOUT_MILLIS
+                + " trace=" + currentAodTraceId());
+        if (!within) {
+            clearInactiveMediaTimeout(key);
+            markExpiredInactiveMediaPackage(controller.getPackageName(), "timeout");
+            PixelAodLog.log("AOD media inactive expired pkg=" + controller.getPackageName()
+                    + " key=" + key
+                    + " reason=" + reason
+                    + " state=" + playbackStateName(state)
+                    + " ageMs=" + age
+                    + " timeoutMs=" + PAUSED_MEDIA_TIMEOUT_MILLIS
+                    + " trace=" + currentAodTraceId());
+        }
+        return within;
+    }
+
+    private long inactiveMediaStartFromState(PlaybackState state) {
+        if (state == null) {
+            return 0L;
+        }
+        try {
+            long updatedAt = state.getLastPositionUpdateTime();
+            if (updatedAt > 0L) {
+                return updatedAt;
+            }
+        } catch (Throwable ignored) {
+        }
+        return 0L;
+    }
+
+    private void scheduleInactiveMediaTimeoutCheck(MediaController controller, String key) {
+        if (controller == null || TextUtils.isEmpty(key)) {
+            return;
+        }
+        Long startedAt = inactiveMediaStartedAt.get(key);
+        if (startedAt == null) {
+            return;
+        }
+        Runnable previous = inactiveMediaTimeoutRunnables.remove(key);
+        if (previous != null) {
+            mainHandler().removeCallbacks(previous);
+        }
+        long delay = (startedAt + PAUSED_MEDIA_TIMEOUT_MILLIS) - SystemClock.elapsedRealtime();
+        if (delay <= 0L) {
+            mainHandler().post(() -> expireInactiveMedia(controller, key, "media-inactive-timeout"));
+            return;
+        }
+        Runnable timeoutRunnable = () -> expireInactiveMedia(controller, key, "media-inactive-timeout");
+        inactiveMediaTimeoutRunnables.put(key, timeoutRunnable);
+        mainHandler().postDelayed(timeoutRunnable, delay + 50L);
+        PixelAodLog.log("scheduled AOD media inactive timeout pkg=" + controller.getPackageName()
+                + " key=" + key
+                + " delayMs=" + delay
+                + " trace=" + currentAodTraceId());
+    }
+
+    private void expireInactiveMedia(MediaController controller, String key, String source) {
+        inactiveMediaTimeoutRunnables.remove(key);
+        PlaybackState state = null;
+        try {
+            state = controller.getPlaybackState();
+        } catch (Throwable ignored) {
+        }
+        if (isPlayingPlaybackState(state)) {
+            clearInactiveMediaTracking(controller, source + "#playing");
+            return;
+        }
+        if (controller != null) {
+            markExpiredInactiveMediaPackage(controller.getPackageName(), source);
+        }
+        PixelAodLog.log("expired AOD inactive media pkg="
+                + (controller != null ? controller.getPackageName() : "")
+                + " key=" + key
+                + " source=" + source
+                + " state=" + playbackStateName(state)
+                + " trace=" + currentAodTraceId());
+        updateMediaLine(source);
+        requestAodFrameRefresh(source);
+    }
+
+    private boolean isExpiredInactiveMediaPackage(String packageName) {
+        return isExpiredInactiveMediaPackageForAnyInstance(packageName);
+    }
+
+    private static boolean isExpiredInactiveMediaPackageForAnyInstance(String packageName) {
+        if (TextUtils.isEmpty(packageName)) {
+            return false;
+        }
+        synchronized (PixelAodClockView.class) {
+            return expiredInactiveMediaPackages.contains(packageName);
+        }
+    }
+
+    private void markExpiredInactiveMediaPackage(String packageName, String source) {
+        if (TextUtils.isEmpty(packageName)) {
+            return;
+        }
+        boolean changed;
+        synchronized (PixelAodClockView.class) {
+            changed = expiredInactiveMediaPackages.add(packageName);
+        }
+        if (changed) {
+            PixelAodLog.log("marked AOD inactive media package expired pkg=" + packageName
+                    + " source=" + source
+                    + " trace=" + currentAodTraceId());
+        }
+    }
+
+    private void clearExpiredInactiveMediaPackage(String packageName, String source) {
+        if (TextUtils.isEmpty(packageName)) {
+            return;
+        }
+        boolean changed;
+        synchronized (PixelAodClockView.class) {
+            changed = expiredInactiveMediaPackages.remove(packageName);
+        }
+        if (changed) {
+            PixelAodLog.log("cleared AOD inactive media package expiry pkg=" + packageName
+                    + " source=" + source
+                    + " trace=" + currentAodTraceId());
+        }
+    }
+
+    private void clearInactiveMediaTracking(MediaController controller, String source) {
+        String key = mediaControllerKey(controller);
+        if (TextUtils.isEmpty(key)) {
+            return;
+        }
+        clearInactiveMediaTimeout(key);
+        inactiveMediaStartedAt.remove(key);
+        PixelAodLog.log("cleared AOD media inactive tracking pkg=" + controller.getPackageName()
+                + " key=" + key
+                + " source=" + source
+                + " trace=" + currentAodTraceId());
+    }
+
+    private void clearInactiveMediaTimeout(String key) {
+        Runnable pendingTimeout = inactiveMediaTimeoutRunnables.remove(key);
+        if (pendingTimeout != null) {
+            mainHandler().removeCallbacks(pendingTimeout);
+        }
+    }
+
+    private static String mediaControllerKey(MediaController controller) {
+        if (controller == null) {
+            return "";
+        }
+        try {
+            return controller.getPackageName() + "|" + controller.getSessionToken();
+        } catch (Throwable ignored) {
+            return controller.getPackageName();
+        }
+    }
+
+    private static String playbackStateName(PlaybackState state) {
+        if (state == null) {
+            return "null";
+        }
+        return state.getState() + "@" + state.getLastPositionUpdateTime();
     }
 
     private static Drawable loadSystemNotificationGlyph(Context context, StatusBarNotification sbn) {
@@ -2768,6 +3052,17 @@ public final class PixelAodClockView extends FrameLayout {
         }
         Collections.sort(entries);
         return TextUtils.join("|", entries);
+    }
+
+    private static String expiredInactiveMediaPackageSignature() {
+        synchronized (PixelAodClockView.class) {
+            if (expiredInactiveMediaPackages.isEmpty()) {
+                return "";
+            }
+            ArrayList<String> packages = new ArrayList<>(expiredInactiveMediaPackages);
+            Collections.sort(packages);
+            return TextUtils.join("|", packages);
+        }
     }
 
     private static String rankingSignature(Map<String, RankingSnapshot> snapshot) {
@@ -3200,11 +3495,14 @@ public final class PixelAodClockView extends FrameLayout {
             hour = 12;
         }
         int minute = calendar.get(Calendar.MINUTE);
+        String clockText;
         if (compactClock) {
-            clockView.setText(String.format(Locale.getDefault(), "%02d:%02d", hour, minute));
+            clockText = String.format(Locale.getDefault(), "%02d:%02d", hour, minute);
         } else {
-            clockView.setText(String.format(Locale.getDefault(), "%02d\n%02d", hour, minute));
+            clockText = String.format(Locale.getDefault(), "%02d\n%02d", hour, minute);
         }
+        CharSequence previousClockText = clockView.getText();
+        clockView.setText(clockText);
         int infoColor = resolveMaterialInfoColor(getContext());
         dateView.setText(formatAtAGlanceLine(calendar));
         applyWeatherIcon(dateView, currentFreshWeather(getContext()), infoColor);
@@ -3213,6 +3511,52 @@ public final class PixelAodClockView extends FrameLayout {
         chargeBoltView.setVisibility(batteryStatus.charging ? View.VISIBLE : View.GONE);
         batteryRow.setVisibility(TextUtils.isEmpty(batteryStatus.percentText) ? View.GONE : View.VISIBLE);
         applyBurnInTranslation();
+        PixelAodLog.log("AOD time update trace=" + currentAodTraceId()
+                + " text=" + clockText.replace('\n', '/')
+                + " previous=" + String.valueOf(previousClockText).replace('\n', '/')
+                + " changed=" + !TextUtils.equals(previousClockText, clockText)
+                + " visibility=" + getVisibility()
+                + " shown=" + isShown()
+                + " state={" + describeAodState(getContext()) + "}");
+        requestAodFrameRefresh("updateTime");
+    }
+
+    private void requestAodFrameRefresh(String source) {
+        try {
+            requestLayout();
+            invalidate();
+            postInvalidateOnAnimation();
+            invalidateView(clockView);
+            invalidateView(dateView);
+            invalidateView(mediaRow);
+            invalidateView(mediaIconView);
+            invalidateView(mediaView);
+            invalidateView(notificationIconRow);
+            invalidateView(batteryRow);
+            View root = getRootView();
+            if (root != null && root != this) {
+                root.invalidate();
+                root.postInvalidateOnAnimation();
+            }
+            PixelAodLog.log("requested AOD frame refresh trace=" + currentAodTraceId()
+                    + " source=" + source
+                    + " visibility=" + getVisibility()
+                    + " shown=" + isShown()
+                    + " parent=" + (getParent() != null ? getParent().getClass().getName() : "null")
+                    + " root=" + (root != null ? root.getClass().getName() : "null")
+                    + " clock=" + String.valueOf(clockView.getText()).replace('\n', '/')
+                    + " state={" + describeAodState(getContext()) + "}");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to request AOD frame refresh source=" + source, t);
+        }
+    }
+
+    private static void invalidateView(View view) {
+        if (view == null) {
+            return;
+        }
+        view.invalidate();
+        view.postInvalidateOnAnimation();
     }
 
     private void applyBurnInTranslation() {
