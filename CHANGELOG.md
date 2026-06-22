@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.111] - 2026-06-22
+### UI
+- Remove the Pocket Mode and Notification Icons toggles from the settings screen and treat both behaviors as built-in defaults instead of optional switches.
+
+### Bug Fixes
+- Force both Pocket Mode and monochrome notification icons to remain enabled at runtime, and automatically normalize old saved `false` values back to `true` so legacy preferences no longer disable those features.
+
 ## [0.1.110] - 2026-06-22
 ### Bug Fixes
 - Force custom AOD views to refresh their frame after time, notification, weather, and media updates so stale minute text or delayed notification icons are less likely to remain until the next wake cycle.

@@ -42,8 +42,36 @@ public final class PixelAodSettings {
     }
 
     public static boolean getBoolean(Context context, String key, boolean fallback) {
+        if (isAlwaysEnabledKey(key)) {
+            return true;
+        }
         String value = getValue(context, key);
         return value == null ? fallback : Boolean.parseBoolean(value);
+    }
+
+    public static boolean isAlwaysEnabledKey(String key) {
+        return KEY_NOTIFICATION_ICONS.equals(key) || KEY_POCKET_MODE.equals(key);
+    }
+
+    public static boolean normalizeAlwaysEnabledPreferences(SharedPreferences prefs) {
+        if (prefs == null) {
+            return false;
+        }
+        boolean changed = false;
+        SharedPreferences.Editor editor = null;
+        if (!prefs.getBoolean(KEY_NOTIFICATION_ICONS, true)) {
+            editor = prefs.edit();
+            editor.putBoolean(KEY_NOTIFICATION_ICONS, true);
+            changed = true;
+        }
+        if (!prefs.getBoolean(KEY_POCKET_MODE, true)) {
+            if (editor == null) {
+                editor = prefs.edit();
+            }
+            editor.putBoolean(KEY_POCKET_MODE, true);
+            changed = true;
+        }
+        return !changed || (editor != null && editor.commit());
     }
 
     public static String getString(Context context, String key, String fallback) {

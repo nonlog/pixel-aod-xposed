@@ -27,6 +27,7 @@ public final class PixelAodSettingsProvider extends ContentProvider {
             return cursor;
         }
         SharedPreferences prefs = PixelAodSettings.getSharedPreferences(context);
+        PixelAodSettings.normalizeAlwaysEnabledPreferences(prefs);
         putBoolean(cursor, PixelAodSettings.KEY_CUSTOM_AOD,
                 prefs.getBoolean(PixelAodSettings.KEY_CUSTOM_AOD, true));
         putBoolean(cursor, PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE,
@@ -35,8 +36,7 @@ public final class PixelAodSettingsProvider extends ContentProvider {
                 prefs.getBoolean(PixelAodSettings.KEY_LOCKSCREEN_CLOCK, true));
         putBoolean(cursor, PixelAodSettings.KEY_WEATHER,
                 prefs.getBoolean(PixelAodSettings.KEY_WEATHER, true));
-        putBoolean(cursor, PixelAodSettings.KEY_NOTIFICATION_ICONS,
-                prefs.getBoolean(PixelAodSettings.KEY_NOTIFICATION_ICONS, true));
+        putBoolean(cursor, PixelAodSettings.KEY_NOTIFICATION_ICONS, true);
         putBoolean(cursor, PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY,
                 prefs.getBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true));
         putBoolean(cursor, PixelAodSettings.KEY_DEBUG_LOGGING,
@@ -54,8 +54,7 @@ public final class PixelAodSettingsProvider extends ContentProvider {
                 prefs.getBoolean(PixelAodSettings.KEY_FORCE_ENGLISH_DATE, false));
         putBoolean(cursor, PixelAodSettings.KEY_DISABLE_BURN_IN_OFFSET,
                 prefs.getBoolean(PixelAodSettings.KEY_DISABLE_BURN_IN_OFFSET, false));
-        putBoolean(cursor, PixelAodSettings.KEY_POCKET_MODE,
-                prefs.getBoolean(PixelAodSettings.KEY_POCKET_MODE, true));
+        putBoolean(cursor, PixelAodSettings.KEY_POCKET_MODE, true);
         putBoolean(cursor, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED,
                 prefs.getBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, false));
         putString(cursor, PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME,
@@ -97,7 +96,9 @@ public final class PixelAodSettingsProvider extends ContentProvider {
             return 0;
         }
         SharedPreferences.Editor editor = PixelAodSettings.getSharedPreferences(context).edit();
-        if (rawValue instanceof Boolean) {
+        if (PixelAodSettings.isAlwaysEnabledKey(key)) {
+            editor.putBoolean(key, true);
+        } else if (rawValue instanceof Boolean) {
             editor.putBoolean(key, (Boolean) rawValue);
         } else if (rawValue instanceof Integer) {
             editor.putInt(key, (Integer) rawValue);

@@ -30,7 +30,6 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Policy
 import androidx.compose.material.icons.outlined.RestartAlt
@@ -78,6 +77,9 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (normalizeAlwaysOnSettings(this)) {
+            PixelAodSettings.refresh(this)
+        }
         setContent {
             PixelAodSettingsScreen(onLanguageChanged = { recreate() })
         }
@@ -104,6 +106,11 @@ class SettingsActivity : ComponentActivity() {
             return base.createConfigurationContext(config)
         }
     }
+}
+
+private fun normalizeAlwaysOnSettings(context: Context): Boolean {
+    val prefs = PixelAodSettings.getSharedPreferences(context)
+    return PixelAodSettings.normalizeAlwaysEnabledPreferences(prefs)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -181,17 +188,11 @@ private fun SettingsContent(
     val weather = remember {
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_WEATHER, true))
     }
-    val notificationIcons = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_NOTIFICATION_ICONS, true))
-    }
     val lockscreenPolicy = remember {
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true))
     }
     val debugLogging = remember {
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, false))
-    }
-    val pocketMode = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_POCKET_MODE, true))
     }
     val weatherIconPack = remember {
         mutableStateOf(prefs.getString(PixelAodSettings.KEY_WEATHER_ICON_PACK, "") ?: "")
@@ -317,17 +318,9 @@ private fun SettingsContent(
                     showIconPackDialog = true
                 }
             }
-            ToggleCard(Icons.Outlined.Notifications, stringResource(R.string.title_notification_icons), stringResource(R.string.desc_notification_icons), notificationIcons.value) {
-                notificationIcons.value = it
-                prefs.edit().putBoolean(PixelAodSettings.KEY_NOTIFICATION_ICONS, it).apply()
-            }
             ToggleCard(Icons.Outlined.Policy, stringResource(R.string.title_lockscreen_policy), stringResource(R.string.desc_lockscreen_policy), lockscreenPolicy.value) {
                 lockscreenPolicy.value = it
                 prefs.edit().putBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, it).apply()
-            }
-            ToggleCard(Icons.Outlined.Policy, stringResource(R.string.title_pocket_mode), stringResource(R.string.desc_pocket_mode), pocketMode.value) {
-                pocketMode.value = it
-                prefs.edit().putBoolean(PixelAodSettings.KEY_POCKET_MODE, it).apply()
             }
             ToggleCard(Icons.Outlined.Schedule, stringResource(R.string.title_aod_schedule), stringResource(R.string.desc_aod_schedule), aodScheduleEnabled.value) {
                 aodScheduleEnabled.value = it
