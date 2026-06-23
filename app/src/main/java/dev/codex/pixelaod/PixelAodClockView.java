@@ -122,6 +122,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int NOTIFICATION_FLAG_SILENT = 0x00020000;
     private static final String GOOGLE_SANS_FLEX_VARIABLE_ASSET = "assets/fonts/GoogleSansFlex-Variable.ttf";
     private static final String GOOGLE_SANS_FLEX_VARIABLE_CACHE = "GoogleSansFlex-Variable.ttf";
+    private static final String GOOGLE_SANS_FLEX_VARIABLE_CACHE_PREFIX = "GoogleSansFlex-Variable-";
     private static final String ANDROID_CLOCK_FONT = "/system/fonts/AndroidClock.ttf";
     private static final String MODULE_PACKAGE = "dev.codex.pixelaod";
     private static final String BREEZY_PACKAGE = "org.breezyweather";
@@ -441,6 +442,7 @@ public final class PixelAodClockView extends FrameLayout {
             modulePath = path;
             cachedClockTypeface = null;
             cachedInfoTypeface = null;
+            cachedClockTypefaceByWeight.clear();
         }
     }
 
@@ -4043,16 +4045,96 @@ public final class PixelAodClockView extends FrameLayout {
         if (context == null) {
             return null;
         }
-        String apkPath;
-        synchronized (PixelAodClockView.class) {
-            apkPath = modulePath;
-        }
+        String apkPath = resolveModuleApkPath(context);
         if (TextUtils.isEmpty(apkPath)) {
+            return fallbackGoogleSansFlexFontFile(context);
+        }
+        File fontFile = new File(context.getCacheDir(), googleSansFlexCacheFileName(apkPath));
+        if (isUsableFontFile(fontFile)) {
+            return fontFile;
+        }
+        if (ensureExtractedAsset(apkPath, GOOGLE_SANS_FLEX_VARIABLE_ASSET, fontFile)) {
+            return fontFile;
+        }
+        return fallbackGoogleSansFlexFontFile(context);
+    }
+
+    private static String resolveModuleApkPath(Context context) {
+        String cachedPath;
+        synchronized (PixelAodClockView.class) {
+            cachedPath = modulePath;
+        }
+        if (!TextUtils.isEmpty(cachedPath) && new File(cachedPath).isFile()) {
+            return cachedPath;
+        }
+        return refreshModuleApkPath(context, cachedPath);
+    }
+
+    private static String refreshModuleApkPath(Context context, String previousPath) {
+        if (context == null) {
             return null;
         }
-        File fontFile = new File(context.getCacheDir(), GOOGLE_SANS_FLEX_VARIABLE_CACHE);
-        return ensureExtractedAsset(apkPath, GOOGLE_SANS_FLEX_VARIABLE_ASSET, fontFile)
-                ? fontFile : null;
+        try {
+            ApplicationInfo info = context.getPackageManager().getApplicationInfo(MODULE_PACKAGE, 0);
+            String resolvedPath = info != null ? info.sourceDir : null;
+            if (TextUtils.isEmpty(resolvedPath)) {
+                return null;
+            }
+            boolean changed = !TextUtils.equals(previousPath, resolvedPath);
+            synchronized (PixelAodClockView.class) {
+                modulePath = resolvedPath;
+                if (changed) {
+                    cachedClockTypeface = null;
+                    cachedInfoTypeface = null;
+                    cachedClockTypefaceByWeight.clear();
+                }
+            }
+            if (changed) {
+                PixelAodLog.log("refreshed module APK path old=" + previousPath + " new=" + resolvedPath);
+            }
+            return resolvedPath;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to refresh module APK path", t);
+            return null;
+        }
+    }
+
+    private static String googleSansFlexCacheFileName(String apkPath) {
+        return GOOGLE_SANS_FLEX_VARIABLE_CACHE_PREFIX
+                + Integer.toHexString(apkPath.hashCode())
+                + ".ttf";
+    }
+
+    private static File fallbackGoogleSansFlexFontFile(Context context) {
+        File legacyFontFile = new File(context.getCacheDir(), GOOGLE_SANS_FLEX_VARIABLE_CACHE);
+        if (isUsableFontFile(legacyFontFile)) {
+            return legacyFontFile;
+        }
+        File[] files = context.getCacheDir().listFiles();
+        if (files == null) {
+            return null;
+        }
+        File newestMatch = null;
+        long newestModified = Long.MIN_VALUE;
+        for (File file : files) {
+            String name = file.getName();
+            if (!name.startsWith(GOOGLE_SANS_FLEX_VARIABLE_CACHE_PREFIX) || !name.endsWith(".ttf")) {
+                continue;
+            }
+            if (!isUsableFontFile(file)) {
+                continue;
+            }
+            long modified = file.lastModified();
+            if (newestMatch == null || modified > newestModified) {
+                newestMatch = file;
+                newestModified = modified;
+            }
+        }
+        return newestMatch;
+    }
+
+    private static boolean isUsableFontFile(File file) {
+        return file != null && file.isFile() && file.length() > 0L;
     }
 
     private static boolean ensureExtractedAsset(String apkPath, String entryName, File outFile) {
@@ -4086,7 +4168,8 @@ public final class PixelAodClockView extends FrameLayout {
                 closeQuietly(output);
             }
         } catch (Throwable t) {
-            PixelAodLog.log("failed to extract bundled Google Sans Flex", t);
+            PixelAodLog.log("failed to extract bundled Google Sans Flex apkPath=" + apkPath
+                    + " entry=" + entryName, t);
             return false;
         } finally {
             closeQuietly(zipFile);
