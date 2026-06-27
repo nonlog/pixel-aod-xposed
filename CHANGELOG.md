@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.112] - 2026-06-27
+### Bug Fixes
+- Make the status bar and navigation bar icons in the Settings screen adapt to the system theme: enable edge-to-edge layout and flip `isAppearanceLightStatusBars` / `isAppearanceLightNavigationBars` based on the current `UI_MODE_NIGHT_MASK`. Previously the icons stayed light on top of `Theme.Material.Light`, making them invisible on a white surface.
+
 ## [0.1.111] - 2026-06-22
 ### UI
 - Remove the Pocket Mode and Notification Icons toggles from the settings screen and treat both behaviors as built-in defaults instead of optional switches.
