@@ -10,6 +10,7 @@ import android.widget.Toast
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.view.WindowCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -80,6 +81,14 @@ class SettingsActivity : ComponentActivity() {
         if (normalizeAlwaysOnSettings(this)) {
             PixelAodSettings.refresh(this)
         }
+        // Edge-to-edge so the Material 3 Scaffold paints behind the status bar.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        // Make status & navigation bar icons legible on both light and dark surfaces.
+        val isSystemDark = resources.configuration.uiMode and
+            Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.isAppearanceLightStatusBars = !isSystemDark
+        controller.isAppearanceLightNavigationBars = !isSystemDark
         setContent {
             PixelAodSettingsScreen(onLanguageChanged = { recreate() })
         }
