@@ -8,10 +8,20 @@ import android.os.Bundle;
 import android.util.Base64;
 import android.util.Log;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.ByteArrayInputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.GZIPInputStream;
+
 public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
     static final String ACTION_RELAY = "dev.codex.pixelaod.BREEZY_WEATHER_RELAY";
     static final String ACTION_REQUEST_RELAY = "dev.codex.pixelaod.REQUEST_BREEZY_WEATHER_RELAY";
     static final String EXTRA_RECEIVED_AT = "dev.codex.pixelaod.extra.RECEIVED_AT";
+    static final String EXTRA_SUNRISE = "dev.codex.pixelaod.extra.SUNRISE";
+    static final String EXTRA_SUNSET = "dev.codex.pixelaod.extra.SUNSET";
     private static final String PREFS = "pixel_aod_weather";
     private static final String KEY_RECEIVED_AT = "received_at";
     private static final String KEY_WEATHER_JSON = "weather_json";
@@ -25,6 +35,8 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
     private static final String KEY_CURRENT_CONDITION_CODE = "current_condition_code";
     private static final String KEY_WEATHER_CODE = "weather_code";
     private static final String KEY_CONDITION_CODE = "condition_code";
+    private static final String KEY_SUNRISE = "sunrise_millis";
+    private static final String KEY_SUNSET = "sunset_millis";
     private static final String TAG = "PixelAodBreezyRelay";
 
     @Override
@@ -44,6 +56,17 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
             Bundle extras = intent.getExtras();
             if (extras != null) {
                 relay.putExtras(extras);
+            }
+            // Re-extract sunrise/sunset from persisted JSON so the clock view
+            // gets authoritative day/night boundaries.
+            long[] sunTimes = readSunTimesFromPrefs(context);
+            if (sunTimes != null) {
+                if (sunTimes[0] > 0L) {
+                    relay.putExtra(EXTRA_SUNRISE, sunTimes[0]);
+                }
+                if (sunTimes[1] > 0L) {
+                    relay.putExtra(EXTRA_SUNSET, sunTimes[1]);
+                }
             }
             relay.putExtra(EXTRA_RECEIVED_AT, System.currentTimeMillis());
             context.sendBroadcast(relay);
@@ -77,6 +100,12 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
         putIntIfPresent(relay, "currentConditionCode", prefs, KEY_CURRENT_CONDITION_CODE);
         putIntIfPresent(relay, "weatherCode", prefs, KEY_WEATHER_CODE);
         putIntIfPresent(relay, "conditionCode", prefs, KEY_CONDITION_CODE);
+        if (prefs.contains(KEY_SUNRISE)) {
+            relay.putExtra(EXTRA_SUNRISE, prefs.getLong(KEY_SUNRISE, 0L));
+        }
+        if (prefs.contains(KEY_SUNSET)) {
+            relay.putExtra(EXTRA_SUNSET, prefs.getLong(KEY_SUNSET, 0L));
+        }
         relay.putExtra(EXTRA_RECEIVED_AT, receivedAt);
         context.sendBroadcast(relay);
         Log.i(TAG, "replayed cached Breezy weather receivedAt=" + receivedAt);
@@ -85,7 +114,8 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
     private static void persistWeatherExtras(Context context, Intent intent) {
         SharedPreferences.Editor editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
         editor.putLong(KEY_RECEIVED_AT, System.currentTimeMillis());
-        putString(editor, KEY_WEATHER_JSON, intent.getStringExtra("WeatherJson"));
+        String json = intent.getStringExtra("WeatherJson");
+        putString(editor, KEY_WEATHER_JSON, json);
         byte[] weatherGz = intent.getByteArrayExtra("WeatherGz");
         putString(editor, KEY_WEATHER_GZ,
                 weatherGz != null && weatherGz.length > 0
@@ -100,7 +130,157 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
         putInt(editor, KEY_CURRENT_CONDITION_CODE, intent, "currentConditionCode");
         putInt(editor, KEY_WEATHER_CODE, intent, "weatherCode");
         putInt(editor, KEY_CONDITION_CODE, intent, "conditionCode");
+        long[] sunTimes = extractSunTimes(intent, json, weatherGz);
+        if (sunTimes != null) {
+            if (sunTimes[0] > 0L) {
+                editor.putLong(KEY_SUNRISE, sunTimes[0]);
+            } else {
+                editor.remove(KEY_SUNRISE);
+            }
+            if (sunTimes[1] > 0L) {
+                editor.putLong(KEY_SUNSET, sunTimes[1]);
+            } else {
+                editor.remove(KEY_SUNSET);
+            }
+        }
         editor.apply();
+    }
+
+    private static long[] extractSunTimes(Intent intent, String json, byte[] weatherGz) {
+        long[] fromIntent = readSunTimesFromIntent(intent);
+        if (fromIntent[0] > 0L && fromIntent[1] > 0L) {
+            return fromIntent;
+        }
+        long[] fromJson = readSunTimesFromJson(json, weatherGz);
+        if (fromJson[0] > 0L) {
+            fromIntent[0] = fromJson[0];
+        }
+        if (fromJson[1] > 0L) {
+            fromIntent[1] = fromJson[1];
+        }
+        return fromIntent;
+    }
+
+    private static long[] readSunTimesFromIntent(Intent intent) {
+        long[] result = new long[]{0L, 0L};
+        if (intent == null) {
+            return result;
+        }
+        if (intent.hasExtra(EXTRA_SUNRISE)) {
+            result[0] = intent.getLongExtra(EXTRA_SUNRISE, 0L);
+        } else if (intent.hasExtra("sunrise")) {
+            result[0] = intent.getLongExtra("sunrise", 0L);
+        } else if (intent.hasExtra("sunRise")) {
+            result[0] = intent.getLongExtra("sunRise", 0L);
+        }
+        if (intent.hasExtra(EXTRA_SUNSET)) {
+            result[1] = intent.getLongExtra(EXTRA_SUNSET, 0L);
+        } else if (intent.hasExtra("sunset")) {
+            result[1] = intent.getLongExtra("sunset", 0L);
+        } else if (intent.hasExtra("sunSet")) {
+            result[1] = intent.getLongExtra("sunSet", 0L);
+        }
+        return result;
+    }
+
+    private static long[] readSunTimesFromJson(String json, byte[] weatherGz) {
+        long[] result = new long[]{0L, 0L};
+        String target = json;
+        if ((target == null || target.isEmpty()) && weatherGz != null && weatherGz.length > 0) {
+            try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(weatherGz));
+                 InputStreamReader reader = new InputStreamReader(gzip, StandardCharsets.UTF_8)) {
+                StringBuilder builder = new StringBuilder();
+                char[] buffer = new char[1024];
+                int read;
+                while ((read = reader.read(buffer)) >= 0) {
+                    builder.append(buffer, 0, read);
+                }
+                org.json.JSONArray array = new org.json.JSONArray(builder.toString());
+                if (array.length() > 0) {
+                    org.json.JSONObject first = array.optJSONObject(0);
+                    if (first != null) {
+                        target = first.toString();
+                    }
+                }
+            } catch (Throwable t) {
+                return result;
+            }
+        }
+        if (target == null || target.isEmpty()) {
+            return result;
+        }
+        try {
+            org.json.JSONObject object = new org.json.JSONObject(target);
+            long sunriseSec = readSunSecondsFromObject(object, "sunRise", "sunrise");
+            long sunsetSec = readSunSecondsFromObject(object, "sunSet", "sunset");
+            if (sunriseSec <= 0L || sunsetSec <= 0L) {
+                org.json.JSONObject hourly = object.optJSONObject("hourlyForecast");
+                if (hourly == null) {
+                    org.json.JSONArray arrays = object.optJSONArray("hourlyForecast");
+                    if (arrays != null && arrays.length() > 0) {
+                        hourly = arrays.optJSONObject(0);
+                    }
+                }
+                if (hourly != null) {
+                    if (sunriseSec <= 0L) {
+                        sunriseSec = readSunSecondsFromObject(hourly, "sunRise", "sunrise");
+                    }
+                    if (sunsetSec <= 0L) {
+                        sunsetSec = readSunSecondsFromObject(hourly, "sunSet", "sunset");
+                    }
+                }
+            }
+            if (sunriseSec <= 0L || sunsetSec <= 0L) {
+                org.json.JSONArray daily = object.optJSONArray("dailyForecast");
+                if (daily != null) {
+                    for (int i = 0; i < daily.length(); i++) {
+                        org.json.JSONObject day = daily.optJSONObject(i);
+                        if (day == null) continue;
+                        if (sunriseSec <= 0L) {
+                            sunriseSec = readSunSecondsFromObject(day, "sunRise", "sunrise");
+                        }
+                        if (sunsetSec <= 0L) {
+                            sunsetSec = readSunSecondsFromObject(day, "sunSet", "sunset");
+                        }
+                        if (sunriseSec > 0L && sunsetSec > 0L) break;
+                    }
+                }
+            }
+            if (sunriseSec > 0L) {
+                result[0] = sunriseSec * 1000L;
+            }
+            if (sunsetSec > 0L) {
+                result[1] = sunsetSec * 1000L;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "failed to extract sunrise/sunset from Breezy weather JSON", t);
+        }
+        return result;
+    }
+
+    private static long readSunSecondsFromObject(org.json.JSONObject object, String camelKey, String lowerKey) {
+        if (object == null) {
+            return 0L;
+        }
+        if (object.has(camelKey)) {
+            return object.optLong(camelKey, 0L);
+        }
+        if (object.has(lowerKey)) {
+            return object.optLong(lowerKey, 0L);
+        }
+        return 0L;
+    }
+
+    private static long[] readSunTimesFromPrefs(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        long[] result = new long[]{0L, 0L};
+        if (prefs.contains(KEY_SUNRISE)) {
+            result[0] = prefs.getLong(KEY_SUNRISE, 0L);
+        }
+        if (prefs.contains(KEY_SUNSET)) {
+            result[1] = prefs.getLong(KEY_SUNSET, 0L);
+        }
+        return result;
     }
 
     private static void putString(SharedPreferences.Editor editor, String key, String value) {

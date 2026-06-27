@@ -1088,11 +1088,14 @@ public final class PixelAodClockView extends FrameLayout {
                 intent.getIntExtra("currentConditionCode", Integer.MIN_VALUE),
                 intent.getIntExtra("weatherCode", Integer.MIN_VALUE),
                 intent.getIntExtra("conditionCode", Integer.MIN_VALUE));
+        long[] sunTimes = readSunTimesFromIntent(intent);
         WeatherSnapshot direct = WeatherSnapshot.from(
                 formatTemperature(temperature),
                 code,
                 condition,
-                System.currentTimeMillis());
+                System.currentTimeMillis(),
+                sunTimes[0],
+                sunTimes[1]);
         if (!direct.hasDisplayableWeather()) {
             return null;
         }
@@ -1149,13 +1152,98 @@ public final class PixelAodClockView extends FrameLayout {
             long timestampMillis = timestampSeconds > 0L
                     ? timestampSeconds * 1000L
                     : Math.max(receivedAtMillis, System.currentTimeMillis());
+            long[] sunTimes = readSunTimesFromJson(object);
             WeatherSnapshot snapshot = WeatherSnapshot.from(
-                    formatTemperature(temperature), code, condition, timestampMillis);
+                    formatTemperature(temperature), code, condition, timestampMillis,
+                    sunTimes[0], sunTimes[1]);
             return snapshot.hasDisplayableWeather() ? snapshot : null;
         } catch (Throwable t) {
             PixelAodLog.log("failed to parse Breezy WeatherJson", t);
             return null;
         }
+    }
+
+    private static long[] readSunTimesFromJson(JSONObject object) {
+        long[] result = new long[]{0L, 0L};
+        if (object == null) {
+            return result;
+        }
+        long sunriseSec = optLongSeconds(object, "sunRise", "sunrise");
+        long sunsetSec = optLongSeconds(object, "sunSet", "sunset");
+        if ((sunriseSec > 0L || sunsetSec > 0L)) {
+            result[0] = sunriseSec * 1000L;
+            result[1] = sunsetSec * 1000L;
+            return result;
+        }
+        JSONObject[] candidates = collectSunTimeCandidates(object);
+        for (JSONObject candidate : candidates) {
+            if (candidate == null) continue;
+            long s = optLongSeconds(candidate, "sunRise", "sunrise");
+            long e = optLongSeconds(candidate, "sunSet", "sunset");
+            if (s > 0L) result[0] = s * 1000L;
+            if (e > 0L) result[1] = e * 1000L;
+            if (result[0] > 0L && result[1] > 0L) return result;
+        }
+        return result;
+    }
+
+    private static JSONObject[] collectSunTimeCandidates(JSONObject object) {
+        java.util.ArrayList<JSONObject> list = new java.util.ArrayList<>();
+        JSONArray daily = object.optJSONArray("dailyForecast");
+        if (daily != null) {
+            for (int i = 0; i < daily.length(); i++) {
+                JSONObject day = daily.optJSONObject(i);
+                if (day != null) list.add(day);
+            }
+        }
+        JSONArray hourly = object.optJSONArray("hourlyForecast");
+        if (hourly != null && hourly.length() > 0) {
+            list.add(hourly.optJSONObject(0));
+        }
+        JSONObject hourlyObj = object.optJSONObject("hourlyForecast");
+        if (hourlyObj != null) {
+            list.add(hourlyObj);
+        }
+        return list.toArray(new JSONObject[0]);
+    }
+
+    private static long optLongSeconds(JSONObject object, String camelKey, String lowerKey) {
+        if (object == null) {
+            return 0L;
+        }
+        if (object.has(camelKey)) {
+            return object.optLong(camelKey, 0L);
+        }
+        if (object.has(lowerKey)) {
+            return object.optLong(lowerKey, 0L);
+        }
+        return 0L;
+    }
+
+    private static long[] readSunTimesFromIntent(Intent intent) {
+        long[] result = new long[]{0L, 0L};
+        if (intent == null) {
+            return result;
+        }
+        long s = firstLongExtra(intent,
+                BreezyWeatherRelayReceiver.EXTRA_SUNRISE, "sunrise", "sunRise");
+        long e = firstLongExtra(intent,
+                BreezyWeatherRelayReceiver.EXTRA_SUNSET, "sunset", "sunSet");
+        if (s > 0L) result[0] = s;
+        if (e > 0L) result[1] = e;
+        return result;
+    }
+
+    private static long firstLongExtra(Intent intent, String... keys) {
+        for (String key : keys) {
+            if (intent.hasExtra(key)) {
+                long value = intent.getLongExtra(key, 0L);
+                if (value > 0L) {
+                    return value;
+                }
+            }
+        }
+        return 0L;
     }
 
     private static String formatTemperature(double rawTemperature) {
@@ -3301,7 +3389,8 @@ public final class PixelAodClockView extends FrameLayout {
         return textView;
     }
 
-    private static Drawable getExternalWeatherIconDrawable(Context context, int weatherCode) {
+    private static Drawable getExternalWeatherIconDrawable(Context context, WeatherSnapshot weather) {
+        int weatherCode = weather.weatherCode;
         String packageName = PixelAodSettings.getString(context, PixelAodSettings.KEY_WEATHER_ICON_PACK, "");
         if (TextUtils.isEmpty(packageName)) {
             return null;
@@ -3310,9 +3399,7 @@ public final class PixelAodClockView extends FrameLayout {
             PackageManager pm = context.getPackageManager();
             android.content.res.Resources res = pm.getResourcesForApplication(packageName);
 
-            java.util.Calendar c = java.util.Calendar.getInstance();
-            int hour = c.get(java.util.Calendar.HOUR_OF_DAY);
-            boolean isNight = hour < 6 || hour >= 18;
+            boolean isNight = resolveIsNight(weather, System.currentTimeMillis());
             String breezyName = getBreezyWeatherIconName(weatherCode, isNight);
 
             int xmlId = 0;
@@ -3377,6 +3464,22 @@ public final class PixelAodClockView extends FrameLayout {
         return null;
     }
 
+    /**
+     * Determine day/night for a weather snapshot. Prefers Breezy Weather's
+     * own sunrise/sunset boundaries when available; falls back to a simple
+     * local hour check (6:00-18:00 = day) when the snapshot doesn't carry
+     * sun-time data.
+     */
+    static boolean resolveIsNight(WeatherSnapshot weather, long nowMillis) {
+        if (weather != null && weather.hasSunTimes()) {
+            return weather.isNightAt(nowMillis);
+        }
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        c.setTimeInMillis(nowMillis);
+        int hour = c.get(java.util.Calendar.HOUR_OF_DAY);
+        return hour < 6 || hour >= 18;
+    }
+
     private static String getBreezyWeatherIconName(int code, boolean isNight) {
         String suffix = isNight ? "_night" : "_day";
         if (code >= 200 && code < 300) return "weather_thunderstorm" + suffix;
@@ -3430,7 +3533,7 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         int size = dp(textView.getContext(), WEATHER_ICON_SIZE_DP);
-        Drawable drawable = getExternalWeatherIconDrawable(textView.getContext(), weather.weatherCode);
+        Drawable drawable = getExternalWeatherIconDrawable(textView.getContext(), weather);
         if (drawable == null) {
             drawable = new WeatherIconDrawable(weather.weatherCode, color);
         } else {
@@ -4269,12 +4372,21 @@ public final class PixelAodClockView extends FrameLayout {
         final int weatherCode;
         final String conditionText;
         final long timestampMillis;
+        final long sunriseMillis;
+        final long sunsetMillis;
 
         WeatherSnapshot(String temperatureText, int weatherCode, String conditionText, long timestampMillis) {
+            this(temperatureText, weatherCode, conditionText, timestampMillis, 0L, 0L);
+        }
+
+        WeatherSnapshot(String temperatureText, int weatherCode, String conditionText, long timestampMillis,
+                long sunriseMillis, long sunsetMillis) {
             this.temperatureText = temperatureText;
             this.weatherCode = weatherCode;
             this.conditionText = normalizeWeatherCondition(conditionText);
             this.timestampMillis = timestampMillis;
+            this.sunriseMillis = sunriseMillis;
+            this.sunsetMillis = sunsetMillis;
         }
 
         boolean isFresh(long nowMillis) {
@@ -4292,11 +4404,29 @@ public final class PixelAodClockView extends FrameLayout {
                     || !TextUtils.isEmpty(conditionText);
         }
 
+        boolean hasSunTimes() {
+            return sunriseMillis > 0L && sunsetMillis > 0L;
+        }
+
+        /**
+         * True if Breezy Weather's day/night boundaries are known. When true,
+         * callers should prefer this over local hour-based checks so the icon
+         * matches the host app's own day/night logic.
+         */
+        boolean isNightAt(long nowMillis) {
+            if (!hasSunTimes()) {
+                return false;
+            }
+            return nowMillis < sunriseMillis || nowMillis >= sunsetMillis;
+        }
+
         boolean sameDisplay(WeatherSnapshot other) {
             return other != null
                     && TextUtils.equals(temperatureText, other.temperatureText)
                     && weatherCode == other.weatherCode
-                    && TextUtils.equals(conditionText, other.conditionText);
+                    && TextUtils.equals(conditionText, other.conditionText)
+                    && sunriseMillis == other.sunriseMillis
+                    && sunsetMillis == other.sunsetMillis;
         }
 
         String logText() {
@@ -4311,14 +4441,20 @@ public final class PixelAodClockView extends FrameLayout {
 
         static WeatherSnapshot from(String temperatureText, int weatherCode,
                 String conditionText, long timestampMillis) {
+            return from(temperatureText, weatherCode, conditionText, timestampMillis, 0L, 0L);
+        }
+
+        static WeatherSnapshot from(String temperatureText, int weatherCode,
+                String conditionText, long timestampMillis, long sunriseMillis, long sunsetMillis) {
             if (weatherCode == Integer.MIN_VALUE) {
                 weatherCode = inferWeatherCode(conditionText);
             }
-            return new WeatherSnapshot(temperatureText, weatherCode, conditionText, timestampMillis);
+            return new WeatherSnapshot(temperatureText, weatherCode, conditionText, timestampMillis,
+                    sunriseMillis, sunsetMillis);
         }
 
         static WeatherSnapshot empty() {
-            return new WeatherSnapshot("", Integer.MIN_VALUE, "", 0L);
+            return new WeatherSnapshot("", Integer.MIN_VALUE, "", 0L, 0L, 0L);
         }
     }
 

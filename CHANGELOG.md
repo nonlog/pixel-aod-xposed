@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.113] - 2026-06-27
+### Bug Fixes
+- Use Breezy Weather's actual sunrise/sunset times for day/night icon selection instead of a naive `hour < 6 || hour >= 18` check. The previous behavior incorrectly showed the night icon at 18:01 in summer (sunset ~19:30). The relay now extracts `sunRise`/`sunSet` (camelCase) and `sunrise`/`sunset` (lowercase) from the Breezy Weather JSON, stores them in SharedPreferences, and passes them through the relay broadcast as `sunrise_millis`/`sunset_millis` extras. Falls back to the hour check when Breezy Weather hasn't published sun-times.
+
 ## [0.1.112] - 2026-06-27
 ### Bug Fixes
 - Make the status bar and navigation bar icons in the Settings screen adapt to the system theme: enable edge-to-edge layout and flip `isAppearanceLightStatusBars` / `isAppearanceLightNavigationBars` based on the current `UI_MODE_NIGHT_MASK`. Previously the icons stayed light on top of `Theme.Material.Light`, making them invisible on a white surface.
