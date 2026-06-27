@@ -59,6 +59,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -221,20 +222,25 @@ private fun SettingsContent(
                 ?: PixelAodSettings.LANGUAGE_SYSTEM
         )
     }
-    val showTimePicker = { isStart: Boolean, currentTime: String ->
+    // ── Clock dial picker state ──
+    var showClockDial by remember { mutableStateOf(false) }
+    var clockDialIsStart by remember { mutableStateOf(true) }
+    var clockDialTitle by remember { mutableStateOf("") }
+    var clockDialHour by remember { mutableIntStateOf(22) }
+    var clockDialMinute by remember { mutableIntStateOf(0) }
+
+    val startTimeLabel = stringResource(R.string.title_schedule_start_time)
+    val endTimeLabel = stringResource(R.string.title_schedule_end_time)
+
+    val showClockDialPicker: (Boolean, String) -> Unit = { isStart, currentTime ->
         val parts = currentTime.split(":")
         val hour = parts.getOrNull(0)?.toIntOrNull() ?: if (isStart) 22 else 7
         val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
-        android.app.TimePickerDialog(context, { _, h, m ->
-            val formatted = String.format("%02d:%02d", h, m)
-            if (isStart) {
-                aodScheduleStartTime.value = formatted
-                prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, formatted).apply()
-            } else {
-                aodScheduleEndTime.value = formatted
-                prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, formatted).apply()
-            }
-        }, hour, minute, true).show()
+        clockDialIsStart = isStart
+        clockDialTitle = if (isStart) startTimeLabel else endTimeLabel
+        clockDialHour = hour
+        clockDialMinute = minute
+        showClockDial = true
     }
     val clockScale = remember {
         mutableFloatStateOf(
@@ -341,14 +347,14 @@ private fun SettingsContent(
                     title = stringResource(R.string.title_schedule_start_time),
                     timeText = aodScheduleStartTime.value
                 ) {
-                    showTimePicker(true, aodScheduleStartTime.value)
+                    showClockDialPicker(true, aodScheduleStartTime.value)
                 }
                 TimePickerCard(
                     icon = Icons.Outlined.Schedule,
                     title = stringResource(R.string.title_schedule_end_time),
                     timeText = aodScheduleEndTime.value
                 ) {
-                    showTimePicker(false, aodScheduleEndTime.value)
+                    showClockDialPicker(false, aodScheduleEndTime.value)
                 }
             }
         }
@@ -393,6 +399,28 @@ private fun SettingsContent(
                 if (selected != weatherIconPack.value) {
                     weatherIconPack.value = selected
                     prefs.edit().putString(PixelAodSettings.KEY_WEATHER_ICON_PACK, selected).apply()
+                }
+            }
+        )
+    }
+
+    // ── Clock dial picker ──
+    if (showClockDial) {
+        ClockDialPickerDialog(
+            title = clockDialTitle,
+            initialHour = clockDialHour,
+            initialMinute = clockDialMinute,
+            is24Hour = true,
+            onDismiss = { showClockDial = false },
+            onTimeSelected = { h, m ->
+                showClockDial = false
+                val formatted = String.format("%02d:%02d", h, m)
+                if (clockDialIsStart) {
+                    aodScheduleStartTime.value = formatted
+                    prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, formatted).apply()
+                } else {
+                    aodScheduleEndTime.value = formatted
+                    prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, formatted).apply()
                 }
             }
         )
