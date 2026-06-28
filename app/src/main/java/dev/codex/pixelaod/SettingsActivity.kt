@@ -1,3 +1,4 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
 package dev.codex.pixelaod
 
 import android.content.Context
@@ -46,6 +47,8 @@ import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -404,23 +407,35 @@ private fun SettingsContent(
         )
     }
 
-    // ── Clock dial picker ──
+    // ── Material 3 Time Picker ──
     if (showClockDial) {
-        ClockDialPickerDialog(
-            title = clockDialTitle,
+        val state = rememberTimePickerState(
             initialHour = clockDialHour,
             initialMinute = clockDialMinute,
-            is24Hour = true,
-            onDismiss = { showClockDial = false },
-            onTimeSelected = { h, m ->
-                showClockDial = false
-                val formatted = String.format("%02d:%02d", h, m)
-                if (clockDialIsStart) {
-                    aodScheduleStartTime.value = formatted
-                    prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, formatted).apply()
-                } else {
-                    aodScheduleEndTime.value = formatted
-                    prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, formatted).apply()
+            is24Hour = true
+        )
+        AlertDialog(
+            onDismissRequest = { showClockDial = false },
+            title = { Text(clockDialTitle) },
+            text = { TimePicker(state = state) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClockDial = false
+                    val formatted = String.format("%02d:%02d", state.hour, state.minute)
+                    if (clockDialIsStart) {
+                        aodScheduleStartTime.value = formatted
+                        prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, formatted).apply()
+                    } else {
+                        aodScheduleEndTime.value = formatted
+                        prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, formatted).apply()
+                    }
+                }) {
+                    Text("OK")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClockDial = false }) {
+                    Text("Cancel")
                 }
             }
         )

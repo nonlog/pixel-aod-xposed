@@ -180,6 +180,14 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
         } else if (intent.hasExtra("sunSet")) {
             result[1] = intent.getLongExtra("sunSet", 0L);
         }
+        
+        if (result[0] > 0L && result[0] < 100000000000L) {
+            result[0] *= 1000L;
+        }
+        if (result[1] > 0L && result[1] < 100000000000L) {
+            result[1] *= 1000L;
+        }
+        
         return result;
     }
 
@@ -195,12 +203,17 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
                 while ((read = reader.read(buffer)) >= 0) {
                     builder.append(buffer, 0, read);
                 }
-                org.json.JSONArray array = new org.json.JSONArray(builder.toString());
-                if (array.length() > 0) {
-                    org.json.JSONObject first = array.optJSONObject(0);
-                    if (first != null) {
-                        target = first.toString();
+                String jsonStr = builder.toString();
+                try {
+                    org.json.JSONArray array = new org.json.JSONArray(jsonStr);
+                    if (array.length() > 0) {
+                        org.json.JSONObject first = array.optJSONObject(0);
+                        if (first != null) {
+                            target = first.toString();
+                        }
                     }
+                } catch (Throwable t) {
+                    target = jsonStr;
                 }
             } catch (Throwable t) {
                 return result;
@@ -247,10 +260,10 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
                 }
             }
             if (sunriseSec > 0L) {
-                result[0] = sunriseSec * 1000L;
+                result[0] = (sunriseSec < 100000000000L) ? sunriseSec * 1000L : sunriseSec;
             }
             if (sunsetSec > 0L) {
-                result[1] = sunsetSec * 1000L;
+                result[1] = (sunsetSec < 100000000000L) ? sunsetSec * 1000L : sunsetSec;
             }
         } catch (Throwable t) {
             Log.w(TAG, "failed to extract sunrise/sunset from Breezy weather JSON", t);

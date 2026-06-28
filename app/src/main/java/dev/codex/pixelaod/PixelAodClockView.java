@@ -4417,7 +4417,19 @@ public final class PixelAodClockView extends FrameLayout {
             if (!hasSunTimes()) {
                 return false;
             }
-            return nowMillis < sunriseMillis || nowMillis >= sunsetMillis;
+            java.util.Calendar now = java.util.Calendar.getInstance();
+            now.setTimeInMillis(nowMillis);
+            int nowMins = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE);
+            
+            java.util.Calendar sunrise = java.util.Calendar.getInstance();
+            sunrise.setTimeInMillis(sunriseMillis);
+            int sunRiseMins = sunrise.get(java.util.Calendar.HOUR_OF_DAY) * 60 + sunrise.get(java.util.Calendar.MINUTE);
+            
+            java.util.Calendar sunset = java.util.Calendar.getInstance();
+            sunset.setTimeInMillis(sunsetMillis);
+            int sunSetMins = sunset.get(java.util.Calendar.HOUR_OF_DAY) * 60 + sunset.get(java.util.Calendar.MINUTE);
+            
+            return nowMins < sunRiseMins || nowMins >= sunSetMins;
         }
 
         boolean sameDisplay(WeatherSnapshot other) {

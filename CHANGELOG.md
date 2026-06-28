@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.115] - 2026-06-28
+### Bug Fixes
+- Fix JSON parsing crash in BreezyWeatherRelayReceiver that skipped parsing if the root was a JSONObject.
+- Fix AOD being stuck in night mode after sunset by converting timestamps to time-of-day before comparison, preventing expiration.
+- Fix time unit mismatch in Breezy Weather intents by properly scaling second-based timestamps to milliseconds.
+- Support system dark mode on module startup splash screen.
+
+### UI
+- Replace the buggy, manual Canvas-based `ClockDialPicker` with Google's official Material 3 `TimePicker`, fixing massive GC thrashing and frame drops.
 ## [0.1.114] - 2026-06-27
 ### UI
 - Replace the stock Android `TimePickerDialog` for "Start Time" / "End Time" with a custom clock-dial (表盘) picker. The user drags on the circular face to pick hours (outer ring, 1–12) or minutes (inner ring, 0–59), with Hour/Minute and AM/PM toggle chips above the dial.
