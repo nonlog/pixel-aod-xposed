@@ -3893,9 +3893,8 @@ public final class PixelAodClockView extends FrameLayout {
             String percent = Math.round(level * 100f / scale) + "%";
             int status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN);
             int plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0);
-            boolean charging = status == BatteryManager.BATTERY_STATUS_CHARGING
-                    || status == BatteryManager.BATTERY_STATUS_FULL
-                    || plugged != 0;
+            boolean charging = (status == BatteryManager.BATTERY_STATUS_CHARGING || plugged != 0)
+                    && status != BatteryManager.BATTERY_STATUS_FULL;
             return new BatteryStatus(percent, charging);
         } catch (Throwable t) {
             return BatteryStatus.empty();

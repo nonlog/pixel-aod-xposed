@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.1.116] - 2026-06-28
+### Bug Fixes
+- Hide the charging indicator icon on the AOD battery status once the battery is fully charged, even if the charger remains plugged in.
 ## [0.1.115] - 2026-06-28
 ### Bug Fixes
 - Fix JSON parsing crash in BreezyWeatherRelayReceiver that skipped parsing if the root was a JSONObject.
