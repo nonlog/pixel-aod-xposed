@@ -2,6 +2,7 @@
 package dev.codex.pixelaod
 
 import android.content.Context
+import android.content.ContentValues
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
@@ -124,6 +125,24 @@ class SettingsActivity : ComponentActivity() {
 private fun normalizeAlwaysOnSettings(context: Context): Boolean {
     val prefs = PixelAodSettings.getSharedPreferences(context)
     return PixelAodSettings.normalizeAlwaysEnabledPreferences(prefs)
+}
+
+private fun updateModuleBooleanSetting(context: Context, key: String, value: Boolean) {
+    val values = ContentValues().apply {
+        put("key", key)
+        put("value", value)
+    }
+    val updated = try {
+        context.contentResolver.update(PixelAodSettingsProvider.URI, values, null, null)
+    } catch (_: Throwable) {
+        0
+    }
+    if (updated > 0) {
+        return
+    }
+    PixelAodSettings.getSharedPreferences(context).edit().putBoolean(key, value).apply()
+    PixelAodSettings.refresh(context)
+    context.contentResolver.notifyChange(PixelAodSettingsProvider.URI, null)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -369,7 +388,7 @@ private fun SettingsContent(
             }
             ToggleCard(Icons.Outlined.BugReport, stringResource(R.string.title_debug_logging), stringResource(R.string.desc_debug_logging), debugLogging.value) {
                 debugLogging.value = it
-                prefs.edit().putBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, it).apply()
+                updateModuleBooleanSetting(context, PixelAodSettings.KEY_DEBUG_LOGGING, it)
             }
         }
 

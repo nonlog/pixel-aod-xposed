@@ -3,6 +3,7 @@ package dev.codex.pixelaod;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.content.Context;
+import android.database.ContentObserver;
 import android.graphics.Canvas;
 import android.os.Handler;
 import android.os.Looper;
@@ -37,6 +38,7 @@ import java.util.regex.Pattern;
 
 final class PixelAodHook {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
+    private static final AtomicBoolean SETTINGS_OBSERVER_REGISTERED = new AtomicBoolean(false);
     private static final String CLOCK_LAYOUT = "com.oplus.systemui.aod.aodclock.off.AodClockLayout";
     private static final String AOD_ROOT_LAYOUT = "com.oplus.systemui.aod.aodclock.off.AodRootLayout";
     private static final String AOD_RECORD = "com.oplus.systemui.aod.AodRecord";
@@ -95,6 +97,7 @@ final class PixelAodHook {
             return;
         }
         PixelAodSettings.refresh(context);
+        registerSettingsObserver(context);
         boolean customAod = PixelAodSettings.getBoolean(context,
                 PixelAodSettings.KEY_CUSTOM_AOD, true);
         boolean lockscreenClock = PixelAodSettings.getBoolean(context,
@@ -136,6 +139,36 @@ final class PixelAodHook {
                 + " notificationIcons=" + notificationIcons
                 + " lockscreenPolicy=" + lockscreenPolicy
                 + " weather=" + weather);
+    }
+
+    private static void registerSettingsObserver(Context context) {
+        if (context == null || !SETTINGS_OBSERVER_REGISTERED.compareAndSet(false, true)) {
+            return;
+        }
+        final Context appContext = context.getApplicationContext() != null
+                ? context.getApplicationContext() : context;
+        try {
+            appContext.getContentResolver().registerContentObserver(
+                    PixelAodSettingsProvider.URI,
+                    true,
+                    new ContentObserver(MAIN) {
+                        @Override
+                        public void onChange(boolean selfChange) {
+                            onChange(selfChange, null);
+                        }
+
+                        @Override
+                        public void onChange(boolean selfChange, android.net.Uri uri) {
+                            PixelAodSettings.refresh(appContext);
+                            PixelAodLog.log("refreshed Pixel AOD settings from provider change"
+                                    + " selfChange=" + selfChange
+                                    + " uri=" + uri);
+                        }
+                    });
+            PixelAodLog.log("registered Pixel AOD settings observer");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to register Pixel AOD settings observer", t);
+        }
     }
 
     private static void hookStockClockDrawSuppression() {
@@ -925,16 +958,19 @@ final class PixelAodHook {
                     "com.android.systemui.statusbar.notification.collection.NotificationEntry",
                     classLoader);
             ModernHookBridge.hookAfter(providerClass, "shouldHideNotification", param -> {
-                if (!Boolean.TRUE.equals(param.getResult()) || param.args == null
-                        || param.args.length == 0) {
+                if (param.args == null || param.args.length == 0) {
                     return;
                 }
                 StatusBarNotification sbn = statusBarNotificationFromEntry(param.args[0]);
                 Object ranking = rankingFromEntry(param.args[0]);
-                if (isEligibleForLockscreenPolicyOverride(sbn, ranking,
+                boolean hidden = Boolean.TRUE.equals(param.getResult());
+                if (hidden && isEligibleForLockscreenPolicyOverride(sbn, ranking,
                         "KeyguardNotificationVisibilityProvider")) {
                     param.setResult(false);
+                    hidden = false;
                 }
+                PixelAodClockView.updateLockscreenVisibilityFromProvider(
+                        sbn, hidden, "KeyguardNotificationVisibilityProvider");
             }, entryClass);
             PixelAodLog.log("hooked KeyguardNotificationVisibilityProvider lockscreen policy");
         } catch (Throwable t) {
@@ -956,17 +992,20 @@ final class PixelAodHook {
                 return;
             }
             ModernHookBridge.hookAfter(filterClass, "shouldFilterOut", param -> {
-                if (!Boolean.TRUE.equals(param.getResult()) || param.args == null
+                if (param.args == null
                         || param.args.length == 0
                         || !looksLikeKeyguardNotificationFilter(param.thisObject)) {
                     return;
                 }
                 StatusBarNotification sbn = statusBarNotificationFromEntry(param.args[0]);
                 Object ranking = rankingFromEntry(param.args[0]);
-                if (isEligibleForLockscreenPolicyOverride(sbn, ranking,
-                        filterName(param.thisObject))) {
+                String source = filterName(param.thisObject);
+                boolean hidden = Boolean.TRUE.equals(param.getResult());
+                if (hidden && isEligibleForLockscreenPolicyOverride(sbn, ranking, source)) {
                     param.setResult(false);
+                    hidden = false;
                 }
+                PixelAodClockView.updateLockscreenVisibilityFromFilter(sbn, hidden, source);
             }, entryClass, long.class);
             PixelAodLog.log("hooked keyguard NotifFilter lockscreen policy fallback");
         } catch (Throwable t) {

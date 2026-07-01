@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.117] - 2026-07-01
+### Bug Fixes
+- Make the `Debug Logging` setting push changes through the settings provider and notify the hooked SystemUI process immediately, so toggling the switch refreshes module settings without waiting for the cache TTL or a later opportunistic reload.
+- Unify AOD notification visibility with the lockscreen visibility decision path: AOD now consumes the same keyguard/provider filter results that decide whether a notification can appear on the lockscreen, instead of applying a separate low-importance/silent heuristic. This fixes FlyClash-style cases where a notification could leak onto AOD while still being hidden on the lockscreen.
+
 ## [0.1.116] - 2026-06-28
 ### Bug Fixes
 - Hide the charging indicator icon on the AOD battery status once the battery is fully charged, even if the charger remains plugged in.

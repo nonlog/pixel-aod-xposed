@@ -119,7 +119,6 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int BURN_IN_OFFSET_Y_DP = 12;
     private static final float BURN_IN_PERIOD_X_MINUTES = 43f;
     private static final float BURN_IN_PERIOD_Y_MINUTES = 271f;
-    private static final int NOTIFICATION_FLAG_SILENT = 0x00020000;
     private static final String GOOGLE_SANS_FLEX_VARIABLE_ASSET = "assets/fonts/GoogleSansFlex-Variable.ttf";
     private static final String GOOGLE_SANS_FLEX_VARIABLE_CACHE = "GoogleSansFlex-Variable.ttf";
     private static final String GOOGLE_SANS_FLEX_VARIABLE_CACHE_PREFIX = "GoogleSansFlex-Variable-";
@@ -177,6 +176,8 @@ public final class PixelAodClockView extends FrameLayout {
     private static boolean cachedScheduleResult = true;
     private static String cachedScheduleKey = "";
     private static final Map<String, RankingSnapshot> notificationRankings = new HashMap<>();
+    private static final Map<String, LockscreenVisibilityDecision> lockscreenVisibilityDecisions =
+            new HashMap<>();
 
     private static SensorManager proximitySensorManager;
     private static Sensor proximitySensor;
@@ -505,6 +506,7 @@ public final class PixelAodClockView extends FrameLayout {
         String signature;
         synchronized (PixelAodClockView.class) {
             rawNotifications = notifications != null ? notifications.clone() : EMPTY_NOTIFICATIONS;
+            retainLockscreenVisibilityDecisionsLocked(rawNotifications);
             activeNotifications = sanitizeNotifications(notifications);
             mediaCandidateCount = replaceMediaNotificationCandidatesLocked(rawNotifications);
             signature = notificationSignature(rawNotifications) + "|"
@@ -543,6 +545,62 @@ public final class PixelAodClockView extends FrameLayout {
         PixelAodLog.log("refreshing AOD notification filtering trace=" + currentAodTraceId()
                 + " source=" + source + " state={" + describeAodState(appContext) + "}");
         setActiveNotifications(rawSnapshot);
+    }
+
+    static void updateLockscreenVisibilityFromProvider(StatusBarNotification sbn,
+            boolean hidden, String source) {
+        updateLockscreenVisibilityDecision(sbn, hidden, false, source);
+    }
+
+    static void updateLockscreenVisibilityFromFilter(StatusBarNotification sbn,
+            boolean hidden, String source) {
+        updateLockscreenVisibilityDecision(sbn, hidden, true, source);
+    }
+
+    private static void updateLockscreenVisibilityDecision(StatusBarNotification sbn,
+            boolean hidden, boolean fromFilter, String source) {
+        if (sbn == null || TextUtils.isEmpty(sbn.getKey())) {
+            return;
+        }
+        LockscreenVisibilityDecision next;
+        boolean changed;
+        synchronized (PixelAodClockView.class) {
+            LockscreenVisibilityDecision current = lockscreenVisibilityDecisions.get(sbn.getKey());
+            next = current != null
+                    ? new LockscreenVisibilityDecision(current)
+                    : new LockscreenVisibilityDecision();
+            changed = fromFilter
+                    ? next.setFilterHidden(hidden, source)
+                    : next.setProviderHidden(hidden, source);
+            if (!changed) {
+                return;
+            }
+            lockscreenVisibilityDecisions.put(sbn.getKey(), next);
+        }
+        PixelAodLog.log("updated lockscreen visibility decision pkg=" + sbn.getPackageName()
+                + " key=" + sbn.getKey()
+                + " source=" + source
+                + " stage=" + (fromFilter ? "filter" : "provider")
+                + " hidden=" + hidden
+                + " decision=" + next
+                + " trace=" + currentAodTraceId());
+        refreshNotificationFiltering("lockscreen-visibility-" + (fromFilter ? "filter" : "provider"));
+    }
+
+    private static void retainLockscreenVisibilityDecisionsLocked(
+            StatusBarNotification[] notifications) {
+        if (lockscreenVisibilityDecisions.isEmpty()) {
+            return;
+        }
+        HashSet<String> activeKeys = new HashSet<>();
+        if (notifications != null) {
+            for (StatusBarNotification sbn : notifications) {
+                if (sbn != null && !TextUtils.isEmpty(sbn.getKey())) {
+                    activeKeys.add(sbn.getKey());
+                }
+            }
+        }
+        lockscreenVisibilityDecisions.keySet().retainAll(activeKeys);
     }
 
     static void setAodActive(boolean active, String source) {
@@ -2214,17 +2272,23 @@ public final class PixelAodClockView extends FrameLayout {
             return false;
         }
         RankingSnapshot ranking;
+        LockscreenVisibilityDecision lockscreenDecision;
         synchronized (PixelAodClockView.class) {
             ranking = notificationRankings.get(sbn.getKey());
+            lockscreenDecision = lockscreenVisibilityDecisions.get(sbn.getKey());
         }
         String rankingHiddenReason = ranking != null ? ranking.hiddenReason() : null;
         if (!systemNotification && rankingHiddenReason != null) {
             logFilteredNotification(sbn, rankingHiddenReason + " ranking=" + ranking);
             return false;
         }
-        if (!systemNotification && !testNotification
-                && isLikelySilentNotification(notification, ranking)) {
-            logFilteredNotification(sbn, "silent-or-low-importance ranking=" + ranking);
+        String lockscreenHiddenReason = lockscreenDecision != null
+                ? lockscreenDecision.hiddenReason()
+                : null;
+        if (!systemNotification && !testNotification && lockscreenHiddenReason != null) {
+            logFilteredNotification(sbn, lockscreenHiddenReason
+                    + " decision=" + lockscreenDecision
+                    + " ranking=" + ranking);
             return false;
         }
         logKeptNotification(sbn, ranking);
@@ -2314,14 +2378,6 @@ public final class PixelAodClockView extends FrameLayout {
         } catch (Throwable ignored) {
             return false;
         }
-    }
-
-    private static boolean isLikelySilentNotification(Notification notification, RankingSnapshot ranking) {
-        if (ranking != null && ranking.importance != NotificationManagerImportance.UNKNOWN
-                && ranking.importance < NotificationManagerImportance.LOW) {
-            return true;
-        }
-        return (notification.flags & NOTIFICATION_FLAG_SILENT) != 0;
     }
 
     private static boolean isMediaIconCandidate(StatusBarNotification sbn) {
@@ -4941,6 +4997,69 @@ public final class PixelAodClockView extends FrameLayout {
                     + ",channel=" + channelVisibility
                     + ",importance=" + importance
                     + ",suppressed=" + suppressedVisualEffects;
+        }
+    }
+
+    private static final class LockscreenVisibilityDecision {
+        private Boolean providerHidden;
+        private String providerSource = "";
+        private Boolean filterHidden;
+        private String filterSource = "";
+
+        LockscreenVisibilityDecision() {
+        }
+
+        LockscreenVisibilityDecision(LockscreenVisibilityDecision other) {
+            if (other == null) {
+                return;
+            }
+            providerHidden = other.providerHidden;
+            providerSource = other.providerSource;
+            filterHidden = other.filterHidden;
+            filterSource = other.filterSource;
+        }
+
+        boolean setProviderHidden(boolean hidden, String source) {
+            if (providerHidden != null
+                    && providerHidden == hidden
+                    && TextUtils.equals(providerSource, source)) {
+                return false;
+            }
+            providerHidden = hidden;
+            providerSource = source != null ? source : "";
+            return true;
+        }
+
+        boolean setFilterHidden(boolean hidden, String source) {
+            if (filterHidden != null
+                    && filterHidden == hidden
+                    && TextUtils.equals(filterSource, source)) {
+                return false;
+            }
+            filterHidden = hidden;
+            filterSource = source != null ? source : "";
+            return true;
+        }
+
+        String hiddenReason() {
+            if (Boolean.TRUE.equals(providerHidden)) {
+                return "lockscreen-provider-hidden source=" + providerSource;
+            }
+            if (Boolean.TRUE.equals(filterHidden)) {
+                return "lockscreen-filter-hidden source=" + filterSource;
+            }
+            return null;
+        }
+
+        @Override
+        public String toString() {
+            return "providerHidden=" + providerHidden
+                    + "@"
+                    + providerSource
+                    + ",filterHidden="
+                    + filterHidden
+                    + "@"
+                    + filterSource;
         }
     }
 
