@@ -104,6 +104,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int NOTIFICATION_ICON_SPACING_DP = 8;
     private static final int MEDIA_ICON_SIZE_DP = 13;
     private static final int MEDIA_ICON_SPACING_DP = 8;
+    private static final int NOTIFICATION_FLAG_SILENT = 0x00020000;
     private static final int MAX_NOTIFICATION_ICONS = 5;
     private static final int ICON_MASK_SAMPLE_SIZE = 48;
     private static final int BATTERY_TOP_DP = 720;
@@ -2277,6 +2278,16 @@ public final class PixelAodClockView extends FrameLayout {
             ranking = notificationRankings.get(sbn.getKey());
             lockscreenDecision = lockscreenVisibilityDecisions.get(sbn.getKey());
         }
+        if (!systemNotification) {
+            String silentHiddenReason = lockscreenPolicySilentHiddenReason(
+                    sbn,
+                    ranking != null ? ranking.importance : NotificationManagerImportance.UNKNOWN);
+            if (silentHiddenReason != null) {
+                logFilteredNotification(sbn, silentHiddenReason
+                        + " ranking=" + ranking);
+                return false;
+            }
+        }
         String rankingHiddenReason = ranking != null ? ranking.hiddenReason() : null;
         if (!systemNotification && rankingHiddenReason != null) {
             logFilteredNotification(sbn, rankingHiddenReason + " ranking=" + ranking);
@@ -2299,6 +2310,31 @@ public final class PixelAodClockView extends FrameLayout {
         return sbn != null
                 && MODULE_PACKAGE.equals(sbn.getPackageName())
                 && TestNotificationReceiver.TEST_TAG.equals(sbn.getTag());
+    }
+
+    static boolean isLockscreenPolicyEnabled() {
+        Context context = appContext;
+        return context == null
+                || PixelAodSettings.getBoolean(context,
+                PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true);
+    }
+
+    static String lockscreenPolicySilentHiddenReason(StatusBarNotification sbn, int importance) {
+        if (!isLockscreenPolicyEnabled()) {
+            return null;
+        }
+        if (sbn == null || sbn.getNotification() == null) {
+            return null;
+        }
+        Notification notification = sbn.getNotification();
+        if ((notification.flags & NOTIFICATION_FLAG_SILENT) != 0) {
+            return "lockscreen-policy-notification-flag-silent";
+        }
+        if (importance != NotificationManagerImportance.UNKNOWN
+                && importance <= NotificationManagerImportance.LOW) {
+            return "lockscreen-policy-ranking-importance-low-or-less importance=" + importance;
+        }
+        return null;
     }
 
     private static boolean isSystemUiUsbNotification(StatusBarNotification sbn) {

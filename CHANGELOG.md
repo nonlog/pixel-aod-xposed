@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.120] - 2026-07-02
+### Bug Fixes
+- Keep supported system notifications such as the USB and tether/network-status entries on module AOD even when OOS marks them as silent or `LOW`, by letting the module's system-notification allow-path run before the lockscreen-policy silent filter.
+- Restore lockscreen-policy hiding for silent third-party notifications only on the real lockscreen path, so notifications like Link to Windows no longer stay visible on OOS lockscreen while the unlocked notification shade still keeps its normal silent section.
+
+## [0.1.119] - 2026-07-01
+### Bug Fixes
+- Bind the AOSP-style silent-notification filtering to the `Lockscreen Policy` setting instead of forcing a global SystemUI hide. With the toggle enabled, silent or low-importance notifications are filtered only from the lockscreen/AOD path; with it disabled, the module no longer alters OOS silent-notification visibility.
+- Stop forcing `shouldHideNotification` / `shouldFilterOut` to hide silent notifications globally. This restores FlyClash-style silent notification groups in the unlocked notification center while keeping the lockscreen-policy override that preserves lockscreen notifications across unlock/relock cycles.
+
+## [0.1.118] - 2026-07-01
+### Bug Fixes
+- Make silent notifications follow AOSP semantics on both OOS lockscreen and module AOD: if a notification is marked `FLAG_SILENT` or its ranking importance is `LOW` or below, the module now force-hides it from the lockscreen visibility path and filters it from AOD as well.
+- Remove the temporary third-party aggregate-summary special case and replace it with the general silent-notification rule, so grouped summaries like FlyClash's auto-group notification no longer leak onto AOD when the underlying notification channel is silent.
+
 ## [0.1.117] - 2026-07-01
 ### Bug Fixes
 - Make the `Debug Logging` setting push changes through the settings provider and notify the hooked SystemUI process immediately, so toggling the switch refreshes module settings without waiting for the cache TTL or a later opportunistic reload.

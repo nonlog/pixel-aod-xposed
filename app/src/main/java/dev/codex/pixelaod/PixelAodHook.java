@@ -88,6 +88,7 @@ final class PixelAodHook {
     private static WeakReference<ViewGroup> lastStockHost = new WeakReference<>(null);
     private static WeakReference<ViewGroup> lastPixelHost = new WeakReference<>(null);
     private static WeakReference<ViewGroup> lastShadeHost = new WeakReference<>(null);
+    private static volatile Context systemUiContext;
 
     private PixelAodHook() {
     }
@@ -96,26 +97,29 @@ final class PixelAodHook {
         if (!INSTALLED.compareAndSet(false, true)) {
             return;
         }
-        PixelAodSettings.refresh(context);
-        registerSettingsObserver(context);
-        boolean customAod = PixelAodSettings.getBoolean(context,
+        Context appContext = context.getApplicationContext() != null
+                ? context.getApplicationContext() : context;
+        systemUiContext = appContext;
+        PixelAodSettings.refresh(appContext);
+        registerSettingsObserver(appContext);
+        boolean customAod = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_CUSTOM_AOD, true);
-        boolean lockscreenClock = PixelAodSettings.getBoolean(context,
+        boolean lockscreenClock = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_LOCKSCREEN_CLOCK, true);
-        boolean notificationIcons = PixelAodSettings.getBoolean(context,
+        boolean notificationIcons = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_NOTIFICATION_ICONS, true);
-        boolean lockscreenPolicy = PixelAodSettings.getBoolean(context,
+        boolean lockscreenPolicy = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true);
-        boolean weather = PixelAodSettings.getBoolean(context,
+        boolean weather = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_WEATHER, true);
         if (weather) {
-            PixelAodClockView.ensureBreezyWeatherReceiver(context);
+            PixelAodClockView.ensureBreezyWeatherReceiver(appContext);
         }
         if (customAod) {
-            hookClockLayout(context, classLoader);
+            hookClockLayout(appContext, classLoader);
             hookNotificationView(classLoader);
             hookAodRecord(classLoader);
-            hookSkipDozeOffState(context, classLoader);
+            hookSkipDozeOffState(appContext, classLoader);
             if (ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS) {
                 hookStockClockVisibilityAndAlphaSuppression();
             } else {
@@ -130,7 +134,7 @@ final class PixelAodHook {
             hookLockscreenNotificationPolicy(classLoader);
         }
         if (customAod || lockscreenClock) {
-            hookShadeWindowView(context, classLoader);
+            hookShadeWindowView(appContext, classLoader);
             hookLockscreenClockProbe(classLoader);
             PixelAodLog.log("skipped global stock clock draw suppression to avoid UI jank");
         }
@@ -963,14 +967,19 @@ final class PixelAodHook {
                 }
                 StatusBarNotification sbn = statusBarNotificationFromEntry(param.args[0]);
                 Object ranking = rankingFromEntry(param.args[0]);
+                String source = "KeyguardNotificationVisibilityProvider";
                 boolean hidden = Boolean.TRUE.equals(param.getResult());
+                if (!hidden && shouldForceHideSilentNotificationOnLockscreen(sbn, ranking, source)) {
+                    param.setResult(true);
+                    hidden = true;
+                }
                 if (hidden && isEligibleForLockscreenPolicyOverride(sbn, ranking,
-                        "KeyguardNotificationVisibilityProvider")) {
+                        source)) {
                     param.setResult(false);
                     hidden = false;
                 }
                 PixelAodClockView.updateLockscreenVisibilityFromProvider(
-                        sbn, hidden, "KeyguardNotificationVisibilityProvider");
+                        sbn, hidden, source);
             }, entryClass);
             PixelAodLog.log("hooked KeyguardNotificationVisibilityProvider lockscreen policy");
         } catch (Throwable t) {
@@ -1001,6 +1010,10 @@ final class PixelAodHook {
                 Object ranking = rankingFromEntry(param.args[0]);
                 String source = filterName(param.thisObject);
                 boolean hidden = Boolean.TRUE.equals(param.getResult());
+                if (!hidden && shouldForceHideSilentNotificationOnLockscreen(sbn, ranking, source)) {
+                    param.setResult(true);
+                    hidden = true;
+                }
                 if (hidden && isEligibleForLockscreenPolicyOverride(sbn, ranking, source)) {
                     param.setResult(false);
                     hidden = false;
@@ -1150,6 +1163,50 @@ final class PixelAodHook {
                 + " flags=0x" + Integer.toHexString(notification.flags)
                 + " trace=" + PixelAodClockView.currentAodTraceId()
                 + " state={" + PixelAodClockView.describeAodState(null) + "}");
+        return true;
+    }
+
+    private static boolean shouldForceHideSilentNotificationOnLockscreen(StatusBarNotification sbn,
+            Object ranking, String source) {
+        if (!PixelAodClockView.isLockscreenPolicyEnabled()) {
+            return false;
+        }
+        Context context = systemUiContext;
+        if (context == null || !PixelLockscreenClockView.isSystemKeyguardLocked(context)) {
+            return false;
+        }
+        if (sbn == null || sbn.getNotification() == null
+                || sbn.getNotification().getSmallIcon() == null) {
+            return false;
+        }
+        Notification notification = sbn.getNotification();
+        String pkg = sbn.getPackageName();
+        boolean testNotification = MODULE_PACKAGE.equals(pkg)
+                && TestNotificationReceiver.TEST_TAG.equals(sbn.getTag());
+        if (MODULE_PACKAGE.equals(pkg) && !testNotification) {
+            return false;
+        }
+        if ("android".equals(pkg) || "com.android.systemui".equals(pkg)) {
+            return false;
+        }
+        if (Notification.CATEGORY_TRANSPORT.equals(notification.category)
+                || notification.visibility == Notification.VISIBILITY_SECRET
+                || rankingVisibilitySecret(ranking)) {
+            return false;
+        }
+        int importance = rankingImportance(ranking);
+        String hiddenReason = PixelAodClockView.lockscreenPolicySilentHiddenReason(sbn, importance);
+        if (testNotification || hiddenReason == null) {
+            return false;
+        }
+        PixelAodLog.log("forcing lockscreen silent-notification hide pkg=" + pkg
+                + " key=" + sbn.getKey()
+                + " source=" + source
+                + " reason=" + hiddenReason
+                + " importance=" + importance
+                + " flags=0x" + Integer.toHexString(notification.flags)
+                + " trace=" + PixelAodClockView.currentAodTraceId()
+                + " state={" + PixelAodClockView.describeAodState(context) + "}");
         return true;
     }
 
