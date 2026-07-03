@@ -118,6 +118,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int WEATHER_ICON_PADDING_DP = 6;
     private static final int BURN_IN_OFFSET_X_DP = 8;
     private static final int BURN_IN_OFFSET_Y_DP = 12;
+    private static final long AOD_ENTRY_SECOND_REFRESH_DELAY_MS = 500L;
     private static final float BURN_IN_PERIOD_X_MINUTES = 43f;
     private static final float BURN_IN_PERIOD_Y_MINUTES = 271f;
     private static final String GOOGLE_SANS_FLEX_VARIABLE_ASSET = "assets/fonts/GoogleSansFlex-Variable.ttf";
@@ -179,7 +180,6 @@ public final class PixelAodClockView extends FrameLayout {
     private static final Map<String, RankingSnapshot> notificationRankings = new HashMap<>();
     private static final Map<String, LockscreenVisibilityDecision> lockscreenVisibilityDecisions =
             new HashMap<>();
-
     private static SensorManager proximitySensorManager;
     private static Sensor proximitySensor;
     private static boolean proximityNear;
@@ -282,16 +282,6 @@ public final class PixelAodClockView extends FrameLayout {
     private final Map<String, Runnable> inactiveMediaTimeoutRunnables = new HashMap<>();
     private final MediaSessionManager.OnActiveSessionsChangedListener activeSessionsChangedListener =
             this::updateMediaControllers;
-    private final Runnable ticker = new Runnable() {
-        @Override
-        public void run() {
-            updateTime();
-            updateMediaLine("ticker");
-            updateAodVisibility("ticker");
-            requestAodFrameRefresh("ticker");
-            mainHandler().postDelayed(this, millisUntilNextMinute());
-        }
-    };
     private final BroadcastReceiver screenStateReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -312,6 +302,16 @@ public final class PixelAodClockView extends FrameLayout {
             updateAodVisibility("screen-state");
         }
     };
+    private final BroadcastReceiver timeChangedReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent != null ? intent.getAction() : "";
+            PixelAodLog.log("Pixel AOD time receiver action=" + action
+                    + " trace=" + currentAodTraceId()
+                    + " state={" + describeAodState(context) + "}");
+            refreshForNativeAodTick("time-broadcast");
+        }
+    };
     private final ContentObserver notificationSettingsObserver = new ContentObserver(mainHandler()) {
         @Override
         public void onChange(boolean selfChange) {
@@ -324,6 +324,7 @@ public final class PixelAodClockView extends FrameLayout {
     private boolean compactClock;
     private boolean screenStateReceiverRegistered;
     private boolean notificationSettingsObserverRegistered;
+    private boolean timeReceiverRegistered;
 
     public PixelAodClockView(Context context) {
         super(context);
@@ -932,7 +933,7 @@ public final class PixelAodClockView extends FrameLayout {
         return age >= 0L && age <= windowMillis;
     }
 
-    private static boolean isDisplayInAodState(Context context) {
+    static boolean isDisplayInAodState(Context context) {
         int state = currentDisplayState(context);
         return state == Display.STATE_DOZE || state == Display.STATE_DOZE_SUSPEND;
     }
@@ -1443,15 +1444,15 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         running = true;
+        registerTimeReceiver();
         updateAodVisibility("start");
         refreshPresentation();
-        mainHandler().removeCallbacks(ticker);
-        mainHandler().postDelayed(ticker, millisUntilNextMinute());
+        scheduleEntrySecondRefresh();
     }
 
     public void stop() {
         running = false;
-        mainHandler().removeCallbacks(ticker);
+        unregisterTimeReceiver();
         resetBurnInTranslation();
     }
 
@@ -1471,12 +1472,75 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    static void refreshAllForNativeAodTick(String source) {
+        for (PixelAodClockView view : INSTANCES) {
+            if (view != null) {
+                view.refreshForNativeAodTick(source);
+            }
+        }
+    }
+
     private void refreshPresentation() {
         applyMaterialColors();
         updateTime();
         rebuildNotificationIcons("refreshPresentation");
         updateMediaLine("refreshPresentation");
         requestAodFrameRefresh("refreshPresentation");
+    }
+
+    private void registerTimeReceiver() {
+        if (timeReceiverRegistered) {
+            return;
+        }
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_TIME_CHANGED);
+        filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+        filter.addAction(Intent.ACTION_LOCALE_CHANGED);
+        try {
+            getContext().registerReceiver(timeChangedReceiver, filter);
+            timeReceiverRegistered = true;
+            PixelAodLog.log("registered Pixel AOD time-change receiver trace=" + currentAodTraceId()
+                    + " state={" + describeAodState(getContext()) + "}");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to register Pixel AOD time receiver", t);
+        }
+    }
+
+    private void unregisterTimeReceiver() {
+        if (!timeReceiverRegistered) {
+            return;
+        }
+        try {
+            getContext().unregisterReceiver(timeChangedReceiver);
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to unregister Pixel AOD time receiver", t);
+        }
+        timeReceiverRegistered = false;
+    }
+
+    private void scheduleEntrySecondRefresh() {
+        mainHandler().postDelayed(() -> {
+            if (!running) {
+                return;
+            }
+            refreshForNativeAodTick("aod-entry-delayed");
+        }, AOD_ENTRY_SECOND_REFRESH_DELAY_MS);
+    }
+
+    private void refreshForNativeAodTick(String source) {
+        if (!running) {
+            PixelAodLog.log("ignored native AOD refresh while stopped trace="
+                    + currentAodTraceId() + " source=" + source
+                    + " state={" + describeAodState(getContext()) + "}");
+            return;
+        }
+        updateTime();
+        updateMediaLine(source);
+        updateAodVisibility(source);
+        requestAodFrameRefresh(source);
+        PixelAodLog.log("handled native AOD refresh trace=" + currentAodTraceId()
+                + " source=" + source
+                + " state={" + describeAodState(getContext()) + "}");
     }
 
     private static void refreshInstancesFromNotificationSnapshot(String source) {
@@ -4410,12 +4474,6 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static int normalizeClockWeight(int weight) {
         return Math.max(160, Math.min(800, weight));
-    }
-
-    private long millisUntilNextMinute() {
-        Calendar calendar = Calendar.getInstance();
-        long elapsed = calendar.get(Calendar.SECOND) * 1000L + calendar.get(Calendar.MILLISECOND);
-        return Math.max(1000L, 60_000L - elapsed + 50L);
     }
 
     private int dp(int value) {

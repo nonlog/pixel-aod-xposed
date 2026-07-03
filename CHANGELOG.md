@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.122] - 2026-07-02
+### Bug Fixes
+- Drive module AOD time updates from SystemUI's native OOS AOD refresh callbacks, with a short entry refresh and time-change broadcast fallback while the module AOD view is active.
+- Guard OOS energy-saving AOD hide callbacks during the AOD entry window so the custom AOD overlay is reasserted instead of disappearing or causing SystemUI-like restart behavior.
+
+## [0.1.121] - 2026-07-02
+### Bug Fixes
+- Drive module AOD clock refresh from SystemUI's system `ACTION_TIME_TICK` broadcast while AOD is running, so the clock keeps advancing even when the OOS `DozeUi` native tick hook is not available.
+- Keep the custom `Handler.postDelayed` minute ticker removed; this update uses the platform broadcast already delivered to SystemUI instead of adding a module-owned self-loop.
+- Remove the remaining global debug-log rate limit so `debug_logging=true` no longer drops transition or time-refresh evidence during dense AOD traces.
+
 ## [0.1.120] - 2026-07-02
 ### Bug Fixes
 - Keep supported system notifications such as the USB and tether/network-status entries on module AOD even when OOS marks them as silent or `LOW`, by letting the module's system-notification allow-path run before the lockscreen-policy silent filter.

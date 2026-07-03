@@ -46,6 +46,15 @@ final class PixelAodHook {
             "com.oplus.systemui.aod.display.AODDisplayUtil";
     private static final String AOD_SMOOTH_TRANSITION_CONTROLLER =
             "com.oplus.systemui.aod.display.SmoothTransitionController";
+    private static final String AOD_UPDATE_MANAGER =
+            "com.oplus.systemui.aod.aodclock.off.AodUpdateManager";
+    private static final String[] OPLUS_WAKE_UP_CONTROLLER_CANDIDATES = {
+            "com.oplus.systemui.aod.display.OplusWakeUpController",
+            "com.oplus.systemui.aod.OplusWakeUpController",
+            "com.oplus.systemui.aod.controller.OplusWakeUpController",
+            "com.oplus.systemui.keyguard.OplusWakeUpController",
+            "com.oplus.keyguard.OplusWakeUpController"
+    };
     private static final String SHADE_WINDOW_VIEW =
             "com.android.systemui.shade.NotificationShadeWindowView";
     private static final String KEYGUARD_STYLE_CLOCK =
@@ -62,6 +71,7 @@ final class PixelAodHook {
     private static final int STATUS_EDGE_DP = 68;
     private static final int NOTIFICATION_FLAG_SILENT = 0x00020000;
     private static final long AOD_ENTRY_STATE_REWRITE_WINDOW_MILLIS = 10000L;
+    private static final long AOD_ENERGY_HIDE_REASSERT_DELAY_MILLIS = 80L;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_REAPPLY = false;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_DUMPS = false;
     private static final boolean ENABLE_NOTIFICATION_VIEW_REFLECTION_DUMP = false;
@@ -117,8 +127,10 @@ final class PixelAodHook {
         }
         if (customAod) {
             hookClockLayout(appContext, classLoader);
+            hookNativeAodRefreshCallbacks(classLoader);
             hookNotificationView(classLoader);
             hookAodRecord(classLoader);
+            hookOplusEnergySavingHideGuards(classLoader);
             hookSkipDozeOffState(appContext, classLoader);
             if (ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS) {
                 hookStockClockVisibilityAndAlphaSuppression();
@@ -491,6 +503,49 @@ final class PixelAodHook {
         }
     }
 
+    private static void hookNativeAodRefreshCallbacks(ClassLoader classLoader) {
+        boolean hooked = false;
+        try {
+            Class<?> clockLayoutClass = ModernHookBridge.findClass(CLOCK_LAYOUT, classLoader);
+            hooked |= hookNativeAodRefreshMethods(clockLayoutClass, "AodClockLayout",
+                    "performAodUpdate", "refreshAodTime");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook AodClockLayout native AOD refresh callbacks", t);
+        }
+        try {
+            Class<?> updateManagerClass = ModernHookBridge.findClass(AOD_UPDATE_MANAGER, classLoader);
+            hooked |= hookNativeAodRefreshMethods(updateManagerClass, "AodUpdateManager",
+                    "setExactTimeForAlarm", "updateCounterOrSetHideAlarm");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook AodUpdateManager native AOD refresh callbacks", t);
+        }
+        PixelAodLog.log("installed native AOD refresh callbacks hooked=" + hooked);
+    }
+
+    private static boolean hookNativeAodRefreshMethods(Class<?> clazz, String sourceClass,
+            String... methodNames) {
+        boolean hooked = false;
+        Set<String> names = new HashSet<>();
+        Collections.addAll(names, methodNames);
+        for (Method method : clazz.getDeclaredMethods()) {
+            if (Modifier.isAbstract(method.getModifiers()) || !names.contains(method.getName())) {
+                continue;
+            }
+            final Method targetMethod = method;
+            final String source = sourceClass + "#" + methodSignature(method);
+            try {
+                targetMethod.setAccessible(true);
+                ModernHookBridge.hookAfter(targetMethod, param -> MAIN.post(() ->
+                        PixelAodClockView.refreshAllForNativeAodTick(source)));
+                hooked = true;
+                PixelAodLog.log("hooked native AOD refresh callback " + source);
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to hook native AOD refresh callback " + source, t);
+            }
+        }
+        return hooked;
+    }
+
     private static void hookShadeWindowView(Context context, ClassLoader classLoader) {
         try {
             Class<?> shadeClass = ModernHookBridge.findClass(SHADE_WINDOW_VIEW, classLoader);
@@ -679,6 +734,42 @@ final class PixelAodHook {
             builder.append(parameterTypes[i].getSimpleName());
         }
         return builder.append(')').toString();
+    }
+
+    private static String simpleClassName(String className) {
+        int index = className.lastIndexOf('.');
+        return index >= 0 ? className.substring(index + 1) : className;
+    }
+
+    private static Object defaultReturnValue(Class<?> type) {
+        if (type == null || type == void.class || !type.isPrimitive()) {
+            return null;
+        }
+        if (type == boolean.class) {
+            return false;
+        }
+        if (type == byte.class) {
+            return (byte) 0;
+        }
+        if (type == char.class) {
+            return (char) 0;
+        }
+        if (type == short.class) {
+            return (short) 0;
+        }
+        if (type == int.class) {
+            return 0;
+        }
+        if (type == long.class) {
+            return 0L;
+        }
+        if (type == float.class) {
+            return 0f;
+        }
+        if (type == double.class) {
+            return 0d;
+        }
+        return null;
     }
 
     private static void publishRankingFromArg(ModernHookBridge.HookParam param, int index) {
@@ -947,6 +1038,159 @@ final class PixelAodHook {
         } catch (Throwable t) {
             PixelAodLog.log("failed to hook AodRecord lifecycle", t);
         }
+    }
+
+    private static void hookOplusEnergySavingHideGuards(ClassLoader classLoader) {
+        boolean hooked = false;
+        try {
+            Class<?> recordClass = ModernHookBridge.findClass(AOD_RECORD, classLoader);
+            hooked |= hookEnergySavingHideMethods(recordClass, "onEnergySavingNotifyHide",
+                    "AodRecord");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook AodRecord energy-saving hide guard", t);
+        }
+        try {
+            Class<?> updateManagerClass = ModernHookBridge.findClass(AOD_UPDATE_MANAGER, classLoader);
+            hooked |= hookEnergySavingHideMethods(updateManagerClass,
+                    "notifyHideAodFromEnergySavingDirectly", "AodUpdateManager");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook AodUpdateManager energy-saving hide guard", t);
+        }
+        for (String className : OPLUS_WAKE_UP_CONTROLLER_CANDIDATES) {
+            try {
+                Class<?> controllerClass = ModernHookBridge.findClass(className, classLoader);
+                hooked |= hookEnergySavingHideMethods(controllerClass, "hideByTimeoutReceiver",
+                        simpleClassName(className));
+                hooked |= hookEnergySavingHideMethods(controllerClass, "notifyHideCallback",
+                        simpleClassName(className));
+            } catch (ClassNotFoundException ignored) {
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to hook OPlus energy-saving hide guard class "
+                        + className, t);
+            }
+        }
+        PixelAodLog.log("installed OPlus AOD energy-saving hide guards hooked=" + hooked);
+    }
+
+    private static boolean hookEnergySavingHideMethods(Class<?> clazz, String methodName,
+            String sourceClass) {
+        boolean hooked = false;
+        for (Method method : clazz.getDeclaredMethods()) {
+            if (Modifier.isAbstract(method.getModifiers())
+                    || !methodName.equals(method.getName())) {
+                continue;
+            }
+            final Method targetMethod = method;
+            final Class<?> returnType = method.getReturnType();
+            final String source = sourceClass + "#" + methodSignature(method);
+            try {
+                targetMethod.setAccessible(true);
+                ModernHookBridge.hookBefore(targetMethod, param -> {
+                    Context context = contextFromHookParam(param);
+                    if (!shouldSuppressOplusEnergySavingHide(context, source)) {
+                        return;
+                    }
+                    param.setResult(defaultReturnValue(returnType));
+                    reassertPixelAodAfterEnergySavingHide(context, source);
+                });
+                hooked = true;
+                PixelAodLog.log("hooked OPlus AOD energy-saving hide guard " + source);
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to hook OPlus AOD energy-saving hide guard "
+                        + source, t);
+            }
+        }
+        return hooked;
+    }
+
+    private static Context contextFromHookParam(ModernHookBridge.HookParam param) {
+        if (param != null) {
+            Context context = contextFromObject(param.thisObject);
+            if (context != null) {
+                return context;
+            }
+            if (param.args != null) {
+                for (Object arg : param.args) {
+                    context = contextFromObject(arg);
+                    if (context != null) {
+                        return context;
+                    }
+                }
+            }
+        }
+        return systemUiContext;
+    }
+
+    private static Context contextFromObject(Object value) {
+        if (value instanceof Context) {
+            return (Context) value;
+        }
+        if (value instanceof View) {
+            return ((View) value).getContext();
+        }
+        if (value instanceof DreamService) {
+            return (DreamService) value;
+        }
+        return null;
+    }
+
+    private static boolean shouldSuppressOplusEnergySavingHide(Context context, String source) {
+        Context checkContext = context != null ? context : systemUiContext;
+        String state = PixelAodClockView.describeAodState(checkContext);
+        if (checkContext == null) {
+            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
+                    + " reason=no-context state={" + state + "}");
+            return false;
+        }
+        if (PixelAodClockView.isDeviceInteractive(checkContext)) {
+            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
+                    + " reason=interactive state={" + state + "}");
+            return false;
+        }
+        if (!isAodAllowedBySystemSettings(checkContext)) {
+            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
+                    + " reason=system-settings state={" + state + "}");
+            return false;
+        }
+        boolean displayAod = PixelAodClockView.isDisplayInAodState(checkContext);
+        if (!PixelAodClockView.isAodActive() && !displayAod) {
+            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
+                    + " reason=aod-inactive state={" + state + "}");
+            return false;
+        }
+        if (!PixelAodClockView.isInAodEntryTransitionWindow(
+                AOD_ENTRY_STATE_REWRITE_WINDOW_MILLIS)) {
+            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
+                    + " reason=outside-entry-window state={" + state + "}");
+            return false;
+        }
+        if (!displayAod && !PixelAodClockView.shouldKeepDozeScreenActive(checkContext)) {
+            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
+                    + " reason=custom-aod-not-live state={" + state + "}");
+            return false;
+        }
+        PixelAodLog.i("suppressed OPlus AOD energy-saving hide source=" + source
+                + " trace=" + PixelAodClockView.currentAodTraceId()
+                + " state={" + state + "}");
+        return true;
+    }
+
+    private static void reassertPixelAodAfterEnergySavingHide(Context context, String source) {
+        Context checkContext = context != null ? context : systemUiContext;
+        PixelAodClockView.markRecentAodOverlayVisible(source + "#suppressed-hide");
+        MAIN.post(() -> {
+            PixelAodClockView.setAodActive(true, source + "#suppressed-hide");
+            PixelAodClockView.tickAllInstances();
+            refreshKnownAodHostVisibility(source + "#suppressed-hide");
+        });
+        MAIN.postDelayed(() -> {
+            PixelAodClockView.tickAllInstances();
+            refreshKnownAodHostVisibility(source + "#suppressed-hide-delayed");
+            PixelAodLog.log("reasserted Pixel AOD after OPlus energy-saving hide source="
+                    + source
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
+        }, AOD_ENERGY_HIDE_REASSERT_DELAY_MILLIS);
     }
 
     private static void hookLockscreenNotificationPolicy(ClassLoader classLoader) {
@@ -1474,10 +1718,12 @@ final class PixelAodHook {
             return;
         }
         if (requestedState == Display.STATE_DOZE_SUSPEND
-                && PixelAodClockView.shouldKeepDozeScreenActive(context)) {
+                && PixelAodClockView.shouldKeepDozeScreenActive(context)
+                && PixelAodClockView.isInAodEntryTransitionWindow(
+                AOD_ENTRY_STATE_REWRITE_WINDOW_MILLIS)) {
             args[stateIndex] = Display.STATE_DOZE;
             PixelAodLog.i("rewrote " + source
-                    + " DOZE_SUSPEND->DOZE while custom AOD needs live frames"
+                    + " DOZE_SUSPEND->DOZE during AOD entry"
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
             return;
