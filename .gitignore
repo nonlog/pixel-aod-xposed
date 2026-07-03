@@ -8,3 +8,6 @@ verification/
 local.properties
 *.iml
 .idea/
+.omc/
+.omo/
+.agents/
