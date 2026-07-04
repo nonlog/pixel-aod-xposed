@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+### Deferred
+- Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
+
 ## [0.1.122] - 2026-07-02
 ### Bug Fixes
 - Drive module AOD time updates from SystemUI's native OOS AOD refresh callbacks, with a short entry refresh and time-change broadcast fallback while the module AOD view is active.
