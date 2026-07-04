@@ -168,7 +168,7 @@ Current call sites:
 
 Implemented in `OosAodLifecycleAdapter`.
 
-The adapter is a non-behavioral skeleton: it classifies raw hook sources into stable event names and logs which `AodLifecycleState.phase()` each event reached. It does not own state and does not decide whether Pixel AOD should draw.
+The adapter is the behavior-preserving lifecycle decision gateway. It classifies raw hook sources into stable event names, logs which `AodLifecycleState.phase()` each event reached, and owns selected boolean decisions by forwarding the current state-derived result unchanged.
 
 Current event names:
 
@@ -193,6 +193,15 @@ OOS AOD lifecycle mapping event=<event> source=<source> from=<previous> to=<phas
 ```
 
 The next refactor step is to move selected decisions onto this adapter once the event ordering is stable across slow entry, fast entry, AOD exit, and interrupted entry.
+Current adapter-backed decisions:
+
+| Decision | Current behavior |
+|---|---|
+| `shouldDrawPixelAod(...)` | Returns the existing `AodLifecycleState.shouldDrawPixelAod()` result. |
+| `shouldKeepDozeScreenActive(...)` | Preserves the existing non-interactive plus recent-overlay-or-drawable rule. |
+| `shouldBridgeLockscreenDuringAodEntry(...)` | Preserves the existing non-interactive, inactive, entry-window bridge rule. |
+
+The next refactor step is to move one concrete policy at a time into these adapter-backed decisions only after logs prove the event ordering is stable across slow entry, fast entry, AOD exit, and interrupted entry.
 
 ## Log Extraction
 
@@ -212,7 +221,8 @@ powershell -ExecutionPolicy Bypass -File tools/extract_pixelaod_logs.ps1 -Serial
    `AodRecord#onDreamingStopped` -> `screen-on` -> Pixel AOD hidden -> lockscreen replacement visible or stock restore skipped/restored.
 3. Treat any long-lived `aod-active-waiting-display` as a bug candidate: it means module state and native display state disagree.
 4. Keep every delayed hide/restore task tied to the trace that scheduled it.
+5. Keep new lifecycle-policy changes behind adapter methods so behavior changes are isolated and reviewable.
 
 ## Current Recommendation
 
-The adapter skeleton is now producing useful logs for rapid AOD entry/exit. Next development should collect slow-entry and long-session samples, then move one small decision at a time from scattered hooks into the adapter-backed lifecycle model. Future bugs should be diagnosed by state transition order first, then by isolated visibility logs.
+The adapter is now producing useful logs for rapid AOD entry/exit and owns the first behavior-preserving decision gateway methods. Next development should move one small policy at a time into the adapter-backed lifecycle model only after the relevant slow-entry, long-session, or exit logs are clean. Future bugs should be diagnosed by state transition order first, then by isolated visibility logs.

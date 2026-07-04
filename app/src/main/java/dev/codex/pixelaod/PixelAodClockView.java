@@ -861,7 +861,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static boolean shouldCustomizeAodNow(Context context) {
-        return currentAodLifecycleState(context).shouldDrawPixelAod();
+        return OosAodLifecycleAdapter.shouldDrawPixelAod(currentAodLifecycleState(context));
     }
 
     static boolean shouldKeepDozeScreenActive(Context context) {
@@ -869,8 +869,7 @@ public final class PixelAodClockView extends FrameLayout {
             return false;
         }
         AodLifecycleState state = currentAodLifecycleState(context);
-        return !state.interactive
-                && (state.recentOverlayVisible || state.shouldDrawPixelAod());
+        return OosAodLifecycleAdapter.shouldKeepDozeScreenActive(state);
     }
 
     static boolean isInAodEntryTransitionWindow(long windowMillis) {
@@ -879,9 +878,7 @@ public final class PixelAodClockView extends FrameLayout {
 
     static boolean shouldBridgeLockscreenDuringAodEntry(Context context, long windowMillis) {
         AodLifecycleState state = currentAodLifecycleState(context);
-        return !state.interactive
-                && !state.active
-                && state.isInEntryTransitionWindow(windowMillis);
+        return OosAodLifecycleAdapter.shouldBridgeLockscreenDuringAodEntry(state, windowMillis);
     }
 
     private static boolean isAllowedAodEntryDelay(long now, long then) {
@@ -993,7 +990,7 @@ public final class PixelAodClockView extends FrameLayout {
                 recentOverlayVisible, shouldDrawPixelAod);
     }
 
-    private static final class AodLifecycleState {
+    static final class AodLifecycleState {
         final long now;
         final boolean active;
         final long screenOffAt;

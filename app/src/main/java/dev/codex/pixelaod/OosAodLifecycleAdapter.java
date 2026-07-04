@@ -22,6 +22,24 @@ final class OosAodLifecycleAdapter {
         return TextUtils.isEmpty(expectedTrace) || TextUtils.equals(expectedTrace, currentTrace);
     }
 
+    static boolean shouldDrawPixelAod(PixelAodClockView.AodLifecycleState state) {
+        return state != null && state.shouldDrawPixelAod();
+    }
+
+    static boolean shouldKeepDozeScreenActive(PixelAodClockView.AodLifecycleState state) {
+        return state != null
+                && !state.interactive
+                && (state.recentOverlayVisible || shouldDrawPixelAod(state));
+    }
+
+    static boolean shouldBridgeLockscreenDuringAodEntry(
+            PixelAodClockView.AodLifecycleState state, long windowMillis) {
+        return state != null
+                && !state.interactive
+                && !state.active
+                && state.isInEntryTransitionWindow(windowMillis);
+    }
+
     private static Event classify(String source) {
         if (sourceContains(source, "onDreamingStarted")) {
             return Event.DREAMING_STARTED;
