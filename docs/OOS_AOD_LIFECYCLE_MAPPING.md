@@ -10,7 +10,7 @@ This document is a working reference for making Pixel AOD behavior lifecycle-ali
 
 ## Evidence Snapshot
 
-Live device sample:
+Stable AOD sample:
 
 | Item | Value |
 |---|---|
@@ -23,6 +23,38 @@ Live device sample:
 | Missing from retained buffer | `entering-aod`, `aod-grace`, `aod-active-waiting-display`, `interactive`, `inactive` |
 
 Important limitation: the retained logcat sample did not include the first few hundred milliseconds of a fresh screen-off entry. Rows marked "expected" below come from current code paths, not from the retained live sample.
+
+Fast lock/unlock sample:
+
+| Item | Value |
+|---|---|
+| Device | `CPH2573` |
+| Module version | `0.1.124` / `versionCode=131` |
+| SystemUI PID | `19549` |
+| Source | `/data/adb/lspd/log/modules_2026-07-04T19:44:27.56369.log` |
+| User test window | `2026-07-04T19:51` |
+| Retained sample coverage | Rapid lockscreen / AOD / screen-on switching |
+| Observed phases | `interactive`, `entering-aod`, `aod-grace` |
+| Error scan | No `FATAL`, `AndroidRuntime`, `Failed to instantiate`, `Class does not extend`, `NoClassDefFoundError`, or `UnsatisfiedLinkError` matches in the `19:51` module-log window |
+
+Important logging rule: use `adb logcat` for live capture, but always check LSPosed persistent module logs under `/data/adb/lspd/log/modules_*.log` for user-reported time windows. The current logcat ring buffer can roll past dense AOD traces within minutes.
+
+Adapter validation sample:
+
+| Item | Value |
+|---|---|
+| Device | `CPH2573` |
+| Module version | `0.1.125` / `versionCode=132` |
+| SystemUI PID | `19041` |
+| Extracted log | `logs/pixelaod_20260704_2025.txt` |
+| Source | `/data/adb/lspd/log/modules_2026-07-04T20:21:26.512919.log` |
+| User test window | `2026-07-04T20:24:30` to `2026-07-04T20:26:30` |
+| Retained sample coverage | Rapid lockscreen / AOD / screen-on switching after adapter install |
+| Pixel AOD matches | `172` from current `adb logcat`, `1868` from LSPosed persistent module log |
+| Adapter events | `27` |
+| Event counts | `dreaming-started=6`, `dreaming-stopped=6`, `screen-on=6`, `screen-off=5`, `display-state-request=1`, `native-tick=1`, `notification-snapshot=1`, `visibility-decision=1` |
+| Observed final entry | `screen-off` trace `aod-2a-bac3d6` reached `aod-visible` at `20:25:56.357` with `displayState=DOZE(3)` and `displayAod=true` |
+| Error scan | No `FATAL`, `AndroidRuntime`, `Failed to instantiate`, `Class does not extend`, `NoClassDefFoundError`, `UnsatisfiedLinkError`, `Exception`, `ANR`, or `crash` matches in the extracted Pixel AOD window |
 
 ## Phase Definitions
 
@@ -49,6 +81,32 @@ These rows were observed in the retained live logcat sample.
 | `broadcast` | `aod-visible` | System broadcast reaching lockscreen clock view | Observed lockscreen decision was `visible=false reason=noninteractive-outside-aod-window`, which is correct during stable AOD. |
 | `updateTime` | `aod-visible` | Internal frame refresh after time text update | Observed after minute tick; requests invalidate / frame refresh while AOD remains shown. |
 | `screen-off` as `traceSource` | `aod-visible` | Trace origin for current AOD session | Retained logs show the stable AOD trace was seeded by screen-off. |
+
+These rows were observed in the `19:51` LSPosed persistent module-log sample.
+
+| OOS / module event source | Observed phase | Observed role | Notes |
+|---|---|---|---|
+| `AodRecord#onDreamingStopped#hideAllAodOverlays` | `interactive` | AOD exit / screen-on transition | Repeated during rapid tests. Pixel AOD overlay was hidden and stock keyguard hide pass ran with the same trace. |
+| `screen-on#hideAllAodOverlays` | `interactive` | Broadcast-driven screen-on cleanup | Observed immediately after `ACTION_SCREEN_ON`; starts a screen-on trace and keeps Pixel AOD hidden. |
+| `AodRecord#onDreamingStarted#setAodActive` | `entering-aod` | Native AOD start | Observed at `19:51:02.997`, `19:51:05.115`, `19:51:16.400`, and `19:51:17.850` during rapid switching. |
+| `screen-off#noteScreenOff` | `entering-aod` | Broadcast-driven AOD entry trace | Observed shortly after native AOD start; seeds the screen-off trace used by later visibility decisions. |
+| `snapshot-setActiveNotifications#updateAodVisibility` | `aod-grace` | Entry grace after notification snapshot refresh | Observed while display was still `ON(2)` and non-interactive, before stable `DOZE`. |
+| `aod-entry-delayed#nativeTick` | `interactive` during interrupted entry | Rapid test interruption | Observed when the device was switched back on before the short entry window finished; followed by `AodRecord#onDreamingStopped`. |
+| `AODDisplayUtil#requestScreenState(View,int,boolean)#off-request#noteScreenOffIfUnset` | `entering-aod` | Native display-state request seeded entry trace | Confirms display-state hooks can become the trace source when OOS requests screen off before the broadcast path. |
+| `AodRecord#createAndInitRootView+1800` delayed suppression | current trace phase, skip by `trace-mismatch` | Old delayed task guard | Observed skip when expected trace belonged to an older cycle and current trace was already newer. This is desired. |
+
+These rows were observed in the `20:25` adapter validation sample after installing `0.1.125`.
+
+| Adapter event | Example source | Observed phase | Notes |
+|---|---|---|---|
+| `dreaming-stopped` | `AodRecord#onDreamingStopped#hideAllAodOverlays` | `interactive` | Repeated during AOD exit. Pixel AOD became inactive and stock/keyguard hide passes ran on the same trace. |
+| `screen-on` | `screen-on#hideAllAodOverlays` | `interactive` | Broadcast cleanup followed `dreaming-stopped` and opened a fresh screen-on trace. |
+| `dreaming-started` | `AodRecord#onDreamingStarted#setAodActive` | `entering-aod` | Native AOD start appeared before or near screen-off trace creation. |
+| `display-state-request` | `AODDisplayUtil#requestScreenState(View,int,boolean)#off-request#noteScreenOffIfUnset` | `entering-aod` | Confirmed the adapter classifies OOS display-state requests separately from broadcasts. |
+| `screen-off` | `screen-off#noteScreenOff` | `entering-aod` | Broadcast path seeded a dedicated screen-off trace during entry. |
+| `native-tick` | `aod-entry-delayed#nativeTick` | `interactive` during interrupted entry | Rapid screen-on interrupted one entry before stable doze. This is expected in fast switching. |
+| `notification-snapshot` | `snapshot-setActiveNotifications#updateAodVisibility` | `inactive` after screen-on cleanup | Snapshot refresh after rapid screen-on did not incorrectly keep AOD visible. |
+| `visibility-decision` | `start-existing#updateAodVisibility` | `aod-visible` | Final uninterrupted entry reached `DOZE(3)`, `displayAod=true`, and `customizeNow=true` after about `1888ms`. |
 
 ## Expected Event Mapping From Code
 
@@ -83,23 +141,78 @@ Use this interpretation when reading logs:
 | `reason=trace-mismatch` on delayed restore / hide | Desired guard behavior. Old delayed tasks did not apply to the current AOD session. |
 | `lockscreen visibility decision ... bridge=false ... phase=aod-visible` | Correct during stable AOD: lockscreen replacement should stay hidden while AOD owns the visual surface. |
 
+## Phase Transition Logging
+
+Implemented in `PixelAodClockView.logAodPhaseIfChanged(...)`.
+
+The helper is intentionally separate from `describeAodState()` so high-frequency diagnostic state descriptions do not emit extra logs. Each new AOD trace resets the remembered phase, then logs the first observed phase for that trace and later logs only when `AodLifecycleState.phase()` changes.
+
+Expected format:
+
+```text
+AOD lifecycle phase changed source=<source> from=<previous> to=<current> previousTrace=<previousTrace> trace=<trace> sinceLastMs=<age> state={phase=<current> ...}
+```
+
+Current call sites:
+
+| Call site | Why it logs phase changes |
+|---|---|
+| `screen-state#<ACTION>` | Records the first SystemUI broadcast-visible state for screen on/off. |
+| `noteScreenOff(...)` / `noteScreenOffIfUnset(...)` | Records trace creation and early screen-off entry state. |
+| `setAodActive(...)` | Records native AOD active/inactive transitions from hooked OOS paths. |
+| `hideAllAodOverlays(...)` | Records AOD exit / lockscreen transition state. |
+| `refreshForNativeAodTick(...)` | Records native AOD tick driven state if it crosses a phase boundary. |
+| `updateAodVisibility(...)` | Records the phase at the exact point the overlay visibility decision is made. |
+
+## OOS Lifecycle Adapter
+
+Implemented in `OosAodLifecycleAdapter`.
+
+The adapter is a non-behavioral skeleton: it classifies raw hook sources into stable event names and logs which `AodLifecycleState.phase()` each event reached. It does not own state and does not decide whether Pixel AOD should draw.
+
+Current event names:
+
+| Event | Example source |
+|---|---|
+| `dreaming-started` | `AodRecord#onDreamingStarted#setAodActive` |
+| `dreaming-stopped` | `AodRecord#onDreamingStopped#hideAllAodOverlays` |
+| `screen-off` | `screen-off#noteScreenOff` |
+| `screen-on` | `screen-on#hideAllAodOverlays` |
+| `display-state-request` | `AODDisplayUtil#requestScreenState...` / `DreamService#setDozeScreenState` |
+| `aod-host` | `AodClockLayout#...#host-ready` / `AodRecord#createAndInitRootView` |
+| `energy-saving-hide` | `AodRecord#onEnergySavingNotifyHide()` / `OplusWakeUpController#notifyHideCallback()` |
+| `native-tick` | `aod-entry-delayed#nativeTick` / native AOD refresh hooks |
+| `notification-snapshot` | `snapshot-setActiveNotifications#updateAodVisibility` |
+| `visibility-decision` | `updateAodVisibility` sources |
+| `module-event` | Any unclassified module source |
+
+Expected format:
+
+```text
+OOS AOD lifecycle mapping event=<event> source=<source> from=<previous> to=<phase> trace=<trace> state={phase=<phase> ...}
+```
+
+The next refactor step is to move selected decisions onto this adapter once the event ordering is stable across slow entry, fast entry, AOD exit, and interrupted entry.
+
+## Log Extraction
+
+Use `tools/extract_pixelaod_logs.ps1` when analyzing user-reported time windows. It reads both live `adb logcat` and LSPosed persistent module logs.
+
+Example:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/extract_pixelaod_logs.ps1 -Serial 192.168.1.6:35001 -Start "2026-07-04 19:51:00" -End "2026-07-04 19:52:00"
+```
+
 ## Gaps To Close Next
 
-1. Add a lightweight "phase changed" log emitted only when `AodLifecycleState.phase()` changes.
-2. Capture a fresh screen-off sequence and verify this chain:
-   `screen-off` -> `entering-aod` -> `AodRecord#onDreamingStarted` -> `AodClockLayout#host-ready` -> `aod-visible`.
-3. Capture screen-on / AOD exit and verify this chain:
-   `AodRecord#onDreamingStopped` -> `screen-on` -> Pixel AOD hidden -> lockscreen replacement visible or stock restore skipped/restored for the right reason.
-4. Treat any long-lived `aod-active-waiting-display` as a bug candidate: it means module state and native display state disagree.
-5. Keep every delayed hide/restore task tied to the trace that scheduled it.
+1. Capture a slow, non-rapid screen-off sequence and verify whether host readiness always lands between native AOD start and the final `aod-visible` decision:
+   `AodRecord#onDreamingStarted` -> `screen-off` / display-state request -> optional host-ready -> `aod-visible`.
+2. Capture a slow AOD exit and verify whether stock restore is skipped/restored for the right trace after Pixel AOD is hidden:
+   `AodRecord#onDreamingStopped` -> `screen-on` -> Pixel AOD hidden -> lockscreen replacement visible or stock restore skipped/restored.
+3. Treat any long-lived `aod-active-waiting-display` as a bug candidate: it means module state and native display state disagree.
+4. Keep every delayed hide/restore task tied to the trace that scheduled it.
 
 ## Current Recommendation
 
-Next implementation should not add more visual behavior yet. It should first make phase transitions observable:
-
-```text
-previous phase != current phase
-        -> log source, previous phase, current phase, trace, display state, active flag, screenOffAge, aodAge
-```
-
-That will let future bugs be diagnosed by state transition order instead of by isolated visibility logs.
+The adapter skeleton is now producing useful logs for rapid AOD entry/exit. Next development should collect slow-entry and long-session samples, then move one small decision at a time from scattered hooks into the adapter-backed lifecycle model. Future bugs should be diagnosed by state transition order first, then by isolated visibility logs.

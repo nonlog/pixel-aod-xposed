@@ -160,6 +160,9 @@ public final class PixelAodClockView extends FrameLayout {
     private static String lastAodTraceId = "";
     private static String lastAodTraceSource = "";
     private static long lastAodTraceAt;
+    private static String lastLoggedAodPhase = "";
+    private static String lastLoggedAodPhaseTrace = "";
+    private static long lastLoggedAodPhaseAt;
     private static boolean lastAodCompactClock;
     private static int lastAodClockWeight = -1;
     private static float lastBurnInTranslationX;
@@ -289,6 +292,7 @@ public final class PixelAodClockView extends FrameLayout {
             PixelAodLog.log("Pixel AOD screen-state receiver action=" + action
                     + " visibility=" + getVisibility()
                     + " interactive=" + isDeviceInteractive(context));
+            logAodPhaseIfChanged(context, "screen-state#" + action);
             if (intent != null && Intent.ACTION_SCREEN_ON.equals(intent.getAction())) {
                 if (getVisibility() == View.VISIBLE || shouldCustomizeAodNow(context)) {
                     PixelLockscreenClockView.prepareAodToLockscreenTransition("screen-on");
@@ -655,6 +659,7 @@ public final class PixelAodClockView extends FrameLayout {
                 + " source=" + source
                 + " trace=" + currentAodTraceId()
                 + " state={" + describeAodState(appContext) + "}");
+        logAodPhaseIfChanged(appContext, source + "#setAodActive");
     }
 
     static boolean isAodActive() {
@@ -669,6 +674,42 @@ public final class PixelAodClockView extends FrameLayout {
 
     static String describeAodState(Context context, boolean compact, int weight) {
         return currentAodLifecycleState(context).describe(compact, weight);
+    }
+
+    static void logAodPhaseIfChanged(Context context, String source) {
+        Context ctx = context != null ? context : appContext;
+        if (ctx == null) {
+            return;
+        }
+        AodLifecycleState state = currentAodLifecycleState(ctx);
+        String phase = state.phase();
+        String previousPhase;
+        String previousTrace;
+        long previousAt;
+        boolean compact;
+        int weight;
+        synchronized (PixelAodClockView.class) {
+            if (TextUtils.equals(lastLoggedAodPhase, phase)) {
+                return;
+            }
+            previousPhase = lastLoggedAodPhase;
+            previousTrace = lastLoggedAodPhaseTrace;
+            previousAt = lastLoggedAodPhaseAt;
+            lastLoggedAodPhase = phase;
+            lastLoggedAodPhaseTrace = state.traceId;
+            lastLoggedAodPhaseAt = state.now;
+            compact = lastAodCompactClock;
+            weight = lastAodClockWeight;
+        }
+        PixelAodLog.log("AOD lifecycle phase changed source=" + source
+                + " from=" + (TextUtils.isEmpty(previousPhase) ? "none" : previousPhase)
+                + " to=" + phase
+                + " previousTrace=" + (TextUtils.isEmpty(previousTrace) ? "none" : previousTrace)
+                + " trace=" + state.traceId
+                + " sinceLastMs=" + ageSince(state.now, previousAt)
+                + " state={" + state.describe(compact, weight) + "}");
+        OosAodLifecycleAdapter.recordPhaseChange(source, previousPhase, phase,
+                state.traceId, state.describe(compact, weight));
     }
 
     static String currentAodTraceId() {
@@ -717,6 +758,9 @@ public final class PixelAodClockView extends FrameLayout {
                 + "-" + Long.toHexString(now);
         lastAodTraceSource = source != null ? source : "";
         lastAodTraceAt = now;
+        lastLoggedAodPhase = "";
+        lastLoggedAodPhaseTrace = "";
+        lastLoggedAodPhaseAt = 0L;
         return lastAodTraceId;
     }
 
@@ -734,6 +778,7 @@ public final class PixelAodClockView extends FrameLayout {
             lastAodActivatedAt = 0L;
         }
         startAodTrace(source);
+        logAodPhaseIfChanged(appContext, source + "#hideAllAodOverlays");
         Runnable task = () -> {
             int hidden = 0;
             for (PixelAodClockView view : INSTANCES) {
@@ -764,6 +809,7 @@ public final class PixelAodClockView extends FrameLayout {
         startAodTrace(source);
         PixelAodLog.log("noted Pixel AOD screen-off trace=" + currentAodTraceId()
                 + " source=" + source + " state={" + describeAodState(appContext) + "}");
+        logAodPhaseIfChanged(appContext, source + "#noteScreenOff");
     }
 
     static void noteScreenOffIfUnset(String source) {
@@ -778,6 +824,7 @@ public final class PixelAodClockView extends FrameLayout {
             startAodTrace(source);
             PixelAodLog.log("seeded Pixel AOD screen-off trace=" + currentAodTraceId()
                     + " source=" + source + " state={" + describeAodState(appContext) + "}");
+            logAodPhaseIfChanged(appContext, source + "#noteScreenOffIfUnset");
         }
     }
 
@@ -1584,6 +1631,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void refreshForNativeAodTick(String source) {
+        logAodPhaseIfChanged(getContext(), source + "#nativeTick");
         if (!running) {
             PixelAodLog.log("ignored native AOD refresh while stopped trace="
                     + currentAodTraceId() + " source=" + source
@@ -1714,6 +1762,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void updateAodVisibility(String source) {
+        logAodPhaseIfChanged(getContext(), source + "#updateAodVisibility");
         boolean visible = shouldDrawAodOverlay(source);
         int desiredVisibility = visible ? View.VISIBLE : View.GONE;
         PixelAodLog.log("AOD overlay visibility decision trace=" + currentAodTraceId()

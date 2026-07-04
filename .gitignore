@@ -5,6 +5,7 @@ build/
 app/build/
 libxposed-stubs/build/
 verification/
+logs/
 local.properties
 *.iml
 .idea/

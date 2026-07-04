@@ -4,6 +4,17 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.125] - 2026-07-04
+### Diagnostics
+- Add an observability-only OOS AOD lifecycle adapter that classifies hook sources such as dreaming start/stop, screen on/off, display-state requests, host readiness, and native ticks against the current `AodLifecycleState.phase()`.
+- Record the 19:51 rapid lockscreen / AOD switching evidence from LSPosed persistent module logs in the lifecycle mapping document.
+- Add a local `tools/extract_pixelaod_logs.ps1` helper that extracts Pixel AOD logs from both current `adb logcat` and `/data/adb/lspd/log/modules_*.log` for a requested time window.
+
+## [0.1.124] - 2026-07-04
+### Diagnostics
+- Add lightweight AOD lifecycle phase-change logs that record source, previous/current phase, trace id, display state, active flag, and timing snapshot only when `AodLifecycleState.phase()` changes.
+- Document the phase-change log format and the next required live captures for AOD entry and exit mapping.
+
 ## [0.1.123] - 2026-07-04
 ### Bug Fixes
 - Add a centralized AOD lifecycle snapshot used by AOD visibility, Doze screen keepalive, and lockscreen-to-AOD bridge decisions, keeping the current behavior while making transition state easier to reason about from logs.
