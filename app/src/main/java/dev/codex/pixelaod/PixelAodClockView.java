@@ -905,46 +905,188 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static boolean shouldCustomizeAodNow(Context context) {
-        return OosAodLifecycleAdapter.shouldDrawPixelAod(currentAodLifecycleState(context));
+        return evaluateAodPolicy(context, "shouldCustomizeAodNow").lifecycleWantsPixelOverlay;
     }
 
     static boolean shouldApplyModuleAodNow(Context context, String source) {
-        return shouldCustomizeAodNow(context)
-                && isModuleAodPolicyAllowingDisplay(context, source);
+        return evaluateAodPolicy(context, source).shouldApplyModuleAod;
     }
 
     static boolean shouldKeepDozeScreenActive(Context context) {
         if (context == null) {
             return false;
         }
-        if (!isModuleAodPolicyAllowingDisplay(context, "doze-keepalive")) {
-            return false;
-        }
-        AodLifecycleState state = currentAodLifecycleState(context);
-        return OosAodLifecycleAdapter.shouldKeepDozeScreenActive(state);
+        return evaluateAodPolicy(context, "doze-keepalive").shouldKeepNativeDozeAlive;
     }
 
     static boolean isModuleAodPolicyAllowingDisplay(Context context, String source) {
+        return evaluateAodPolicy(context, source).modulePolicyAllowsDisplay;
+    }
+
+    static AodPolicyDecision evaluateAodPolicy(Context context, String source) {
+        return evaluateAodPolicy(context, source, false, false);
+    }
+
+    private static AodPolicyDecision evaluateAodPolicy(Context context, String source,
+            boolean proximityBlocked, boolean expandedShadeBlocked) {
+        String normalizedSource = TextUtils.isEmpty(source) ? "unknown" : source;
+        String trace = ensureAodTrace(normalizedSource);
         Context ctx = context != null ? context : appContext;
-        String trace = currentAodTraceId();
-        if (ctx == null) {
+        AodLifecycleState state = currentAodLifecycleState(ctx);
+        ModulePolicyResult modulePolicy = evaluateModuleAodPolicy(ctx, normalizedSource, trace);
+        boolean lifecycleWantsPixelOverlay = OosAodLifecycleAdapter.shouldDrawPixelAod(state);
+        boolean shouldApplyModuleAod = lifecycleWantsPixelOverlay
+                && modulePolicy.allowsDisplay;
+        boolean shouldDrawPixelOverlay = shouldApplyModuleAod
+                && !proximityBlocked
+                && !expandedShadeBlocked;
+        boolean shouldKeepNativeDozeAlive = ctx != null
+                && modulePolicy.allowsDisplay
+                && OosAodLifecycleAdapter.shouldKeepDozeScreenActive(state);
+        boolean shouldSuppressStockAodViews = state != null
+                && !state.interactive
+                && (shouldApplyModuleAod
+                || !modulePolicy.allowsDisplay
+                || state.displayAod
+                || state.entryDelay
+                || state.active
+                || state.graceWindow);
+        boolean shouldAllowNativeHideCallbacks = !shouldKeepNativeDozeAlive;
+        AodPolicyDecision decision = new AodPolicyDecision(
+                normalizedSource,
+                trace,
+                state,
+                lifecycleWantsPixelOverlay,
+                modulePolicy.allowsDisplay,
+                shouldApplyModuleAod,
+                shouldDrawPixelOverlay,
+                shouldKeepNativeDozeAlive,
+                shouldSuppressStockAodViews,
+                shouldAllowNativeHideCallbacks,
+                proximityBlocked,
+                expandedShadeBlocked,
+                modulePolicy.reason,
+                drawReason(lifecycleWantsPixelOverlay, modulePolicy, proximityBlocked,
+                        expandedShadeBlocked),
+                keepDozeReason(shouldKeepNativeDozeAlive, lifecycleWantsPixelOverlay,
+                        modulePolicy),
+                stockSuppressionReason(shouldSuppressStockAodViews, shouldApplyModuleAod,
+                        modulePolicy, state),
+                nativeHideCallbackReason(shouldAllowNativeHideCallbacks,
+                        shouldKeepNativeDozeAlive, lifecycleWantsPixelOverlay, modulePolicy));
+        logAodPolicyDecision(decision);
+        return decision;
+    }
+
+    private static ModulePolicyResult evaluateModuleAodPolicy(
+            Context context, String source, String trace) {
+        if (context == null) {
             PixelAodLog.log("AOD module policy blocked source=" + source
                     + " reason=no-context"
                     + " trace=" + trace
                     + " state={" + describeAodState(null) + "}");
-            return false;
+            return new ModulePolicyResult(false, "no-context");
         }
-        if (!isWithinAodSchedule(ctx)) {
+        if (!isWithinAodSchedule(context)) {
             PixelAodLog.log("AOD module policy blocked source=" + source
                     + " reason=outside-schedule"
                     + " trace=" + trace
-                    + " state={" + describeAodState(ctx) + "}");
-            return false;
+                    + " state={" + describeAodState(context) + "}");
+            return new ModulePolicyResult(false, "outside-schedule");
         }
-        if (!isPowerPolicyAllowingAod(ctx, source, trace, false)) {
-            return false;
+        if (!isPowerPolicyAllowingAod(context, source, trace, false)) {
+            return new ModulePolicyResult(false, "power-policy");
         }
-        return true;
+        return new ModulePolicyResult(true, "all-checks-passed");
+    }
+
+    private static String drawReason(boolean lifecycleWantsPixelOverlay,
+            ModulePolicyResult modulePolicy, boolean proximityBlocked, boolean expandedShadeBlocked) {
+        if (!lifecycleWantsPixelOverlay) {
+            return "lifecycle-not-ready";
+        }
+        if (!modulePolicy.allowsDisplay) {
+            return modulePolicy.reason;
+        }
+        if (proximityBlocked) {
+            return "proximity-near";
+        }
+        if (expandedShadeBlocked) {
+            return "expanded-system-shade";
+        }
+        return "all-checks-passed";
+    }
+
+    private static String keepDozeReason(boolean shouldKeepNativeDozeAlive,
+            boolean lifecycleWantsPixelOverlay, ModulePolicyResult modulePolicy) {
+        if (shouldKeepNativeDozeAlive) {
+            return "recent-pixel-aod";
+        }
+        if (!modulePolicy.allowsDisplay) {
+            return modulePolicy.reason;
+        }
+        if (!lifecycleWantsPixelOverlay) {
+            return "lifecycle-not-ready";
+        }
+        return "native-doze-not-needed";
+    }
+
+    private static String stockSuppressionReason(boolean shouldSuppressStockAodViews,
+            boolean shouldApplyModuleAod, ModulePolicyResult modulePolicy, AodLifecycleState state) {
+        if (!shouldSuppressStockAodViews) {
+            if (state == null) {
+                return "no-state";
+            }
+            if (state.interactive) {
+                return "interactive";
+            }
+            return "not-needed";
+        }
+        if (!modulePolicy.allowsDisplay) {
+            return "module-aod-policy";
+        }
+        if (shouldApplyModuleAod) {
+            return "pixel-overlay-active";
+        }
+        return "native-aod-transition";
+    }
+
+    private static String nativeHideCallbackReason(boolean shouldAllowNativeHideCallbacks,
+            boolean shouldKeepNativeDozeAlive, boolean lifecycleWantsPixelOverlay,
+            ModulePolicyResult modulePolicy) {
+        if (!shouldAllowNativeHideCallbacks) {
+            return "module-keeps-native-doze";
+        }
+        if (!modulePolicy.allowsDisplay) {
+            return modulePolicy.reason;
+        }
+        if (!lifecycleWantsPixelOverlay) {
+            return "lifecycle-not-ready";
+        }
+        if (!shouldKeepNativeDozeAlive) {
+            return "native-doze-not-needed";
+        }
+        return "allowed";
+    }
+
+    private static void logAodPolicyDecision(AodPolicyDecision decision) {
+        PixelAodLog.log("AOD policy decision source=" + decision.source
+                + " trace=" + decision.trace
+                + " shouldDrawPixelOverlay=" + decision.shouldDrawPixelOverlay
+                + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
+                + " shouldSuppressStockAodViews=" + decision.shouldSuppressStockAodViews
+                + " shouldAllowNativeHideCallbacks=" + decision.shouldAllowNativeHideCallbacks
+                + " lifecycleWantsPixelOverlay=" + decision.lifecycleWantsPixelOverlay
+                + " modulePolicyAllowsDisplay=" + decision.modulePolicyAllowsDisplay
+                + " shouldApplyModuleAod=" + decision.shouldApplyModuleAod
+                + " proximityBlocked=" + decision.proximityBlocked
+                + " expandedShadeBlocked=" + decision.expandedShadeBlocked
+                + " reasons={draw=" + decision.drawReason
+                + ",keepDoze=" + decision.keepNativeDozeReason
+                + ",stock=" + decision.stockSuppressionReason
+                + ",nativeHide=" + decision.nativeHideCallbackReason
+                + ",module=" + decision.modulePolicyReason + "}"
+                + " state={" + describeAodState(appContext) + "}");
     }
 
     static boolean isInAodEntryTransitionWindow(long windowMillis) {
@@ -1072,6 +1214,63 @@ public final class PixelAodClockView extends FrameLayout {
                 interactive, displayAod, entryDelay, graceWindow,
                 recentOverlayVisible, shouldDrawPixelAod, triggerType,
                 triggerSource, triggerDetail, triggerAt);
+    }
+
+    static final class AodPolicyDecision {
+        final String source;
+        final String trace;
+        final AodLifecycleState state;
+        final boolean lifecycleWantsPixelOverlay;
+        final boolean modulePolicyAllowsDisplay;
+        final boolean shouldApplyModuleAod;
+        final boolean shouldDrawPixelOverlay;
+        final boolean shouldKeepNativeDozeAlive;
+        final boolean shouldSuppressStockAodViews;
+        final boolean shouldAllowNativeHideCallbacks;
+        final boolean proximityBlocked;
+        final boolean expandedShadeBlocked;
+        final String modulePolicyReason;
+        final String drawReason;
+        final String keepNativeDozeReason;
+        final String stockSuppressionReason;
+        final String nativeHideCallbackReason;
+
+        AodPolicyDecision(String source, String trace, AodLifecycleState state,
+                boolean lifecycleWantsPixelOverlay, boolean modulePolicyAllowsDisplay,
+                boolean shouldApplyModuleAod, boolean shouldDrawPixelOverlay,
+                boolean shouldKeepNativeDozeAlive, boolean shouldSuppressStockAodViews,
+                boolean shouldAllowNativeHideCallbacks, boolean proximityBlocked,
+                boolean expandedShadeBlocked, String modulePolicyReason, String drawReason,
+                String keepNativeDozeReason, String stockSuppressionReason,
+                String nativeHideCallbackReason) {
+            this.source = source;
+            this.trace = trace;
+            this.state = state;
+            this.lifecycleWantsPixelOverlay = lifecycleWantsPixelOverlay;
+            this.modulePolicyAllowsDisplay = modulePolicyAllowsDisplay;
+            this.shouldApplyModuleAod = shouldApplyModuleAod;
+            this.shouldDrawPixelOverlay = shouldDrawPixelOverlay;
+            this.shouldKeepNativeDozeAlive = shouldKeepNativeDozeAlive;
+            this.shouldSuppressStockAodViews = shouldSuppressStockAodViews;
+            this.shouldAllowNativeHideCallbacks = shouldAllowNativeHideCallbacks;
+            this.proximityBlocked = proximityBlocked;
+            this.expandedShadeBlocked = expandedShadeBlocked;
+            this.modulePolicyReason = modulePolicyReason;
+            this.drawReason = drawReason;
+            this.keepNativeDozeReason = keepNativeDozeReason;
+            this.stockSuppressionReason = stockSuppressionReason;
+            this.nativeHideCallbackReason = nativeHideCallbackReason;
+        }
+    }
+
+    private static final class ModulePolicyResult {
+        final boolean allowsDisplay;
+        final String reason;
+
+        ModulePolicyResult(boolean allowsDisplay, String reason) {
+            this.allowsDisplay = allowsDisplay;
+            this.reason = reason;
+        }
     }
 
     static final class AodLifecycleState {
@@ -1900,45 +2099,23 @@ public final class PixelAodClockView extends FrameLayout {
 
     private boolean shouldDrawAodOverlay(String source) {
         String trace = ensureAodTrace(source);
-        if (!shouldCustomizeAodNow(getContext())) {
-            PixelAodLog.log("AOD overlay decision trace=" + trace
-                    + " source=" + source
-                    + " visible=false reason=shouldCustomizeAodNow=false"
-                    + " state={" + describeAodState(getContext()) + "}");
-            return false;
-        }
-        if (!isWithinAodSchedule()) {
-            PixelAodLog.log("AOD overlay decision trace=" + trace
-                    + " source=" + source
-                    + " visible=false reason=outside-schedule"
-                    + " state={" + describeAodState(getContext()) + "}");
-            return false;
-        }
-        if (!isPowerPolicyAllowingAod(source, trace)) {
-            return false;
-        }
-        if (proximityNear) {
-            PixelAodLog.log("AOD overlay decision trace=" + trace
-                    + " source=" + source
-                    + " visible=false reason=proximity-near"
-                    + " state={" + describeAodState(getContext()) + "}");
-            return false;
-        }
-        if (isInsideExpandedSystemShade()) {
+        boolean expandedShadeBlocked = isInsideExpandedSystemShade();
+        AodPolicyDecision decision = evaluateAodPolicy(getContext(), source,
+                proximityNear, expandedShadeBlocked);
+        if (expandedShadeBlocked && !decision.shouldDrawPixelOverlay) {
             PixelAodLog.log("suppressed Pixel AOD overlay in expanded shade trace=" + trace
                     + " source=" + source
                     + " state={" + describeAodState(getContext()) + "}");
-            PixelAodLog.log("AOD overlay decision trace=" + trace
-                    + " source=" + source
-                    + " visible=false reason=expanded-system-shade"
-                    + " state={" + describeAodState(getContext()) + "}");
-            return false;
         }
         PixelAodLog.log("AOD overlay decision trace=" + trace
                 + " source=" + source
-                + " visible=true reason=all-checks-passed"
+                + " visible=" + decision.shouldDrawPixelOverlay
+                + " reason=" + decision.drawReason
+                + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
+                + " shouldSuppressStockAodViews=" + decision.shouldSuppressStockAodViews
+                + " shouldAllowNativeHideCallbacks=" + decision.shouldAllowNativeHideCallbacks
                 + " state={" + describeAodState(getContext()) + "}");
-        return true;
+        return decision.shouldDrawPixelOverlay;
     }
 
     private boolean isPowerPolicyAllowingAod(String source, String trace) {

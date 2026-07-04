@@ -1206,10 +1206,14 @@ final class PixelAodHook {
                     + " reason=system-settings state={" + state + "}");
             return false;
         }
-        if (!PixelAodClockView.isModuleAodPolicyAllowingDisplay(
-                checkContext, source + "#energy-saving-hide")) {
+        PixelAodClockView.AodPolicyDecision decision =
+                PixelAodClockView.evaluateAodPolicy(checkContext, source + "#energy-saving-hide");
+        if (!decision.modulePolicyAllowsDisplay) {
             PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
-                    + " reason=module-aod-policy state={"
+                    + " reason=" + decision.modulePolicyReason
+                    + " shouldAllowNativeHideCallbacks="
+                    + decision.shouldAllowNativeHideCallbacks
+                    + " state={"
                     + PixelAodClockView.describeAodState(checkContext) + "}");
             return false;
         }
@@ -1225,12 +1229,16 @@ final class PixelAodHook {
                     + " reason=outside-entry-window state={" + state + "}");
             return false;
         }
-        if (!displayAod && !PixelAodClockView.shouldKeepDozeScreenActive(checkContext)) {
+        if (!displayAod && !decision.shouldKeepNativeDozeAlive) {
             PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
-                    + " reason=custom-aod-not-live state={" + state + "}");
+                    + " reason=" + decision.keepNativeDozeReason
+                    + " shouldAllowNativeHideCallbacks="
+                    + decision.shouldAllowNativeHideCallbacks
+                    + " state={" + state + "}");
             return false;
         }
         PixelAodLog.i("suppressed OPlus AOD energy-saving hide source=" + source
+                + " reason=" + decision.nativeHideCallbackReason
                 + " trace=" + PixelAodClockView.currentAodTraceId()
                 + " state={" + state + "}");
         return true;
@@ -1852,17 +1860,22 @@ final class PixelAodHook {
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
             return;
         }
-        if (!PixelAodClockView.isModuleAodPolicyAllowingDisplay(
-                context, source + "#state-rewrite")) {
+        PixelAodClockView.AodPolicyDecision decision =
+                PixelAodClockView.evaluateAodPolicy(context, source + "#state-rewrite");
+        if (!decision.modulePolicyAllowsDisplay) {
             PixelAodLog.log("skipped AOD rewrite source=" + source
                     + " requestedState=" + requestedState
-                    + " reason=module-aod-policy"
+                    + " reason=" + decision.modulePolicyReason
+                    + " shouldKeepNativeDozeAlive="
+                    + decision.shouldKeepNativeDozeAlive
+                    + " shouldAllowNativeHideCallbacks="
+                    + decision.shouldAllowNativeHideCallbacks
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
             return;
         }
         if (requestedState == Display.STATE_DOZE_SUSPEND
-                && PixelAodClockView.shouldKeepDozeScreenActive(context)
+                && decision.shouldKeepNativeDozeAlive
                 && PixelAodClockView.isInAodEntryTransitionWindow(
                 AOD_ENTRY_STATE_REWRITE_WINDOW_MILLIS)) {
             args[stateIndex] = Display.STATE_DOZE;
@@ -1963,10 +1976,10 @@ final class PixelAodHook {
                     + " stockHost=" + hostSummary(host)
                     + " pixelHost=" + hostSummary(pixelHost)
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
-            boolean lifecycleCustomizeNow = PixelAodClockView.shouldCustomizeAodNow(context);
-            boolean moduleAodPolicyAllows = !screenOff
-                    || PixelAodClockView.isModuleAodPolicyAllowingDisplay(
-                    context, source + "#host-ready");
+            PixelAodClockView.AodPolicyDecision decision =
+                    PixelAodClockView.evaluateAodPolicy(context, source + "#host-ready");
+            boolean lifecycleCustomizeNow = decision.lifecycleWantsPixelOverlay;
+            boolean moduleAodPolicyAllows = !screenOff || decision.modulePolicyAllowsDisplay;
             boolean customizeNow = lifecycleCustomizeNow && moduleAodPolicyAllows;
             if (screenOff) {
                 PixelAodClockView.noteScreenOffIfUnset(source + "#host-ready");
@@ -1982,6 +1995,14 @@ final class PixelAodHook {
                     + " customizeNow=" + customizeNow
                     + " lifecycleCustomizeNow=" + lifecycleCustomizeNow
                     + " moduleAodPolicyAllows=" + moduleAodPolicyAllows
+                    + " shouldDrawPixelOverlay=" + decision.shouldDrawPixelOverlay
+                    + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
+                    + " shouldSuppressStockAodViews=" + decision.shouldSuppressStockAodViews
+                    + " shouldAllowNativeHideCallbacks="
+                    + decision.shouldAllowNativeHideCallbacks
+                    + " reasons={draw=" + decision.drawReason
+                    + ",stock=" + decision.stockSuppressionReason
+                    + ",nativeHide=" + decision.nativeHideCallbackReason + "}"
                     + " lockscreenVisible=" + lockscreenVisible
                     + " stockHost=" + hostSummary(host)
                     + " pixelHost=" + hostSummary(pixelHost)
@@ -1993,7 +2014,7 @@ final class PixelAodHook {
                 hideStockKeyguardClockViews(highestParentGroup(host));
                 scheduleStockSuppressionReapply(host, source + "#module-aod-policy");
                 PixelAodLog.log("suppressed stock AOD without Pixel overlay source=" + source
-                        + " reason=module-aod-policy"
+                        + " reason=" + decision.stockSuppressionReason
                         + " stockHost=" + hostSummary(host)
                         + " pixelHost=" + hostSummary(pixelHost)
                         + " trace=" + PixelAodClockView.currentAodTraceId()
@@ -2301,10 +2322,10 @@ final class PixelAodHook {
             try {
                 boolean screenOff = !PixelAodClockView.isDeviceInteractive(context);
                 boolean lockscreenVisible = isLikelyLockscreenSurfaceVisible(context, stockHost, pixelHost);
-                boolean lifecycleCustomizeNow = PixelAodClockView.shouldCustomizeAodNow(context);
-                boolean moduleAodPolicyAllows = !screenOff
-                        || PixelAodClockView.isModuleAodPolicyAllowingDisplay(
-                        context, source + "#delayed-reapply");
+                PixelAodClockView.AodPolicyDecision decision =
+                        PixelAodClockView.evaluateAodPolicy(context, source + "#delayed-reapply");
+                boolean lifecycleCustomizeNow = decision.lifecycleWantsPixelOverlay;
+                boolean moduleAodPolicyAllows = !screenOff || decision.modulePolicyAllowsDisplay;
                 boolean customizeNow = lifecycleCustomizeNow && moduleAodPolicyAllows;
                 PixelAodLog.log("delayed AOD reapply source=" + source
                         + " delayMillis=" + delayMillis
@@ -2313,6 +2334,14 @@ final class PixelAodHook {
                         + " customizeNow=" + customizeNow
                         + " lifecycleCustomizeNow=" + lifecycleCustomizeNow
                         + " moduleAodPolicyAllows=" + moduleAodPolicyAllows
+                        + " shouldDrawPixelOverlay=" + decision.shouldDrawPixelOverlay
+                        + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
+                        + " shouldSuppressStockAodViews=" + decision.shouldSuppressStockAodViews
+                        + " shouldAllowNativeHideCallbacks="
+                        + decision.shouldAllowNativeHideCallbacks
+                        + " reasons={draw=" + decision.drawReason
+                        + ",stock=" + decision.stockSuppressionReason
+                        + ",nativeHide=" + decision.nativeHideCallbackReason + "}"
                         + " stockHost=" + hostSummary(stockHost)
                         + " pixelHost=" + hostSummary(pixelHost)
                         + " state={" + PixelAodClockView.describeAodState(context) + "}");
@@ -2325,7 +2354,7 @@ final class PixelAodHook {
                         scheduleStockSuppressionReapply(stockHost, source + "#module-aod-policy");
                     }
                     PixelAodLog.log("kept stock AOD suppressed during delayed reapply source=" + source
-                            + " reason=module-aod-policy"
+                            + " reason=" + decision.stockSuppressionReason
                             + " delayMillis=" + delayMillis
                             + " stockHost=" + hostSummary(stockHost)
                             + " pixelHost=" + hostSummary(pixelHost)
@@ -2784,14 +2813,23 @@ final class PixelAodHook {
             } else if (stockHost != null) {
                 context = stockHost.getContext();
             }
+            PixelAodClockView.AodPolicyDecision decision =
+                    PixelAodClockView.evaluateAodPolicy(context, source + "#restore-guard");
             if (PixelLockscreenClockView.shouldShowOnLockscreen(context)
-                    || PixelAodClockView.shouldApplyModuleAodNow(
-                    context, source + "#restore-guard")) {
+                    || decision.shouldApplyModuleAod) {
                 PixelAodLog.log("kept stock AOD/keyguard views hidden after transition from "
                         + source + " stockHost=" + hostSummary(stockHost)
                         + " pixelHost=" + hostSummary(pixelHost)
                         + " trace=" + currentTrace
                         + " expectedTrace=" + expectedTrace
+                        + " shouldDrawPixelOverlay=" + decision.shouldDrawPixelOverlay
+                        + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
+                        + " shouldSuppressStockAodViews=" + decision.shouldSuppressStockAodViews
+                        + " shouldAllowNativeHideCallbacks="
+                        + decision.shouldAllowNativeHideCallbacks
+                        + " reasons={draw=" + decision.drawReason
+                        + ",stock=" + decision.stockSuppressionReason
+                        + ",nativeHide=" + decision.nativeHideCallbackReason + "}"
                         + " state={" + PixelAodClockView.describeAodState(context) + "}");
                 return;
             }

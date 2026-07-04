@@ -4,6 +4,11 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.135] - 2026-07-04
+### Internal
+- Centralize AOD lifecycle, module policy, stock AOD suppression, and native hide callback choices into a shared policy decision object with explicit logs for each output.
+- Route AOD overlay drawing, Doze keepalive, OPlus energy-saving hide guard, display-state rewrite, host ready, delayed reapply, and restore guard checks through the shared decision layer without intentionally changing behavior.
+
 ## [0.1.134] - 2026-07-04
 ### Bug Fixes
 - Keep suppressing stock OOS AOD views when the module AOD schedule blocks Pixel AOD display, avoiding a brief stock AOD flash on screen-off.
