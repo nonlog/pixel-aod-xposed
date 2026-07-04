@@ -118,6 +118,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int WEATHER_ICON_PADDING_DP = 6;
     private static final int BURN_IN_OFFSET_X_DP = 8;
     private static final int BURN_IN_OFFSET_Y_DP = 12;
+    private static final int LOW_BATTERY_AOD_SUPPRESS_THRESHOLD_PERCENT = 15;
     private static final long AOD_ENTRY_SECOND_REFRESH_DELAY_MS = 500L;
     private static final float BURN_IN_PREVENTION_PERIOD_X_MINUTES = 83f;
     private static final float BURN_IN_PREVENTION_PERIOD_Y_MINUTES = 521f;
@@ -1817,6 +1818,9 @@ public final class PixelAodClockView extends FrameLayout {
                     + " state={" + describeAodState(getContext()) + "}");
             return false;
         }
+        if (!isPowerPolicyAllowingAod(source, trace)) {
+            return false;
+        }
         if (proximityNear) {
             PixelAodLog.log("AOD overlay decision trace=" + trace
                     + " source=" + source
@@ -1838,6 +1842,35 @@ public final class PixelAodClockView extends FrameLayout {
                 + " source=" + source
                 + " visible=true reason=all-checks-passed"
                 + " state={" + describeAodState(getContext()) + "}");
+        return true;
+    }
+
+    private boolean isPowerPolicyAllowingAod(String source, String trace) {
+        Context context = getContext();
+        boolean powerSaveMode = isPowerSaveMode(context);
+        BatteryStatus batteryStatus = readBatteryStatus();
+        if (powerSaveMode) {
+            PixelAodLog.log("AOD overlay decision trace=" + trace
+                    + " source=" + source
+                    + " visible=false reason=power-save-mode"
+                    + " battery={" + batteryStatus.describeForLog() + "}"
+                    + " state={" + describeAodState(context) + "}");
+            return false;
+        }
+        if (batteryStatus.shouldSuppressAodForLowBattery()) {
+            PixelAodLog.log("AOD overlay decision trace=" + trace
+                    + " source=" + source
+                    + " visible=false reason=low-battery"
+                    + " threshold=" + LOW_BATTERY_AOD_SUPPRESS_THRESHOLD_PERCENT
+                    + " battery={" + batteryStatus.describeForLog() + "}"
+                    + " state={" + describeAodState(context) + "}");
+            return false;
+        }
+        PixelAodLog.log("AOD power policy allows overlay trace=" + trace
+                + " source=" + source
+                + " powerSave=" + powerSaveMode
+                + " battery={" + batteryStatus.describeForLog() + "}"
+                + " state={" + describeAodState(context) + "}");
         return true;
     }
 
@@ -1929,6 +1962,18 @@ public final class PixelAodClockView extends FrameLayout {
         try {
             PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
             return powerManager != null && powerManager.isInteractive();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isPowerSaveMode(Context context) {
+        if (context == null) {
+            return false;
+        }
+        try {
+            PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            return powerManager != null && powerManager.isPowerSaveMode();
         } catch (Throwable ignored) {
             return false;
         }
@@ -4178,7 +4223,11 @@ public final class PixelAodClockView extends FrameLayout {
             int plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0);
             boolean charging = (status == BatteryManager.BATTERY_STATUS_CHARGING || plugged != 0)
                     && status != BatteryManager.BATTERY_STATUS_FULL;
-            return new BatteryStatus(percent, charging);
+            int levelPercent = Math.round(level * 100f / scale);
+            boolean systemLow = intent.getBooleanExtra("battery_low", false);
+            boolean lowBattery = systemLow
+                    || levelPercent <= LOW_BATTERY_AOD_SUPPRESS_THRESHOLD_PERCENT;
+            return new BatteryStatus(percent, charging, true, levelPercent, lowBattery, systemLow, plugged, status);
         } catch (Throwable t) {
             return BatteryStatus.empty();
         }
@@ -4629,14 +4678,42 @@ public final class PixelAodClockView extends FrameLayout {
     private static final class BatteryStatus {
         final String percentText;
         final boolean charging;
+        final boolean valid;
+        final int levelPercent;
+        final boolean lowBattery;
+        final boolean systemLowBattery;
+        final int plugged;
+        final int status;
 
-        BatteryStatus(String percentText, boolean charging) {
+        BatteryStatus(String percentText, boolean charging, boolean valid, int levelPercent,
+                boolean lowBattery, boolean systemLowBattery, int plugged, int status) {
             this.percentText = percentText;
             this.charging = charging;
+            this.valid = valid;
+            this.levelPercent = levelPercent;
+            this.lowBattery = lowBattery;
+            this.systemLowBattery = systemLowBattery;
+            this.plugged = plugged;
+            this.status = status;
         }
 
         static BatteryStatus empty() {
-            return new BatteryStatus("", false);
+            return new BatteryStatus("", false, false, -1, false, false, 0,
+                    BatteryManager.BATTERY_STATUS_UNKNOWN);
+        }
+
+        boolean shouldSuppressAodForLowBattery() {
+            return valid && lowBattery && !charging;
+        }
+
+        String describeForLog() {
+            return "valid=" + valid
+                    + ",level=" + levelPercent
+                    + ",charging=" + charging
+                    + ",low=" + lowBattery
+                    + ",systemLow=" + systemLowBattery
+                    + ",plugged=" + plugged
+                    + ",status=" + status;
         }
     }
 

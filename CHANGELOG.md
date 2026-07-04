@@ -4,6 +4,11 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.130] - 2026-07-04
+### Power
+- Align module AOD visibility with native-style power policy by hiding the overlay while system battery saver is active.
+- Hide module AOD when the device is on low battery and not charging, with explicit debug-log reasons for power-save and low-battery decisions.
+
 ## [0.1.129] - 2026-07-04
 ### UI
 - Remove the Clock Scale slider from module settings and keep AOD clock text at the Pixel-style default 1.0 scale.
