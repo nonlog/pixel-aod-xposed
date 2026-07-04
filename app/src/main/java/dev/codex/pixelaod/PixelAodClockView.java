@@ -166,6 +166,10 @@ public final class PixelAodClockView extends FrameLayout {
     private static long lastLoggedAodPhaseAt;
     private static boolean lastAodCompactClock;
     private static int lastAodClockWeight = -1;
+    private static String lastNativeTriggerType = "none";
+    private static String lastNativeTriggerSource = "none";
+    private static String lastNativeTriggerDetail = "";
+    private static long lastNativeTriggerAt;
     private static float lastBurnInTranslationX;
     private static float lastBurnInTranslationY;
     private static long lastAodOverlayVisibleAt;
@@ -202,6 +206,9 @@ public final class PixelAodClockView extends FrameLayout {
             }
             if (proximityNear != near) {
                 proximityNear = near;
+                String triggerType = near ? "proximity-near" : "proximity-far";
+                noteNativeTrigger(triggerType, "module-proximity-listener",
+                        "distance=" + distance + ",maxRange=" + maxRange);
                 PixelAodLog.i("proximity sensor state changed: near=" + near + " distance=" + distance + " maxRange=" + maxRange);
                 mainHandler().post(() -> {
                     for (PixelAodClockView view : INSTANCES) {
@@ -295,7 +302,8 @@ public final class PixelAodClockView extends FrameLayout {
                     + " interactive=" + isDeviceInteractive(context));
             logAodPhaseIfChanged(context, "screen-state#" + action);
             if (intent != null && Intent.ACTION_SCREEN_ON.equals(intent.getAction())) {
-                if (getVisibility() == View.VISIBLE || shouldCustomizeAodNow(context)) {
+                if (getVisibility() == View.VISIBLE
+                        || shouldApplyModuleAodNow(context, "screen-on#transition")) {
                     PixelLockscreenClockView.prepareAodToLockscreenTransition("screen-on");
                 }
                 hideAllAodOverlays("screen-on");
@@ -611,8 +619,14 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static void setAodActive(boolean active, String source) {
+        boolean moduleAodPolicyAllows = !active
+                || isModuleAodPolicyAllowingDisplay(appContext, source + "#set-active");
         boolean changed;
         synchronized (PixelAodClockView.class) {
+            if (active && !moduleAodPolicyAllows) {
+                active = false;
+                lastAodOverlayVisibleAt = 0L;
+            }
             changed = aodActive != active;
             aodActive = active;
             if (active) {
@@ -642,22 +656,24 @@ public final class PixelAodClockView extends FrameLayout {
         if (!changed && active) {
             return;
         }
+        final boolean finalActive = active;
         mainHandler().post(() -> {
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
                     view.updateAodVisibility(source);
-                    if (active) {
+                    if (finalActive) {
                         view.refreshActiveMediaControllers();
                         view.requestAodFrameRefresh(source + "#active");
                     }
                 }
             }
-            if (active) {
+            if (finalActive) {
                 PixelAodHook.refreshKnownAodHostVisibility(source + "#active");
             }
         });
         PixelAodLog.log("Pixel AOD active=" + active + " changed=" + changed
                 + " source=" + source
+                + " moduleAodPolicyAllows=" + moduleAodPolicyAllows
                 + " trace=" + currentAodTraceId()
                 + " state={" + describeAodState(appContext) + "}");
         logAodPhaseIfChanged(appContext, source + "#setAodActive");
@@ -772,6 +788,33 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    static void noteNativeTrigger(String type, String source, String detail) {
+        long now = SystemClock.uptimeMillis();
+        String normalizedType = TextUtils.isEmpty(type) ? "unknown" : type;
+        String normalizedSource = TextUtils.isEmpty(source) ? "unknown" : source;
+        String normalizedDetail = TextUtils.isEmpty(detail) ? "" : detail;
+        String trace;
+        String stateDescription;
+        synchronized (PixelAodClockView.class) {
+            if (TextUtils.isEmpty(lastAodTraceId)) {
+                startAodTraceLocked(normalizedSource);
+            }
+            lastNativeTriggerType = normalizedType;
+            lastNativeTriggerSource = normalizedSource;
+            lastNativeTriggerDetail = normalizedDetail;
+            lastNativeTriggerAt = now;
+            trace = lastAodTraceId;
+        }
+        stateDescription = describeAodState(appContext);
+        PixelAodLog.log("AOD native trigger type=" + normalizedType
+                + " source=" + normalizedSource
+                + " detail={" + normalizedDetail + "}"
+                + " trace=" + trace
+                + " state={" + stateDescription + "}");
+        OosAodLifecycleAdapter.recordTriggerEvent(normalizedType, normalizedSource,
+                normalizedDetail, trace, stateDescription);
+    }
+
     static void hideAllAodOverlays(String source) {
         synchronized (PixelAodClockView.class) {
             aodActive = false;
@@ -865,12 +908,43 @@ public final class PixelAodClockView extends FrameLayout {
         return OosAodLifecycleAdapter.shouldDrawPixelAod(currentAodLifecycleState(context));
     }
 
+    static boolean shouldApplyModuleAodNow(Context context, String source) {
+        return shouldCustomizeAodNow(context)
+                && isModuleAodPolicyAllowingDisplay(context, source);
+    }
+
     static boolean shouldKeepDozeScreenActive(Context context) {
         if (context == null) {
             return false;
         }
+        if (!isModuleAodPolicyAllowingDisplay(context, "doze-keepalive")) {
+            return false;
+        }
         AodLifecycleState state = currentAodLifecycleState(context);
         return OosAodLifecycleAdapter.shouldKeepDozeScreenActive(state);
+    }
+
+    static boolean isModuleAodPolicyAllowingDisplay(Context context, String source) {
+        Context ctx = context != null ? context : appContext;
+        String trace = currentAodTraceId();
+        if (ctx == null) {
+            PixelAodLog.log("AOD module policy blocked source=" + source
+                    + " reason=no-context"
+                    + " trace=" + trace
+                    + " state={" + describeAodState(null) + "}");
+            return false;
+        }
+        if (!isWithinAodSchedule(ctx)) {
+            PixelAodLog.log("AOD module policy blocked source=" + source
+                    + " reason=outside-schedule"
+                    + " trace=" + trace
+                    + " state={" + describeAodState(ctx) + "}");
+            return false;
+        }
+        if (!isPowerPolicyAllowingAod(ctx, source, trace, false)) {
+            return false;
+        }
+        return true;
     }
 
     static boolean isInAodEntryTransitionWindow(long windowMillis) {
@@ -960,6 +1034,10 @@ public final class PixelAodClockView extends FrameLayout {
         String traceId;
         String traceSource;
         long traceAt;
+        String triggerType;
+        String triggerSource;
+        String triggerDetail;
+        long triggerAt;
         synchronized (PixelAodClockView.class) {
             if (TextUtils.isEmpty(lastAodTraceId)) {
                 startAodTraceLocked("auto");
@@ -971,6 +1049,10 @@ public final class PixelAodClockView extends FrameLayout {
             traceId = lastAodTraceId;
             traceSource = lastAodTraceSource;
             traceAt = lastAodTraceAt;
+            triggerType = lastNativeTriggerType;
+            triggerSource = lastNativeTriggerSource;
+            triggerDetail = lastNativeTriggerDetail;
+            triggerAt = lastNativeTriggerAt;
         }
         int displayState = currentDisplayState(context);
         boolean interactive = isDeviceInteractive(context);
@@ -988,7 +1070,8 @@ public final class PixelAodClockView extends FrameLayout {
         return new AodLifecycleState(now, active, screenOffAt, aodActivatedAt,
                 overlayVisibleAt, traceId, traceSource, traceAt, displayState,
                 interactive, displayAod, entryDelay, graceWindow,
-                recentOverlayVisible, shouldDrawPixelAod);
+                recentOverlayVisible, shouldDrawPixelAod, triggerType,
+                triggerSource, triggerDetail, triggerAt);
     }
 
     static final class AodLifecycleState {
@@ -1007,12 +1090,17 @@ public final class PixelAodClockView extends FrameLayout {
         final boolean graceWindow;
         final boolean recentOverlayVisible;
         final boolean shouldDrawPixelAod;
+        final String nativeTriggerType;
+        final String nativeTriggerSource;
+        final String nativeTriggerDetail;
+        final long nativeTriggerAt;
 
         AodLifecycleState(long now, boolean active, long screenOffAt, long aodActivatedAt,
                 long overlayVisibleAt, String traceId, String traceSource, long traceAt,
                 int displayState, boolean interactive, boolean displayAod,
                 boolean entryDelay, boolean graceWindow, boolean recentOverlayVisible,
-                boolean shouldDrawPixelAod) {
+                boolean shouldDrawPixelAod, String nativeTriggerType,
+                String nativeTriggerSource, String nativeTriggerDetail, long nativeTriggerAt) {
             this.now = now;
             this.active = active;
             this.screenOffAt = screenOffAt;
@@ -1028,6 +1116,10 @@ public final class PixelAodClockView extends FrameLayout {
             this.graceWindow = graceWindow;
             this.recentOverlayVisible = recentOverlayVisible;
             this.shouldDrawPixelAod = shouldDrawPixelAod;
+            this.nativeTriggerType = nativeTriggerType;
+            this.nativeTriggerSource = nativeTriggerSource;
+            this.nativeTriggerDetail = nativeTriggerDetail;
+            this.nativeTriggerAt = nativeTriggerAt;
         }
 
         boolean shouldDrawPixelAod() {
@@ -1072,6 +1164,10 @@ public final class PixelAodClockView extends FrameLayout {
                     + " trace=" + traceId
                     + " traceSource=" + traceSource
                     + " traceAgeMs=" + ageSince(now, traceAt)
+                    + " nativeTrigger=" + nativeTriggerType
+                    + " nativeTriggerSource=" + nativeTriggerSource
+                    + " nativeTriggerAgeMs=" + ageSince(now, nativeTriggerAt)
+                    + " nativeTriggerDetail={" + nativeTriggerDetail + "}"
                     + " compact=" + compact
                     + " weight=" + weight
                     + " entryDelay=" + entryDelay
@@ -1846,9 +1942,13 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private boolean isPowerPolicyAllowingAod(String source, String trace) {
-        Context context = getContext();
+        return isPowerPolicyAllowingAod(getContext(), source, trace, true);
+    }
+
+    private static boolean isPowerPolicyAllowingAod(
+            Context context, String source, String trace, boolean logAllowed) {
         boolean powerSaveMode = isPowerSaveMode(context);
-        BatteryStatus batteryStatus = readBatteryStatus();
+        BatteryStatus batteryStatus = readBatteryStatus(context);
         if (powerSaveMode) {
             PixelAodLog.log("AOD overlay decision trace=" + trace
                     + " source=" + source
@@ -1866,17 +1966,26 @@ public final class PixelAodClockView extends FrameLayout {
                     + " state={" + describeAodState(context) + "}");
             return false;
         }
-        PixelAodLog.log("AOD power policy allows overlay trace=" + trace
-                + " source=" + source
-                + " powerSave=" + powerSaveMode
-                + " battery={" + batteryStatus.describeForLog() + "}"
-                + " state={" + describeAodState(context) + "}");
+        if (logAllowed) {
+            PixelAodLog.log("AOD power policy allows overlay trace=" + trace
+                    + " source=" + source
+                    + " powerSave=" + powerSaveMode
+                    + " battery={" + batteryStatus.describeForLog() + "}"
+                    + " state={" + describeAodState(context) + "}");
+        }
         return true;
     }
 
     private boolean isWithinAodSchedule() {
-        Context appContext = getContext().getApplicationContext();
-        Context ctx = appContext != null ? appContext : getContext();
+        return isWithinAodSchedule(getContext());
+    }
+
+    private static boolean isWithinAodSchedule(Context context) {
+        Context contextApp = context != null ? context.getApplicationContext() : null;
+        Context ctx = contextApp != null ? contextApp : context;
+        if (ctx == null) {
+            return true;
+        }
         boolean enabled = PixelAodSettings.getBoolean(ctx, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, false);
         if (!enabled) {
             synchronized (PixelAodClockView.class) {
@@ -3968,7 +4077,8 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void applyBurnInTranslation() {
-        if (getVisibility() != View.VISIBLE || !shouldCustomizeAodNow(getContext())) {
+        if (getVisibility() != View.VISIBLE
+                || !shouldApplyModuleAodNow(getContext(), "burn-in")) {
             resetBurnInTranslation();
             return;
         }
@@ -4208,8 +4318,15 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private BatteryStatus readBatteryStatus() {
+        return readBatteryStatus(getContext());
+    }
+
+    private static BatteryStatus readBatteryStatus(Context context) {
+        if (context == null) {
+            return BatteryStatus.empty();
+        }
         try {
-            Intent intent = getContext().registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            Intent intent = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
             if (intent == null) {
                 return BatteryStatus.empty();
             }

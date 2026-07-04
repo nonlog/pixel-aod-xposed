@@ -4,6 +4,26 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.134] - 2026-07-04
+### Bug Fixes
+- Keep suppressing stock OOS AOD views when the module AOD schedule blocks Pixel AOD display, avoiding a brief stock AOD flash on screen-off.
+- Prevent `AodRecord#onDreamingStarted` from marking Pixel AOD active/recent-visible outside the module schedule or power policy, while still allowing native OOS hide callbacks to dismiss fingerprint affordances.
+
+## [0.1.133] - 2026-07-04
+### Bug Fixes
+- Stop module AOD host/reapply paths from hiding stock AOD views or reasserting Pixel AOD while the module schedule or power policy blocks display.
+- Allow OOS energy-saving AOD hide callbacks to run outside the module AOD policy window so native fingerprint / short-wake affordances can time out normally.
+
+## [0.1.132] - 2026-07-04
+### Bug Fixes
+- Stop the module from keeping OOS Doze screen state alive or rewriting OFF requests while the module AOD schedule or power policy says the Pixel AOD overlay should not display.
+- Fix the schedule-outside case where module AOD stayed hidden correctly but OOS short wake / fingerprint affordance could fail to disappear because OFF requests were still rewritten to DOZE.
+
+## [0.1.131] - 2026-07-04
+### Diagnostics
+- Add native-style AOD trigger diagnostics for OPlus wake-up controller methods related to pickup, tap, proximity, pocket, and sensors without changing trigger behavior.
+- Record the latest native trigger type, source, detail, and age in AOD lifecycle state snapshots so real OOS trigger events can be mapped before adding module-owned sensor logic.
+
 ## [0.1.130] - 2026-07-04
 ### Power
 - Align module AOD visibility with native-style power policy by hiding the overlay while system battery saver is active.
