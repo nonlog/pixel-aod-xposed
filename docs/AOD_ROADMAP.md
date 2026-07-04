@@ -1,0 +1,120 @@
+# Pixel AOD Roadmap
+
+Last updated: 2026-07-04
+
+## Goal
+
+Build a stable Pixel-like AOD visual replacement for OPlus SystemUI.
+
+The target is not a full ROM-level replacement of Android Doze. The module should keep Pixel-style visuals while aligning itself as tightly as practical with the native OOS AOD / Doze lifecycle.
+
+## Open-Source Reference Choice
+
+Use different references for different layers:
+
+| Layer | Recommended reference | Reason |
+|---|---|---|
+| Visual target | Google Pixel AOD behavior | This is the desired user-facing look and feel. |
+| Lifecycle model | AOSP SystemUI Doze | AOSP exposes the canonical Doze state machine and lifecycle concepts. |
+| Practical open implementation | LineageOS / YAAP / crDroid SystemUI Doze | Custom ROMs provide readable, modified SystemUI implementations closer to real-world Pixel-style AOD customization. |
+| Final runtime truth | OOS SystemUI logs and classes | The module runs inside OOS SystemUI, so OOS behavior decides what is actually safe and stable. |
+
+Google Pixel AOD should not be treated as the primary source-code base. Pixel's complete AOD experience includes Google / Pixel-specific pieces that are not fully available as open-source implementation code.
+
+## Baseline Recommendation
+
+Use this priority order:
+
+1. Pixel AOD as the visual and behavior target.
+2. AOSP `SystemUI/src/com/android/systemui/doze` as the lifecycle and state-machine reference.
+3. LineageOS / YAAP / crDroid SystemUI Doze code as practical implementation references.
+4. OOS runtime logs, dumps, and hooked classes as the final source of truth.
+
+The module should become a lifecycle-aligned Pixel visual layer:
+
+```text
+OOS Doze / AOD lifecycle
+        ↓
+Pixel AOD state adapter
+        ↓
+Pixel-style AOD rendering
+```
+
+It should not become an independent AOD engine that guesses screen state, owns long-running refresh loops, or fights OOS display power policy from the outside.
+
+## Doze Lifecycle Integration Direction
+
+Full ROM-level integration would require owning or replacing SystemUI Doze internals such as `DozeMachine`, display state, sensor triggers, wake locks, pulse handling, brightness, and low-power policy. That is not realistic or desirable for this Xposed module.
+
+The feasible Xposed direction is lifecycle alignment:
+
+| Area | Preferred behavior |
+|---|---|
+| AOD active state | Follow OOS native AOD / dreaming / display callbacks. |
+| Clock refresh | Prefer native SystemUI / OOS refresh callbacks; avoid self-owned minute loops unless used as a narrowly scoped fallback. |
+| Visibility | Render only while native lifecycle says AOD should be visible. |
+| Sensors | Reuse or observe OOS handling for proximity, pocket, pickup, tap, and pulse where possible. |
+| Power policy | Respect OOS energy-saving, low-battery, and display-off decisions instead of overriding them broadly. |
+| Failure handling | Log state transitions and decision reasons so intermittent bugs can be traced by lifecycle session. |
+
+This can reduce power usage and improve stability compared with a purely parasitic overlay, but it cannot become identical to Pixel ROM Doze without replacing or deeply modifying SystemUI itself.
+
+## Roadmap
+
+### Phase 1: Stabilize Current Replacement Layer
+
+- Keep the currently working AOD clock refresh path.
+- Keep debug logs focused on lifecycle transitions, visibility decisions, notification decisions, and hide / restore paths.
+- Continue treating the silent notification flash during OOS lockscreen-to-AOD transition as a deferred known issue.
+- Avoid broad changes to lockscreen notification rows until the lifecycle model is cleaner.
+
+### Phase 2: Define AOD State Adapter
+
+- Build a small internal state model inspired by AOSP Doze states.
+- Map OOS events into module states such as inactive, lockscreen, entering AOD, AOD visible, pulsing, paused, and exiting AOD.
+- Make rendering decisions depend on this state adapter instead of scattered direct checks.
+- Keep OOS as the lifecycle owner; the adapter only translates observed native state into module decisions.
+
+### Phase 3: Pixel-Like Burn-In Behavior
+
+- Replace ad-hoc movement with Pixel-like burn-in offset behavior.
+- Keep offsets small, periodic, and deterministic enough to avoid visible jitter.
+- Ensure clock, notification icons, media text, and secondary rows move as one visual group unless Pixel behavior says otherwise.
+
+### Phase 4: Pixel Visual Parity
+
+- Remove the user-facing clock scale option if no longer needed.
+- Keep the default clock scale and spacing close to Pixel behavior.
+- Review clock weight transition, AOD-to-lockscreen transition, and lockscreen-to-AOD transition for one-frame flashes.
+- Keep existing notification icon handling for now unless a specific app regression requires a targeted fix.
+
+### Phase 5: Native-Style Trigger Features
+
+- Add or align pickup / lift-to-wake behavior.
+- Add or align tap-to-show behavior.
+- Add proximity and pocket-aware behavior.
+- Add charging-state and low-battery handling.
+- Defer custom notification pulse until the core lifecycle is stable; use OOS native pulse behavior where possible.
+
+### Phase 6: Later Pixel Features
+
+- At a Glance.
+- Richer media line behavior.
+- Possible media artwork / progress / controls only after confirming how Pixel / AOSP / target ROMs handle interaction on AOD.
+
+## Deferred Known Issue
+
+Silent notifications on OOS may briefly flash during the lockscreen-to-AOD transition when the channel is silent but still has lockscreen display permission enabled. The current user workaround is to disable lockscreen display permission for affected silent channels.
+
+Do not resume this issue unless it becomes a priority again. It is likely tied to OOS lockscreen row timing and should be revisited after the AOD state adapter is clearer.
+
+## Reference Links
+
+- AOSP source setup: https://source.android.com/docs/setup/download
+- Pixel open-source components note: https://support.google.com/pixelphone/answer/13202895
+- AOSP DozeMachine: https://android.googlesource.com/platform/frameworks/base/+/master/packages/SystemUI/src/com/android/systemui/doze/DozeMachine.java
+- AOSP DozeHost: https://android.googlesource.com/platform/frameworks/base/+/master/packages/SystemUI/src/com/android/systemui/doze/DozeHost.java
+- AOSP DozeTriggers: https://android.googlesource.com/platform/frameworks/base/+/master/packages/SystemUI/src/com/android/systemui/doze/DozeTriggers.java
+- LineageOS SystemUI Doze: https://github.com/LineageOS/android_frameworks_base/tree/lineage-23.2/packages/SystemUI/src/com/android/systemui/doze
+- YAAP SystemUI Doze: https://github.com/yaap/frameworks_base/tree/sixteen/packages/SystemUI/src/com/android/systemui/doze
+- crDroid SystemUI Doze: https://github.com/crdroidandroid/android_frameworks_base/tree/16.0/packages/SystemUI/src/com/android/systemui/doze
