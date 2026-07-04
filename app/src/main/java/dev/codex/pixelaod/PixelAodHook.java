@@ -1940,8 +1940,7 @@ final class PixelAodHook {
             Context context = host != null ? host.getContext() : null;
             String currentTrace = PixelAodClockView.peekAodTraceId();
             String state = context != null ? PixelAodClockView.describeAodState(context) : "context=null";
-            if (!TextUtils.isEmpty(expectedTrace)
-                    && !TextUtils.equals(expectedTrace, currentTrace)) {
+            if (!OosAodLifecycleAdapter.matchesExpectedTrace(expectedTrace, currentTrace)) {
                 PixelAodLog.log("skipped refreshing known AOD host visibility source=" + source
                         + " reason=trace-mismatch expectedTrace=" + expectedTrace
                         + " currentTrace=" + currentTrace
@@ -2073,8 +2072,7 @@ final class PixelAodHook {
             try {
                 Context context = host != null ? host.getContext() : null;
                 String currentTrace = PixelAodClockView.peekAodTraceId();
-                if (!TextUtils.isEmpty(expectedTrace)
-                        && !TextUtils.equals(expectedTrace, currentTrace)) {
+                if (!OosAodLifecycleAdapter.matchesExpectedTrace(expectedTrace, currentTrace)) {
                     PixelAodLog.log("skipped delayed stock AOD suppression from " + source
                             + "+" + delayMillis
                             + " reason=trace-mismatch expectedTrace=" + expectedTrace
@@ -2565,8 +2563,7 @@ final class PixelAodHook {
             ViewGroup pixelHost = lastPixelHost.get();
             ViewGroup stockHost = lastStockHost.get();
             String currentTrace = PixelAodClockView.peekAodTraceId();
-            if (!TextUtils.isEmpty(expectedTrace)
-                    && !TextUtils.equals(expectedTrace, currentTrace)) {
+            if (!OosAodLifecycleAdapter.matchesExpectedTrace(expectedTrace, currentTrace)) {
                 Context context = pixelHost != null ? pixelHost.getContext()
                         : stockHost != null ? stockHost.getContext() : null;
                 String state = context != null ? PixelAodClockView.describeAodState(context)

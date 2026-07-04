@@ -18,6 +18,10 @@ final class OosAodLifecycleAdapter {
                 + " state={" + stateDescription + "}");
     }
 
+    static boolean matchesExpectedTrace(String expectedTrace, String currentTrace) {
+        return TextUtils.isEmpty(expectedTrace) || TextUtils.equals(expectedTrace, currentTrace);
+    }
+
     private static Event classify(String source) {
         if (sourceContains(source, "onDreamingStarted")) {
             return Event.DREAMING_STARTED;

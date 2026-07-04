@@ -4,6 +4,10 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.126] - 2026-07-04
+### Maintenance
+- Route existing AOD trace guard checks for known-host refresh, delayed stock AOD suppression, and delayed stock view restore through the OOS lifecycle adapter without changing visual behavior.
+
 ## [0.1.125] - 2026-07-04
 ### Diagnostics
 - Add an observability-only OOS AOD lifecycle adapter that classifies hook sources such as dreaming start/stop, screen on/off, display-state requests, host readiness, and native ticks against the current `AodLifecycleState.phase()`.
