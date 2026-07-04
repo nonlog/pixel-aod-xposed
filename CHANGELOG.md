@@ -4,6 +4,11 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.128] - 2026-07-04
+### Visual
+- Replace the custom burn-in drift periods with AOSP-style 83/521 minute Pixel-like offset periods while keeping the current low-power native-tick refresh path.
+- Keep the 8-second AOD entry settle window so the clock group does not visibly jump during the OOS lockscreen-to-AOD transition.
+
 ## [0.1.127] - 2026-07-04
 ### Maintenance
 - Route the core Pixel AOD draw, Doze keepalive, and lockscreen-to-AOD bridge decisions through the OOS lifecycle adapter while preserving the existing boolean behavior.

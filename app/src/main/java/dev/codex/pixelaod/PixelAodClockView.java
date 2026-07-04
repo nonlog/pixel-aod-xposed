@@ -119,8 +119,8 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int BURN_IN_OFFSET_X_DP = 8;
     private static final int BURN_IN_OFFSET_Y_DP = 12;
     private static final long AOD_ENTRY_SECOND_REFRESH_DELAY_MS = 500L;
-    private static final float BURN_IN_PERIOD_X_MINUTES = 43f;
-    private static final float BURN_IN_PERIOD_Y_MINUTES = 271f;
+    private static final float BURN_IN_PREVENTION_PERIOD_X_MINUTES = 83f;
+    private static final float BURN_IN_PREVENTION_PERIOD_Y_MINUTES = 521f;
     private static final String GOOGLE_SANS_FLEX_VARIABLE_ASSET = "assets/fonts/GoogleSansFlex-Variable.ttf";
     private static final String GOOGLE_SANS_FLEX_VARIABLE_CACHE = "GoogleSansFlex-Variable.ttf";
     private static final String GOOGLE_SANS_FLEX_VARIABLE_CACHE_PREFIX = "GoogleSansFlex-Variable-";
@@ -3928,30 +3928,55 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         long now = android.os.SystemClock.uptimeMillis();
+        if (PixelAodSettings.getBoolean(getContext(),
+                PixelAodSettings.KEY_DISABLE_BURN_IN_OFFSET, false)) {
+            setTranslationX(0f);
+            setTranslationY(0f);
+            rememberBurnInTranslation(0f, 0f);
+            return;
+        }
         if (isWithinBurnInSettleWindow(now)) {
             setTranslationX(0f);
             setTranslationY(0f);
-            synchronized (PixelAodClockView.class) {
-                lastBurnInTranslationX = 0f;
-                lastBurnInTranslationY = 0f;
-            }
+            rememberBurnInTranslation(0f, 0f);
             return;
         }
-        float minutes = System.currentTimeMillis() / 60000f;
+        BurnInOffset offset = computePixelLikeBurnInOffset();
+        setTranslationX(offset.translationX);
+        setTranslationY(offset.translationY);
+        rememberBurnInTranslation(offset.translationX, offset.translationY);
+        PixelAodLog.log("applied Pixel AOD burn-in offset trace=" + currentAodTraceId()
+                + " x=" + Math.round(offset.translationX)
+                + " y=" + Math.round(offset.translationY)
+                + " periodX=" + Math.round(BURN_IN_PREVENTION_PERIOD_X_MINUTES)
+                + " periodY=" + Math.round(BURN_IN_PREVENTION_PERIOD_Y_MINUTES)
+                + " state={" + describeAodState(getContext()) + "}");
+    }
+
+    private BurnInOffset computePixelLikeBurnInOffset() {
+        long wallTimeMillis = System.currentTimeMillis();
         int maxX = dp(BURN_IN_OFFSET_X_DP);
         int maxY = dp(BURN_IN_OFFSET_Y_DP);
-        float x = zigzag(minutes, maxX, BURN_IN_PERIOD_X_MINUTES) - maxX / 2f;
-        float y = zigzag(minutes, maxY, BURN_IN_PERIOD_Y_MINUTES) - maxY / 2f;
-        setTranslationX(x);
-        setTranslationY(y);
+        float x = burnInOffset(wallTimeMillis, maxX, true) - maxX / 2f;
+        float y = burnInOffset(wallTimeMillis, maxY, false) - maxY / 2f;
+        return new BurnInOffset(x, y);
+    }
+
+    private static int burnInOffset(long wallTimeMillis, int maxOffset, boolean xAxis) {
+        if (maxOffset <= 0) {
+            return 0;
+        }
+        float period = xAxis
+                ? BURN_IN_PREVENTION_PERIOD_X_MINUTES
+                : BURN_IN_PREVENTION_PERIOD_Y_MINUTES;
+        return Math.round(zigzag(wallTimeMillis / 60000f, maxOffset, period));
+    }
+
+    private static void rememberBurnInTranslation(float x, float y) {
         synchronized (PixelAodClockView.class) {
             lastBurnInTranslationX = x;
             lastBurnInTranslationY = y;
         }
-        PixelAodLog.log("applied Pixel AOD burn-in offset trace=" + currentAodTraceId()
-                + " x=" + Math.round(x)
-                + " y=" + Math.round(y)
-                + " state={" + describeAodState(getContext()) + "}");
     }
 
     private void resetBurnInTranslation() {
