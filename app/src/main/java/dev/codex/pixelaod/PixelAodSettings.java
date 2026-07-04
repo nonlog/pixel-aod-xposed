@@ -18,7 +18,6 @@ public final class PixelAodSettings {
     public static final String KEY_NOTIFICATION_ICONS = "notification_icons";
     public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY = "lockscreen_notification_policy";
     public static final String KEY_DEBUG_LOGGING = "debug_logging";
-    public static final String KEY_CLOCK_SCALE = "clock_scale";
     public static final String KEY_AOD_WEIGHT = "aod_weight";
     public static final String KEY_LOCKSCREEN_WEIGHT = "lockscreen_weight";
     public static final String KEY_FORCE_ENGLISH_DATE = "force_english_date";
@@ -31,7 +30,6 @@ public final class PixelAodSettings {
     public static final String LANGUAGE_SYSTEM = "system";
     public static final String LANGUAGE_CHINESE = "zh";
     public static final String LANGUAGE_ENGLISH = "en";
-    public static final float DEFAULT_CLOCK_SCALE = 1.0f;
     public static final float DEFAULT_AOD_WEIGHT = 280f;
     public static final float DEFAULT_LOCKSCREEN_WEIGHT = 520f;
     private static final Map<String, String> CACHE = new HashMap<>();

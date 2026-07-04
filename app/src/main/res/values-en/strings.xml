@@ -17,7 +17,6 @@
     <string name="desc_lockscreen_policy">Fix OOS lockscreen rules</string>
     <string name="title_debug_logging">Debug Logging</string>
     <string name="desc_debug_logging">Output detailed diagnostic logs</string>
-    <string name="title_clock_scale">Clock Scale</string>
     <string name="title_aod_weight">AOD Weight</string>
     <string name="title_lockscreen_weight">Lockscreen Weight</string>
     <string name="restart_systemui">Restart SystemUI (Needs Root)</string>

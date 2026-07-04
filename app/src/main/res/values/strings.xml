@@ -17,7 +17,6 @@
     <string name="desc_lockscreen_policy">修正 OOS 锁屏显示规则</string>
     <string name="title_debug_logging">调试日志</string>
     <string name="desc_debug_logging">输出详细诊断日志</string>
-    <string name="title_clock_scale">时钟缩放</string>
     <string name="title_aod_weight">AOD 字重</string>
     <string name="title_lockscreen_weight">锁屏字重</string>
     <string name="restart_systemui">重启 SystemUI (需要 Root)</string>

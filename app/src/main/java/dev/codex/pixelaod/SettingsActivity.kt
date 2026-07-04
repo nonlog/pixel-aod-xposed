@@ -264,11 +264,6 @@ private fun SettingsContent(
         clockDialMinute = minute
         showClockDial = true
     }
-    val clockScale = remember {
-        mutableFloatStateOf(
-            prefs.getFloat(PixelAodSettings.KEY_CLOCK_SCALE, PixelAodSettings.DEFAULT_CLOCK_SCALE)
-        )
-    }
     val aodWeight = remember {
         mutableFloatStateOf(
             prefs.getFloat(PixelAodSettings.KEY_AOD_WEIGHT, PixelAodSettings.DEFAULT_AOD_WEIGHT)
@@ -306,16 +301,6 @@ private fun SettingsContent(
         }
 
         SettingsSection(stringResource(R.string.section_clock)) {
-            SliderCard(
-                icon = Icons.Outlined.Bolt,
-                title = stringResource(R.string.title_clock_scale),
-                valueText = "%.0f%%".format(clockScale.floatValue * 100f),
-                value = clockScale.floatValue,
-                valueRange = 0.9f..1.15f
-            ) {
-                clockScale.floatValue = it
-                prefs.edit().putFloat(PixelAodSettings.KEY_CLOCK_SCALE, it).apply()
-            }
             SliderCard(
                 icon = Icons.Outlined.Schedule,
                 title = stringResource(R.string.title_aod_weight),

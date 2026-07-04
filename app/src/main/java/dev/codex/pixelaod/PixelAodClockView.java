@@ -4208,10 +4208,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static int scaledClockTextDp(Context context, int baseDp) {
-        float scale = PixelAodSettings.getFloat(context, PixelAodSettings.KEY_CLOCK_SCALE,
-                PixelAodSettings.DEFAULT_CLOCK_SCALE);
-        scale = Math.max(0.75f, Math.min(1.35f, scale));
-        return Math.round(baseDp * scale);
+        return baseDp;
     }
 
     static void applySharedFontVariation(TextView textView, int weight) {

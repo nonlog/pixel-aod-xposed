@@ -41,9 +41,6 @@ public final class PixelAodSettingsProvider extends ContentProvider {
                 prefs.getBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true));
         putBoolean(cursor, PixelAodSettings.KEY_DEBUG_LOGGING,
                 prefs.getBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, false));
-        putFloat(cursor, PixelAodSettings.KEY_CLOCK_SCALE,
-                prefs.getFloat(PixelAodSettings.KEY_CLOCK_SCALE,
-                        PixelAodSettings.DEFAULT_CLOCK_SCALE));
         putFloat(cursor, PixelAodSettings.KEY_AOD_WEIGHT,
                 prefs.getFloat(PixelAodSettings.KEY_AOD_WEIGHT,
                         PixelAodSettings.DEFAULT_AOD_WEIGHT));
