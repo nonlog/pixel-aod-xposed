@@ -2,6 +2,8 @@ package dev.codex.pixelaod;
 
 import android.text.TextUtils;
 
+import java.util.Locale;
+
 final class OosAodLifecycleAdapter {
     private OosAodLifecycleAdapter() {
     }
@@ -22,8 +24,11 @@ final class OosAodLifecycleAdapter {
             String trace, String stateDescription) {
         String normalizedType = normalizeSource(triggerType);
         String normalizedSource = normalizeSource(source);
-        Event event = classifyTrigger(normalizedType + " " + normalizedSource + " " + detail);
-        PixelAodLog.log("OOS AOD trigger mapping event=" + event.label
+        TriggerMapping mapping = mapTrigger(normalizedType, normalizedSource, detail);
+        PixelAodLog.log("OOS AOD trigger mapping event=" + mapping.event.label
+                + " displayMode=" + mapping.displayMode.label
+                + " futureAction=" + mapping.futureAction
+                + " behaviorApplied=false"
                 + " trigger=" + normalizedType
                 + " source=" + normalizedSource
                 + " detail={" + (TextUtils.isEmpty(detail) ? "" : detail) + "}"
@@ -112,31 +117,87 @@ final class OosAodLifecycleAdapter {
     }
 
     private static Event classifyTrigger(String source) {
-        if (sourceContains(source, "proximity")
-                || sourceContains(source, "prox")
-                || sourceContains(source, "near")
-                || sourceContains(source, "far")) {
+        String lowerSource = TextUtils.isEmpty(source) ? "" : source.toLowerCase(Locale.US);
+        if (sourceContains(lowerSource, "proximity")
+                || sourceContains(lowerSource, "prox")
+                || sourceContains(lowerSource, "near")
+                || sourceContains(lowerSource, "far")) {
             return Event.TRIGGER_PROXIMITY;
         }
-        if (sourceContains(source, "pocket")) {
+        if (sourceContains(lowerSource, "pocket")) {
             return Event.TRIGGER_POCKET;
         }
-        if (sourceContains(source, "pickup")
-                || sourceContains(source, "pick-up")
-                || sourceContains(source, "pick_up")
-                || sourceContains(source, "raise")
-                || sourceContains(source, "lift")) {
+        if (sourceContains(lowerSource, "pickup")
+                || sourceContains(lowerSource, "pick-up")
+                || sourceContains(lowerSource, "pick_up")
+                || sourceContains(lowerSource, "raise")
+                || sourceContains(lowerSource, "lift")) {
             return Event.TRIGGER_PICKUP;
         }
-        if (sourceContains(source, "tap")
-                || sourceContains(source, "touch")
-                || sourceContains(source, "gesture")) {
+        if (sourceContains(lowerSource, "tap")
+                || sourceContains(lowerSource, "touch")
+                || sourceContains(lowerSource, "gesture")) {
             return Event.TRIGGER_TAP;
         }
-        if (sourceContains(source, "sensor")) {
+        if (sourceContains(lowerSource, "sensor")) {
             return Event.TRIGGER_SENSOR;
         }
         return Event.TRIGGER_UNKNOWN;
+    }
+
+    private static TriggerMapping mapTrigger(String triggerType, String source, String detail) {
+        String combined = normalizeSource(triggerType) + " "
+                + normalizeSource(source) + " "
+                + normalizeSource(detail);
+        String lowerCombined = combined.toLowerCase(Locale.US);
+        Event event = classifyTrigger(combined);
+        DisplayMode displayMode;
+        String futureAction;
+        switch (event) {
+            case TRIGGER_PICKUP:
+            case TRIGGER_TAP:
+                displayMode = DisplayMode.TRIGGER_ONLY_BRIEF_DISPLAY;
+                futureAction = "brief-show-candidate";
+                break;
+            case TRIGGER_POCKET:
+                displayMode = DisplayMode.SENSOR_GUARD_HIDE;
+                futureAction = "block-brief-and-continuous-aod";
+                break;
+            case TRIGGER_PROXIMITY:
+                if (isProximityNear(lowerCombined)) {
+                    displayMode = DisplayMode.SENSOR_GUARD_HIDE;
+                    futureAction = "hide-or-block-aod";
+                } else if (isProximityFar(lowerCombined)) {
+                    displayMode = DisplayMode.SENSOR_GUARD_RELEASE;
+                    futureAction = "allow-future-aod";
+                } else {
+                    displayMode = DisplayMode.SENSOR_GUARD_UNKNOWN;
+                    futureAction = "observe-proximity-result";
+                }
+                break;
+            case TRIGGER_SENSOR:
+            case TRIGGER_UNKNOWN:
+            default:
+                displayMode = DisplayMode.TRIGGER_DIAGNOSTIC_ONLY;
+                futureAction = "classify-before-action";
+                break;
+        }
+        return new TriggerMapping(event, displayMode, futureAction);
+    }
+
+    private static boolean isProximityNear(String lowerSource) {
+        return sourceContains(lowerSource, "proximity-near")
+                || sourceContains(lowerSource, "near=true")
+                || (sourceContains(lowerSource, "prox")
+                && sourceContains(lowerSource, "boolean(true)"));
+    }
+
+    private static boolean isProximityFar(String lowerSource) {
+        return sourceContains(lowerSource, "proximity-far")
+                || sourceContains(lowerSource, "far")
+                || sourceContains(lowerSource, "near=false")
+                || (sourceContains(lowerSource, "prox")
+                && sourceContains(lowerSource, "boolean(false)"));
     }
 
     private static boolean sourceContains(String source, String token) {
@@ -174,6 +235,32 @@ final class OosAodLifecycleAdapter {
 
         Event(String label) {
             this.label = label;
+        }
+    }
+
+    private enum DisplayMode {
+        TRIGGER_ONLY_BRIEF_DISPLAY("trigger-only-brief-display"),
+        SENSOR_GUARD_HIDE("sensor-guard-hide"),
+        SENSOR_GUARD_RELEASE("sensor-guard-release"),
+        SENSOR_GUARD_UNKNOWN("sensor-guard-unknown"),
+        TRIGGER_DIAGNOSTIC_ONLY("trigger-diagnostic-only");
+
+        final String label;
+
+        DisplayMode(String label) {
+            this.label = label;
+        }
+    }
+
+    private static final class TriggerMapping {
+        final Event event;
+        final DisplayMode displayMode;
+        final String futureAction;
+
+        TriggerMapping(Event event, DisplayMode displayMode, String futureAction) {
+            this.event = event;
+            this.displayMode = displayMode;
+            this.futureAction = futureAction;
         }
     }
 }

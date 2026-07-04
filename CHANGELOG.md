@@ -4,6 +4,11 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.136] - 2026-07-05
+### Diagnostics
+- Classify native OOS pickup, tap, proximity, pocket, and sensor triggers into display modes for Phase 5 trigger work without changing AOD behavior.
+- Record trigger-only brief display candidates separately from continuous scheduled AOD, and mark all new trigger mappings as observe-only.
+
 ## [0.1.135] - 2026-07-04
 ### Internal
 - Centralize AOD lifecycle, module policy, stock AOD suppression, and native hide callback choices into a shared policy decision object with explicit logs for each output.

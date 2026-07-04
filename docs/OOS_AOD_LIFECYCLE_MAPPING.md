@@ -69,6 +69,21 @@ Current implementation: `PixelAodClockView.AodLifecycleState.phase()`.
 | `aod-active-waiting-display` | non-interactive, `aodActive=true`, but not display-AOD and not in grace window | OOS says AOD active, but display state is not aligned. This is suspicious if long-lived. |
 | `inactive` | none of the above | Pixel AOD should not draw. |
 
+## Trigger Display Modes
+
+Phase 5 separates continuous scheduled AOD from trigger-only brief display.
+
+Current implementation only records these mappings. It does not yet change visibility, wake locks, display state, or pulse timing.
+
+| Trigger event | Display mode | Future action | Current behavior |
+|---|---|---|---|
+| `trigger-pickup` | `trigger-only-brief-display` | Briefly show Pixel-style AOD outside the continuous schedule if policy allows. | Observe/log only. |
+| `trigger-tap` | `trigger-only-brief-display` | Briefly show Pixel-style AOD outside the continuous schedule if policy allows. | Observe/log only. |
+| `trigger-proximity` with near result | `sensor-guard-hide` | Hide or block both continuous AOD and brief trigger display while covered. | Observe/log only; existing proximity guard still controls current overlay behavior. |
+| `trigger-proximity` with far result | `sensor-guard-release` | Allow future continuous or brief display after cover is removed. | Observe/log only. |
+| `trigger-pocket` | `sensor-guard-hide` | Block continuous and brief display while the device is in pocket state. | Observe/log only. |
+| Unknown sensor trigger | `trigger-diagnostic-only` | Classify before attaching behavior. | Observe/log only. |
+
 ## Live Observed Event Mapping
 
 These rows were observed in the retained live logcat sample.

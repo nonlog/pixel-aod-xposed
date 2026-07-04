@@ -90,6 +90,10 @@ This can reduce power usage and improve stability compared with a purely parasit
 
 ### Phase 5: Native-Style Trigger Features
 
+- Treat trigger-driven AOD as a separate non-periodic display mode.
+- Continuous AOD remains controlled by the schedule / power-policy path.
+- Pickup / tap should become trigger-only brief display events, not a reason to keep AOD visible indefinitely outside the schedule.
+- Proximity / pocket should guard both continuous AOD and trigger-only brief display, hiding or blocking display when the device is covered.
 - Add or align pickup / lift-to-wake behavior.
 - Add or align tap-to-show behavior.
 - Add proximity and pocket-aware behavior.
