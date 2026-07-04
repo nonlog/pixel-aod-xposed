@@ -2063,21 +2063,36 @@ final class PixelAodHook {
     }
 
     private static void scheduleStockSuppressionReapply(ViewGroup host, String source) {
-        stockSuppressionReapplyLater(host, source, 1800L);
+        stockSuppressionReapplyLater(host, source, 1800L,
+                PixelAodClockView.peekAodTraceId());
     }
 
-    private static void stockSuppressionReapplyLater(ViewGroup host, String source, long delayMillis) {
+    private static void stockSuppressionReapplyLater(ViewGroup host, String source,
+            long delayMillis, String expectedTrace) {
         MAIN.postDelayed(() -> {
             try {
-                if (host == null || PixelAodClockView.isDeviceInteractive(host.getContext())) {
+                Context context = host != null ? host.getContext() : null;
+                String currentTrace = PixelAodClockView.peekAodTraceId();
+                if (!TextUtils.isEmpty(expectedTrace)
+                        && !TextUtils.equals(expectedTrace, currentTrace)) {
+                    PixelAodLog.log("skipped delayed stock AOD suppression from " + source
+                            + "+" + delayMillis
+                            + " reason=trace-mismatch expectedTrace=" + expectedTrace
+                            + " currentTrace=" + currentTrace
+                            + " host=" + hostSummary(host)
+                            + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                    return;
+                }
+                if (host == null || PixelAodClockView.isDeviceInteractive(context)) {
                     return;
                 }
                 hideStockClockViews(host);
-                adjustPluginStatusViews(host.getContext(), host);
+                adjustPluginStatusViews(context, host);
                 PixelAodLog.log("reapplied stock AOD suppression from " + source
                         + "+" + delayMillis + " children=" + host.getChildCount()
-                        + " trace=" + PixelAodClockView.currentAodTraceId()
-                        + " state={" + PixelAodClockView.describeAodState(host.getContext()) + "}");
+                        + " trace=" + currentTrace
+                        + " expectedTrace=" + expectedTrace
+                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
             } catch (Throwable t) {
                 PixelAodLog.log("delayed stock AOD suppression failed", t);
             }

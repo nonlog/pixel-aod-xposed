@@ -668,47 +668,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static String describeAodState(Context context, boolean compact, int weight) {
-        long now = SystemClock.uptimeMillis();
-        boolean active;
-        long screenOffAt;
-        long aodActivatedAt;
-        long overlayVisibleAt;
-        String traceId = currentAodTraceId();
-        String traceSource;
-        long traceAt;
-        synchronized (PixelAodClockView.class) {
-            active = aodActive;
-            screenOffAt = lastScreenOffAt;
-            aodActivatedAt = lastAodActivatedAt;
-            overlayVisibleAt = lastAodOverlayVisibleAt;
-            traceSource = lastAodTraceSource;
-            traceAt = lastAodTraceAt;
-        }
-        int displayState = currentDisplayState(context);
-        boolean interactive = isDeviceInteractive(context);
-        boolean displayAod = displayState == Display.STATE_DOZE
-                || displayState == Display.STATE_DOZE_SUSPEND;
-        boolean entryDelay = isAllowedAodEntryDelay(now, screenOffAt)
-                || isAllowedAodEntryDelay(now, aodActivatedAt);
-        boolean graceWindow = isAllowedAodEntryAge(now, screenOffAt)
-                || isAllowedAodEntryAge(now, aodActivatedAt);
-        boolean customizeNow = context != null
-                && !interactive
-                && (displayAod || entryDelay || (active && graceWindow));
-        return "active=" + active
-                + " customizeNow=" + customizeNow
-                + " interactive=" + interactive
-                + " displayState=" + displayStateLabel(displayState)
-                + " screenOffAgeMs=" + ageSince(now, screenOffAt)
-                + " aodAgeMs=" + ageSince(now, aodActivatedAt)
-                + " overlayAgeMs=" + ageSince(now, overlayVisibleAt)
-                + " trace=" + traceId
-                + " traceSource=" + traceSource
-                + " traceAgeMs=" + ageSince(now, traceAt)
-                + " compact=" + compact
-                + " weight=" + weight
-                + " entryDelay=" + entryDelay
-                + " graceWindow=" + graceWindow;
+        return currentAodLifecycleState(context).describe(compact, weight);
     }
 
     static String currentAodTraceId() {
@@ -854,59 +814,27 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static boolean shouldCustomizeAodNow(Context context) {
-        if (context == null) {
-            return false;
-        }
-        long now = SystemClock.uptimeMillis();
-        boolean active;
-        boolean entryDelay;
-        synchronized (PixelAodClockView.class) {
-            active = aodActive;
-            entryDelay = isAllowedAodEntryDelay(now, lastScreenOffAt)
-                    || isAllowedAodEntryDelay(now, lastAodActivatedAt);
-        }
-        if (!active && !entryDelay) {
-            return false;
-        }
-        if (isDeviceInteractive(context)) {
-            return false;
-        }
-        if (isDisplayInAodState(context)) {
-            return true;
-        }
-        if (entryDelay) {
-            return true;
-        }
-        return active && isInAodEntryGraceWindow();
+        return currentAodLifecycleState(context).shouldDrawPixelAod();
     }
 
     static boolean shouldKeepDozeScreenActive(Context context) {
-        if (context == null || isDeviceInteractive(context)) {
+        if (context == null) {
             return false;
         }
-        long now = SystemClock.uptimeMillis();
-        synchronized (PixelAodClockView.class) {
-            if (isRecentUptime(now, lastAodOverlayVisibleAt, AOD_FORCE_DOZE_RECENT_OVERLAY_MILLIS)) {
-                return true;
-            }
-        }
-        return shouldCustomizeAodNow(context);
-    }
-
-    private static boolean isInAodEntryGraceWindow() {
-        long now = android.os.SystemClock.uptimeMillis();
-        synchronized (PixelAodClockView.class) {
-            return isAllowedAodEntryAge(now, lastScreenOffAt)
-                    || isAllowedAodEntryAge(now, lastAodActivatedAt);
-        }
+        AodLifecycleState state = currentAodLifecycleState(context);
+        return !state.interactive
+                && (state.recentOverlayVisible || state.shouldDrawPixelAod());
     }
 
     static boolean isInAodEntryTransitionWindow(long windowMillis) {
-        long now = SystemClock.uptimeMillis();
-        synchronized (PixelAodClockView.class) {
-            return isRecentUptime(now, lastScreenOffAt, windowMillis)
-                    || isRecentUptime(now, lastAodActivatedAt, windowMillis);
-        }
+        return currentAodLifecycleState(null).isInEntryTransitionWindow(windowMillis);
+    }
+
+    static boolean shouldBridgeLockscreenDuringAodEntry(Context context, long windowMillis) {
+        AodLifecycleState state = currentAodLifecycleState(context);
+        return !state.interactive
+                && !state.active
+                && state.isInEntryTransitionWindow(windowMillis);
     }
 
     private static boolean isAllowedAodEntryDelay(long now, long then) {
@@ -975,6 +903,134 @@ public final class PixelAodClockView extends FrameLayout {
                 return "DOZE_SUSPEND(" + state + ")";
             default:
                 return "STATE_" + state;
+        }
+    }
+
+    private static AodLifecycleState currentAodLifecycleState(Context context) {
+        long now = SystemClock.uptimeMillis();
+        boolean active;
+        long screenOffAt;
+        long aodActivatedAt;
+        long overlayVisibleAt;
+        String traceId;
+        String traceSource;
+        long traceAt;
+        synchronized (PixelAodClockView.class) {
+            if (TextUtils.isEmpty(lastAodTraceId)) {
+                startAodTraceLocked("auto");
+            }
+            active = aodActive;
+            screenOffAt = lastScreenOffAt;
+            aodActivatedAt = lastAodActivatedAt;
+            overlayVisibleAt = lastAodOverlayVisibleAt;
+            traceId = lastAodTraceId;
+            traceSource = lastAodTraceSource;
+            traceAt = lastAodTraceAt;
+        }
+        int displayState = currentDisplayState(context);
+        boolean interactive = isDeviceInteractive(context);
+        boolean displayAod = displayState == Display.STATE_DOZE
+                || displayState == Display.STATE_DOZE_SUSPEND;
+        boolean entryDelay = isAllowedAodEntryDelay(now, screenOffAt)
+                || isAllowedAodEntryDelay(now, aodActivatedAt);
+        boolean graceWindow = isAllowedAodEntryAge(now, screenOffAt)
+                || isAllowedAodEntryAge(now, aodActivatedAt);
+        boolean recentOverlayVisible =
+                isRecentUptime(now, overlayVisibleAt, AOD_FORCE_DOZE_RECENT_OVERLAY_MILLIS);
+        boolean shouldDrawPixelAod = context != null
+                && !interactive
+                && (displayAod || entryDelay || (active && graceWindow));
+        return new AodLifecycleState(now, active, screenOffAt, aodActivatedAt,
+                overlayVisibleAt, traceId, traceSource, traceAt, displayState,
+                interactive, displayAod, entryDelay, graceWindow,
+                recentOverlayVisible, shouldDrawPixelAod);
+    }
+
+    private static final class AodLifecycleState {
+        final long now;
+        final boolean active;
+        final long screenOffAt;
+        final long aodActivatedAt;
+        final long overlayVisibleAt;
+        final String traceId;
+        final String traceSource;
+        final long traceAt;
+        final int displayState;
+        final boolean interactive;
+        final boolean displayAod;
+        final boolean entryDelay;
+        final boolean graceWindow;
+        final boolean recentOverlayVisible;
+        final boolean shouldDrawPixelAod;
+
+        AodLifecycleState(long now, boolean active, long screenOffAt, long aodActivatedAt,
+                long overlayVisibleAt, String traceId, String traceSource, long traceAt,
+                int displayState, boolean interactive, boolean displayAod,
+                boolean entryDelay, boolean graceWindow, boolean recentOverlayVisible,
+                boolean shouldDrawPixelAod) {
+            this.now = now;
+            this.active = active;
+            this.screenOffAt = screenOffAt;
+            this.aodActivatedAt = aodActivatedAt;
+            this.overlayVisibleAt = overlayVisibleAt;
+            this.traceId = traceId;
+            this.traceSource = traceSource;
+            this.traceAt = traceAt;
+            this.displayState = displayState;
+            this.interactive = interactive;
+            this.displayAod = displayAod;
+            this.entryDelay = entryDelay;
+            this.graceWindow = graceWindow;
+            this.recentOverlayVisible = recentOverlayVisible;
+            this.shouldDrawPixelAod = shouldDrawPixelAod;
+        }
+
+        boolean shouldDrawPixelAod() {
+            return shouldDrawPixelAod;
+        }
+
+        boolean isInEntryTransitionWindow(long windowMillis) {
+            return isRecentUptime(now, screenOffAt, windowMillis)
+                    || isRecentUptime(now, aodActivatedAt, windowMillis);
+        }
+
+        String phase() {
+            if (interactive) {
+                return "interactive";
+            }
+            if (displayAod && shouldDrawPixelAod) {
+                return "aod-visible";
+            }
+            if (entryDelay) {
+                return "entering-aod";
+            }
+            if (active && graceWindow) {
+                return "aod-grace";
+            }
+            if (active) {
+                return "aod-active-waiting-display";
+            }
+            return "inactive";
+        }
+
+        String describe(boolean compact, int weight) {
+            return "phase=" + phase()
+                    + " active=" + active
+                    + " customizeNow=" + shouldDrawPixelAod
+                    + " interactive=" + interactive
+                    + " displayState=" + displayStateLabel(displayState)
+                    + " displayAod=" + displayAod
+                    + " screenOffAgeMs=" + ageSince(now, screenOffAt)
+                    + " aodAgeMs=" + ageSince(now, aodActivatedAt)
+                    + " overlayAgeMs=" + ageSince(now, overlayVisibleAt)
+                    + " recentOverlayVisible=" + recentOverlayVisible
+                    + " trace=" + traceId
+                    + " traceSource=" + traceSource
+                    + " traceAgeMs=" + ageSince(now, traceAt)
+                    + " compact=" + compact
+                    + " weight=" + weight
+                    + " entryDelay=" + entryDelay
+                    + " graceWindow=" + graceWindow;
         }
     }
 

@@ -400,9 +400,8 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     private static boolean shouldBridgeLockscreenToAod(Context context) {
         return isSystemKeyguardLockedRaw(context)
-                && !PixelAodClockView.isAodActive()
-                && PixelAodClockView.isInAodEntryTransitionWindow(
-                        AOD_TRANSITION_ANIMATION_WINDOW_MS);
+                && PixelAodClockView.shouldBridgeLockscreenDuringAodEntry(
+                        context, AOD_TRANSITION_ANIMATION_WINDOW_MS);
     }
 
     private static boolean isSystemKeyguardLockedRaw(Context context) {
