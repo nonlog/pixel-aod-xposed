@@ -1,8 +1,6 @@
 package dev.codex.pixelaod;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -104,7 +102,6 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int NOTIFICATION_ICON_SPACING_DP = 8;
     private static final int MEDIA_ICON_SIZE_DP = 13;
     private static final int MEDIA_ICON_SPACING_DP = 8;
-    private static final int NOTIFICATION_FLAG_SILENT = 0x00020000;
     private static final int MAX_NOTIFICATION_ICONS = 5;
     private static final int ICON_MASK_SAMPLE_SIZE = 48;
     private static final int BATTERY_TOP_DP = 720;
@@ -134,7 +131,6 @@ public final class PixelAodClockView extends FrameLayout {
             "nodomain.freeyourgadget.gadgetbridge.ACTION_GENERIC_WEATHER";
     private static final String ACTION_BREEZY_UPDATE_NOTIFIER =
             "org.breezyweather.ACTION_UPDATE_NOTIFIER";
-    private static final String LOCK_SCREEN_SHOW_NOTIFICATIONS = "lock_screen_show_notifications";
     private static final boolean AT_A_GLANCE_EXTRA_ENABLED = false;
     private static final boolean ENABLE_AOD_SHADE_TREE_GUARD = false;
     private static final long AOD_ENTRY_GRACE_MILLIS = 1800L;
@@ -198,8 +194,9 @@ public final class PixelAodClockView extends FrameLayout {
     private static long cachedScheduleCheckedAt;
     private static boolean cachedScheduleResult = true;
     private static String cachedScheduleKey = "";
-    private static final Map<String, RankingSnapshot> notificationRankings = new HashMap<>();
-    private static final Map<String, LockscreenVisibilityDecision> lockscreenVisibilityDecisions =
+    private static final Map<String, AodNotificationPipeline.RankingSnapshot> notificationRankings =
+            new HashMap<>();
+    private static final Map<String, AodNotificationPipeline.LockscreenVisibilityDecision> lockscreenVisibilityDecisions =
             new HashMap<>();
     private static SensorManager proximitySensorManager;
     private static Sensor proximitySensor;
@@ -535,17 +532,23 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             rawNotifications = notifications != null ? notifications.clone() : EMPTY_NOTIFICATIONS;
             retainLockscreenVisibilityDecisionsLocked(rawNotifications);
-            activeNotifications = sanitizeNotifications(notifications);
+            activeNotifications = AodNotificationPipeline.sanitizeNotifications(
+                    appContext,
+                    notifications,
+                    notificationRankings,
+                    lockscreenVisibilityDecisions,
+                    isLockscreenPolicyEnabled(),
+                    currentAodTraceId());
             mediaCandidateCount = replaceMediaNotificationCandidatesLocked(rawNotifications);
-            signature = notificationSignature(rawNotifications) + "|"
-                    + notificationSignature(activeNotifications) + "|media="
+            signature = AodNotificationPipeline.notificationSignature(rawNotifications) + "|"
+                    + AodNotificationPipeline.notificationSignature(activeNotifications) + "|media="
                     + mediaCandidatesSignatureLocked();
             if (TextUtils.equals(lastNotificationSnapshotSignature, signature)) {
                 return;
             }
             lastNotificationSnapshotSignature = signature;
             usableCount = activeNotifications.length;
-            packageSummary = describeNotificationPackages(activeNotifications);
+            packageSummary = AodNotificationPipeline.describePackages(activeNotifications);
             String trace = currentAodTraceId();
             String state = describeAodState(appContext);
             PixelAodLog.log("updated native AOD notification snapshot raw="
@@ -590,13 +593,14 @@ public final class PixelAodClockView extends FrameLayout {
         if (sbn == null || TextUtils.isEmpty(sbn.getKey())) {
             return;
         }
-        LockscreenVisibilityDecision next;
+        AodNotificationPipeline.LockscreenVisibilityDecision next;
         boolean changed;
         synchronized (PixelAodClockView.class) {
-            LockscreenVisibilityDecision current = lockscreenVisibilityDecisions.get(sbn.getKey());
+            AodNotificationPipeline.LockscreenVisibilityDecision current =
+                    lockscreenVisibilityDecisions.get(sbn.getKey());
             next = current != null
-                    ? new LockscreenVisibilityDecision(current)
-                    : new LockscreenVisibilityDecision();
+                    ? new AodNotificationPipeline.LockscreenVisibilityDecision(current)
+                    : new AodNotificationPipeline.LockscreenVisibilityDecision();
             changed = fromFilter
                     ? next.setFilterHidden(hidden, source)
                     : next.setProviderHidden(hidden, source);
@@ -1166,12 +1170,14 @@ public final class PixelAodClockView extends FrameLayout {
         return allowed;
     }
 
-    static AodPolicyDecision evaluateAodPolicy(Context context, String source) {
+    static OosAodLifecycleAdapter.AodPolicyDecision evaluateAodPolicy(
+            Context context, String source) {
         return evaluateAodPolicy(context, source, false, false);
     }
 
-    private static AodPolicyDecision evaluateAodPolicy(Context context, String source,
-            boolean proximityBlocked, boolean expandedShadeBlocked) {
+    private static OosAodLifecycleAdapter.AodPolicyDecision evaluateAodPolicy(
+            Context context, String source, boolean proximityBlocked,
+            boolean expandedShadeBlocked) {
         String normalizedSource = TextUtils.isEmpty(source) ? "unknown" : source;
         String trace = ensureAodTrace(normalizedSource);
         Context ctx = context != null ? context : appContext;
@@ -1179,64 +1185,28 @@ public final class PixelAodClockView extends FrameLayout {
         if (maybeStartNativeShortWakeTrigger(ctx, normalizedSource, trace, state)) {
             state = currentAodLifecycleState(ctx);
         }
-        ModulePolicyResult modulePolicy =
+        OosAodLifecycleAdapter.ModulePolicy modulePolicy =
                 evaluateModuleAodPolicy(ctx, normalizedSource, trace, state);
-        boolean lifecycleWantsPixelOverlay = OosAodLifecycleAdapter.shouldDrawPixelAod(state);
-        boolean shouldApplyModuleAod = lifecycleWantsPixelOverlay
-                && modulePolicy.allowsDisplay;
-        boolean shouldDrawPixelOverlay = shouldApplyModuleAod
-                && !proximityBlocked
-                && !expandedShadeBlocked;
-        boolean shouldKeepNativeDozeAlive = ctx != null
-                && modulePolicy.allowsDisplay
-                && modulePolicy.continuousAllowed
-                && OosAodLifecycleAdapter.shouldKeepDozeScreenActive(state);
-        boolean nativeAodTransition = state != null
-                && (state.displayAod
-                || state.entryDelay
-                || state.active
-                || state.graceWindow
-                || state.triggerBriefActive);
-        boolean shouldSuppressStockAodViews = modulePolicy.moduleEnabled
-                && state != null
-                && !state.interactive
-                && (shouldApplyModuleAod
-                || nativeAodTransition);
-        boolean shouldAllowNativeHideCallbacks = !shouldKeepNativeDozeAlive;
-        AodPolicyDecision decision = new AodPolicyDecision(
+        OosAodLifecycleAdapter.AodPolicyDecision decision =
+                OosAodLifecycleAdapter.evaluatePolicy(
                 normalizedSource,
                 trace,
                 state,
-                lifecycleWantsPixelOverlay,
-                modulePolicy.allowsDisplay,
-                shouldApplyModuleAod,
-                shouldDrawPixelOverlay,
-                shouldKeepNativeDozeAlive,
-                shouldSuppressStockAodViews,
-                shouldAllowNativeHideCallbacks,
+                modulePolicy,
                 proximityBlocked,
-                expandedShadeBlocked,
-                modulePolicy.reason,
-                drawReason(lifecycleWantsPixelOverlay, modulePolicy, proximityBlocked,
-                        expandedShadeBlocked),
-                keepDozeReason(shouldKeepNativeDozeAlive, lifecycleWantsPixelOverlay,
-                        modulePolicy),
-                stockSuppressionReason(shouldSuppressStockAodViews, shouldApplyModuleAod,
-                        modulePolicy, state),
-                nativeHideCallbackReason(shouldAllowNativeHideCallbacks,
-                        shouldKeepNativeDozeAlive, lifecycleWantsPixelOverlay, modulePolicy));
+                expandedShadeBlocked);
         logAodPolicyDecision(decision);
         return decision;
     }
 
-    private static ModulePolicyResult evaluateModuleAodPolicy(
+    private static OosAodLifecycleAdapter.ModulePolicy evaluateModuleAodPolicy(
             Context context, String source, String trace, AodLifecycleState state) {
         if (context == null) {
             PixelAodLog.log("AOD module policy blocked source=" + source
                     + " reason=no-context"
                     + " trace=" + trace
                     + " state={" + describeAodState(null) + "}");
-            return new ModulePolicyResult(false, false, false, false,
+            return new OosAodLifecycleAdapter.ModulePolicy(false, false, false, false,
                     "no-context", "unknown", false, false);
         }
         boolean moduleEnabled = isModuleEnabled(context);
@@ -1249,11 +1219,11 @@ public final class PixelAodClockView extends FrameLayout {
                     + " displayMode=" + displayMode
                     + " trace=" + trace
                     + " state={" + describeAodState(context) + "}");
-            return new ModulePolicyResult(false, false, false, false,
+            return new OosAodLifecycleAdapter.ModulePolicy(false, false, false, false,
                     "module-disabled", displayMode, withinSchedule, triggerBriefActive);
         }
         if (!isPowerPolicyAllowingAod(context, source, trace, false)) {
-            return new ModulePolicyResult(false, moduleEnabled, false, false,
+            return new OosAodLifecycleAdapter.ModulePolicy(false, moduleEnabled, false, false,
                     "power-policy", displayMode, withinSchedule, triggerBriefActive);
         }
         boolean continuousAllowed = isContinuousAodAllowedByMode(displayMode)
@@ -1267,12 +1237,12 @@ public final class PixelAodClockView extends FrameLayout {
                     + " withinSchedule=" + withinSchedule
                     + " trace=" + trace
                     + " state={" + describeAodState(context) + "}");
-            return new ModulePolicyResult(true, moduleEnabled, continuousAllowed,
+            return new OosAodLifecycleAdapter.ModulePolicy(true, moduleEnabled, continuousAllowed,
                     true, "trigger-brief-display", displayMode, withinSchedule,
                     true);
         }
         if (continuousAllowed) {
-            return new ModulePolicyResult(true, moduleEnabled, true, false,
+            return new OosAodLifecycleAdapter.ModulePolicy(true, moduleEnabled, true, false,
                     "continuous-schedule", displayMode, withinSchedule, false);
         }
         if (isTriggerOnlyAodMode(displayMode)) {
@@ -1282,7 +1252,7 @@ public final class PixelAodClockView extends FrameLayout {
                     + " withinSchedule=" + withinSchedule
                     + " trace=" + trace
                     + " state={" + describeAodState(context) + "}");
-            return new ModulePolicyResult(false, moduleEnabled, false, false,
+            return new OosAodLifecycleAdapter.ModulePolicy(false, moduleEnabled, false, false,
                     "trigger-only-waiting-trigger", displayMode, withinSchedule, false);
         }
         PixelAodLog.log("AOD module policy blocked source=" + source
@@ -1291,86 +1261,8 @@ public final class PixelAodClockView extends FrameLayout {
                 + " withinSchedule=" + withinSchedule
                 + " trace=" + trace
                 + " state={" + describeAodState(context) + "}");
-        return new ModulePolicyResult(false, moduleEnabled, false, false,
+        return new OosAodLifecycleAdapter.ModulePolicy(false, moduleEnabled, false, false,
                 "outside-schedule", displayMode, withinSchedule, false);
-    }
-
-    private static String drawReason(boolean lifecycleWantsPixelOverlay,
-            ModulePolicyResult modulePolicy, boolean proximityBlocked, boolean expandedShadeBlocked) {
-        if (!lifecycleWantsPixelOverlay) {
-            return "lifecycle-not-ready";
-        }
-        if (!modulePolicy.allowsDisplay) {
-            return modulePolicy.reason;
-        }
-        if (proximityBlocked) {
-            return "proximity-near";
-        }
-        if (expandedShadeBlocked) {
-            return "expanded-system-shade";
-        }
-        if ("trigger-brief-display".equals(modulePolicy.reason)) {
-            return "trigger-brief-display";
-        }
-        return "all-checks-passed";
-    }
-
-    private static String keepDozeReason(boolean shouldKeepNativeDozeAlive,
-            boolean lifecycleWantsPixelOverlay, ModulePolicyResult modulePolicy) {
-        if (shouldKeepNativeDozeAlive) {
-            return "recent-pixel-aod";
-        }
-        if (!modulePolicy.allowsDisplay) {
-            return modulePolicy.reason;
-        }
-        if (modulePolicy.triggerBriefAllowed) {
-            return "trigger-brief-allows-native-hide";
-        }
-        if (!lifecycleWantsPixelOverlay) {
-            return "lifecycle-not-ready";
-        }
-        return "native-doze-not-needed";
-    }
-
-    private static String stockSuppressionReason(boolean shouldSuppressStockAodViews,
-            boolean shouldApplyModuleAod, ModulePolicyResult modulePolicy, AodLifecycleState state) {
-        if (!shouldSuppressStockAodViews) {
-            if (state == null) {
-                return "no-state";
-            }
-            if (state.interactive) {
-                return "interactive";
-            }
-            return "not-needed";
-        }
-        if (!modulePolicy.allowsDisplay) {
-            return "module-aod-policy";
-        }
-        if (shouldApplyModuleAod) {
-            return "pixel-overlay-active";
-        }
-        return "native-aod-transition";
-    }
-
-    private static String nativeHideCallbackReason(boolean shouldAllowNativeHideCallbacks,
-            boolean shouldKeepNativeDozeAlive, boolean lifecycleWantsPixelOverlay,
-            ModulePolicyResult modulePolicy) {
-        if (!shouldAllowNativeHideCallbacks) {
-            return "module-keeps-native-doze";
-        }
-        if (!modulePolicy.allowsDisplay) {
-            return modulePolicy.reason;
-        }
-        if (modulePolicy.triggerBriefAllowed) {
-            return "trigger-brief-allows-native-hide";
-        }
-        if (!lifecycleWantsPixelOverlay) {
-            return "lifecycle-not-ready";
-        }
-        if (!shouldKeepNativeDozeAlive) {
-            return "native-doze-not-needed";
-        }
-        return "allowed";
     }
 
     private static boolean maybeStartNativeShortWakeTrigger(Context context, String source,
@@ -1527,7 +1419,7 @@ public final class PixelAodClockView extends FrameLayout {
         return isContinuousAodAllowedByMode(displayMode) || isTriggerOnlyAodMode(displayMode);
     }
 
-    private static void logAodPolicyDecision(AodPolicyDecision decision) {
+    private static void logAodPolicyDecision(OosAodLifecycleAdapter.AodPolicyDecision decision) {
         PixelAodLog.log("AOD policy decision source=" + decision.source
                 + " trace=" + decision.trace
                 + " shouldDrawPixelOverlay=" + decision.shouldDrawPixelOverlay
@@ -1560,7 +1452,8 @@ public final class PixelAodClockView extends FrameLayout {
         if (!inEntryWindow) {
             return false;
         }
-        AodPolicyDecision decision = evaluateAodPolicy(context, "lockscreen-bridge");
+        OosAodLifecycleAdapter.AodPolicyDecision decision =
+                evaluateAodPolicy(context, "lockscreen-bridge");
         boolean bridge = decision.shouldApplyModuleAod;
         PixelAodLog.log("AOD lockscreen bridge decision trace=" + decision.trace
                 + " bridge=" + bridge
@@ -1722,90 +1615,6 @@ public final class PixelAodClockView extends FrameLayout {
                 briefTriggerStartedAt, briefTriggerUntilAt);
     }
 
-    static final class AodPolicyDecision {
-        final String source;
-        final String trace;
-        final AodLifecycleState state;
-        final boolean lifecycleWantsPixelOverlay;
-        final boolean modulePolicyAllowsDisplay;
-        final boolean shouldApplyModuleAod;
-        final boolean shouldDrawPixelOverlay;
-        final boolean shouldKeepNativeDozeAlive;
-        final boolean shouldSuppressStockAodViews;
-        final boolean shouldAllowNativeHideCallbacks;
-        final boolean proximityBlocked;
-        final boolean expandedShadeBlocked;
-        final String modulePolicyReason;
-        final String drawReason;
-        final String keepNativeDozeReason;
-        final String stockSuppressionReason;
-        final String nativeHideCallbackReason;
-        final String displayMode;
-        final boolean withinSchedule;
-
-        AodPolicyDecision(String source, String trace, AodLifecycleState state,
-                boolean lifecycleWantsPixelOverlay, boolean modulePolicyAllowsDisplay,
-                boolean shouldApplyModuleAod, boolean shouldDrawPixelOverlay,
-                boolean shouldKeepNativeDozeAlive, boolean shouldSuppressStockAodViews,
-                boolean shouldAllowNativeHideCallbacks, boolean proximityBlocked,
-                boolean expandedShadeBlocked, String modulePolicyReason, String drawReason,
-                String keepNativeDozeReason, String stockSuppressionReason,
-                String nativeHideCallbackReason) {
-            this.source = source;
-            this.trace = trace;
-            this.state = state;
-            this.lifecycleWantsPixelOverlay = lifecycleWantsPixelOverlay;
-            this.modulePolicyAllowsDisplay = modulePolicyAllowsDisplay;
-            this.shouldApplyModuleAod = shouldApplyModuleAod;
-            this.shouldDrawPixelOverlay = shouldDrawPixelOverlay;
-            this.shouldKeepNativeDozeAlive = shouldKeepNativeDozeAlive;
-            this.shouldSuppressStockAodViews = shouldSuppressStockAodViews;
-            this.shouldAllowNativeHideCallbacks = shouldAllowNativeHideCallbacks;
-            this.proximityBlocked = proximityBlocked;
-            this.expandedShadeBlocked = expandedShadeBlocked;
-            this.modulePolicyReason = modulePolicyReason;
-            this.drawReason = drawReason;
-            this.keepNativeDozeReason = keepNativeDozeReason;
-            this.stockSuppressionReason = stockSuppressionReason;
-            this.nativeHideCallbackReason = nativeHideCallbackReason;
-            this.displayMode = state != null ? aodDisplayMode(appContext)
-                    : PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS;
-            this.withinSchedule = isWithinAodSchedule(appContext);
-        }
-
-        String stateDisplayMode() {
-            return displayMode;
-        }
-
-        boolean stateWithinSchedule() {
-            return withinSchedule;
-        }
-    }
-
-    private static final class ModulePolicyResult {
-        final boolean allowsDisplay;
-        final boolean moduleEnabled;
-        final boolean continuousAllowed;
-        final boolean triggerBriefAllowed;
-        final String reason;
-        final String displayMode;
-        final boolean withinSchedule;
-        final boolean triggerBriefActive;
-
-        ModulePolicyResult(boolean allowsDisplay, boolean moduleEnabled,
-                boolean continuousAllowed, boolean triggerBriefAllowed, String reason,
-                String displayMode, boolean withinSchedule, boolean triggerBriefActive) {
-            this.allowsDisplay = allowsDisplay;
-            this.moduleEnabled = moduleEnabled;
-            this.continuousAllowed = continuousAllowed;
-            this.triggerBriefAllowed = triggerBriefAllowed;
-            this.reason = reason;
-            this.displayMode = displayMode;
-            this.withinSchedule = withinSchedule;
-            this.triggerBriefActive = triggerBriefActive;
-        }
-    }
-
     static final class AodLifecycleState {
         final long now;
         final boolean active;
@@ -1963,14 +1772,14 @@ public final class PixelAodClockView extends FrameLayout {
             if (keys == null) {
                 return;
             }
-            HashMap<String, RankingSnapshot> snapshot = new HashMap<>();
+            HashMap<String, AodNotificationPipeline.RankingSnapshot> snapshot = new HashMap<>();
             NotificationListenerService.Ranking ranking = new NotificationListenerService.Ranking();
             for (String key : keys) {
                 if (key != null && rankingMap.getRanking(key, ranking)) {
-                    snapshot.put(key, RankingSnapshot.from(ranking));
+                    snapshot.put(key, AodNotificationPipeline.RankingSnapshot.from(ranking));
                 }
             }
-            String signature = rankingSignature(snapshot);
+            String signature = AodNotificationPipeline.rankingSignature(snapshot);
             synchronized (PixelAodClockView.class) {
                 if (TextUtils.equals(lastRankingSignature, signature)) {
                     return;
@@ -2016,7 +1825,7 @@ public final class PixelAodClockView extends FrameLayout {
         int count = 0;
         if (notifications != null) {
             for (StatusBarNotification sbn : notifications) {
-                if (isMediaIconCandidate(sbn)) {
+                if (AodNotificationPipeline.isMediaIconCandidate(sbn)) {
                     mediaNotificationCache.put(sbn.getKey(), sbn);
                     count++;
                 }
@@ -2026,7 +1835,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static void cacheMediaNotificationCandidate(StatusBarNotification sbn, String source) {
-        if (!isMediaIconCandidate(sbn)) {
+        if (!AodNotificationPipeline.isMediaIconCandidate(sbn)) {
             return;
         }
         int count;
@@ -2605,7 +2414,7 @@ public final class PixelAodClockView extends FrameLayout {
         }
         try {
             getContext().getContentResolver().registerContentObserver(
-                    Settings.Secure.getUriFor(LOCK_SCREEN_SHOW_NOTIFICATIONS),
+                    Settings.Secure.getUriFor(AodNotificationPipeline.LOCK_SCREEN_SHOW_NOTIFICATIONS),
                     false,
                     notificationSettingsObserver);
             notificationSettingsObserverRegistered = true;
@@ -2679,8 +2488,8 @@ public final class PixelAodClockView extends FrameLayout {
     private boolean shouldDrawAodOverlay(String source) {
         String trace = ensureAodTrace(source);
         boolean expandedShadeBlocked = isInsideExpandedSystemShade();
-        AodPolicyDecision decision = evaluateAodPolicy(getContext(), source,
-                proximityNear, expandedShadeBlocked);
+        OosAodLifecycleAdapter.AodPolicyDecision decision =
+                evaluateAodPolicy(getContext(), source, proximityNear, expandedShadeBlocked);
         if (expandedShadeBlocked && !decision.shouldDrawPixelOverlay) {
             PixelAodLog.log("suppressed Pixel AOD overlay in expanded shade trace=" + trace
                     + " source=" + source
@@ -3197,7 +3006,8 @@ public final class PixelAodClockView extends FrameLayout {
 
     private void rebuildNotificationIcons(String source) {
         List<StatusBarNotification> notifications = currentNotifications();
-        String signature = notificationSignature(notifications.toArray(new StatusBarNotification[0]))
+        String signature = AodNotificationPipeline.notificationSignature(
+                notifications.toArray(new StatusBarNotification[0]))
                 + "|media=" + currentMediaNotificationKey
                 + "|expiredMedia=" + expiredInactiveMediaPackageSignature();
         if (TextUtils.equals(lastNotificationIconSignature, signature)) {
@@ -3278,7 +3088,7 @@ public final class PixelAodClockView extends FrameLayout {
                 + " emitted=" + emitted
                 + " skippedMedia=" + skippedMedia
                 + " loadFailures=" + loadFailures
-                + " packages=" + describeNotificationPackages(notifications)
+                + " packages=" + AodNotificationPipeline.describePackages(notifications)
                 + " state={" + describeAodState(getContext()) + "}");
     }
 
@@ -3292,7 +3102,7 @@ public final class PixelAodClockView extends FrameLayout {
         }
         Notification notification = sbn.getNotification();
         if (Notification.CATEGORY_TRANSPORT.equals(notification.category)
-                || hasMediaSessionExtra(notification)) {
+                || AodNotificationPipeline.hasMediaSessionExtra(notification)) {
             return true;
         }
         String packageName = sbn.getPackageName();
@@ -3321,86 +3131,6 @@ public final class PixelAodClockView extends FrameLayout {
         return list;
     }
 
-    private static StatusBarNotification[] sanitizeNotifications(StatusBarNotification[] notifications) {
-        if (notifications == null || notifications.length == 0) {
-            return EMPTY_NOTIFICATIONS;
-        }
-        ArrayList<StatusBarNotification> list = new ArrayList<>(notifications.length);
-        for (StatusBarNotification sbn : notifications) {
-            if (isLockscreenVisibleNotification(sbn)) {
-                list.add(sbn);
-            }
-        }
-        return list.toArray(new StatusBarNotification[0]);
-    }
-
-    private static boolean isLockscreenVisibleNotification(StatusBarNotification sbn) {
-        if (sbn == null || sbn.getNotification() == null || sbn.getNotification().getSmallIcon() == null) {
-            return false;
-        }
-        Notification notification = sbn.getNotification();
-        boolean testNotification = isTestNotification(sbn);
-        if (MODULE_PACKAGE.equals(sbn.getPackageName()) && !testNotification) {
-            logFilteredNotification(sbn, "module-package-not-test-notification");
-            return false;
-        }
-        if (Notification.CATEGORY_TRANSPORT.equals(notification.category)
-                || hasMediaSessionExtra(notification)
-                || isMediaIconCandidate(sbn)) {
-            return false;
-        }
-        if (!lockscreenNotificationsEnabled()) {
-            logFilteredNotification(sbn, "global-lockscreen-notifications-disabled");
-            return false;
-        }
-        if (notification.visibility == Notification.VISIBILITY_SECRET) {
-            logFilteredNotification(sbn, "notification-visibility-secret");
-            return false;
-        }
-        boolean systemNotification = isSystemNotificationCandidate(sbn);
-        if ("com.android.systemui".equals(sbn.getPackageName()) && !systemNotification) {
-            return false;
-        }
-        RankingSnapshot ranking;
-        LockscreenVisibilityDecision lockscreenDecision;
-        synchronized (PixelAodClockView.class) {
-            ranking = notificationRankings.get(sbn.getKey());
-            lockscreenDecision = lockscreenVisibilityDecisions.get(sbn.getKey());
-        }
-        if (!systemNotification) {
-            String silentHiddenReason = lockscreenPolicySilentHiddenReason(
-                    sbn,
-                    ranking != null ? ranking.importance : NotificationManagerImportance.UNKNOWN);
-            if (silentHiddenReason != null) {
-                logFilteredNotification(sbn, silentHiddenReason
-                        + " ranking=" + ranking);
-                return false;
-            }
-        }
-        String rankingHiddenReason = ranking != null ? ranking.hiddenReason() : null;
-        if (!systemNotification && rankingHiddenReason != null) {
-            logFilteredNotification(sbn, rankingHiddenReason + " ranking=" + ranking);
-            return false;
-        }
-        String lockscreenHiddenReason = lockscreenDecision != null
-                ? lockscreenDecision.hiddenReason()
-                : null;
-        if (!systemNotification && !testNotification && lockscreenHiddenReason != null) {
-            logFilteredNotification(sbn, lockscreenHiddenReason
-                    + " decision=" + lockscreenDecision
-                    + " ranking=" + ranking);
-            return false;
-        }
-        logKeptNotification(sbn, ranking);
-        return true;
-    }
-
-    private static boolean isTestNotification(StatusBarNotification sbn) {
-        return sbn != null
-                && MODULE_PACKAGE.equals(sbn.getPackageName())
-                && TestNotificationReceiver.TEST_TAG.equals(sbn.getTag());
-    }
-
     static boolean isLockscreenPolicyEnabled() {
         Context context = appContext;
         return context == null
@@ -3409,123 +3139,8 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static String lockscreenPolicySilentHiddenReason(StatusBarNotification sbn, int importance) {
-        if (!isLockscreenPolicyEnabled()) {
-            return null;
-        }
-        if (sbn == null || sbn.getNotification() == null) {
-            return null;
-        }
-        Notification notification = sbn.getNotification();
-        if ((notification.flags & NOTIFICATION_FLAG_SILENT) != 0) {
-            return "lockscreen-policy-notification-flag-silent";
-        }
-        if (importance != NotificationManagerImportance.UNKNOWN
-                && importance <= NotificationManagerImportance.LOW) {
-            return "lockscreen-policy-ranking-importance-low-or-less importance=" + importance;
-        }
-        return null;
-    }
-
-    private static boolean isSystemUiUsbNotification(StatusBarNotification sbn) {
-        if (sbn == null || sbn.getNotification() == null
-                || !"com.android.systemui".equals(sbn.getPackageName())) {
-            return false;
-        }
-        int id = sbn.getId();
-        if (id == 10004 || id == 10005) {
-            return true;
-        }
-        Notification notification = sbn.getNotification();
-        String group = notification.getGroup();
-        if (group != null && group.toLowerCase(Locale.US).contains("usb")) {
-            return true;
-        }
-        try {
-            Bundle extras = notification.extras;
-            CharSequence title = extras != null ? extras.getCharSequence(Notification.EXTRA_TITLE) : null;
-            CharSequence text = extras != null ? extras.getCharSequence(Notification.EXTRA_TEXT) : null;
-            String joined = ((title != null ? title : "") + " " + (text != null ? text : ""))
-                    .toLowerCase(Locale.US);
-            return joined.contains("usb")
-                    || joined.contains("adb")
-                    || joined.contains("debugging enabled")
-                    || joined.contains("charging this device");
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private static boolean isSystemUiUsbDebugNotification(StatusBarNotification sbn) {
-        try {
-            Notification notification = sbn.getNotification();
-            Bundle extras = notification != null ? notification.extras : null;
-            if (extras == null) {
-                return false;
-            }
-            String title = String.valueOf(extras.getCharSequence(Notification.EXTRA_TITLE, ""));
-            String text = String.valueOf(extras.getCharSequence(Notification.EXTRA_TEXT, ""));
-            String combined = (title + " " + text).toLowerCase(Locale.US);
-            return combined.contains("debug") || combined.contains("adb");
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private static boolean isSystemNotificationCandidate(StatusBarNotification sbn) {
-        if (sbn == null || sbn.getNotification() == null) {
-            return false;
-        }
-        String packageName = sbn.getPackageName();
-        if (!"android".equals(packageName) && !"com.android.systemui".equals(packageName)) {
-            return false;
-        }
-        if (isSystemUiUsbNotification(sbn)) {
-            return true;
-        }
-        try {
-            Notification notification = sbn.getNotification();
-            Bundle extras = notification.extras;
-            CharSequence title = extras != null ? extras.getCharSequence(Notification.EXTRA_TITLE) : null;
-            CharSequence text = extras != null ? extras.getCharSequence(Notification.EXTRA_TEXT) : null;
-            CharSequence subText = extras != null ? extras.getCharSequence(Notification.EXTRA_SUB_TEXT) : null;
-            String joined = ((title != null ? title : "") + " "
-                    + (text != null ? text : "") + " "
-                    + (subText != null ? subText : "") + " "
-                    + (notification.tickerText != null ? notification.tickerText : ""))
-                    .toLowerCase(Locale.US);
-            return joined.contains("module update")
-                    || joined.contains("network status")
-                    || joined.contains("hotspot")
-                    || joined.contains("tether")
-                    || joined.contains("usb")
-                    || joined.contains("debugging enabled")
-                    || joined.contains("charging this device");
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private static boolean isMediaIconCandidate(StatusBarNotification sbn) {
-        if (sbn == null || sbn.getNotification() == null
-                || sbn.getNotification().getSmallIcon() == null) {
-            return false;
-        }
-        Notification notification = sbn.getNotification();
-        return Notification.CATEGORY_TRANSPORT.equals(notification.category)
-                || hasMediaSessionExtra(notification);
-    }
-
-    private static boolean lockscreenNotificationsEnabled() {
-        Context context = appContext;
-        if (context != null) {
-            try {
-                return Settings.Secure.getInt(context.getContentResolver(),
-                        "lock_screen_show_notifications", 1) != 0;
-            } catch (Throwable ignored) {
-                return true;
-            }
-        }
-        return true;
+        return AodNotificationPipeline.lockscreenPolicySilentHiddenReason(
+                isLockscreenPolicyEnabled(), sbn, importance);
     }
 
     private static Drawable loadMediaNotificationIcon(Context context, MediaController controller,
@@ -3586,7 +3201,7 @@ public final class PixelAodClockView extends FrameLayout {
                 continue;
             }
             Notification notification = sbn.getNotification();
-            if (matchesMediaSession(notification, controller)) {
+            if (AodNotificationPipeline.matchesMediaSession(notification, controller)) {
                 return sbn;
             }
             if (categoryCandidate == null && Notification.CATEGORY_TRANSPORT.equals(notification.category)) {
@@ -3597,28 +3212,6 @@ public final class PixelAodClockView extends FrameLayout {
             }
         }
         return categoryCandidate != null ? categoryCandidate : packageCandidate;
-    }
-
-    private static boolean hasMediaSessionExtra(Notification notification) {
-        try {
-            Bundle extras = notification != null ? notification.extras : null;
-            return extras != null && extras.containsKey(Notification.EXTRA_MEDIA_SESSION);
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private static boolean matchesMediaSession(Notification notification, MediaController controller) {
-        try {
-            Bundle extras = notification.extras;
-            if (extras == null || !extras.containsKey(Notification.EXTRA_MEDIA_SESSION)) {
-                return false;
-            }
-            Object token = extras.getParcelable(Notification.EXTRA_MEDIA_SESSION);
-            return token != null && token.equals(controller.getSessionToken());
-        } catch (Throwable ignored) {
-            return false;
-        }
     }
 
     private static Drawable loadMonochromeNotificationIcon(Context context, StatusBarNotification sbn) {
@@ -3731,7 +3324,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             boolean filledMask = looksLikeFilledNotificationMask(drawable);
             boolean tinyForeground = looksLikeTinyForeground(drawable);
-            if (isSystemNotificationCandidate(sbn)) {
+            if (AodNotificationPipeline.isSystemNotificationCandidate(sbn)) {
                 Drawable glyph = loadSystemNotificationIcon(context, sbn);
                 if (glyph != null) {
                     logNotificationIconChoice(sbn.getPackageName(), "system-native-icon");
@@ -3783,7 +3376,7 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static Drawable loadSystemNotificationIcon(Context context, StatusBarNotification sbn) {
         int color = resolveMaterialInfoColor(context);
-        if (isSystemUiUsbNotification(sbn)) {
+        if (AodNotificationPipeline.isSystemUiUsbNotification(sbn)) {
             Drawable nativeIcon = loadTintedSystemDrawable(context, color,
                     "stat_sys_data_usb",
                     "stat_notify_sdcard_usb");
@@ -3792,7 +3385,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             return loadSystemNotificationGlyph(context, sbn);
         }
-        String text = systemNotificationText(sbn);
+        String text = AodNotificationPipeline.systemNotificationText(sbn);
         if (text.contains("network status") || text.contains("hotspot") || text.contains("tether")) {
             Drawable nativeIcon = loadTintedSystemDrawable(context, color, "stat_sys_tether_wifi");
             if (nativeIcon != null) {
@@ -4036,10 +3629,11 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static Drawable loadSystemNotificationGlyph(Context context, StatusBarNotification sbn) {
         int color = resolveMaterialInfoColor(context);
-        if (isSystemUiUsbNotification(sbn)) {
-            return new UsbNotificationDrawable(color, isSystemUiUsbDebugNotification(sbn));
+        if (AodNotificationPipeline.isSystemUiUsbNotification(sbn)) {
+            return new UsbNotificationDrawable(color,
+                    AodNotificationPipeline.isSystemUiUsbDebugNotification(sbn));
         }
-        String text = systemNotificationText(sbn);
+        String text = AodNotificationPipeline.systemNotificationText(sbn);
         if (text.contains("module update")) {
             return new SystemNotificationGlyphDrawable(color, SystemNotificationGlyphDrawable.TYPE_CHECK);
         }
@@ -4093,23 +3687,6 @@ public final class PixelAodClockView extends FrameLayout {
             }
         }
         return null;
-    }
-
-    private static String systemNotificationText(StatusBarNotification sbn) {
-        try {
-            Notification notification = sbn != null ? sbn.getNotification() : null;
-            Bundle extras = notification != null ? notification.extras : null;
-            CharSequence title = extras != null ? extras.getCharSequence(Notification.EXTRA_TITLE) : null;
-            CharSequence text = extras != null ? extras.getCharSequence(Notification.EXTRA_TEXT) : null;
-            CharSequence subText = extras != null ? extras.getCharSequence(Notification.EXTRA_SUB_TEXT) : null;
-            return ((title != null ? title : "") + " "
-                    + (text != null ? text : "") + " "
-                    + (subText != null ? subText : "") + " "
-                    + (notification != null && notification.tickerText != null
-                    ? notification.tickerText : "")).toLowerCase(Locale.US);
-        } catch (Throwable ignored) {
-            return "";
-        }
     }
 
     private static Drawable loadIconDrawable(Context context, String packageName, Icon icon) {
@@ -4261,68 +3838,8 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
-    private static String describeNotificationPackages(StatusBarNotification[] notifications) {
-        if (notifications == null || notifications.length == 0) {
-            return "";
-        }
-        ArrayList<StatusBarNotification> list = new ArrayList<>(notifications.length);
-        Collections.addAll(list, notifications);
-        return describeNotificationPackages(list);
-    }
-
-    private static String describeNotificationPackages(List<StatusBarNotification> notifications) {
-        StringBuilder builder = new StringBuilder();
-        HashSet<String> seen = new HashSet<>();
-        for (StatusBarNotification sbn : notifications) {
-            if (sbn == null || !seen.add(sbn.getPackageName())) {
-                continue;
-            }
-            if (builder.length() > 0) {
-                builder.append(',');
-            }
-            builder.append(sbn.getPackageName());
-            if (seen.size() >= 8) {
-                if (notifications.size() > seen.size()) {
-                    builder.append(",...");
-                }
-                break;
-            }
-        }
-        return builder.toString();
-    }
-
-    private static String notificationSignature(StatusBarNotification[] notifications) {
-        if (notifications == null || notifications.length == 0) {
-            return "";
-        }
-        ArrayList<String> entries = new ArrayList<>();
-        for (StatusBarNotification sbn : notifications) {
-            if (sbn == null) {
-                continue;
-            }
-            Notification notification = sbn.getNotification();
-            entries.add(sbn.getKey()
-                    + '@' + sbn.getPostTime()
-                    + ':' + (notification != null ? notification.visibility : 0)
-                    + ':' + (notification != null ? notification.flags : 0));
-        }
-        Collections.sort(entries);
-        return TextUtils.join("|", entries);
-    }
-
     private static String mediaCandidatesSignatureLocked() {
-        if (mediaNotificationCache.isEmpty()) {
-            return "";
-        }
-        ArrayList<String> entries = new ArrayList<>();
-        for (StatusBarNotification sbn : mediaNotificationCache.values()) {
-            if (sbn == null) {
-                continue;
-            }
-            entries.add(sbn.getKey() + '@' + sbn.getPostTime());
-        }
-        Collections.sort(entries);
-        return TextUtils.join("|", entries);
+        return AodNotificationPipeline.mediaCandidatesSignature(mediaNotificationCache.values());
     }
 
     private static String expiredInactiveMediaPackageSignature() {
@@ -4334,44 +3851,6 @@ public final class PixelAodClockView extends FrameLayout {
             Collections.sort(packages);
             return TextUtils.join("|", packages);
         }
-    }
-
-    private static String rankingSignature(Map<String, RankingSnapshot> snapshot) {
-        if (snapshot == null || snapshot.isEmpty()) {
-            return "";
-        }
-        ArrayList<String> keys = new ArrayList<>(snapshot.keySet());
-        Collections.sort(keys);
-        StringBuilder builder = new StringBuilder();
-        for (String key : keys) {
-            RankingSnapshot ranking = snapshot.get(key);
-            if (ranking == null) {
-                continue;
-            }
-            if (builder.length() > 0) {
-                builder.append('|');
-            }
-            builder.append(key).append('=').append(ranking.toString());
-        }
-        return builder.toString();
-    }
-
-    private static void logFilteredNotification(StatusBarNotification sbn, String reason) {
-        PixelAodLog.log("filtered AOD notification pkg=" + sbn.getPackageName()
-                + " key=" + sbn.getKey()
-                + " category=" + sbn.getNotification().category
-                + " visibility=" + sbn.getNotification().visibility
-                + " reason=" + reason
-                + " trace=" + currentAodTraceId());
-    }
-
-    private static void logKeptNotification(StatusBarNotification sbn, RankingSnapshot ranking) {
-        PixelAodLog.log("kept AOD notification pkg=" + sbn.getPackageName()
-                + " key=" + sbn.getKey()
-                + " category=" + sbn.getNotification().category
-                + " visibility=" + sbn.getNotification().visibility
-                + " ranking=" + ranking
-                + " trace=" + currentAodTraceId());
     }
 
     private static void logNotificationIconChoice(String packageName, String mode) {
@@ -6114,141 +5593,6 @@ public final class PixelAodClockView extends FrameLayout {
         public int getIntrinsicHeight() {
             return 64;
         }
-    }
-
-    private static final class RankingSnapshot {
-        final int overrideVisibility;
-        final int channelVisibility;
-        final int importance;
-        final int suppressedVisualEffects;
-
-        RankingSnapshot(int overrideVisibility, int channelVisibility, int importance,
-                int suppressedVisualEffects) {
-            this.overrideVisibility = overrideVisibility;
-            this.channelVisibility = channelVisibility;
-            this.importance = importance;
-            this.suppressedVisualEffects = suppressedVisualEffects;
-        }
-
-        static RankingSnapshot from(NotificationListenerService.Ranking ranking) {
-            int channelVisibility = NotificationListenerService.Ranking.VISIBILITY_NO_OVERRIDE;
-            try {
-                NotificationChannel channel = ranking.getChannel();
-                if (channel != null) {
-                    channelVisibility = channel.getLockscreenVisibility();
-                }
-            } catch (Throwable ignored) {
-                // Channel details are best-effort; fall back to the ranking override.
-            }
-            int importance = NotificationManagerImportance.UNKNOWN;
-            try {
-                importance = ranking.getImportance();
-            } catch (Throwable ignored) {
-                // Older framework variants may not expose all ranking fields.
-            }
-            int suppressedEffects = 0;
-            try {
-                suppressedEffects = ranking.getSuppressedVisualEffects();
-            } catch (Throwable ignored) {
-                // Best-effort; older framework variants may not expose all ranking fields.
-            }
-            return new RankingSnapshot(
-                    ranking.getLockscreenVisibilityOverride(),
-                    channelVisibility,
-                    importance,
-                    suppressedEffects);
-        }
-
-        String hiddenReason() {
-            if (importance == NotificationManagerImportance.NONE) {
-                return "ranking-importance-none";
-            }
-            if (overrideVisibility == Notification.VISIBILITY_SECRET) {
-                return "ranking-override-secret";
-            }
-            if (channelVisibility == Notification.VISIBILITY_SECRET) {
-                return "ranking-channel-secret";
-            }
-            return null;
-        }
-
-        @Override
-        public String toString() {
-            return "override=" + overrideVisibility
-                    + ",channel=" + channelVisibility
-                    + ",importance=" + importance
-                    + ",suppressed=" + suppressedVisualEffects;
-        }
-    }
-
-    private static final class LockscreenVisibilityDecision {
-        private Boolean providerHidden;
-        private String providerSource = "";
-        private Boolean filterHidden;
-        private String filterSource = "";
-
-        LockscreenVisibilityDecision() {
-        }
-
-        LockscreenVisibilityDecision(LockscreenVisibilityDecision other) {
-            if (other == null) {
-                return;
-            }
-            providerHidden = other.providerHidden;
-            providerSource = other.providerSource;
-            filterHidden = other.filterHidden;
-            filterSource = other.filterSource;
-        }
-
-        boolean setProviderHidden(boolean hidden, String source) {
-            if (providerHidden != null
-                    && providerHidden == hidden
-                    && TextUtils.equals(providerSource, source)) {
-                return false;
-            }
-            providerHidden = hidden;
-            providerSource = source != null ? source : "";
-            return true;
-        }
-
-        boolean setFilterHidden(boolean hidden, String source) {
-            if (filterHidden != null
-                    && filterHidden == hidden
-                    && TextUtils.equals(filterSource, source)) {
-                return false;
-            }
-            filterHidden = hidden;
-            filterSource = source != null ? source : "";
-            return true;
-        }
-
-        String hiddenReason() {
-            if (Boolean.TRUE.equals(providerHidden)) {
-                return "lockscreen-provider-hidden source=" + providerSource;
-            }
-            if (Boolean.TRUE.equals(filterHidden)) {
-                return "lockscreen-filter-hidden source=" + filterSource;
-            }
-            return null;
-        }
-
-        @Override
-        public String toString() {
-            return "providerHidden=" + providerHidden
-                    + "@"
-                    + providerSource
-                    + ",filterHidden="
-                    + filterHidden
-                    + "@"
-                    + filterSource;
-        }
-    }
-
-    private static final class NotificationManagerImportance {
-        static final int UNKNOWN = Integer.MIN_VALUE;
-        static final int NONE = 0;
-        static final int LOW = 2;
-        static final int DEFAULT = 3;
     }
 
 }

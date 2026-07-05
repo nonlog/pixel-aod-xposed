@@ -4,6 +4,16 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.144] - 2026-07-05
+### Internal
+- Add `AodNotificationPipeline` and move AOD notification visibility filtering, ranking snapshots, lockscreen visibility decisions, media candidate detection, notification signatures, and system notification classification out of `PixelAodClockView`.
+- Reuse the shared notification pipeline silent-notification policy from `PixelAodHook` so lockscreen and AOD policy logic stay aligned.
+
+## [0.1.143] - 2026-07-05
+### Internal
+- Move the final AOD policy decision output into `OosAodLifecycleAdapter`, keeping behavior the same while making Pixel overlay, native Doze keepalive, stock AOD suppression, and native hide callback decisions come from one lifecycle policy module.
+- Add `StockAodVisibilityController` to own stock view hidden-state tracking, adjusted status-view restoration, delayed stock suppression reapply trace guards, and delayed transition restore trace guards.
+
 ## [0.1.142] - 2026-07-05
 ### Bug Fixes
 - Prevent proximity / pocket / sensor diagnostics such as `getProxNear() result=false` from starting `Trigger-only` native short-wake AOD; those events now remain sensor guard release / diagnostic signals instead of briefly showing Pixel AOD.

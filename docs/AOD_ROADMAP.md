@@ -61,6 +61,44 @@ This can reduce power usage and improve stability compared with a purely parasit
 
 ## Roadmap
 
+## Architecture Deepening Roadmap
+
+These items are incremental deep-module refactors, not mutually exclusive
+alternatives. They should be implemented one at a time so each change keeps
+runtime behavior observable and reversible.
+
+| Order | Module direction | Status | Purpose |
+|---|---|---|---|
+| 1 | Deepen the AOD lifecycle policy module | First migration implemented on 2026-07-05 | Put Pixel overlay, native Doze keepalive, stock AOD suppression, and native hide callback decisions behind one lifecycle policy interface. |
+| 2 | Split SystemUI hook orchestration from stock visibility | First migration implemented on 2026-07-05 | Keep hooks as adapters and move stock view hide / restore / delayed reapply / trace guard behavior into one stock visibility module. |
+| 3 | Extract the AOD notification pipeline | First migration implemented on 2026-07-05 | Make lockscreen and AOD consume the same notification display model, including silent filtering, media classification, and icon fallback reasons. |
+| 4 | Create a settings schema module | Planned | Centralize setting keys, defaults, UI visibility, provider rows, and restart requirements. |
+| 5 | Separate Pixel AOD rendering from policy and data collection | Planned | Let views apply render models instead of owning policy, data parsing, and drawing state in the same implementation. |
+
+### Architecture Tracking
+
+- 2026-07-05: Architecture review identified five deepening candidates. The
+  recommended implementation order is lifecycle policy, stock visibility,
+  notification pipeline, settings schema, then render model.
+- 2026-07-05: Phase 2 continues with item 1. First implementation step should
+  move the existing behavior-preserving AOD policy output into
+  `OosAodLifecycleAdapter` without changing AOD / lockscreen behavior.
+- 2026-07-05: Item 1 first migration implemented. `OosAodLifecycleAdapter`
+  now owns the final AOD policy decision object and reason calculation, while
+  `PixelAodClockView` still collects current state, module settings, schedule,
+  power policy, and trigger-window facts. Debug APK build passed with JDK 17.
+- 2026-07-05: Item 2 first migration implemented.
+  `StockAodVisibilityController` now owns stock view hidden-state tracking,
+  adjusted status-view restoration, delayed stock suppression reapply trace
+  guards, and delayed transition restore trace guards. `PixelAodHook` still
+  owns OOS view-tree marker heuristics and calls this module through a small
+  interface.
+- 2026-07-05: Item 3 first migration implemented.
+  `AodNotificationPipeline` now owns AOD notification visibility filtering,
+  ranking snapshots, lockscreen visibility decisions, media candidate
+  detection, notification signatures, and system notification classification.
+  `PixelAodClockView` still owns rendering and icon drawable loading.
+
 ### Phase 1: Stabilize Current Replacement Layer
 
 - Keep the currently working AOD clock refresh path.
