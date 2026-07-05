@@ -4,6 +4,12 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.153] - 2026-07-05
+### Internal
+- Add explicit OOS trigger / sensor mapping rules so pickup, tap, proximity, pocket, generic sensor, and unknown trigger events log stable `rule` and `category` fields.
+- Document the current trigger mapping and priority model in `docs/OOS_TRIGGER_MAPPING.md`.
+- Extend the trigger diagnostic script to count mapped trigger categories and key trigger rules from the current run window only, while keeping LSPosed module logs as auxiliary evidence.
+
 ## [0.1.152] - 2026-07-05
 ### Experimental Fixes
 - Try a narrower native-timeout path for Continuous AOD: when OOS attempts to hide the whole native AOD for the fingerprint timeout callback, invoke the captured FOD-only hide method first and suppress the broader native AOD hide if that succeeds.

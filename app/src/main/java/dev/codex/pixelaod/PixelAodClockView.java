@@ -839,6 +839,8 @@ public final class PixelAodClockView extends FrameLayout {
         PixelAodLog.log("AOD native trigger type=" + normalizedType
                 + " source=" + normalizedSource
                 + " detail={" + normalizedDetail + "}"
+                + " rule=" + behavior.ruleLabel
+                + " category=" + behavior.categoryLabel
                 + " displayMode=" + behavior.displayModeLabel
                 + " futureAction=" + behavior.futureAction
                 + " behaviorApplied=" + behaviorApplied
@@ -934,6 +936,7 @@ public final class PixelAodClockView extends FrameLayout {
         PixelAodLog.log("started trigger-only Pixel AOD brief display"
                 + " source=" + source
                 + " type=" + type
+                + " detail={" + detail + "}"
                 + " displayMode=" + displayMode
                 + " durationMs=" + TRIGGER_BRIEF_AOD_DURATION_MS
                 + " untilAgeMs=" + (until - now)
@@ -1307,6 +1310,9 @@ public final class PixelAodClockView extends FrameLayout {
                     + " displayMode=" + displayMode
                     + " withinSchedule=" + withinSchedule
                     + " triggerEvent=" + (behavior != null ? behavior.eventLabel : "none")
+                    + " triggerRule=" + (behavior != null ? behavior.ruleLabel : "none")
+                    + " triggerCategory="
+                    + (behavior != null ? behavior.categoryLabel : "none")
                     + " triggerDisplayMode="
                     + (behavior != null ? behavior.displayModeLabel : "none")
                     + " futureAction=" + (behavior != null ? behavior.futureAction : "none")
@@ -1349,6 +1355,9 @@ public final class PixelAodClockView extends FrameLayout {
                         + " withinSchedule=" + withinSchedule
                         + " mode=" + displayMode
                         + " triggerEvent=" + (behavior != null ? behavior.eventLabel : "none")
+                        + " triggerRule=" + (behavior != null ? behavior.ruleLabel : "none")
+                        + " triggerCategory="
+                        + (behavior != null ? behavior.categoryLabel : "none")
                         + " triggerDisplayMode="
                         + (behavior != null ? behavior.displayModeLabel : "none")
                         + " implicitDisplayWake=" + implicitDisplayWake,
@@ -1364,6 +1373,8 @@ public final class PixelAodClockView extends FrameLayout {
                 + " displayMode=" + displayMode
                 + " withinSchedule=" + withinSchedule
                 + " implicitDisplayWake=" + implicitDisplayWake
+                + " triggerRule=" + (behavior != null ? behavior.ruleLabel : "none")
+                + " triggerCategory=" + (behavior != null ? behavior.categoryLabel : "none")
                 + " trace=" + trace
                 + " state={" + describeAodState(context) + "}");
         return started;

@@ -26,6 +26,8 @@ final class OosAodLifecycleAdapter {
         String normalizedSource = normalizeSource(source);
         TriggerBehavior behavior = behaviorForTrigger(normalizedType, normalizedSource, detail);
         PixelAodLog.log("OOS AOD trigger mapping event=" + behavior.eventLabel
+                + " rule=" + behavior.ruleLabel
+                + " category=" + behavior.categoryLabel
                 + " displayMode=" + behavior.displayModeLabel
                 + " futureAction=" + behavior.futureAction
                 + " behaviorApplied=" + behaviorApplied
@@ -325,46 +327,26 @@ final class OosAodLifecycleAdapter {
                 + normalizeSource(detail);
         String lowerCombined = combined.toLowerCase(Locale.US);
         Event event = classifyTrigger(combined);
-        DisplayMode displayMode;
-        String futureAction;
-        boolean startsBriefDisplay = false;
-        boolean blocksDisplay = false;
-        boolean releasesDisplayGuard = false;
         switch (event) {
             case TRIGGER_PICKUP:
+                return TriggerRule.PICKUP_BRIEF.toBehavior();
             case TRIGGER_TAP:
-                displayMode = DisplayMode.TRIGGER_ONLY_BRIEF_DISPLAY;
-                futureAction = "brief-show-candidate";
-                startsBriefDisplay = true;
-                break;
+                return TriggerRule.TAP_BRIEF.toBehavior();
             case TRIGGER_POCKET:
-                displayMode = DisplayMode.SENSOR_GUARD_HIDE;
-                futureAction = "block-brief-and-continuous-aod";
-                blocksDisplay = true;
-                break;
+                return TriggerRule.POCKET_HIDE.toBehavior();
             case TRIGGER_PROXIMITY:
                 if (isProximityNear(lowerCombined)) {
-                    displayMode = DisplayMode.SENSOR_GUARD_HIDE;
-                    futureAction = "hide-or-block-aod";
-                    blocksDisplay = true;
+                    return TriggerRule.PROXIMITY_NEAR_HIDE.toBehavior();
                 } else if (isProximityFar(lowerCombined)) {
-                    displayMode = DisplayMode.SENSOR_GUARD_RELEASE;
-                    futureAction = "allow-future-aod";
-                    releasesDisplayGuard = true;
-                } else {
-                    displayMode = DisplayMode.SENSOR_GUARD_UNKNOWN;
-                    futureAction = "observe-proximity-result";
+                    return TriggerRule.PROXIMITY_FAR_RELEASE.toBehavior();
                 }
-                break;
+                return TriggerRule.PROXIMITY_OBSERVE.toBehavior();
             case TRIGGER_SENSOR:
+                return TriggerRule.SENSOR_DIAGNOSTIC.toBehavior();
             case TRIGGER_UNKNOWN:
             default:
-                displayMode = DisplayMode.TRIGGER_DIAGNOSTIC_ONLY;
-                futureAction = "classify-before-action";
-                break;
+                return TriggerRule.UNKNOWN_DIAGNOSTIC.toBehavior();
         }
-        return new TriggerBehavior(event.label, displayMode.label, futureAction,
-                startsBriefDisplay, blocksDisplay, releasesDisplayGuard);
     }
 
     private static boolean isProximityNear(String lowerSource) {
@@ -434,18 +416,90 @@ final class OosAodLifecycleAdapter {
         }
     }
 
+    private enum TriggerCategory {
+        DISPLAY_WAKE("display-wake"),
+        SENSOR_GUARD("sensor-guard"),
+        DIAGNOSTIC("diagnostic-only");
+
+        final String label;
+
+        TriggerCategory(String label) {
+            this.label = label;
+        }
+    }
+
+    private enum TriggerRule {
+        PICKUP_BRIEF("pickup-brief", Event.TRIGGER_PICKUP,
+                TriggerCategory.DISPLAY_WAKE, DisplayMode.TRIGGER_ONLY_BRIEF_DISPLAY,
+                "brief-show-candidate", true, false, false),
+        TAP_BRIEF("tap-brief", Event.TRIGGER_TAP,
+                TriggerCategory.DISPLAY_WAKE, DisplayMode.TRIGGER_ONLY_BRIEF_DISPLAY,
+                "brief-show-candidate", true, false, false),
+        POCKET_HIDE("pocket-hide", Event.TRIGGER_POCKET,
+                TriggerCategory.SENSOR_GUARD, DisplayMode.SENSOR_GUARD_HIDE,
+                "block-brief-and-continuous-aod", false, true, false),
+        PROXIMITY_NEAR_HIDE("proximity-near-hide", Event.TRIGGER_PROXIMITY,
+                TriggerCategory.SENSOR_GUARD, DisplayMode.SENSOR_GUARD_HIDE,
+                "hide-or-block-aod", false, true, false),
+        PROXIMITY_FAR_RELEASE("proximity-far-release", Event.TRIGGER_PROXIMITY,
+                TriggerCategory.SENSOR_GUARD, DisplayMode.SENSOR_GUARD_RELEASE,
+                "allow-future-aod", false, false, true),
+        PROXIMITY_OBSERVE("proximity-observe", Event.TRIGGER_PROXIMITY,
+                TriggerCategory.SENSOR_GUARD, DisplayMode.SENSOR_GUARD_UNKNOWN,
+                "observe-proximity-result", false, false, false),
+        SENSOR_DIAGNOSTIC("sensor-diagnostic", Event.TRIGGER_SENSOR,
+                TriggerCategory.DIAGNOSTIC, DisplayMode.TRIGGER_DIAGNOSTIC_ONLY,
+                "classify-before-action", false, false, false),
+        UNKNOWN_DIAGNOSTIC("unknown-diagnostic", Event.TRIGGER_UNKNOWN,
+                TriggerCategory.DIAGNOSTIC, DisplayMode.TRIGGER_DIAGNOSTIC_ONLY,
+                "classify-before-action", false, false, false);
+
+        final String label;
+        final Event event;
+        final TriggerCategory category;
+        final DisplayMode displayMode;
+        final String futureAction;
+        final boolean startsBriefDisplay;
+        final boolean blocksDisplay;
+        final boolean releasesDisplayGuard;
+
+        TriggerRule(String label, Event event, TriggerCategory category,
+                DisplayMode displayMode, String futureAction,
+                boolean startsBriefDisplay, boolean blocksDisplay,
+                boolean releasesDisplayGuard) {
+            this.label = label;
+            this.event = event;
+            this.category = category;
+            this.displayMode = displayMode;
+            this.futureAction = futureAction;
+            this.startsBriefDisplay = startsBriefDisplay;
+            this.blocksDisplay = blocksDisplay;
+            this.releasesDisplayGuard = releasesDisplayGuard;
+        }
+
+        TriggerBehavior toBehavior() {
+            return new TriggerBehavior(event.label, label, category.label,
+                    displayMode.label, futureAction, startsBriefDisplay,
+                    blocksDisplay, releasesDisplayGuard);
+        }
+    }
+
     static final class TriggerBehavior {
         final String eventLabel;
+        final String ruleLabel;
+        final String categoryLabel;
         final String displayModeLabel;
         final String futureAction;
         final boolean startsBriefDisplay;
         final boolean blocksDisplay;
         final boolean releasesDisplayGuard;
 
-        TriggerBehavior(String eventLabel, String displayModeLabel, String futureAction,
-                boolean startsBriefDisplay, boolean blocksDisplay,
-                boolean releasesDisplayGuard) {
+        TriggerBehavior(String eventLabel, String ruleLabel, String categoryLabel,
+                String displayModeLabel, String futureAction, boolean startsBriefDisplay,
+                boolean blocksDisplay, boolean releasesDisplayGuard) {
             this.eventLabel = eventLabel;
+            this.ruleLabel = ruleLabel;
+            this.categoryLabel = categoryLabel;
             this.displayModeLabel = displayModeLabel;
             this.futureAction = futureAction;
             this.startsBriefDisplay = startsBriefDisplay;
