@@ -165,7 +165,7 @@ final class PixelLockscreenClockView extends FrameLayout {
                 + " variation=" + PixelAodClockView.sharedClockFontVariationSettings(lockscreenWeight)
                 + " typeface=builder"
                 + " visualProfile={"
-                + PixelAodVisualStyle.lockscreenProfile(lockscreenWeight) + "}");
+                + PixelAodVisualStyle.lockscreenProfile(context, lockscreenWeight) + "}");
         clockView.setAlpha(LOCKSCREEN_CLOCK_ALPHA);
         FrameLayout.LayoutParams clockParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,

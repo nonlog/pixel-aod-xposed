@@ -2560,7 +2560,7 @@ public final class PixelAodClockView extends FrameLayout {
         PixelAodLog.log("applied Pixel AOD clock style source=init weight=" + weight
                 + " variation=" + sharedClockFontVariationSettings(weight)
                 + " typeface=builder"
-                + " visualProfile={" + PixelAodVisualStyle.aodProfile(weight) + "}");
+                + " visualProfile={" + PixelAodVisualStyle.aodProfile(context, weight) + "}");
         textView.setAlpha(AOD_CLOCK_ALPHA);
         return textView;
     }

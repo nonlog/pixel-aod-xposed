@@ -1,6 +1,15 @@
 package dev.codex.pixelaod;
 
+import android.content.Context;
+import android.content.res.Configuration;
+import android.content.res.Resources;
+import android.util.DisplayMetrics;
+
+import java.util.Locale;
+
 final class PixelAodVisualStyle {
+    private static final String PROFILE_REVISION = "6.4";
+
     static final int CLOCK_COLOR_RED = 232;
     static final int CLOCK_COLOR_GREEN = 234;
     static final int CLOCK_COLOR_BLUE = 237;
@@ -29,8 +38,8 @@ final class PixelAodVisualStyle {
     static final int LARGE_INFO_TEXT_DP = 16;
     static final int COMPACT_INFO_TEXT_DP = 14;
 
-    static String aodProfile(int runtimeClockWeight) {
-        return commonProfile(runtimeClockWeight, Aod.INFO_WEIGHT)
+    static String aodProfile(Context context, int runtimeClockWeight) {
+        return commonProfile(context, runtimeClockWeight, Aod.INFO_WEIGHT)
                 + ",notificationIcon=" + Aod.NOTIFICATION_ICON_SIZE_DP
                 + ",notificationSpacing=" + Aod.NOTIFICATION_ICON_SPACING_DP
                 + ",mediaIcon=" + Aod.MEDIA_ICON_SIZE_DP
@@ -45,12 +54,14 @@ final class PixelAodVisualStyle {
                 + ",chargeBolt=" + Aod.CHARGE_BOLT_WIDTH_DP + "x" + Aod.CHARGE_BOLT_HEIGHT_DP;
     }
 
-    static String lockscreenProfile(int runtimeClockWeight) {
-        return commonProfile(runtimeClockWeight, Lockscreen.INFO_WEIGHT);
+    static String lockscreenProfile(Context context, int runtimeClockWeight) {
+        return commonProfile(context, runtimeClockWeight, Lockscreen.INFO_WEIGHT);
     }
 
-    private static String commonProfile(int runtimeClockWeight, int infoWeight) {
-        return "clockColor=" + color(CLOCK_COLOR_RED, CLOCK_COLOR_GREEN, CLOCK_COLOR_BLUE)
+    private static String commonProfile(Context context, int runtimeClockWeight, int infoWeight) {
+        return "profileRevision=" + PROFILE_REVISION
+                + runtimeDisplayProfile(context)
+                + ",clockColor=" + color(CLOCK_COLOR_RED, CLOCK_COLOR_GREEN, CLOCK_COLOR_BLUE)
                 + ",infoColor=" + color(INFO_COLOR_RED, INFO_COLOR_GREEN, INFO_COLOR_BLUE)
                 + ",largeText=" + LARGE_CLOCK_TEXT_DP
                 + ",smallText=" + SMALL_CLOCK_TEXT_DP
@@ -75,6 +86,23 @@ final class PixelAodVisualStyle {
                 + ",infoWeight=" + infoWeight;
     }
 
+    private static String runtimeDisplayProfile(Context context) {
+        if (context == null) {
+            return ",densityDpi=unknown,density=unknown,scaledDensity=unknown,fontScale=unknown,"
+                    + "widthDp=unknown,heightDp=unknown,smallestDp=unknown";
+        }
+        Resources resources = context.getResources();
+        DisplayMetrics metrics = resources.getDisplayMetrics();
+        Configuration config = resources.getConfiguration();
+        return ",densityDpi=" + metrics.densityDpi
+                + ",density=" + decimal(metrics.density)
+                + ",scaledDensity=" + decimal(metrics.scaledDensity)
+                + ",fontScale=" + decimal(config.fontScale)
+                + ",widthDp=" + config.screenWidthDp
+                + ",heightDp=" + config.screenHeightDp
+                + ",smallestDp=" + config.smallestScreenWidthDp;
+    }
+
     private static String color(int red, int green, int blue) {
         return "#" + hex(red) + hex(green) + hex(blue);
     }
@@ -82,6 +110,10 @@ final class PixelAodVisualStyle {
     private static String hex(int value) {
         String hex = Integer.toHexString(value & 0xff).toUpperCase(java.util.Locale.US);
         return hex.length() == 1 ? "0" + hex : hex;
+    }
+
+    private static String decimal(float value) {
+        return String.format(Locale.US, "%.2f", value);
     }
 
     static final class Aod {

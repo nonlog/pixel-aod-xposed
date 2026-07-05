@@ -197,6 +197,8 @@ runtime behavior observable and reversible.
   style profile so opacity tweaks can be audited and adjusted from one place.
 - Phase 6.3 moves date, media, battery, and charge-bolt sizing into the visual
   style profile without changing current rendered dimensions.
+- Phase 6.4 adds visual profile revision and runtime display metrics to init
+  logs so future visual parity work can compare density / font-scale context.
 - At a Glance.
 - Richer media line behavior.
 - Possible media artwork / progress / controls only after confirming how Pixel / AOSP / target ROMs handle interaction on AOD.
