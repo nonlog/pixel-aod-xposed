@@ -30,15 +30,27 @@ Optional environment variables:
 
 ## Rules
 
-| Rule | Native input | Category | Module action |
-|---|---|---|---|
-| `posted-pulse-candidate` | Notification posted / received and at least one usable AOD notification remains | `pulse-candidate` | Observe OOS native pulse timing only. |
-| `posted-filtered` | Notification posted / received but no usable AOD notification remains | `pulse-filtered` | Do not pulse; keep the filter reason in notification logs. |
-| `snapshot-pulse-candidate` | Listener or AOD view snapshot with at least one usable AOD notification | `pulse-candidate` | Observe snapshot timing only. |
-| `snapshot-filtered` | Snapshot contains raw notifications but none are AOD-usable | `pulse-filtered` | Do not pulse. |
-| `removed-or-cleared` | Notification removed or native view cleared | `pulse-clear` | Observe native clear / removal timing only. |
-| `ranking-update` | Ranking map changed | `diagnostic-only` | Refresh pulse inputs and filtering evidence only. |
-| `empty-snapshot` | Empty notification snapshot | `diagnostic-only` | Observe empty state only. |
+| Rule | Native input | Category | Pulse policy | Module action |
+|---|---|---|---|---|
+| `posted-pulse-candidate` | Notification posted / received and at least one usable AOD notification remains | `pulse-candidate` | `can-trigger-brief-display`, unless sensor / power policy blocks it | Observe OOS native pulse timing only. |
+| `posted-filtered` | Notification posted / received but no usable AOD notification remains | `pulse-filtered` | `lockscreen-aod-filtered` | Do not pulse; keep the filter reason in notification logs. |
+| `snapshot-pulse-candidate` | Listener or AOD view snapshot with at least one usable AOD notification | `pulse-candidate` | `observe-only` | Observe snapshot timing only. |
+| `snapshot-filtered` | Snapshot contains raw notifications but none are AOD-usable | `pulse-filtered` | `lockscreen-aod-filtered` | Do not pulse. |
+| `removed-or-cleared` | Notification removed or native view cleared | `pulse-clear` | `observe-only` | Observe native clear / removal timing only. |
+| `ranking-update` | Ranking map changed | `diagnostic-only` | `observe-only` | Refresh pulse inputs and filtering evidence only. |
+| `empty-snapshot` | Empty notification snapshot | `diagnostic-only` | `observe-only` | Observe empty state only. |
+
+## Pulse Policy
+
+The current adapter only classifies native notification pulse evidence. It does
+not start a custom notification pulse.
+
+| Pulse policy | Meaning |
+|---|---|
+| `can-trigger-brief-display` | A posted notification is usable by lockscreen / AOD filtering and is not blocked by currently known sensor or power policy. |
+| `observe-only` | The event is useful diagnostic evidence but is not an explicit display trigger. |
+| `lockscreen-aod-filtered` | The notification event did not leave any usable lockscreen / AOD notification after filtering. |
+| `sensor-power-blocked` | The event would otherwise be a pulse candidate, but proximity / pocket / power policy says it should not wake AOD. |
 
 ## Logging Contract
 
@@ -48,6 +60,11 @@ Every notification-pulse observation log should include:
 - `rule`: exact mapping rule, for example `posted-pulse-candidate`.
 - `category`: `pulse-candidate`, `pulse-filtered`, `pulse-clear`, or `diagnostic-only`.
 - `futureAction`: what a later custom-pulse implementation might do.
+- `pulsePolicy`: one of the pulse policy labels above.
+- `pulsePolicyReason`: exact reason for that policy result.
+- `pulsePolicyAction`: what a later custom-pulse implementation may do with this policy result.
+- `pulsePolicyCanTriggerBrief`: whether the event is currently a future brief-display candidate.
+- `pulsePolicyBlocked`: whether the event is blocked by lockscreen/AOD, sensor, or power policy.
 - `raw`: raw notification count.
 - `usable`: count after AOD / lockscreen visibility filtering.
 - `media`: media candidate count.

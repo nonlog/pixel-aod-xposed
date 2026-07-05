@@ -90,12 +90,26 @@ final class OosAodLifecycleAdapter {
     static void recordNotificationPulseObservation(String source, int rawCount,
             int usableCount, int mediaCandidateCount, int rankingCount,
             String packageSummary, String trace, String stateDescription) {
+        recordNotificationPulseObservation(source, rawCount, usableCount,
+                mediaCandidateCount, rankingCount, packageSummary, trace,
+                stateDescription, null, false);
+    }
+
+    static void recordNotificationPulseObservation(String source, int rawCount,
+            int usableCount, int mediaCandidateCount, int rankingCount,
+            String packageSummary, String trace, String stateDescription,
+            ModulePolicy modulePolicy, boolean sensorBlocked) {
         NotificationPulseObservation observation = evaluateNotificationPulseObservation(
-                source, rawCount, usableCount, rankingCount);
+                source, rawCount, usableCount, rankingCount, modulePolicy, sensorBlocked);
         PixelAodLog.log("OOS AOD notification pulse observation event=" + observation.eventLabel
                 + " rule=" + observation.ruleLabel
                 + " category=" + observation.categoryLabel
                 + " futureAction=" + observation.futureAction
+                + " pulsePolicy=" + observation.policyLabel
+                + " pulsePolicyReason=" + observation.policyReason
+                + " pulsePolicyAction=" + observation.policyAction
+                + " pulsePolicyCanTriggerBrief=" + observation.policyCanTriggerBriefDisplay
+                + " pulsePolicyBlocked=" + observation.policyBlocked
                 + " raw=" + rawCount
                 + " usable=" + usableCount
                 + " media=" + mediaCandidateCount
@@ -108,9 +122,18 @@ final class OosAodLifecycleAdapter {
 
     static NotificationPulseObservation evaluateNotificationPulseObservation(String source,
             int rawCount, int usableCount, int rankingCount) {
+        return evaluateNotificationPulseObservation(source, rawCount, usableCount,
+                rankingCount, null, false);
+    }
+
+    static NotificationPulseObservation evaluateNotificationPulseObservation(String source,
+            int rawCount, int usableCount, int rankingCount,
+            ModulePolicy modulePolicy, boolean sensorBlocked) {
         NotificationPulseRule rule = mapNotificationPulseRule(source, rawCount,
                 usableCount, rankingCount);
-        return rule.toObservation();
+        NotificationPulsePolicy policy = NotificationPulsePolicy.evaluate(
+                rule, modulePolicy, sensorBlocked);
+        return rule.toObservation(policy);
     }
 
     static boolean matchesExpectedTrace(String expectedTrace, String currentTrace) {
@@ -588,8 +611,95 @@ final class OosAodLifecycleAdapter {
             this.futureAction = futureAction;
         }
 
-        NotificationPulseObservation toObservation() {
-            return new NotificationPulseObservation(eventLabel, label, category, futureAction);
+        NotificationPulseObservation toObservation(NotificationPulsePolicy policy) {
+            NotificationPulsePolicy safePolicy = policy != null
+                    ? policy
+                    : NotificationPulsePolicy.observeOnly("no-policy-context");
+            return new NotificationPulseObservation(eventLabel, label, category, futureAction,
+                    safePolicy.label, safePolicy.reason, safePolicy.futureAction,
+                    safePolicy.canTriggerBriefDisplay, safePolicy.blocked);
+        }
+    }
+
+    static final class NotificationPulsePolicy {
+        final String label;
+        final String reason;
+        final String futureAction;
+        final boolean canTriggerBriefDisplay;
+        final boolean blocked;
+
+        private NotificationPulsePolicy(String label, String reason, String futureAction,
+                boolean canTriggerBriefDisplay, boolean blocked) {
+            this.label = label;
+            this.reason = reason;
+            this.futureAction = futureAction;
+            this.canTriggerBriefDisplay = canTriggerBriefDisplay;
+            this.blocked = blocked;
+        }
+
+        static NotificationPulsePolicy evaluate(NotificationPulseRule rule,
+                ModulePolicy modulePolicy, boolean sensorBlocked) {
+            if (sensorBlocked && rule == NotificationPulseRule.POSTED_PULSE_CANDIDATE) {
+                return sensorPowerBlocked("proximity-or-pocket-guard");
+            }
+            if (blocksNotificationPulse(modulePolicy)
+                    && rule == NotificationPulseRule.POSTED_PULSE_CANDIDATE) {
+                return sensorPowerBlocked(emptyAsNone(modulePolicy.reason));
+            }
+            switch (rule) {
+                case POSTED_PULSE_CANDIDATE:
+                    return new NotificationPulsePolicy(
+                            "can-trigger-brief-display",
+                            "posted-usable-lockscreen-aod-notification",
+                            "brief-show-candidate",
+                            true,
+                            false);
+                case POSTED_FILTERED:
+                case SNAPSHOT_FILTERED:
+                    return new NotificationPulsePolicy(
+                            "lockscreen-aod-filtered",
+                            "no-usable-lockscreen-aod-notification",
+                            "do-not-pulse",
+                            false,
+                            true);
+                case SNAPSHOT_PULSE_CANDIDATE:
+                    return observeOnly("snapshot-not-explicit-post");
+                case REMOVED_OR_CLEARED:
+                    return observeOnly("notification-removed-or-cleared");
+                case RANKING_UPDATE:
+                    return observeOnly("ranking-update");
+                case EMPTY_SNAPSHOT:
+                default:
+                    return observeOnly("empty-or-diagnostic-snapshot");
+            }
+        }
+
+        static NotificationPulsePolicy observeOnly(String reason) {
+            return new NotificationPulsePolicy(
+                    "observe-only",
+                    emptyAsNone(reason),
+                    "record-only",
+                    false,
+                    false);
+        }
+
+        private static NotificationPulsePolicy sensorPowerBlocked(String reason) {
+            return new NotificationPulsePolicy(
+                    "sensor-power-blocked",
+                    emptyAsNone(reason),
+                    "block-brief-pulse",
+                    false,
+                    true);
+        }
+
+        private static boolean blocksNotificationPulse(ModulePolicy modulePolicy) {
+            if (modulePolicy == null) {
+                return false;
+            }
+            return "power-save-mode".equals(modulePolicy.reason)
+                    || "low-battery".equals(modulePolicy.reason)
+                    || "module-disabled".equals(modulePolicy.reason)
+                    || "no-context".equals(modulePolicy.reason);
         }
     }
 
@@ -673,13 +783,25 @@ final class OosAodLifecycleAdapter {
         final String ruleLabel;
         final String categoryLabel;
         final String futureAction;
+        final String policyLabel;
+        final String policyReason;
+        final String policyAction;
+        final boolean policyCanTriggerBriefDisplay;
+        final boolean policyBlocked;
 
         NotificationPulseObservation(String eventLabel, String ruleLabel,
-                String categoryLabel, String futureAction) {
+                String categoryLabel, String futureAction, String policyLabel,
+                String policyReason, String policyAction,
+                boolean policyCanTriggerBriefDisplay, boolean policyBlocked) {
             this.eventLabel = eventLabel;
             this.ruleLabel = ruleLabel;
             this.categoryLabel = categoryLabel;
             this.futureAction = futureAction;
+            this.policyLabel = policyLabel;
+            this.policyReason = policyReason;
+            this.policyAction = policyAction;
+            this.policyCanTriggerBriefDisplay = policyCanTriggerBriefDisplay;
+            this.policyBlocked = policyBlocked;
         }
 
         boolean isPulseCandidate() {
