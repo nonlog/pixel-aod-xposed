@@ -138,6 +138,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static final long TRIGGER_BRIEF_AOD_DURATION_MS = 10_000L;
     private static final long NATIVE_SHORT_WAKE_TRIGGER_FRESHNESS_MS = 3_000L;
     private static final long IMPLICIT_DISPLAY_WAKE_MIN_SCREEN_OFF_AGE_MS = 5_000L;
+    private static final long NOTIFICATION_PULSE_RECENT_MILLIS = 30_000L;
     private static final long WEATHER_STALE_MILLIS = 12L * 60L * 60L * 1000L;
     private static final long SCHEDULE_CACHE_MILLIS = 30_000L;
     private static final long PAUSED_MEDIA_TIMEOUT_MILLIS = 10L * 60L * 1000L;
@@ -172,6 +173,15 @@ public final class PixelAodClockView extends FrameLayout {
     private static String briefAodTriggerDetail = "";
     private static long briefAodTriggerStartedAt;
     private static long briefAodTriggerUntilAt;
+    private static String lastNotificationPulseRule = "none";
+    private static String lastNotificationPulseCategory = "none";
+    private static String lastNotificationPulseSource = "none";
+    private static String lastNotificationPulseTrace = "none";
+    private static String lastNotificationPulsePackages = "none";
+    private static int lastNotificationPulseRawCount = -1;
+    private static int lastNotificationPulseUsableCount = -1;
+    private static int lastNotificationPulseMediaCount = -1;
+    private static long lastNotificationPulseAt;
     private static String lastNativeShortWakeTriggerKey = "";
     private static long lastNativeShortWakeTriggerAt;
     private static int lastObservedDisplayState = Integer.MIN_VALUE;
@@ -557,6 +567,13 @@ public final class PixelAodClockView extends FrameLayout {
             usableCount = activeNotifications.length;
             packageSummary = AodNotificationPipeline.describePackages(activeNotifications);
             String trace = currentAodTraceId();
+            OosAodLifecycleAdapter.NotificationPulseObservation pulseObservation =
+                    OosAodLifecycleAdapter.evaluateNotificationPulseObservation(
+                            source, rawCount, usableCount, -1);
+            if (pulseObservation.isPulseCandidate()) {
+                markNotificationPulseCandidateLocked(pulseObservation, source, trace,
+                        packageSummary, rawCount, usableCount, mediaCandidateCount);
+            }
             String state = describeAodState(appContext);
             PixelAodLog.log("updated native AOD notification snapshot raw="
                     + rawCount
@@ -582,6 +599,22 @@ public final class PixelAodClockView extends FrameLayout {
         }
         refreshInstancesFromNotificationSnapshot(source);
         PixelLockscreenClockView.setActiveNotifications(activeNotifications);
+    }
+
+    private static void markNotificationPulseCandidateLocked(
+            OosAodLifecycleAdapter.NotificationPulseObservation observation,
+            String source, String trace, String packageSummary, int rawCount,
+            int usableCount, int mediaCandidateCount) {
+        lastNotificationPulseRule = observation.ruleLabel;
+        lastNotificationPulseCategory = observation.categoryLabel;
+        lastNotificationPulseSource = TextUtils.isEmpty(source) ? "unknown" : source;
+        lastNotificationPulseTrace = TextUtils.isEmpty(trace) ? "none" : trace;
+        lastNotificationPulsePackages = TextUtils.isEmpty(packageSummary)
+                ? "none" : packageSummary;
+        lastNotificationPulseRawCount = rawCount;
+        lastNotificationPulseUsableCount = usableCount;
+        lastNotificationPulseMediaCount = mediaCandidateCount;
+        lastNotificationPulseAt = SystemClock.uptimeMillis();
     }
 
     static void refreshNotificationFiltering(String source) {
@@ -1580,6 +1613,15 @@ public final class PixelAodClockView extends FrameLayout {
         String briefTriggerDetail;
         long briefTriggerStartedAt;
         long briefTriggerUntilAt;
+        String notificationPulseRule;
+        String notificationPulseCategory;
+        String notificationPulseSource;
+        String notificationPulseTrace;
+        String notificationPulsePackages;
+        int notificationPulseRawCount;
+        int notificationPulseUsableCount;
+        int notificationPulseMediaCount;
+        long notificationPulseAt;
         synchronized (PixelAodClockView.class) {
             if (TextUtils.isEmpty(lastAodTraceId)) {
                 startAodTraceLocked("auto");
@@ -1600,6 +1642,15 @@ public final class PixelAodClockView extends FrameLayout {
             briefTriggerDetail = briefAodTriggerDetail;
             briefTriggerStartedAt = briefAodTriggerStartedAt;
             briefTriggerUntilAt = briefAodTriggerUntilAt;
+            notificationPulseRule = lastNotificationPulseRule;
+            notificationPulseCategory = lastNotificationPulseCategory;
+            notificationPulseSource = lastNotificationPulseSource;
+            notificationPulseTrace = lastNotificationPulseTrace;
+            notificationPulsePackages = lastNotificationPulsePackages;
+            notificationPulseRawCount = lastNotificationPulseRawCount;
+            notificationPulseUsableCount = lastNotificationPulseUsableCount;
+            notificationPulseMediaCount = lastNotificationPulseMediaCount;
+            notificationPulseAt = lastNotificationPulseAt;
         }
         int displayState = currentDisplayState(context);
         int previousDisplayState;
@@ -1641,7 +1692,11 @@ public final class PixelAodClockView extends FrameLayout {
                 recentOverlayVisible, shouldDrawPixelAod, triggerType,
                 triggerSource, triggerDetail, triggerAt, triggerBriefActive,
                 briefTriggerType, briefTriggerSource, briefTriggerDetail,
-                briefTriggerStartedAt, briefTriggerUntilAt);
+                briefTriggerStartedAt, briefTriggerUntilAt, notificationPulseRule,
+                notificationPulseCategory, notificationPulseSource, notificationPulseTrace,
+                notificationPulsePackages, notificationPulseRawCount,
+                notificationPulseUsableCount, notificationPulseMediaCount,
+                notificationPulseAt);
     }
 
     static final class AodLifecycleState {
@@ -1673,6 +1728,15 @@ public final class PixelAodClockView extends FrameLayout {
         final String triggerBriefDetail;
         final long triggerBriefStartedAt;
         final long triggerBriefUntilAt;
+        final String notificationPulseRule;
+        final String notificationPulseCategory;
+        final String notificationPulseSource;
+        final String notificationPulseTrace;
+        final String notificationPulsePackages;
+        final int notificationPulseRawCount;
+        final int notificationPulseUsableCount;
+        final int notificationPulseMediaCount;
+        final long notificationPulseAt;
 
         AodLifecycleState(long now, boolean active, long screenOffAt, long aodActivatedAt,
                 long overlayVisibleAt, String traceId, String traceSource, long traceAt,
@@ -1683,7 +1747,12 @@ public final class PixelAodClockView extends FrameLayout {
                 String nativeTriggerSource, String nativeTriggerDetail, long nativeTriggerAt,
                 boolean triggerBriefActive, String triggerBriefType,
                 String triggerBriefSource, String triggerBriefDetail,
-                long triggerBriefStartedAt, long triggerBriefUntilAt) {
+                long triggerBriefStartedAt, long triggerBriefUntilAt,
+                String notificationPulseRule, String notificationPulseCategory,
+                String notificationPulseSource, String notificationPulseTrace,
+                String notificationPulsePackages, int notificationPulseRawCount,
+                int notificationPulseUsableCount, int notificationPulseMediaCount,
+                long notificationPulseAt) {
             this.now = now;
             this.active = active;
             this.screenOffAt = screenOffAt;
@@ -1712,6 +1781,15 @@ public final class PixelAodClockView extends FrameLayout {
             this.triggerBriefDetail = triggerBriefDetail;
             this.triggerBriefStartedAt = triggerBriefStartedAt;
             this.triggerBriefUntilAt = triggerBriefUntilAt;
+            this.notificationPulseRule = notificationPulseRule;
+            this.notificationPulseCategory = notificationPulseCategory;
+            this.notificationPulseSource = notificationPulseSource;
+            this.notificationPulseTrace = notificationPulseTrace;
+            this.notificationPulsePackages = notificationPulsePackages;
+            this.notificationPulseRawCount = notificationPulseRawCount;
+            this.notificationPulseUsableCount = notificationPulseUsableCount;
+            this.notificationPulseMediaCount = notificationPulseMediaCount;
+            this.notificationPulseAt = notificationPulseAt;
         }
 
         boolean shouldDrawPixelAod() {
@@ -1769,6 +1847,17 @@ public final class PixelAodClockView extends FrameLayout {
                     + " triggerBriefAgeMs=" + ageSince(now, triggerBriefStartedAt)
                     + " triggerBriefRemainingMs=" + remainingUntil(now, triggerBriefUntilAt)
                     + " triggerBriefDetail={" + triggerBriefDetail + "}"
+                    + " notificationPulseRule=" + notificationPulseRule
+                    + " notificationPulseCategory=" + notificationPulseCategory
+                    + " notificationPulseSource=" + notificationPulseSource
+                    + " notificationPulseTrace=" + notificationPulseTrace
+                    + " notificationPulseAgeMs=" + ageSince(now, notificationPulseAt)
+                    + " notificationPulseRecent=" + isRecentUptime(now, notificationPulseAt,
+                    NOTIFICATION_PULSE_RECENT_MILLIS)
+                    + " notificationPulseRaw=" + notificationPulseRawCount
+                    + " notificationPulseUsable=" + notificationPulseUsableCount
+                    + " notificationPulseMedia=" + notificationPulseMediaCount
+                    + " notificationPulsePackages=" + notificationPulsePackages
                     + " compact=" + compact
                     + " weight=" + weight
                     + " entryDelay=" + entryDelay

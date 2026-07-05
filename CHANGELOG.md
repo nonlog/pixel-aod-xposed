@@ -4,6 +4,11 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.156] - 2026-07-05
+### Internal
+- Correlate notification pulse candidates with the current AOD trace by recording the latest pulse-candidate rule, source, trace, package summary, and age in AOD lifecycle state snapshots.
+- Extend diagnostics to count `notificationPulseRecent=true` in the current run window.
+
 ## [0.1.155] - 2026-07-05
 ### Internal
 - Start Phase 5.4 by recording notification snapshot, ranking, posted, removed, and cleared events as explicit native notification-pulse observations.

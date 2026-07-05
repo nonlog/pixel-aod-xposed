@@ -90,12 +90,12 @@ final class OosAodLifecycleAdapter {
     static void recordNotificationPulseObservation(String source, int rawCount,
             int usableCount, int mediaCandidateCount, int rankingCount,
             String packageSummary, String trace, String stateDescription) {
-        NotificationPulseRule rule = mapNotificationPulseRule(source, rawCount,
-                usableCount, rankingCount);
-        PixelAodLog.log("OOS AOD notification pulse observation event=" + rule.eventLabel
-                + " rule=" + rule.label
-                + " category=" + rule.category
-                + " futureAction=" + rule.futureAction
+        NotificationPulseObservation observation = evaluateNotificationPulseObservation(
+                source, rawCount, usableCount, rankingCount);
+        PixelAodLog.log("OOS AOD notification pulse observation event=" + observation.eventLabel
+                + " rule=" + observation.ruleLabel
+                + " category=" + observation.categoryLabel
+                + " futureAction=" + observation.futureAction
                 + " raw=" + rawCount
                 + " usable=" + usableCount
                 + " media=" + mediaCandidateCount
@@ -104,6 +104,13 @@ final class OosAodLifecycleAdapter {
                 + " source=" + normalizeSource(source)
                 + " trace=" + emptyAsNone(trace)
                 + " state={" + stateDescription + "}");
+    }
+
+    static NotificationPulseObservation evaluateNotificationPulseObservation(String source,
+            int rawCount, int usableCount, int rankingCount) {
+        NotificationPulseRule rule = mapNotificationPulseRule(source, rawCount,
+                usableCount, rankingCount);
+        return rule.toObservation();
     }
 
     static boolean matchesExpectedTrace(String expectedTrace, String currentTrace) {
@@ -580,6 +587,10 @@ final class OosAodLifecycleAdapter {
             this.category = category;
             this.futureAction = futureAction;
         }
+
+        NotificationPulseObservation toObservation() {
+            return new NotificationPulseObservation(eventLabel, label, category, futureAction);
+        }
     }
 
     private enum TriggerRule {
@@ -654,6 +665,25 @@ final class OosAodLifecycleAdapter {
             this.futureAction = futureAction;
             this.levelPercent = levelPercent;
             this.thresholdPercent = thresholdPercent;
+        }
+    }
+
+    static final class NotificationPulseObservation {
+        final String eventLabel;
+        final String ruleLabel;
+        final String categoryLabel;
+        final String futureAction;
+
+        NotificationPulseObservation(String eventLabel, String ruleLabel,
+                String categoryLabel, String futureAction) {
+            this.eventLabel = eventLabel;
+            this.ruleLabel = ruleLabel;
+            this.categoryLabel = categoryLabel;
+            this.futureAction = futureAction;
+        }
+
+        boolean isPulseCandidate() {
+            return "pulse-candidate".equals(categoryLabel);
         }
     }
 

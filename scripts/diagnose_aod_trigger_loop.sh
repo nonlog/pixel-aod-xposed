@@ -146,6 +146,7 @@ write_summary() {
   local display_wake sensor_guard diagnostic pickup_rule tap_rule prox_near_rule prox_far_rule
   local power_allow power_block power_save low_battery charging_power unknown_battery
   local pulse_candidate pulse_filtered pulse_clear pulse_ranking pulse_empty
+  local pulse_recent
   local log_window_status
   started="$(count_events 'started trigger-only Pixel AOD brief display')"
   expired="$(count_events 'expired trigger-only Pixel AOD brief display')"
@@ -171,6 +172,7 @@ write_summary() {
   pulse_clear="$(count_events 'OOS AOD notification pulse observation.*category=pulse-clear')"
   pulse_ranking="$(count_events 'OOS AOD notification pulse observation.*rule=ranking-update')"
   pulse_empty="$(count_events 'OOS AOD notification pulse observation.*rule=empty-snapshot')"
+  pulse_recent="$(count_events 'notificationPulseRecent=true')"
   systemui_pid="$(run_adb shell pidof com.android.systemui 2>/dev/null | tr -d '\r' || true)"
   pkg_version="$({ run_adb shell dumpsys package dev.codex.pixelaod 2>/dev/null \
     | grep -E 'versionCode=|versionName=' || true; } | tr -d '\r' | paste -sd ';' -)"
@@ -209,6 +211,7 @@ write_summary() {
     echo "counts.notificationPulseClear=$pulse_clear"
     echo "counts.notificationPulseRanking=$pulse_ranking"
     echo "counts.notificationPulseEmpty=$pulse_empty"
+    echo "counts.notificationPulseRecentInState=$pulse_recent"
     echo
     echo "verdict:"
     if [[ "$screen_off_brief" -gt 0 ]]; then

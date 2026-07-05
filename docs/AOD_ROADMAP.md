@@ -150,6 +150,10 @@ runtime behavior observable and reversible.
   starting a custom pulse. Notification snapshot, ranking, posted, removed,
   and clear events now map to stable pulse-observation logs. The current rule
   table is recorded in `docs/OOS_NOTIFICATION_PULSE_MAPPING.md`.
+- Phase 5.5 correlates notification pulse candidates with the active AOD
+  trace by adding recent pulse-candidate rule, source, trace, package summary,
+  and age fields to AOD lifecycle state snapshots. This still does not start a
+  custom notification pulse.
 - Treat AOD display as one of two explicit modes:
 - `Continuous + Trigger`: continuously displays during the configured schedule while respecting power saver, low battery, proximity, and pocket policy; outside the schedule it can still display briefly when OOS provides a native short-wake / trigger window.
 - `Trigger-only`: never keeps AOD visible continuously; it only displays during native short-wake / pickup / tap style trigger windows and expires automatically.
