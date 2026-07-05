@@ -44,7 +44,6 @@ import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.provider.Settings;
 import android.text.TextUtils;
-import android.text.format.DateFormat;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
@@ -62,7 +61,6 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
@@ -275,6 +273,11 @@ public final class PixelAodClockView extends FrameLayout {
         proximityListening = false;
         proximityNear = false;
     }
+
+    static boolean isProximityNear() {
+        return proximityNear;
+    }
+
     private static final BroadcastReceiver BREEZY_WEATHER_RECEIVER = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -2161,7 +2164,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             return;
         }
-        String normalized = normalizeAtAGlanceExtra(extra);
+        String normalized = PixelAodRenderModel.normalizeAtAGlanceExtra(extra);
         boolean changed;
         synchronized (PixelAodClockView.class) {
             changed = !TextUtils.equals(atAGlanceExtra, normalized);
@@ -4241,45 +4244,28 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static String formatDateWithWeather(Calendar calendar) {
-        Locale locale = Locale.getDefault();
-        String pattern = locale.getLanguage().equals(Locale.CHINESE.getLanguage())
-                ? "M\u6708d\u65e5 EEEE" : "EEE, MMM d";
-        String date = new SimpleDateFormat(pattern, locale).format(calendar.getTime());
-        WeatherSnapshot weather = currentFreshWeather(appContext);
-        if (!TextUtils.isEmpty(weather.temperatureText)) {
-            return date + " \u00b7 " + weather.temperatureText;
-        }
-        return date;
+        return PixelAodRenderModel.formatDateWithWeather(calendar, currentFreshWeather(appContext));
     }
 
     private void updateTime() {
-        Calendar calendar = Calendar.getInstance();
-        boolean is24Hour = DateFormat.is24HourFormat(getContext());
-        int hour = calendar.get(is24Hour ? Calendar.HOUR_OF_DAY : Calendar.HOUR);
-        if (!is24Hour && hour == 0) {
-            hour = 12;
-        }
-        int minute = calendar.get(Calendar.MINUTE);
-        String clockText;
-        if (compactClock) {
-            clockText = String.format(Locale.getDefault(), "%02d:%02d", hour, minute);
-        } else {
-            clockText = String.format(Locale.getDefault(), "%02d\n%02d", hour, minute);
-        }
-        CharSequence previousClockText = clockView.getText();
-        clockView.setText(clockText);
-        int infoColor = resolveMaterialInfoColor(getContext());
-        dateView.setText(formatAtAGlanceLine(calendar));
-        applyWeatherIcon(dateView, currentFreshWeather(getContext()), infoColor);
+        WeatherSnapshot weather = currentFreshWeather(getContext());
         BatteryStatus batteryStatus = readBatteryStatus();
-        batteryView.setText(batteryStatus.percentText);
-        chargeBoltView.setVisibility(batteryStatus.charging ? View.VISIBLE : View.GONE);
-        batteryRow.setVisibility(TextUtils.isEmpty(batteryStatus.percentText) ? View.GONE : View.VISIBLE);
+        PixelAodRenderModel model = PixelAodRenderModel.forAod(getContext(), compactClock,
+                weather, currentAtAGlanceExtra(), batteryStatus.percentText,
+                batteryStatus.charging);
+        CharSequence previousClockText = clockView.getText();
+        clockView.setText(model.clockText);
+        int infoColor = resolveMaterialInfoColor(getContext());
+        dateView.setText(model.dateText);
+        applyWeatherIcon(dateView, model.weather, infoColor);
+        batteryView.setText(model.batteryText);
+        chargeBoltView.setVisibility(model.batteryCharging ? View.VISIBLE : View.GONE);
+        batteryRow.setVisibility(TextUtils.isEmpty(model.batteryText) ? View.GONE : View.VISIBLE);
         applyBurnInTranslation();
         PixelAodLog.log("AOD time update trace=" + currentAodTraceId()
-                + " text=" + clockText.replace('\n', '/')
+                + " text=" + model.clockText.replace('\n', '/')
                 + " previous=" + String.valueOf(previousClockText).replace('\n', '/')
-                + " changed=" + !TextUtils.equals(previousClockText, clockText)
+                + " changed=" + !TextUtils.equals(previousClockText, model.clockText)
                 + " visibility=" + getVisibility()
                 + " shown=" + isShown()
                 + " state={" + describeAodState(getContext()) + "}");
@@ -4542,27 +4528,10 @@ public final class PixelAodClockView extends FrameLayout {
         mediaRow.setLayoutParams(mediaParams);
     }
 
-    private String formatAtAGlanceLine(Calendar calendar) {
-        String date = formatDateWithWeather(calendar);
-        String extra;
+    private static String currentAtAGlanceExtra() {
         synchronized (PixelAodClockView.class) {
-            extra = atAGlanceExtra;
+            return atAGlanceExtra;
         }
-        if (TextUtils.isEmpty(extra)) {
-            return date;
-        }
-        return date + " · " + extra;
-    }
-
-    private static String normalizeAtAGlanceExtra(String extra) {
-        if (extra == null) {
-            return "";
-        }
-        String normalized = extra.replace('\n', ' ').replace('\r', ' ').trim();
-        if (normalized.length() > 24) {
-            normalized = normalized.substring(0, 24).trim();
-        }
-        return normalized;
     }
 
     private BatteryStatus readBatteryStatus() {

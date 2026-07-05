@@ -4,6 +4,32 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.151] - 2026-07-05
+### Diagnostics
+- Add targeted FOD / UDFPS AOD diagnostics around OOS fingerprint icon show/hide callbacks so the remaining AOD entry black-frame window can be correlated with native fingerprint timeout behavior.
+- Add `scripts/diagnose_aod_black_frame.sh` to capture logcat plus LSPosed module logs and summarize native hide callbacks, `AodData` hide signals, SurfaceFlinger power-mode transitions, and Pixel overlay visibility decisions.
+
+## [0.1.150] - 2026-07-05
+### Bug Fixes
+- Reassert the Pixel AOD overlay after OOS native fingerprint / timeout hide callbacks complete, so Continuous AOD does not disappear together with the fingerprint affordance.
+- Keep native timeout reassertion trace-guarded and proximity-aware so Trigger-only, outside-schedule, interactive, and pocket/near-sensor paths are not accidentally kept alive.
+- Rewrite OOS `DreamService#setDozeScreenState(OFF)` to `DOZE` only while Continuous AOD policy is actively keeping native Doze alive, reducing the entry / timeout black-frame path without blocking fingerprint fadeout callbacks.
+- Extend the Continuous AOD diagnostic script to report native-timeout reassert coverage and OOS Doze screen-state OFF events.
+
+## [0.1.149] - 2026-07-05
+### Bug Fixes
+- Let OOS `notifyHideCallback` run during Continuous AOD so native fingerprint / short-wake timeout callbacks can self-dismiss normally, while keeping module AOD lifecycle decisions active.
+- Stop treating proximity-near expected hiding as a black-frame diagnostic failure in the Continuous AOD diagnostic script.
+
+## [0.1.148] - 2026-07-05
+### Bug Fixes
+- Keep Continuous AOD active for the whole non-interactive AOD session inside schedule, instead of letting the lifecycle fall back to `lifecycle-not-ready` after the short entry/recent-overlay window.
+- Suppress OOS energy-saving native hide callbacks whenever Continuous AOD is actively keeping native Doze alive, so the Pixel overlay is not hidden about one second after screen-off.
+
+## [0.1.147] - 2026-07-05
+### Internal
+- Add `PixelAodRenderModel` and route AOD / lockscreen clock-date rendering through it, keeping the existing visibility, media, notification, and transition policies unchanged.
+
 ## [0.1.146] - 2026-07-05
 ### Removed
 - Remove the ineffective `Skip AOD black frame` advanced option and its old doze screen-state rewrite hook, so stale enabled preferences no longer install that compatibility path.

@@ -10,6 +10,7 @@ import android.os.Looper;
 import android.service.dreams.DreamService;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
+import android.view.Display;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
@@ -55,6 +56,25 @@ final class PixelAodHook {
             "com.oplus.systemui.aod.scene.AodViewSingleClickWakeUpHolder$AodSingleClickWakeUpCallback",
             "com.oplus.systemui.aod.scene.PanoramicAodSingleClickWakeUpController$PanoramicAodSingleClickWakeUpCallback"
     };
+    private static final String OPLUS_BIOMETRIC_AUTH_CONTROLLER =
+            "com.oplus.systemui.biometrics.OplusBiometricAuthController";
+    private static final String OPLUS_ON_SCREEN_FINGERPRINT_UI_MECH =
+            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech";
+    private static final String[] FOD_AOD_DIAGNOSTIC_METHOD_NAMES = {
+            "hideUdfpsOverlay",
+            "setFpIconVisibilityInAOD",
+            "showOrHideFingerprintIconTemporarily",
+            "showUdfpsOverlay",
+            "hidePressAnimImmediately",
+            "fpIconHide",
+            "fpIconShow",
+            "hideFingerprintIcon",
+            "hideFingerprintIconTemporarily",
+            "notifyHideAodIcon",
+            "notifyShowAodIcon",
+            "setFingerprintIconShow",
+            "showFingerprintIconTemporarily"
+    };
     private static final String SHADE_WINDOW_VIEW =
             "com.android.systemui.shade.NotificationShadeWindowView";
     private static final String KEYGUARD_STYLE_CLOCK =
@@ -69,8 +89,10 @@ final class PixelAodHook {
     private static final String LOCKSCREEN_CUSTOM_TAG = "dev.codex.pixelaod.PIXEL_LOCKSCREEN_CLOCK";
     private static final String MODULE_PACKAGE = "dev.codex.pixelaod";
     private static final int STATUS_EDGE_DP = 68;
-    private static final long AOD_ENTRY_STATE_REWRITE_WINDOW_MILLIS = 10000L;
     private static final long AOD_ENERGY_HIDE_REASSERT_DELAY_MILLIS = 80L;
+    private static final long[] AOD_NATIVE_TIMEOUT_REASSERT_DELAYS_MILLIS = {
+            80L, 450L, 1200L
+    };
     private static final boolean ENABLE_EXPENSIVE_DEBUG_REAPPLY = false;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_DUMPS = false;
     private static final boolean ENABLE_NOTIFICATION_VIEW_REFLECTION_DUMP = false;
@@ -132,8 +154,10 @@ final class PixelAodHook {
         hookNotificationView(classLoader);
         hookAodRecord(classLoader);
         hookOplusEnergySavingHideGuards(classLoader);
+        hookOplusFingerprintAodDiagnostics(classLoader);
         hookOplusAodTriggerDiagnostics(classLoader);
         hookPowerManagerWakeTriggers();
+        hookDreamServiceDozeScreenState();
         if (ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS) {
             hookStockClockVisibilityAndAlphaSuppression();
         } else {
@@ -1093,6 +1117,9 @@ final class PixelAodHook {
                     param.setResult(defaultReturnValue(returnType));
                     reassertPixelAodAfterEnergySavingHide(context, source);
                 });
+                ModernHookBridge.hookAfter(targetMethod, param ->
+                        maybeReassertPixelAodAfterNativeTimeoutHide(
+                                contextFromHookParam(param), source));
                 hooked = true;
                 PixelAodLog.log("hooked OPlus AOD energy-saving hide guard " + source);
             } catch (Throwable t) {
@@ -1101,6 +1128,73 @@ final class PixelAodHook {
             }
         }
         return hooked;
+    }
+
+    private static void hookOplusFingerprintAodDiagnostics(ClassLoader classLoader) {
+        boolean hooked = false;
+        hooked |= hookFingerprintAodDiagnosticClass(classLoader, OPLUS_BIOMETRIC_AUTH_CONTROLLER);
+        hooked |= hookFingerprintAodDiagnosticClass(classLoader, OPLUS_ON_SCREEN_FINGERPRINT_UI_MECH);
+        PixelAodLog.log("installed FOD AOD diagnostics hooked=" + hooked);
+    }
+
+    private static boolean hookFingerprintAodDiagnosticClass(
+            ClassLoader classLoader, String className) {
+        try {
+            Class<?> clazz = ModernHookBridge.findClass(className, classLoader);
+            return hookFingerprintAodDiagnosticMethods(clazz, simpleClassName(className));
+        } catch (ClassNotFoundException ignored) {
+            PixelAodLog.log("FOD AOD diagnostic class not found class=" + className);
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook FOD AOD diagnostic class " + className, t);
+        }
+        return false;
+    }
+
+    private static boolean hookFingerprintAodDiagnosticMethods(Class<?> clazz, String sourceClass) {
+        boolean hooked = false;
+        StringBuilder candidates = new StringBuilder();
+        for (Method method : clazz.getDeclaredMethods()) {
+            if (!isFingerprintAodDiagnosticMethod(method)) {
+                continue;
+            }
+            if (candidates.length() > 0) {
+                candidates.append('|');
+            }
+            candidates.append(methodSignature(method));
+            final Method targetMethod = method;
+            final String source = sourceClass + "#" + methodSignature(method);
+            try {
+                targetMethod.setAccessible(true);
+                ModernHookBridge.hookAfter(targetMethod, param -> {
+                    Context context = contextFromHookParam(param);
+                    PixelAodLog.log("FOD AOD diagnostic source=" + source
+                            + " args=" + summarizeArgs(param.args, 6)
+                            + " result=" + summarizeValue(param.getResult())
+                            + " trace=" + PixelAodClockView.currentAodTraceId()
+                            + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                });
+                hooked = true;
+                PixelAodLog.log("hooked FOD AOD diagnostic " + source);
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to hook FOD AOD diagnostic " + source, t);
+            }
+        }
+        PixelAodLog.log("FOD AOD diagnostic candidates class=" + clazz.getName()
+                + " hooked=" + hooked
+                + " methods=" + (candidates.length() > 0 ? candidates : "none"));
+        return hooked;
+    }
+
+    private static boolean isFingerprintAodDiagnosticMethod(Method method) {
+        if (method == null || Modifier.isAbstract(method.getModifiers())) {
+            return false;
+        }
+        for (String name : FOD_AOD_DIAGNOSTIC_METHOD_NAMES) {
+            if (name.equals(method.getName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void hookOplusAodTriggerDiagnostics(ClassLoader classLoader) {
@@ -1224,6 +1318,36 @@ final class PixelAodHook {
         PixelAodLog.log("installed PowerManager wake trigger hooks hooked=" + hooked);
     }
 
+    private static void hookDreamServiceDozeScreenState() {
+        try {
+            ModernHookBridge.hookBefore(DreamService.class, "setDozeScreenState", param -> {
+                if (param.args == null || param.args.length == 0
+                        || !(param.args[0] instanceof Integer)) {
+                    return;
+                }
+                int requestedState = (Integer) param.args[0];
+                if (requestedState != Display.STATE_OFF) {
+                    return;
+                }
+                Context context = contextFromHookParam(param);
+                if (!shouldRewriteDozeScreenOffToDoze(context,
+                        "DreamService#setDozeScreenState(OFF)")) {
+                    return;
+                }
+                param.args[0] = Display.STATE_DOZE;
+                PixelAodLog.log("rewrote DreamService doze screen state"
+                        + " source=DreamService#setDozeScreenState"
+                        + " requested=OFF replacement=DOZE"
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            }, int.class);
+            PixelAodLog.log("hooked DreamService#setDozeScreenState AOD keepalive guard");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook DreamService#setDozeScreenState AOD keepalive guard",
+                    t);
+        }
+    }
+
     private static String classifyAodTriggerEvent(String source, String args) {
         String combined = (TextUtils.isEmpty(source) ? "" : source) + " "
                 + (TextUtils.isEmpty(args) ? "" : args);
@@ -1288,6 +1412,44 @@ final class PixelAodHook {
         return null;
     }
 
+    private static boolean shouldRewriteDozeScreenOffToDoze(Context context, String source) {
+        Context checkContext = context != null ? context : systemUiContext;
+        String state = PixelAodClockView.describeAodState(checkContext);
+        if (checkContext == null) {
+            PixelAodLog.log("allowed DreamService doze OFF source=" + source
+                    + " reason=no-context state={" + state + "}");
+            return false;
+        }
+        if (PixelAodClockView.isDeviceInteractive(checkContext)) {
+            PixelAodLog.log("allowed DreamService doze OFF source=" + source
+                    + " reason=interactive state={" + state + "}");
+            return false;
+        }
+        if (PixelAodClockView.isProximityNear()) {
+            PixelAodLog.log("allowed DreamService doze OFF source=" + source
+                    + " reason=proximity-near state={" + state + "}");
+            return false;
+        }
+        OosAodLifecycleAdapter.AodPolicyDecision decision =
+                PixelAodClockView.evaluateAodPolicy(checkContext, source);
+        if (!decision.modulePolicyAllowsDisplay
+                || !decision.shouldApplyModuleAod
+                || !decision.shouldKeepNativeDozeAlive) {
+            PixelAodLog.log("allowed DreamService doze OFF source=" + source
+                    + " reason=policy"
+                    + " modulePolicyReason=" + decision.modulePolicyReason
+                    + " shouldApplyModuleAod=" + decision.shouldApplyModuleAod
+                    + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
+                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
+            return false;
+        }
+        PixelAodLog.log("blocked DreamService doze OFF source=" + source
+                + " reason=" + decision.keepNativeDozeReason
+                + " trace=" + PixelAodClockView.currentAodTraceId()
+                + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
+        return true;
+    }
+
     private static boolean shouldSuppressOplusEnergySavingHide(Context context, String source) {
         Context checkContext = context != null ? context : systemUiContext;
         String state = PixelAodClockView.describeAodState(checkContext);
@@ -1326,21 +1488,7 @@ final class PixelAodHook {
                     + PixelAodClockView.describeAodState(checkContext) + "}");
             return false;
         }
-        boolean displayAod = PixelAodClockView.isDisplayInAodState(checkContext);
-        if (!PixelAodClockView.isAodActive()
-                && !displayAod
-                && !decision.shouldDrawPixelOverlay) {
-            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
-                    + " reason=aod-inactive state={" + state + "}");
-            return false;
-        }
-        if (!PixelAodClockView.isInAodEntryTransitionWindow(
-                AOD_ENTRY_STATE_REWRITE_WINDOW_MILLIS)) {
-            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
-                    + " reason=outside-entry-window state={" + state + "}");
-            return false;
-        }
-        if (!displayAod && !decision.shouldKeepNativeDozeAlive) {
+        if (!decision.shouldKeepNativeDozeAlive) {
             PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
                     + " reason=" + decision.keepNativeDozeReason
                     + " shouldAllowNativeHideCallbacks="
@@ -1350,6 +1498,7 @@ final class PixelAodHook {
         }
         PixelAodLog.i("suppressed OPlus AOD energy-saving hide source=" + source
                 + " reason=" + decision.nativeHideCallbackReason
+                + " keepDozeReason=" + decision.keepNativeDozeReason
                 + " trace=" + PixelAodClockView.currentAodTraceId()
                 + " state={" + state + "}");
         return true;
@@ -1371,6 +1520,124 @@ final class PixelAodHook {
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
         }, AOD_ENERGY_HIDE_REASSERT_DELAY_MILLIS);
+    }
+
+    private static void maybeReassertPixelAodAfterNativeTimeoutHide(
+            Context context, String source) {
+        if (!isNativeAodTimeoutHideSource(source)) {
+            return;
+        }
+        Context checkContext = context != null ? context : systemUiContext;
+        String expectedTrace = PixelAodClockView.peekAodTraceId();
+        if (checkContext == null) {
+            PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
+                    + " reason=no-context expectedTrace=" + expectedTrace
+                    + " state={" + PixelAodClockView.describeAodState(null) + "}");
+            return;
+        }
+        if (PixelAodClockView.isDeviceInteractive(checkContext)) {
+            PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
+                    + " reason=interactive expectedTrace=" + expectedTrace
+                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
+            return;
+        }
+        if (PixelAodClockView.isProximityNear()) {
+            PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
+                    + " reason=proximity-near expectedTrace=" + expectedTrace
+                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
+            return;
+        }
+        OosAodLifecycleAdapter.AodPolicyDecision decision =
+                PixelAodClockView.evaluateAodPolicy(
+                        checkContext, source + "#native-timeout-after");
+        if (!decision.modulePolicyAllowsDisplay
+                || !decision.shouldApplyModuleAod
+                || !decision.shouldKeepNativeDozeAlive) {
+            PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
+                    + " reason=policy"
+                    + " modulePolicyReason=" + decision.modulePolicyReason
+                    + " shouldApplyModuleAod=" + decision.shouldApplyModuleAod
+                    + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
+                    + " expectedTrace=" + expectedTrace
+                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
+            return;
+        }
+        PixelAodLog.log("scheduling Pixel AOD native-timeout reassert source=" + source
+                + " expectedTrace=" + expectedTrace
+                + " reason=" + decision.nativeHideCallbackReason
+                + " keepDozeReason=" + decision.keepNativeDozeReason
+                + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
+        reassertPixelAodAfterNativeTimeoutHide(checkContext, source, expectedTrace);
+    }
+
+    private static boolean isNativeAodTimeoutHideSource(String source) {
+        return source != null
+                && (source.contains("notifyHideCallback")
+                || source.contains("AodRecord#onEnergySavingNotifyHide"));
+    }
+
+    private static void reassertPixelAodAfterNativeTimeoutHide(
+            Context context, String source, String expectedTrace) {
+        runPixelAodNativeTimeoutReassert(context, source, expectedTrace, "immediate");
+        for (long delayMillis : AOD_NATIVE_TIMEOUT_REASSERT_DELAYS_MILLIS) {
+            MAIN.postDelayed(() -> runPixelAodNativeTimeoutReassert(
+                    context, source, expectedTrace, "delayed-" + delayMillis),
+                    delayMillis);
+        }
+    }
+
+    private static void runPixelAodNativeTimeoutReassert(Context context, String source,
+            String expectedTrace, String pass) {
+        MAIN.post(() -> {
+            String currentTrace = PixelAodClockView.peekAodTraceId();
+            if (!OosAodLifecycleAdapter.matchesExpectedTrace(expectedTrace, currentTrace)) {
+                PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
+                        + " pass=" + pass
+                        + " reason=trace-mismatch expectedTrace=" + expectedTrace
+                        + " currentTrace=" + currentTrace
+                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                return;
+            }
+            if (PixelAodClockView.isDeviceInteractive(context)) {
+                PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
+                        + " pass=" + pass
+                        + " reason=interactive trace=" + currentTrace
+                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                return;
+            }
+            if (PixelAodClockView.isProximityNear()) {
+                PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
+                        + " pass=" + pass
+                        + " reason=proximity-near trace=" + currentTrace
+                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                return;
+            }
+            OosAodLifecycleAdapter.AodPolicyDecision decision =
+                    PixelAodClockView.evaluateAodPolicy(
+                            context, source + "#native-timeout-reassert-" + pass);
+            if (!decision.modulePolicyAllowsDisplay
+                    || !decision.shouldApplyModuleAod
+                    || !decision.shouldKeepNativeDozeAlive) {
+                PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
+                        + " pass=" + pass
+                        + " reason=policy"
+                        + " modulePolicyReason=" + decision.modulePolicyReason
+                        + " shouldApplyModuleAod=" + decision.shouldApplyModuleAod
+                        + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
+                        + " trace=" + currentTrace
+                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                return;
+            }
+            PixelAodClockView.markRecentAodOverlayVisible(
+                    source + "#native-timeout-reassert-" + pass);
+            PixelAodClockView.setAodActive(true, source + "#native-timeout-reassert-" + pass);
+            PixelAodClockView.tickAllInstances();
+            refreshKnownAodHostVisibility(source + "#native-timeout-reassert-" + pass);
+            PixelAodLog.log("reasserted Pixel AOD after native timeout hide source=" + source
+                    + " pass=" + pass
+                    + " trace=" + currentTrace
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+        });
     }
 
     private static void hookLockscreenNotificationPolicy(ClassLoader classLoader) {

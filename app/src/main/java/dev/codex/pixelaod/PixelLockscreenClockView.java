@@ -12,7 +12,6 @@ import android.graphics.Typeface;
 import android.os.Handler;
 import android.os.Looper;
 import android.service.notification.StatusBarNotification;
-import android.text.format.DateFormat;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -25,10 +24,8 @@ import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
 
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.WeakHashMap;
 
@@ -696,23 +693,12 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     private void updateTime() {
-        Calendar calendar = Calendar.getInstance();
-        boolean is24Hour = DateFormat.is24HourFormat(getContext());
-        int hour = calendar.get(is24Hour ? Calendar.HOUR_OF_DAY : Calendar.HOUR);
-        if (!is24Hour && hour == 0) {
-            hour = 12;
-        }
-        int minute = calendar.get(Calendar.MINUTE);
-        if (compactClock) {
-            clockView.setText(String.format(Locale.getDefault(), "%02d:%02d", hour, minute));
-        } else {
-            clockView.setText(String.format(Locale.getDefault(), "%02d\n%02d", hour, minute));
-        }
-        Locale locale = Locale.getDefault();
-        dateView.setText(PixelAodClockView.formatDateWithWeather(calendar));
+        PixelAodRenderModel model = PixelAodRenderModel.forLockscreen(getContext(), compactClock,
+                PixelAodClockView.currentFreshWeather(getContext()));
+        clockView.setText(model.clockText);
+        dateView.setText(model.dateText);
         PixelAodClockView.applyWeatherIcon(dateView,
-                PixelAodClockView.currentFreshWeather(getContext()),
-                resolveMaterialInfoColor(getContext()));
+                model.weather, resolveMaterialInfoColor(getContext()));
     }
 
     private void applyClockMode(boolean compact) {

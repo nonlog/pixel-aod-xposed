@@ -53,7 +53,9 @@ final class OosAodLifecycleAdapter {
                 ? modulePolicy
                 : new ModulePolicy(false, false, false, false,
                 "no-module-policy", "unknown", false, false);
-        boolean lifecycleWantsPixelOverlay = shouldDrawPixelAod(state);
+        boolean continuousSessionActive = isContinuousSessionActive(state, policy);
+        boolean lifecycleWantsPixelOverlay = shouldDrawPixelAod(state)
+                || continuousSessionActive;
         boolean shouldApplyModuleAod = lifecycleWantsPixelOverlay
                 && policy.allowsDisplay;
         boolean shouldDrawPixelOverlay = shouldApplyModuleAod
@@ -61,7 +63,7 @@ final class OosAodLifecycleAdapter {
                 && !expandedShadeBlocked;
         boolean shouldKeepNativeDozeAlive = policy.allowsDisplay
                 && policy.continuousAllowed
-                && shouldKeepDozeScreenActive(state);
+                && (continuousSessionActive || shouldKeepDozeScreenActive(state));
         boolean nativeAodTransition = state != null
                 && (state.displayAod
                 || state.entryDelay
@@ -72,7 +74,8 @@ final class OosAodLifecycleAdapter {
                 && state != null
                 && !state.interactive
                 && (shouldApplyModuleAod || nativeAodTransition);
-        boolean shouldAllowNativeHideCallbacks = !shouldKeepNativeDozeAlive;
+        boolean shouldAllowNativeHideCallbacks = shouldAllowNativeHideCallbacks(
+                source, state, policy, shouldKeepNativeDozeAlive);
         return new AodPolicyDecision(
                 source,
                 trace,
@@ -87,8 +90,8 @@ final class OosAodLifecycleAdapter {
                 proximityBlocked,
                 expandedShadeBlocked,
                 policy.reason,
-                drawReason(lifecycleWantsPixelOverlay, policy, proximityBlocked,
-                        expandedShadeBlocked),
+                drawReason(lifecycleWantsPixelOverlay, continuousSessionActive,
+                        policy, proximityBlocked, expandedShadeBlocked),
                 keepDozeReason(shouldKeepNativeDozeAlive, lifecycleWantsPixelOverlay,
                         policy),
                 stockSuppressionReason(shouldSuppressStockAodViews, shouldApplyModuleAod,
@@ -101,6 +104,15 @@ final class OosAodLifecycleAdapter {
 
     static boolean shouldDrawPixelAod(PixelAodClockView.AodLifecycleState state) {
         return state != null && state.shouldDrawPixelAod();
+    }
+
+    private static boolean isContinuousSessionActive(
+            PixelAodClockView.AodLifecycleState state, ModulePolicy modulePolicy) {
+        return state != null
+                && !state.interactive
+                && state.active
+                && modulePolicy.allowsDisplay
+                && modulePolicy.continuousAllowed;
     }
 
     static boolean shouldKeepDozeScreenActive(PixelAodClockView.AodLifecycleState state) {
@@ -118,7 +130,8 @@ final class OosAodLifecycleAdapter {
     }
 
     private static String drawReason(boolean lifecycleWantsPixelOverlay,
-            ModulePolicy modulePolicy, boolean proximityBlocked, boolean expandedShadeBlocked) {
+            boolean continuousSessionActive, ModulePolicy modulePolicy,
+            boolean proximityBlocked, boolean expandedShadeBlocked) {
         if (!lifecycleWantsPixelOverlay) {
             return "lifecycle-not-ready";
         }
@@ -133,6 +146,9 @@ final class OosAodLifecycleAdapter {
         }
         if ("trigger-brief-display".equals(modulePolicy.reason)) {
             return "trigger-brief-display";
+        }
+        if (continuousSessionActive) {
+            return "continuous-active-session";
         }
         return "all-checks-passed";
     }
@@ -175,11 +191,31 @@ final class OosAodLifecycleAdapter {
         return "native-aod-transition";
     }
 
+    private static boolean shouldAllowNativeHideCallbacks(String source,
+            PixelAodClockView.AodLifecycleState state, ModulePolicy modulePolicy,
+            boolean shouldKeepNativeDozeAlive) {
+        if (!shouldKeepNativeDozeAlive) {
+            return true;
+        }
+        if (isNativeTimeoutCallback(source) && state != null && !state.interactive) {
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean isNativeTimeoutCallback(String source) {
+        return sourceContains(source, "notifyHideCallback")
+                || sourceContains(source, "AodRecord#onEnergySavingNotifyHide");
+    }
+
     private static String nativeHideCallbackReason(boolean shouldAllowNativeHideCallbacks,
             boolean shouldKeepNativeDozeAlive, boolean lifecycleWantsPixelOverlay,
             ModulePolicy modulePolicy) {
         if (!shouldAllowNativeHideCallbacks) {
             return "module-keeps-native-doze";
+        }
+        if (shouldKeepNativeDozeAlive) {
+            return "native-timeout-callback";
         }
         if (!modulePolicy.allowsDisplay) {
             return modulePolicy.reason;

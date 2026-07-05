@@ -73,7 +73,7 @@ runtime behavior observable and reversible.
 | 2 | Split SystemUI hook orchestration from stock visibility | First migration implemented on 2026-07-05 | Keep hooks as adapters and move stock view hide / restore / delayed reapply / trace guard behavior into one stock visibility module. |
 | 3 | Extract the AOD notification pipeline | First migration implemented on 2026-07-05 | Make lockscreen and AOD consume the same notification display model, including silent filtering, media classification, and icon fallback reasons. |
 | 4 | Create a settings schema module | First migration implemented on 2026-07-05 | Centralize setting keys, defaults, UI visibility, provider rows, and restart requirements. |
-| 5 | Separate Pixel AOD rendering from policy and data collection | Planned | Let views apply render models instead of owning policy, data parsing, and drawing state in the same implementation. |
+| 5 | Separate Pixel AOD rendering from policy and data collection | First migration implemented on 2026-07-05 | Let views apply render models instead of owning policy, data parsing, and drawing state in the same implementation. |
 
 ### Architecture Tracking
 
@@ -103,6 +103,11 @@ runtime behavior observable and reversible.
   flags, and SystemUI restart metadata. `PixelAodSettingsProvider` and
   `SettingsActivity` read schema defaults instead of duplicating fallback
   values.
+- 2026-07-05: Item 5 first migration implemented.
+  `PixelAodRenderModel` now owns clock text, date/weather text, At a Glance
+  extra formatting, and battery row render data for the AOD clock path.
+  `PixelAodClockView` and `PixelLockscreenClockView` apply that model while
+  leaving visibility, media, notification, and transition policy unchanged.
 
 ### Phase 1: Stabilize Current Replacement Layer
 
