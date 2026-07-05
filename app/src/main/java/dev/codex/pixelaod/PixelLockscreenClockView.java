@@ -52,6 +52,9 @@ final class PixelLockscreenClockView extends FrameLayout {
             PixelAodVisualStyle.LARGE_CLOCK_LETTER_SPACING;
     private static final float SMALL_CLOCK_LETTER_SPACING =
             PixelAodVisualStyle.COMPACT_CLOCK_LETTER_SPACING;
+    private static final float LOCKSCREEN_CLOCK_ALPHA =
+            PixelAodVisualStyle.LOCKSCREEN_CLOCK_ALPHA;
+    private static final float INFO_ALPHA = PixelAodVisualStyle.INFO_ALPHA;
     private static final int CLOCK_LOCKSCREEN_WEIGHT =
             PixelAodVisualStyle.Lockscreen.CLOCK_WEIGHT;
     private static final int INFO_LOCKSCREEN_WEIGHT = PixelAodVisualStyle.Lockscreen.INFO_WEIGHT;
@@ -161,7 +164,7 @@ final class PixelLockscreenClockView extends FrameLayout {
                 + " typeface=builder"
                 + " visualProfile={"
                 + PixelAodVisualStyle.lockscreenProfile(lockscreenWeight) + "}");
-        clockView.setAlpha(0.98f);
+        clockView.setAlpha(LOCKSCREEN_CLOCK_ALPHA);
         FrameLayout.LayoutParams clockParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -183,7 +186,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         notificationIconRow.setOrientation(LinearLayout.HORIZONTAL);
         notificationIconRow.setGravity(Gravity.CENTER_VERTICAL);
         notificationIconRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        notificationIconRow.setAlpha(0.94f);
+        notificationIconRow.setAlpha(INFO_ALPHA);
         FrameLayout.LayoutParams notificationParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,

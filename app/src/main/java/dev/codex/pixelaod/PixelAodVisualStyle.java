@@ -12,6 +12,10 @@ final class PixelAodVisualStyle {
     static final float LARGE_CLOCK_LETTER_SPACING = -0.02f;
     static final float COMPACT_CLOCK_LETTER_SPACING = -0.025f;
     static final float INFO_LETTER_SPACING = 0.01f;
+    static final float AOD_CLOCK_ALPHA = 0.96f;
+    static final float LOCKSCREEN_CLOCK_ALPHA = 0.98f;
+    static final float INFO_ALPHA = 0.94f;
+    static final float MEDIA_ALPHA = 0.82f;
 
     static final int LARGE_CLOCK_TEXT_DP = 150;
     static final int LARGE_CLOCK_TOP_DP = 144;
@@ -56,6 +60,10 @@ final class PixelAodVisualStyle {
                 + ",largeLetterSpacing=" + LARGE_CLOCK_LETTER_SPACING
                 + ",compactLetterSpacing=" + COMPACT_CLOCK_LETTER_SPACING
                 + ",infoLetterSpacing=" + INFO_LETTER_SPACING
+                + ",aodClockAlpha=" + AOD_CLOCK_ALPHA
+                + ",lockscreenClockAlpha=" + LOCKSCREEN_CLOCK_ALPHA
+                + ",infoAlpha=" + INFO_ALPHA
+                + ",mediaAlpha=" + MEDIA_ALPHA
                 + ",runtimeClockWeight=" + runtimeClockWeight
                 + ",infoWeight=" + infoWeight;
     }

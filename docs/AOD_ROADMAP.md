@@ -193,6 +193,8 @@ runtime behavior observable and reversible.
 - Phase 6.1 makes the centralized visual profile observable in init logs so
   future Pixel visual parity tweaks can be verified against the actual runtime
   style values without touching lifecycle behavior.
+- Phase 6.2 moves AOD / lockscreen alpha values into the centralized visual
+  style profile so opacity tweaks can be audited and adjusted from one place.
 - At a Glance.
 - Richer media line behavior.
 - Possible media artwork / progress / controls only after confirming how Pixel / AOSP / target ROMs handle interaction on AOD.

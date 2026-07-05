@@ -118,6 +118,9 @@ public final class PixelAodClockView extends FrameLayout {
     private static final float COMPACT_CLOCK_LETTER_SPACING =
             PixelAodVisualStyle.COMPACT_CLOCK_LETTER_SPACING;
     private static final float INFO_LETTER_SPACING = PixelAodVisualStyle.INFO_LETTER_SPACING;
+    private static final float AOD_CLOCK_ALPHA = PixelAodVisualStyle.AOD_CLOCK_ALPHA;
+    private static final float INFO_ALPHA = PixelAodVisualStyle.INFO_ALPHA;
+    private static final float MEDIA_ALPHA = PixelAodVisualStyle.MEDIA_ALPHA;
     private static final int CLOCK_AOD_WEIGHT = PixelAodVisualStyle.Aod.CLOCK_WEIGHT;
     private static final int INFO_AOD_WEIGHT = PixelAodVisualStyle.Aod.INFO_WEIGHT;
     private static final int WEATHER_ICON_SIZE_DP = PixelAodVisualStyle.Aod.WEATHER_ICON_SIZE_DP;
@@ -417,7 +420,7 @@ public final class PixelAodClockView extends FrameLayout {
         notificationIconRow.setOrientation(LinearLayout.HORIZONTAL);
         notificationIconRow.setGravity(Gravity.CENTER_VERTICAL);
         notificationIconRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        notificationIconRow.setAlpha(0.94f);
+        notificationIconRow.setAlpha(INFO_ALPHA);
         FrameLayout.LayoutParams notificationParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 dp(NOTIFICATION_ICON_SIZE_DP),
@@ -431,7 +434,7 @@ public final class PixelAodClockView extends FrameLayout {
         mediaRow.setGravity(Gravity.CENTER_VERTICAL);
         mediaRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         mediaRow.setVisibility(View.GONE);
-        mediaRow.setAlpha(0.82f);
+        mediaRow.setAlpha(MEDIA_ALPHA);
 
         mediaIconView = new ImageView(context);
         mediaIconView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -441,7 +444,7 @@ public final class PixelAodClockView extends FrameLayout {
         mediaRow.addView(mediaIconView, mediaGlyphParams);
 
         mediaView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, 14, Gravity.START);
-        mediaView.setAlpha(0.82f);
+        mediaView.setAlpha(MEDIA_ALPHA);
         mediaView.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams mediaTextParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
@@ -469,7 +472,7 @@ public final class PixelAodClockView extends FrameLayout {
         batteryRow.setOrientation(LinearLayout.HORIZONTAL);
         batteryRow.setGravity(Gravity.CENTER);
         batteryRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        batteryRow.setAlpha(0.94f);
+        batteryRow.setAlpha(INFO_ALPHA);
 
         batteryView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, 13, Gravity.CENTER);
         batteryRow.addView(batteryView, new LinearLayout.LayoutParams(
@@ -2548,7 +2551,7 @@ public final class PixelAodClockView extends FrameLayout {
                 + " variation=" + sharedClockFontVariationSettings(weight)
                 + " typeface=builder"
                 + " visualProfile={" + PixelAodVisualStyle.aodProfile(weight) + "}");
-        textView.setAlpha(0.96f);
+        textView.setAlpha(AOD_CLOCK_ALPHA);
         return textView;
     }
 
@@ -4256,7 +4259,7 @@ public final class PixelAodClockView extends FrameLayout {
         textView.setTextAlignment(View.TEXT_ALIGNMENT_TEXT_START);
         textView.setSingleLine(true);
         textView.setLetterSpacing(INFO_LETTER_SPACING);
-        textView.setAlpha(0.94f);
+        textView.setAlpha(INFO_ALPHA);
         return textView;
     }
 
