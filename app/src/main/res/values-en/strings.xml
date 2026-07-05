@@ -1,12 +1,10 @@
 <resources>
     <string name="app_name">Pixel AOD for OPlus</string>
     <string name="module_description">Pixel-style two-line AOD clock for OPlus SystemUI</string>
-    <string name="title_custom_aod">Custom AOD</string>
-    <string name="desc_custom_aod">Two-line Pixel clock</string>
+    <string name="title_module_enabled">Module Enabled</string>
+    <string name="desc_module_enabled">After disabling, restart SystemUI to stop module hooks</string>
     <string name="title_skip_doze_off_state">Skip AOD black frame</string>
     <string name="desc_skip_doze_off_state">Experimental: skip AOD entry black and suspend states</string>
-    <string name="title_lockscreen_clock">Lockscreen Clock</string>
-    <string name="desc_lockscreen_clock">Unified lockscreen &amp; AOD style</string>
     <string name="title_weather">Weather</string>
     <string name="desc_weather">Breezy Weather / Gadgetbridge</string>
     <string name="title_weather_icon_pack">Weather Icon Pack</string>
@@ -24,8 +22,11 @@
     <string name="restart_systemui_failed">Failed to restart SystemUI</string>
     <string name="title_pocket_mode">Pocket Mode</string>
     <string name="desc_pocket_mode">Stop displaying AOD when device is in a pocket or proximity sensor is covered</string>
-    <string name="title_aod_schedule">AOD Schedule</string>
-    <string name="desc_aod_schedule">Only display AOD during specified time range</string>
+    <string name="title_aod_behavior">AOD Behavior</string>
+    <string name="aod_behavior_continuous_trigger">Continuous + Trigger</string>
+    <string name="aod_behavior_trigger_only">Trigger-only</string>
+    <string name="title_continuous_schedule">Continuous Display Schedule</string>
+    <string name="desc_continuous_schedule">Controls continuous display only; tap / lift triggers can still show AOD briefly outside this window</string>
     <string name="title_schedule_start_time">Start Time</string>
     <string name="title_schedule_end_time">End Time</string>
     <string name="section_appearance">Appearance</string>

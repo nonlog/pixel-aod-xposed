@@ -145,6 +145,24 @@ private fun updateModuleBooleanSetting(context: Context, key: String, value: Boo
     context.contentResolver.notifyChange(PixelAodSettingsProvider.URI, null)
 }
 
+private fun updateModuleStringSetting(context: Context, key: String, value: String) {
+    val values = ContentValues().apply {
+        put("key", key)
+        put("value", value)
+    }
+    val updated = try {
+        context.contentResolver.update(PixelAodSettingsProvider.URI, values, null, null)
+    } catch (_: Throwable) {
+        0
+    }
+    if (updated > 0) {
+        return
+    }
+    PixelAodSettings.getSharedPreferences(context).edit().putString(key, value).apply()
+    PixelAodSettings.refresh(context)
+    context.contentResolver.notifyChange(PixelAodSettingsProvider.URI, null)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PixelAodSettingsScreen(onLanguageChanged: () -> Unit) {
@@ -208,14 +226,19 @@ private fun SettingsContent(
         PixelAodSettings.getSharedPreferences(context)
     }
 
-    val customAod = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_CUSTOM_AOD, true))
+    val moduleEnabled = remember {
+        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_MODULE_ENABLED, true))
     }
     val skipDozeOffState = remember {
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, false))
     }
-    val lockscreenClock = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_LOCKSCREEN_CLOCK, true))
+    val aodDisplayMode = remember {
+        mutableStateOf(
+            prefs.getString(
+                PixelAodSettings.KEY_AOD_DISPLAY_MODE,
+                PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS
+            ) ?: PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS
+        )
     }
     val weather = remember {
         mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_WEATHER, true))
@@ -280,23 +303,20 @@ private fun SettingsContent(
 
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showIconPackDialog by remember { mutableStateOf(false) }
+    var showDisplayModeDialog by remember { mutableStateOf(false) }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(18.dp)) {
         SettingsSection(stringResource(R.string.section_appearance)) {
+            ToggleCard(Icons.Outlined.Bolt, stringResource(R.string.title_module_enabled), stringResource(R.string.desc_module_enabled), moduleEnabled.value) {
+                moduleEnabled.value = it
+                updateModuleBooleanSetting(context, PixelAodSettings.KEY_MODULE_ENABLED, it)
+            }
             ChoiceCard(
                 icon = Icons.Outlined.Language,
                 title = stringResource(R.string.title_language),
                 valueText = languageLabel(language.value)
             ) {
                 showLanguageDialog = true
-            }
-            ToggleCard(Icons.Outlined.Palette, stringResource(R.string.title_custom_aod), stringResource(R.string.desc_custom_aod), customAod.value) {
-                customAod.value = it
-                prefs.edit().putBoolean(PixelAodSettings.KEY_CUSTOM_AOD, it).apply()
-            }
-            ToggleCard(Icons.Outlined.Schedule, stringResource(R.string.title_lockscreen_clock), stringResource(R.string.desc_lockscreen_clock), lockscreenClock.value) {
-                lockscreenClock.value = it
-                prefs.edit().putBoolean(PixelAodSettings.KEY_LOCKSCREEN_CLOCK, it).apply()
             }
         }
 
@@ -324,6 +344,35 @@ private fun SettingsContent(
         }
 
         SettingsSection(stringResource(R.string.section_behavior)) {
+            ChoiceCard(
+                icon = Icons.Outlined.Schedule,
+                title = stringResource(R.string.title_aod_behavior),
+                valueText = aodDisplayModeLabel(aodDisplayMode.value)
+            ) {
+                showDisplayModeDialog = true
+            }
+            if (aodDisplayMode.value == PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS) {
+                ToggleCard(Icons.Outlined.Schedule, stringResource(R.string.title_continuous_schedule), stringResource(R.string.desc_continuous_schedule), aodScheduleEnabled.value) {
+                    aodScheduleEnabled.value = it
+                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, it)
+                }
+                if (aodScheduleEnabled.value) {
+                    TimePickerCard(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_schedule_start_time),
+                        timeText = aodScheduleStartTime.value
+                    ) {
+                        showClockDialPicker(true, aodScheduleStartTime.value)
+                    }
+                    TimePickerCard(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_schedule_end_time),
+                        timeText = aodScheduleEndTime.value
+                    ) {
+                        showClockDialPicker(false, aodScheduleEndTime.value)
+                    }
+                }
+            }
             ToggleCard(Icons.Outlined.Cloud, stringResource(R.string.title_weather), stringResource(R.string.desc_weather), weather.value) {
                 weather.value = it
                 prefs.edit().putBoolean(PixelAodSettings.KEY_WEATHER, it).apply()
@@ -343,26 +392,6 @@ private fun SettingsContent(
             ToggleCard(Icons.Outlined.Policy, stringResource(R.string.title_lockscreen_policy), stringResource(R.string.desc_lockscreen_policy), lockscreenPolicy.value) {
                 lockscreenPolicy.value = it
                 prefs.edit().putBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, it).apply()
-            }
-            ToggleCard(Icons.Outlined.Schedule, stringResource(R.string.title_aod_schedule), stringResource(R.string.desc_aod_schedule), aodScheduleEnabled.value) {
-                aodScheduleEnabled.value = it
-                prefs.edit().putBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, it).apply()
-            }
-            if (aodScheduleEnabled.value) {
-                TimePickerCard(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_schedule_start_time),
-                    timeText = aodScheduleStartTime.value
-                ) {
-                    showClockDialPicker(true, aodScheduleStartTime.value)
-                }
-                TimePickerCard(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_schedule_end_time),
-                    timeText = aodScheduleEndTime.value
-                ) {
-                    showClockDialPicker(false, aodScheduleEndTime.value)
-                }
             }
         }
 
@@ -411,6 +440,20 @@ private fun SettingsContent(
         )
     }
 
+    if (showDisplayModeDialog) {
+        AodDisplayModeDialog(
+            current = aodDisplayMode.value,
+            onDismiss = { showDisplayModeDialog = false },
+            onSelected = { selected ->
+                showDisplayModeDialog = false
+                if (selected != aodDisplayMode.value) {
+                    aodDisplayMode.value = selected
+                    updateModuleStringSetting(context, PixelAodSettings.KEY_AOD_DISPLAY_MODE, selected)
+                }
+            }
+        )
+    }
+
     // ── Material 3 Time Picker ──
     if (showClockDial) {
         val state = rememberTimePickerState(
@@ -428,10 +471,10 @@ private fun SettingsContent(
                     val formatted = String.format("%02d:%02d", state.hour, state.minute)
                     if (clockDialIsStart) {
                         aodScheduleStartTime.value = formatted
-                        prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, formatted).apply()
+                        updateModuleStringSetting(context, PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, formatted)
                     } else {
                         aodScheduleEndTime.value = formatted
-                        prefs.edit().putString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, formatted).apply()
+                        updateModuleStringSetting(context, PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, formatted)
                     }
                 }) {
                     Text("OK")
@@ -475,6 +518,12 @@ private fun languageLabel(value: String): String = when (value) {
 }
 
 @Composable
+private fun aodDisplayModeLabel(value: String): String = when (value) {
+    PixelAodSettings.AOD_DISPLAY_MODE_TRIGGER_ONLY -> stringResource(R.string.aod_behavior_trigger_only)
+    else -> stringResource(R.string.aod_behavior_continuous_trigger)
+}
+
+@Composable
 private fun LanguageDialog(
     current: String,
     onDismiss: () -> Unit,
@@ -488,6 +537,50 @@ private fun LanguageDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.title_language)) },
+        text = {
+            Column {
+                options.forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = value == current,
+                                onClick = { onSelected(value) }
+                            )
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = value == current,
+                            onClick = { onSelected(value) }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(label, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        }
+    )
+}
+
+@Composable
+private fun AodDisplayModeDialog(
+    current: String,
+    onDismiss: () -> Unit,
+    onSelected: (String) -> Unit
+) {
+    val options = listOf(
+        PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS to stringResource(R.string.aod_behavior_continuous_trigger),
+        PixelAodSettings.AOD_DISPLAY_MODE_TRIGGER_ONLY to stringResource(R.string.aod_behavior_trigger_only)
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.title_aod_behavior)) },
         text = {
             Column {
                 options.forEach { (value, label) ->

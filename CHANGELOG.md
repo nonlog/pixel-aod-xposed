@@ -4,6 +4,50 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.142] - 2026-07-05
+### Bug Fixes
+- Prevent proximity / pocket / sensor diagnostics such as `getProxNear() result=false` from starting `Trigger-only` native short-wake AOD; those events now remain sensor guard release / diagnostic signals instead of briefly showing Pixel AOD.
+
+## [0.1.141] - 2026-07-05
+### Bug Fixes
+- Stop treating plain screen-off / AOD host-ready as a trigger-only brief display source; outside-schedule and `Trigger-only` AOD now wait for real native short-wake triggers such as tap or pickup.
+- Let native OOS hide callbacks run during trigger-only brief windows instead of keeping native Doze alive, so fingerprint affordances can time out normally.
+- Re-apply stable AOD clock weight during visible brief refreshes to prevent lockscreen transition weight from sticking on the Pixel AOD overlay.
+
+## [0.1.140] - 2026-07-05
+### Bug Fixes
+- Move `Continuous Display Schedule` directly under `AOD Behavior` so it is visually scoped to `Continuous + Trigger`, not `Lockscreen Policy`.
+- Start the brief trigger window at screen-off when `Trigger-only` or outside-schedule `Continuous + Trigger` mode is active, avoiding the delayed native short-wake black gap.
+- Keep native Doze and suppress OOS native hide callbacks only for the active brief trigger window, then release them when the window expires.
+- Change native short-wake de-duplication from once per AOD trace to once per native trigger event so later tap/lift short-wake events can show AOD again in the same sleep session.
+
+## [0.1.139] - 2026-07-05
+### Bug Fixes
+- Rename the AOD settings hierarchy to `AOD Behavior` plus `Continuous Display Schedule` so schedule only controls continuous display, not trigger behavior.
+- Hide the continuous schedule controls while `Trigger-only` behavior is selected to remove the mode-vs-schedule priority ambiguity.
+- Prevent trigger-only and outside-schedule brief displays from marking Pixel AOD as continuously active.
+- Prevent native short-wake triggers from being recreated repeatedly in the same AOD trace after the brief window expires.
+- Restrict Doze keepalive, screen-state rewrite, and OOS native hide suppression to continuous AOD only so trigger-only display can end naturally.
+- Apply stable AOD clock weight for brief trigger windows instead of running the lockscreen-to-continuous-AOD weight transition.
+
+## [0.1.138] - 2026-07-05
+### Features
+- Redo Phase 5.1 AOD display modes as `Continuous AOD` and `Trigger-only AOD`.
+- Let `Continuous AOD` display continuously inside the schedule while still allowing native short-wake triggers outside the schedule.
+- Let `Trigger-only AOD` skip continuous scheduled display and show only during native short-wake / pickup / tap style trigger windows.
+- Replace the ineffective `Custom AOD` and `Lockscreen Clock` settings cards with a real module master switch; disabling it and restarting SystemUI prevents module hooks from being installed.
+
+### Bug Fixes
+- Treat OOS native `DOZE` short-wake entry as a trigger source instead of waiting only for explicit pickup/tap method names.
+- Keep proximity/pocket policy active during brief trigger windows and cancel the brief window when proximity reports near.
+- Suppress stock OOS AOD during module-managed brief trigger windows to avoid stock AOD flashing over the module AOD.
+
+## [0.1.137] - 2026-07-05
+### Features
+- Implement Phase 5.1 trigger-only brief Pixel AOD display for native OOS pickup and tap triggers while keeping it separate from continuous scheduled AOD.
+- Block or cancel trigger-only brief display when proximity-near or pocket triggers are reported, and keep battery saver / low-battery policy enforced.
+- Add trigger brief window state to AOD snapshots so logs show whether a brief trigger is active, its source, age, and remaining time.
+
 ## [0.1.136] - 2026-07-05
 ### Diagnostics
 - Classify native OOS pickup, tap, proximity, pocket, and sensor triggers into display modes for Phase 5 trigger work without changing AOD behavior.

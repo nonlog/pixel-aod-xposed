@@ -28,12 +28,17 @@ public final class PixelAodSettingsProvider extends ContentProvider {
         }
         SharedPreferences prefs = PixelAodSettings.getSharedPreferences(context);
         PixelAodSettings.normalizeAlwaysEnabledPreferences(prefs);
+        putBoolean(cursor, PixelAodSettings.KEY_MODULE_ENABLED,
+                prefs.getBoolean(PixelAodSettings.KEY_MODULE_ENABLED, true));
         putBoolean(cursor, PixelAodSettings.KEY_CUSTOM_AOD,
                 prefs.getBoolean(PixelAodSettings.KEY_CUSTOM_AOD, true));
         putBoolean(cursor, PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE,
                 prefs.getBoolean(PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, false));
         putBoolean(cursor, PixelAodSettings.KEY_LOCKSCREEN_CLOCK,
                 prefs.getBoolean(PixelAodSettings.KEY_LOCKSCREEN_CLOCK, true));
+        putString(cursor, PixelAodSettings.KEY_AOD_DISPLAY_MODE,
+                prefs.getString(PixelAodSettings.KEY_AOD_DISPLAY_MODE,
+                        PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS));
         putBoolean(cursor, PixelAodSettings.KEY_WEATHER,
                 prefs.getBoolean(PixelAodSettings.KEY_WEATHER, true));
         putBoolean(cursor, PixelAodSettings.KEY_NOTIFICATION_ICONS, true);

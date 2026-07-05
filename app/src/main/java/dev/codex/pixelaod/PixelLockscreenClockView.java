@@ -373,6 +373,9 @@ final class PixelLockscreenClockView extends FrameLayout {
         }
         boolean interactive = PixelAodClockView.isDeviceInteractive(context);
         boolean locked = isSystemKeyguardLockedRaw(context);
+        boolean bridgeCandidate = !interactive && locked
+                && PixelAodClockView.isInAodEntryTransitionWindow(
+                AOD_TRANSITION_ANIMATION_WINDOW_MS);
         boolean bridge = !interactive && shouldBridgeLockscreenToAod(context);
         boolean visible = interactive ? locked : bridge;
         String reason;
@@ -380,6 +383,8 @@ final class PixelLockscreenClockView extends FrameLayout {
             reason = locked ? "interactive-keyguard-locked" : "interactive-unlocked";
         } else if (bridge) {
             reason = "bridge-to-aod";
+        } else if (bridgeCandidate) {
+            reason = "bridge-blocked-by-aod-policy";
         } else if (!locked) {
             reason = "noninteractive-unlocked";
         } else {
@@ -392,6 +397,7 @@ final class PixelLockscreenClockView extends FrameLayout {
                     + " interactive=" + interactive
                     + " locked=" + locked
                     + " bridge=" + bridge
+                    + " bridgeCandidate=" + bridgeCandidate
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
         }

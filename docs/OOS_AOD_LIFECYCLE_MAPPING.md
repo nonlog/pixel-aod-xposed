@@ -1,6 +1,6 @@
 # OOS AOD Lifecycle Mapping
 
-Last updated: 2026-07-04
+Last updated: 2026-07-05
 
 ## Purpose
 
@@ -69,20 +69,44 @@ Current implementation: `PixelAodClockView.AodLifecycleState.phase()`.
 | `aod-active-waiting-display` | non-interactive, `aodActive=true`, but not display-AOD and not in grace window | OOS says AOD active, but display state is not aligned. This is suspicious if long-lived. |
 | `inactive` | none of the above | Pixel AOD should not draw. |
 
-## Trigger Display Modes
+## AOD Display Modes
 
-Phase 5 separates continuous scheduled AOD from trigger-only brief display.
+Phase 5.1 separates module AOD display into two user-facing modes.
 
-Current implementation only records these mappings. It does not yet change visibility, wake locks, display state, or pulse timing.
+| Module behavior | Continuous behavior | Trigger behavior | Current behavior |
+|---|---|---|---|
+| `Continuous + Trigger` | Displays continuously inside the configured schedule when power, low-battery, proximity, and pocket policy allow. | Outside the schedule, can briefly display when OOS provides a native short-wake / AOD-capable display state or an explicit pickup / tap trigger. | This is the default behavior. |
+| `Trigger-only` | Never displays continuously, even inside the configured schedule. | Displays only during native short-wake / pickup / tap style trigger windows, then expires automatically. | Intended for a non-periodic Pixel-style AOD replacement mode. |
+
+`Continuous Display Schedule` is subordinate to `Continuous + Trigger`. It only controls the continuous display window. It does not disable trigger display outside the schedule, and it is hidden in the settings UI while `Trigger-only` is selected.
+
+The previous `0.1.137` implementation waited mainly for explicit pickup / tap trigger classification. Real OOS logs showed that the user-visible short wake can arrive only as display `DOZE` / state rewrite events, so `0.1.138` treats native `DOZE` short-wake entry itself as a trigger candidate.
+
+It does not synthesize a display wake by itself; it draws when OOS has already provided an AOD-capable display state or when a hooked native trigger starts a brief display window.
+
+The `0.1.139` priority rule is:
+
+1. Module master switch blocks all module behavior after SystemUI restart.
+2. Power saver, low battery, proximity, and pocket policy can block both continuous and trigger display.
+3. Only `Continuous + Trigger` plus an active continuous schedule may mark Pixel AOD as continuously active.
+4. Trigger windows may draw the overlay briefly without marking AOD continuously active. During the active brief window they may keep native Doze alive and suppress native hide callbacks so OOS does not black out the display mid-window.
+5. Native `DOZE` short-wake is de-duplicated per native trigger event, not per whole AOD trace, so later tap / lift / short-wake events can open another brief window in the same sleep session.
 
 | Trigger event | Display mode | Future action | Current behavior |
 |---|---|---|---|
-| `trigger-pickup` | `trigger-only-brief-display` | Briefly show Pixel-style AOD outside the continuous schedule if policy allows. | Observe/log only. |
-| `trigger-tap` | `trigger-only-brief-display` | Briefly show Pixel-style AOD outside the continuous schedule if policy allows. | Observe/log only. |
-| `trigger-proximity` with near result | `sensor-guard-hide` | Hide or block both continuous AOD and brief trigger display while covered. | Observe/log only; existing proximity guard still controls current overlay behavior. |
-| `trigger-proximity` with far result | `sensor-guard-release` | Allow future continuous or brief display after cover is removed. | Observe/log only. |
-| `trigger-pocket` | `sensor-guard-hide` | Block continuous and brief display while the device is in pocket state. | Observe/log only. |
+| Native display `DOZE` short-wake while continuous display is not allowed | `trigger-only-brief-display` | Briefly show Pixel-style AOD if module mode and policy allow. | Starts a 10 second brief window for each fresh native trigger event and keeps native Doze alive only for that window. |
+| `trigger-pickup` | `trigger-only-brief-display` | Briefly show Pixel-style AOD outside the continuous schedule if policy allows. | Starts a 10 second trigger-only brief window. |
+| `trigger-tap` | `trigger-only-brief-display` | Briefly show Pixel-style AOD outside the continuous schedule if policy allows. | Starts a 10 second trigger-only brief window. |
+| `trigger-proximity` with near result | `sensor-guard-hide` | Hide or block both continuous AOD and brief trigger display while covered. | Cancels any active trigger-only brief window; existing proximity guard still controls current overlay behavior. |
+| `trigger-proximity` with far result | `sensor-guard-release` | Allow future continuous or brief display after cover is removed. | Logs release only; it does not start display by itself. |
+| `trigger-pocket` | `sensor-guard-hide` | Block continuous and brief display while the device is in pocket state. | Cancels any active trigger-only brief window. |
 | Unknown sensor trigger | `trigger-diagnostic-only` | Classify before attaching behavior. | Observe/log only. |
+
+## Module Master Switch
+
+The settings UI exposes `module_enabled` as the real module master switch. When it is disabled and SystemUI is restarted, `PixelAodHook.install(...)` returns before installing any module hooks.
+
+Changing this setting while SystemUI is already running can hide current Pixel AOD overlays and refresh cached settings, but it cannot fully unhook methods from the already-running process. A SystemUI restart is the defined boundary for complete disable.
 
 ## Live Observed Event Mapping
 

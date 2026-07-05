@@ -10,9 +10,11 @@ import java.util.Map;
 
 public final class PixelAodSettings {
     public static final String PREFS = "pixel_aod_settings";
+    public static final String KEY_MODULE_ENABLED = "module_enabled";
     public static final String KEY_CUSTOM_AOD = "custom_aod";
     public static final String KEY_SKIP_DOZE_OFF_STATE = "skip_doze_off_state";
     public static final String KEY_LOCKSCREEN_CLOCK = "lockscreen_clock";
+    public static final String KEY_AOD_DISPLAY_MODE = "module_aod_display_mode";
     public static final String KEY_WEATHER = "weather";
     public static final String KEY_WEATHER_ICON_PACK = "weather_icon_pack";
     public static final String KEY_NOTIFICATION_ICONS = "notification_icons";
@@ -27,6 +29,8 @@ public final class PixelAodSettings {
     public static final String KEY_AOD_SCHEDULE_START_TIME = "aod_schedule_start_time";
     public static final String KEY_AOD_SCHEDULE_END_TIME = "aod_schedule_end_time";
     public static final String KEY_LANGUAGE = "ui_language";
+    public static final String AOD_DISPLAY_MODE_CONTINUOUS = "continuous";
+    public static final String AOD_DISPLAY_MODE_TRIGGER_ONLY = "trigger_only";
     public static final String LANGUAGE_SYSTEM = "system";
     public static final String LANGUAGE_CHINESE = "zh";
     public static final String LANGUAGE_ENGLISH = "en";

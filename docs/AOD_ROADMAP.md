@@ -1,6 +1,6 @@
 # Pixel AOD Roadmap
 
-Last updated: 2026-07-04
+Last updated: 2026-07-05
 
 ## Goal
 
@@ -90,10 +90,15 @@ This can reduce power usage and improve stability compared with a purely parasit
 
 ### Phase 5: Native-Style Trigger Features
 
-- Treat trigger-driven AOD as a separate non-periodic display mode.
-- Continuous AOD remains controlled by the schedule / power-policy path.
-- Pickup / tap should become trigger-only brief display events, not a reason to keep AOD visible indefinitely outside the schedule.
-- Proximity / pocket should guard both continuous AOD and trigger-only brief display, hiding or blocking display when the device is covered.
+- Treat AOD display as one of two explicit modes:
+- `Continuous + Trigger`: continuously displays during the configured schedule while respecting power saver, low battery, proximity, and pocket policy; outside the schedule it can still display briefly when OOS provides a native short-wake / trigger window.
+- `Trigger-only`: never keeps AOD visible continuously; it only displays during native short-wake / pickup / tap style trigger windows and expires automatically.
+- Treat `Continuous Display Schedule` as a child setting of `Continuous + Trigger`; it controls only continuous display, never trigger display.
+- Phase 5.1 treats OOS native `DOZE` short-wake entry as a trigger source, because real OOS logs do not always expose explicit pickup / tap method names.
+- Native `DOZE` short-wake is de-duplicated per native trigger event, not per whole AOD trace, so later tap / lift / short-wake events in the same sleep session can show AOD again.
+- Continuous display keeps native Doze alive for the scheduled window. Trigger brief display may also keep native Doze alive and suppress native hide callbacks only while its short window is active, then releases them when the window expires.
+- Proximity / pocket guard trigger-only brief display by cancelling or blocking the brief trigger window when the device is covered.
+- The module settings UI now has one real master switch. When disabled and SystemUI is restarted, module hooks are not installed. The old `Custom AOD` and `Lockscreen Clock` toggles were removed because they did not map cleanly to the actual hook boundary.
 - Add or align pickup / lift-to-wake behavior.
 - Add or align tap-to-show behavior.
 - Add proximity and pocket-aware behavior.

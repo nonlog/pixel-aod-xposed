@@ -55,6 +55,11 @@ final class PixelAodHook {
             "com.oplus.systemui.keyguard.OplusWakeUpController",
             "com.oplus.keyguard.OplusWakeUpController"
     };
+    private static final String[] OPLUS_WAKE_CALLBACK_CANDIDATES = {
+            "com.oplus.systemui.aod.display.OplusWakeUpController$AodSingleClickWakeUpCallback",
+            "com.oplus.systemui.aod.scene.AodViewSingleClickWakeUpHolder$AodSingleClickWakeUpCallback",
+            "com.oplus.systemui.aod.scene.PanoramicAodSingleClickWakeUpController$PanoramicAodSingleClickWakeUpCallback"
+    };
     private static final String SHADE_WINDOW_VIEW =
             "com.android.systemui.shade.NotificationShadeWindowView";
     private static final String KEYGUARD_STYLE_CLOCK =
@@ -111,48 +116,50 @@ final class PixelAodHook {
                 ? context.getApplicationContext() : context;
         systemUiContext = appContext;
         PixelAodSettings.refresh(appContext);
+        boolean moduleEnabled = PixelAodSettings.getBoolean(appContext,
+                PixelAodSettings.KEY_MODULE_ENABLED, true);
+        if (!moduleEnabled) {
+            PixelAodLog.log("Pixel AOD module disabled by setting; hooks not installed");
+            return;
+        }
         registerSettingsObserver(appContext);
-        boolean customAod = PixelAodSettings.getBoolean(appContext,
-                PixelAodSettings.KEY_CUSTOM_AOD, true);
-        boolean lockscreenClock = PixelAodSettings.getBoolean(appContext,
-                PixelAodSettings.KEY_LOCKSCREEN_CLOCK, true);
         boolean notificationIcons = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_NOTIFICATION_ICONS, true);
         boolean lockscreenPolicy = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true);
         boolean weather = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_WEATHER, true);
+        String aodDisplayMode = PixelAodSettings.getString(appContext,
+                PixelAodSettings.KEY_AOD_DISPLAY_MODE,
+                PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS);
         if (weather) {
             PixelAodClockView.ensureBreezyWeatherReceiver(appContext);
         }
-        if (customAod) {
-            hookClockLayout(appContext, classLoader);
-            hookNativeAodRefreshCallbacks(classLoader);
-            hookNotificationView(classLoader);
-            hookAodRecord(classLoader);
-            hookOplusEnergySavingHideGuards(classLoader);
-            hookOplusAodTriggerDiagnostics(classLoader);
-            hookSkipDozeOffState(appContext, classLoader);
-            if (ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS) {
-                hookStockClockVisibilityAndAlphaSuppression();
-            } else {
-                PixelAodLog.log("skipped global stock View visibility/alpha hooks");
-            }
+        hookClockLayout(appContext, classLoader);
+        hookNativeAodRefreshCallbacks(classLoader);
+        hookNotificationView(classLoader);
+        hookAodRecord(classLoader);
+        hookOplusEnergySavingHideGuards(classLoader);
+        hookOplusAodTriggerDiagnostics(classLoader);
+        hookPowerManagerWakeTriggers();
+        hookSkipDozeOffState(appContext, classLoader);
+        if (ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS) {
+            hookStockClockVisibilityAndAlphaSuppression();
+        } else {
+            PixelAodLog.log("skipped global stock View visibility/alpha hooks");
         }
-        if (notificationIcons || customAod || lockscreenClock) {
+        if (notificationIcons) {
             hookNotificationListenerService();
             hookSystemUiNotificationListener(classLoader);
         }
         if (lockscreenPolicy) {
             hookLockscreenNotificationPolicy(classLoader);
         }
-        if (customAod || lockscreenClock) {
-            hookShadeWindowView(appContext, classLoader);
-            hookLockscreenClockProbe(classLoader);
-            PixelAodLog.log("skipped global stock clock draw suppression to avoid UI jank");
-        }
-        PixelAodLog.log("installed Pixel AOD hooks customAod=" + customAod
-                + " lockscreenClock=" + lockscreenClock
+        hookShadeWindowView(appContext, classLoader);
+        hookLockscreenClockProbe(classLoader);
+        PixelAodLog.log("skipped global stock clock draw suppression to avoid UI jank");
+        PixelAodLog.log("installed Pixel AOD hooks moduleEnabled=" + moduleEnabled
+                + " aodDisplayMode=" + aodDisplayMode
                 + " notificationIcons=" + notificationIcons
                 + " lockscreenPolicy=" + lockscreenPolicy
                 + " weather=" + weather);
@@ -180,6 +187,7 @@ final class PixelAodHook {
                             PixelAodLog.log("refreshed Pixel AOD settings from provider change"
                                     + " selfChange=" + selfChange
                                     + " uri=" + uri);
+                            PixelAodClockView.refreshAodPolicyFromSettings("settings-provider-change");
                         }
                     });
             PixelAodLog.log("registered Pixel AOD settings observer");
@@ -1116,6 +1124,16 @@ final class PixelAodHook {
                         + className, t);
             }
         }
+        for (String className : OPLUS_WAKE_CALLBACK_CANDIDATES) {
+            try {
+                Class<?> callbackClass = ModernHookBridge.findClass(className, classLoader);
+                hooked |= hookAodTriggerDiagnosticMethods(callbackClass, simpleClassName(className));
+            } catch (ClassNotFoundException ignored) {
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to hook OPlus AOD trigger callback class "
+                        + className, t);
+            }
+        }
         PixelAodLog.log("installed OPlus AOD trigger diagnostics hooked=" + hooked);
     }
 
@@ -1135,12 +1153,22 @@ final class PixelAodHook {
             final String source = sourceClass + "#" + methodSignature(method);
             try {
                 targetMethod.setAccessible(true);
-                ModernHookBridge.hookAfter(targetMethod, param ->
-                        PixelAodClockView.noteNativeTrigger(
-                                classifyAodTriggerKeyword(source + " " + summarizeArgs(param.args, 4)),
-                                source,
-                                "args=" + summarizeArgs(param.args, 4)
-                                        + ",result=" + summarizeValue(param.getResult())));
+                ModernHookBridge.hookAfter(targetMethod, param -> {
+                    String args = summarizeArgs(param.args, 4);
+                    String triggerType = classifyAodTriggerEvent(source, args);
+                    if (TextUtils.isEmpty(triggerType)) {
+                        return;
+                    }
+                    if (isPassiveAodTriggerProbe(targetMethod) && isDisplayTriggerType(triggerType)) {
+                        PixelAodLog.log("skipped passive OPlus AOD trigger probe "
+                                + source + " type=" + triggerType
+                                + " args=" + args
+                                + " result=" + summarizeValue(param.getResult()));
+                        return;
+                    }
+                    PixelAodClockView.noteNativeTrigger(triggerType, source,
+                            "args=" + args + ",result=" + summarizeValue(param.getResult()));
+                });
                 hooked = true;
                 PixelAodLog.log("hooked OPlus AOD trigger diagnostic " + source);
             } catch (Throwable t) {
@@ -1154,7 +1182,88 @@ final class PixelAodHook {
     }
 
     private static boolean isAodTriggerDiagnosticMethod(Method method) {
-        return !TextUtils.isEmpty(classifyAodTriggerKeyword(method.getName()));
+        if (method == null) {
+            return false;
+        }
+        String name = method.getName();
+        String lowerName = name.toLowerCase(Locale.US);
+        String methodTriggerType = classifyAodTriggerKeyword(name);
+        if (isPassiveAodTriggerProbe(method) && isDisplayTriggerType(methodTriggerType)) {
+            return false;
+        }
+        return lowerName.contains("notifywakeupcallback")
+                || lowerName.contains("onwakeup")
+                || lowerName.contains("onclick")
+                || lowerName.contains("ondoubleclick")
+                || lowerName.contains("ongesture")
+                || !TextUtils.isEmpty(methodTriggerType);
+    }
+
+    private static void hookPowerManagerWakeTriggers() {
+        boolean hooked = false;
+        try {
+            for (Method method : android.os.PowerManager.class.getDeclaredMethods()) {
+                if (Modifier.isAbstract(method.getModifiers())
+                        || !"wakeUp".equals(method.getName())) {
+                    continue;
+                }
+                final Method targetMethod = method;
+                final String source = "PowerManager#" + methodSignature(method);
+                try {
+                    targetMethod.setAccessible(true);
+                    ModernHookBridge.hookBefore(targetMethod, param -> {
+                        String args = summarizeArgs(param.args, 6);
+                        String triggerType = classifyAodTriggerEvent(source, args);
+                        if (TextUtils.isEmpty(triggerType)) {
+                            return;
+                        }
+                        PixelAodClockView.noteNativeTrigger(triggerType, source,
+                                "args=" + args);
+                    });
+                    hooked = true;
+                    PixelAodLog.log("hooked PowerManager wake trigger " + source);
+                } catch (Throwable t) {
+                    PixelAodLog.log("failed to hook PowerManager wake trigger "
+                            + source, t);
+                }
+            }
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to install PowerManager wake trigger hooks", t);
+        }
+        PixelAodLog.log("installed PowerManager wake trigger hooks hooked=" + hooked);
+    }
+
+    private static String classifyAodTriggerEvent(String source, String args) {
+        String combined = (TextUtils.isEmpty(source) ? "" : source) + " "
+                + (TextUtils.isEmpty(args) ? "" : args);
+        String triggerType = classifyAodTriggerKeyword(combined);
+        if (!TextUtils.isEmpty(triggerType)) {
+            return triggerType;
+        }
+        String lowerSource = TextUtils.isEmpty(source)
+                ? "" : source.toLowerCase(Locale.US);
+        if (lowerSource.contains("notifywakeupcallback")
+                || lowerSource.contains("onwakeup")) {
+            return "tap";
+        }
+        return "";
+    }
+
+    private static boolean isPassiveAodTriggerProbe(Method method) {
+        if (method == null) {
+            return false;
+        }
+        String lowerName = method.getName().toLowerCase(Locale.US);
+        return lowerName.startsWith("get")
+                || lowerName.startsWith("is")
+                || lowerName.startsWith("set")
+                || lowerName.startsWith("register")
+                || lowerName.startsWith("unregister")
+                || lowerName.startsWith("access$get");
+    }
+
+    private static boolean isDisplayTriggerType(String triggerType) {
+        return "tap".equals(triggerType) || "pickup".equals(triggerType);
     }
 
     private static Context contextFromHookParam(ModernHookBridge.HookParam param) {
@@ -1217,8 +1326,19 @@ final class PixelAodHook {
                     + PixelAodClockView.describeAodState(checkContext) + "}");
             return false;
         }
+        if (decision.shouldAllowNativeHideCallbacks) {
+            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
+                    + " reason=" + decision.nativeHideCallbackReason
+                    + " shouldKeepNativeDozeAlive="
+                    + decision.shouldKeepNativeDozeAlive
+                    + " state={"
+                    + PixelAodClockView.describeAodState(checkContext) + "}");
+            return false;
+        }
         boolean displayAod = PixelAodClockView.isDisplayInAodState(checkContext);
-        if (!PixelAodClockView.isAodActive() && !displayAod) {
+        if (!PixelAodClockView.isAodActive()
+                && !displayAod
+                && !decision.shouldDrawPixelOverlay) {
             PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
                     + " reason=aod-inactive state={" + state + "}");
             return false;
@@ -1904,6 +2024,16 @@ final class PixelAodHook {
             return;
         }
 
+        if (!decision.shouldKeepNativeDozeAlive) {
+            PixelAodLog.log("skipped AOD rewrite source=" + source
+                    + " requestedState=" + requestedState
+                    + " reason=" + decision.keepNativeDozeReason
+                    + " shouldAllowNativeHideCallbacks="
+                    + decision.shouldAllowNativeHideCallbacks
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            return;
+        }
         if (context != null) {
             PixelAodClockView.noteScreenOffIfUnset(source + "#off-request");
         }

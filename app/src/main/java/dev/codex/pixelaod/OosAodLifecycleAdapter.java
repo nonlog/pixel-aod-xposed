@@ -21,19 +21,25 @@ final class OosAodLifecycleAdapter {
     }
 
     static void recordTriggerEvent(String triggerType, String source, String detail,
-            String trace, String stateDescription) {
+            boolean behaviorApplied, String trace, String stateDescription) {
         String normalizedType = normalizeSource(triggerType);
         String normalizedSource = normalizeSource(source);
-        TriggerMapping mapping = mapTrigger(normalizedType, normalizedSource, detail);
-        PixelAodLog.log("OOS AOD trigger mapping event=" + mapping.event.label
-                + " displayMode=" + mapping.displayMode.label
-                + " futureAction=" + mapping.futureAction
-                + " behaviorApplied=false"
+        TriggerBehavior behavior = behaviorForTrigger(normalizedType, normalizedSource, detail);
+        PixelAodLog.log("OOS AOD trigger mapping event=" + behavior.eventLabel
+                + " displayMode=" + behavior.displayModeLabel
+                + " futureAction=" + behavior.futureAction
+                + " behaviorApplied=" + behaviorApplied
                 + " trigger=" + normalizedType
                 + " source=" + normalizedSource
                 + " detail={" + (TextUtils.isEmpty(detail) ? "" : detail) + "}"
                 + " trace=" + emptyAsNone(trace)
                 + " state={" + stateDescription + "}");
+    }
+
+    static TriggerBehavior behaviorForTrigger(String triggerType, String source, String detail) {
+        String normalizedType = normalizeSource(triggerType);
+        String normalizedSource = normalizeSource(source);
+        return mapTrigger(normalizedType, normalizedSource, detail);
     }
 
     static boolean matchesExpectedTrace(String expectedTrace, String currentTrace) {
@@ -145,7 +151,7 @@ final class OosAodLifecycleAdapter {
         return Event.TRIGGER_UNKNOWN;
     }
 
-    private static TriggerMapping mapTrigger(String triggerType, String source, String detail) {
+    private static TriggerBehavior mapTrigger(String triggerType, String source, String detail) {
         String combined = normalizeSource(triggerType) + " "
                 + normalizeSource(source) + " "
                 + normalizeSource(detail);
@@ -153,23 +159,30 @@ final class OosAodLifecycleAdapter {
         Event event = classifyTrigger(combined);
         DisplayMode displayMode;
         String futureAction;
+        boolean startsBriefDisplay = false;
+        boolean blocksDisplay = false;
+        boolean releasesDisplayGuard = false;
         switch (event) {
             case TRIGGER_PICKUP:
             case TRIGGER_TAP:
                 displayMode = DisplayMode.TRIGGER_ONLY_BRIEF_DISPLAY;
                 futureAction = "brief-show-candidate";
+                startsBriefDisplay = true;
                 break;
             case TRIGGER_POCKET:
                 displayMode = DisplayMode.SENSOR_GUARD_HIDE;
                 futureAction = "block-brief-and-continuous-aod";
+                blocksDisplay = true;
                 break;
             case TRIGGER_PROXIMITY:
                 if (isProximityNear(lowerCombined)) {
                     displayMode = DisplayMode.SENSOR_GUARD_HIDE;
                     futureAction = "hide-or-block-aod";
+                    blocksDisplay = true;
                 } else if (isProximityFar(lowerCombined)) {
                     displayMode = DisplayMode.SENSOR_GUARD_RELEASE;
                     futureAction = "allow-future-aod";
+                    releasesDisplayGuard = true;
                 } else {
                     displayMode = DisplayMode.SENSOR_GUARD_UNKNOWN;
                     futureAction = "observe-proximity-result";
@@ -182,7 +195,8 @@ final class OosAodLifecycleAdapter {
                 futureAction = "classify-before-action";
                 break;
         }
-        return new TriggerMapping(event, displayMode, futureAction);
+        return new TriggerBehavior(event.label, displayMode.label, futureAction,
+                startsBriefDisplay, blocksDisplay, releasesDisplayGuard);
     }
 
     private static boolean isProximityNear(String lowerSource) {
@@ -252,15 +266,23 @@ final class OosAodLifecycleAdapter {
         }
     }
 
-    private static final class TriggerMapping {
-        final Event event;
-        final DisplayMode displayMode;
+    static final class TriggerBehavior {
+        final String eventLabel;
+        final String displayModeLabel;
         final String futureAction;
+        final boolean startsBriefDisplay;
+        final boolean blocksDisplay;
+        final boolean releasesDisplayGuard;
 
-        TriggerMapping(Event event, DisplayMode displayMode, String futureAction) {
-            this.event = event;
-            this.displayMode = displayMode;
+        TriggerBehavior(String eventLabel, String displayModeLabel, String futureAction,
+                boolean startsBriefDisplay, boolean blocksDisplay,
+                boolean releasesDisplayGuard) {
+            this.eventLabel = eventLabel;
+            this.displayModeLabel = displayModeLabel;
             this.futureAction = futureAction;
+            this.startsBriefDisplay = startsBriefDisplay;
+            this.blocksDisplay = blocksDisplay;
+            this.releasesDisplayGuard = releasesDisplayGuard;
         }
     }
 }
