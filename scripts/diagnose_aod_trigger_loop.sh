@@ -9,6 +9,12 @@ CYCLES="${CYCLES:-1}"
 SETTLE_SEC="${SETTLE_SEC:-14}"
 TAP_AFTER_OFF="${TAP_AFTER_OFF:-0}"
 WAKE_BEFORE_SLEEP="${WAKE_BEFORE_SLEEP:-1}"
+PULSE_ENTER_AOD_SEC="${PULSE_ENTER_AOD_SEC:-5}"
+PULSE_WAIT_SEC="${PULSE_WAIT_SEC:-20}"
+PULSE_CLEAR_BEFORE="${PULSE_CLEAR_BEFORE:-1}"
+PULSE_CLEAR_AFTER="${PULSE_CLEAR_AFTER:-1}"
+PULSE_TITLE="${PULSE_TITLE:-Pixel AOD pulse sample}"
+PULSE_TEXT="${PULSE_TEXT:-Native notification pulse diagnostic}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/logs/aod-trigger-diagnostics/$(date +%Y%m%d-%H%M%S)}"
 RUN_ID="$(basename "$OUT_DIR")"
 LOGCAT_PID=""
@@ -18,10 +24,12 @@ usage() {
 Usage:
   MODE=auto CYCLES=1 SETTLE_SEC=14 TAP_AFTER_OFF=0 ./scripts/diagnose_aod_trigger_loop.sh
   SERIAL=<adb-serial> MODE=observe ./scripts/diagnose_aod_trigger_loop.sh
+  MODE=pulse PULSE_ENTER_AOD_SEC=5 PULSE_WAIT_SEC=20 ./scripts/diagnose_aod_trigger_loop.sh
 
 Modes:
   auto     Send WAKEUP then SLEEP per cycle, optionally tap after screen-off, then collect logs.
   observe  Do not send input events; collect a log window while the user reproduces manually.
+  pulse    Enter AOD, post the module test notification, then sample native notification-pulse logs.
 
 Outputs:
   logs/aod-trigger-diagnostics/<timestamp>/
@@ -70,6 +78,21 @@ dump_power_state() {
   run_adb shell dumpsys power 2>/dev/null \
     | grep -E 'mWakefulness=|mInteractive=|Display Power|mScreenState=|mDozeScreenState=' \
     | head -n 20 || true
+}
+
+send_test_notification_action() {
+  local action="$1"
+  run_adb shell am broadcast \
+    -n dev.codex.pixelaod/.TestNotificationReceiver \
+    -a "$action" >/dev/null 2>&1 || true
+}
+
+post_pulse_test_notification() {
+  run_adb shell am broadcast \
+    -n dev.codex.pixelaod/.TestNotificationReceiver \
+    -a dev.codex.pixelaod.TEST_NOTIFICATION \
+    --es title "$PULSE_TITLE" \
+    --es text "$PULSE_TEXT" >/dev/null 2>&1 || true
 }
 
 collect_lspd_logs() {
@@ -124,7 +147,7 @@ extract_logcat_window() {
 
 filter_events() {
   local pattern
-  pattern='PixelAodOPlus|PixelAodModern|AOD native trigger|OOS AOD trigger mapping|OOS AOD power policy mapping|OOS AOD notification pulse observation|started trigger-only Pixel AOD brief display|expired trigger-only Pixel AOD brief display|blocked trigger-only Pixel AOD brief display|skipped native short-wake Pixel AOD trigger|native short-wake trigger candidate|triggerBrief|AOD policy decision|AOD overlay decision|AOD overlay visibility decision|screen-state|onDreamingStarted|onDreamingStopped|onEnergySavingNotifyHide|notifyHideCallback|reason=non-display-trigger|fingerprint|Fingerprint|FOD|fod'
+  pattern='PixelAodDiag|PixelAodOPlus|PixelAodModern|test notification skipped|AOD native trigger|OOS AOD trigger mapping|OOS AOD power policy mapping|OOS AOD notification pulse observation|started trigger-only Pixel AOD brief display|expired trigger-only Pixel AOD brief display|blocked trigger-only Pixel AOD brief display|skipped native short-wake Pixel AOD trigger|native short-wake trigger candidate|triggerBrief|AOD policy decision|AOD overlay decision|AOD overlay visibility decision|screen-state|onDreamingStarted|onDreamingStopped|onEnergySavingNotifyHide|notifyHideCallback|reason=non-display-trigger|fingerprint|Fingerprint|FOD|fod'
   extract_logcat_window
   {
     echo "==== current logcat events ($(cat "$OUT_DIR/logcat_window_status.txt")) ===="
@@ -147,7 +170,10 @@ write_summary() {
   local power_allow power_block power_save low_battery charging_power unknown_battery
   local pulse_candidate pulse_filtered pulse_clear pulse_ranking pulse_empty
   local pulse_recent
+  local pulse_post_marker pulse_clear_marker test_notification_skipped
+  local display_state_doze display_state_off aod_visible_phase entering_aod_phase
   local log_window_status
+  local verdict_signal
   started="$(count_events 'started trigger-only Pixel AOD brief display')"
   expired="$(count_events 'expired trigger-only Pixel AOD brief display')"
   non_display="$(count_events 'reason=non-display-trigger')"
@@ -173,6 +199,13 @@ write_summary() {
   pulse_ranking="$(count_events 'OOS AOD notification pulse observation.*rule=ranking-update')"
   pulse_empty="$(count_events 'OOS AOD notification pulse observation.*rule=empty-snapshot')"
   pulse_recent="$(count_events 'notificationPulseRecent=true')"
+  pulse_post_marker="$(count_events 'PixelAodDiag.*pulse-post')"
+  pulse_clear_marker="$(count_events 'PixelAodDiag.*pulse-clear')"
+  test_notification_skipped="$(count_events 'test notification skipped')"
+  display_state_doze="$(count_events 'displayState=DOZE')"
+  display_state_off="$(count_events 'displayState=OFF')"
+  aod_visible_phase="$(count_events 'phase=aod-visible')"
+  entering_aod_phase="$(count_events 'phase=entering-aod')"
   systemui_pid="$(run_adb shell pidof com.android.systemui 2>/dev/null | tr -d '\r' || true)"
   pkg_version="$({ run_adb shell dumpsys package dev.codex.pixelaod 2>/dev/null \
     | grep -E 'versionCode=|versionName=' || true; } | tr -d '\r' | paste -sd ';' -)"
@@ -183,6 +216,7 @@ write_summary() {
     echo "time=$(now_utc)"
     echo "serial=$SERIAL"
     echo "mode=$MODE cycles=$CYCLES settleSec=$SETTLE_SEC tapAfterOff=$TAP_AFTER_OFF wakeBeforeSleep=$WAKE_BEFORE_SLEEP"
+    echo "pulseEnterAodSec=$PULSE_ENTER_AOD_SEC pulseWaitSec=$PULSE_WAIT_SEC pulseClearBefore=$PULSE_CLEAR_BEFORE pulseClearAfter=$PULSE_CLEAR_AFTER"
     echo "logWindow=$log_window_status"
     echo "systemuiPid=$systemui_pid"
     echo "package=$pkg_version"
@@ -212,21 +246,51 @@ write_summary() {
     echo "counts.notificationPulseRanking=$pulse_ranking"
     echo "counts.notificationPulseEmpty=$pulse_empty"
     echo "counts.notificationPulseRecentInState=$pulse_recent"
+    echo "counts.pulsePostMarker=$pulse_post_marker"
+    echo "counts.pulseClearMarker=$pulse_clear_marker"
+    echo "counts.testNotificationSkipped=$test_notification_skipped"
+    echo "counts.displayStateDoze=$display_state_doze"
+    echo "counts.displayStateOff=$display_state_off"
+    echo "counts.phaseAodVisible=$aod_visible_phase"
+    echo "counts.phaseEnteringAod=$entering_aod_phase"
     echo
     echo "verdict:"
+    verdict_signal=0
     if [[ "$screen_off_brief" -gt 0 ]]; then
       echo "RED screen-off incorrectly started brief AOD"
+      verdict_signal=1
     fi
     if [[ "$prox_started" -gt 0 ]]; then
       echo "RED proximity incorrectly started brief AOD"
+      verdict_signal=1
     fi
     if [[ "$started" -gt 0 && "$expired" -eq 0 ]]; then
       echo "RED brief AOD started but no expiry event was captured"
+      verdict_signal=1
     fi
     if [[ "$active_tail" -gt 0 ]]; then
       echo "SUSPECT triggerBriefActive still appears near the end of the log window"
+      verdict_signal=1
     fi
-    if [[ "$screen_off_brief" -eq 0 && "$prox_started" -eq 0 && ! ( "$started" -gt 0 && "$expired" -eq 0 ) ]]; then
+    if [[ "$MODE" == "pulse" ]]; then
+      if [[ "$pulse_post_marker" -eq 0 ]]; then
+        echo "SUSPECT pulse mode did not capture the pulse-post marker"
+        verdict_signal=1
+      fi
+      if [[ "$test_notification_skipped" -gt 0 ]]; then
+        echo "SUSPECT test notification was skipped; check POST_NOTIFICATIONS permission"
+        verdict_signal=1
+      fi
+      if [[ "$pulse_candidate" -eq 0 ]]; then
+        echo "SUSPECT posted test notification did not produce a pulse-candidate observation"
+        verdict_signal=1
+      fi
+      if [[ "$pulse_recent" -eq 0 ]]; then
+        echo "SUSPECT pulse candidate did not reach AOD lifecycle state snapshots"
+        verdict_signal=1
+      fi
+    fi
+    if [[ "$verdict_signal" -eq 0 ]]; then
       echo "NO_RED_SIGNAL no known log-level trigger bug captured"
     fi
     echo
@@ -270,6 +334,32 @@ case "$MODE" in
   observe)
     echo "observe mode: reproduce manually within ${SETTLE_SEC}s" | tee -a "$OUT_DIR/run.txt"
     sleep "$SETTLE_SEC"
+    ;;
+  pulse)
+    echo "pulse mode: enter AOD, post test notification, sample for ${PULSE_WAIT_SEC}s" | tee -a "$OUT_DIR/run.txt"
+    if [[ "$PULSE_CLEAR_BEFORE" == "1" ]]; then
+      echo "pulse: clear previous test notification" | tee -a "$OUT_DIR/run.txt"
+      send_test_notification_action dev.codex.pixelaod.CLEAR_TEST_NOTIFICATION
+      sleep 0.5
+    fi
+    if [[ "$WAKE_BEFORE_SLEEP" == "1" ]]; then
+      echo "pulse: WAKEUP" | tee -a "$OUT_DIR/run.txt"
+      run_adb shell input keyevent WAKEUP >/dev/null 2>&1 || true
+      sleep 1
+    fi
+    echo "pulse: SLEEP" | tee -a "$OUT_DIR/run.txt"
+    run_adb shell input keyevent SLEEP >/dev/null 2>&1 || true
+    sleep "$PULSE_ENTER_AOD_SEC"
+    echo "pulse: POST test notification" | tee -a "$OUT_DIR/run.txt"
+    run_adb shell log -t PixelAodDiag "pulse-post $RUN_ID" >/dev/null 2>&1 || true
+    post_pulse_test_notification
+    sleep "$PULSE_WAIT_SEC"
+    if [[ "$PULSE_CLEAR_AFTER" == "1" ]]; then
+      echo "pulse: clear test notification" | tee -a "$OUT_DIR/run.txt"
+      run_adb shell log -t PixelAodDiag "pulse-clear $RUN_ID" >/dev/null 2>&1 || true
+      send_test_notification_action dev.codex.pixelaod.CLEAR_TEST_NOTIFICATION
+      sleep 1
+    fi
     ;;
   *)
     echo "Unknown MODE=$MODE" >&2
