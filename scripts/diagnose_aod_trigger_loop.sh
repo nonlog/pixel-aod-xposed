@@ -124,7 +124,7 @@ extract_logcat_window() {
 
 filter_events() {
   local pattern
-  pattern='PixelAodOPlus|PixelAodModern|AOD native trigger|OOS AOD trigger mapping|OOS AOD power policy mapping|started trigger-only Pixel AOD brief display|expired trigger-only Pixel AOD brief display|blocked trigger-only Pixel AOD brief display|skipped native short-wake Pixel AOD trigger|native short-wake trigger candidate|triggerBrief|AOD policy decision|AOD overlay decision|AOD overlay visibility decision|screen-state|onDreamingStarted|onDreamingStopped|onEnergySavingNotifyHide|notifyHideCallback|reason=non-display-trigger|fingerprint|Fingerprint|FOD|fod'
+  pattern='PixelAodOPlus|PixelAodModern|AOD native trigger|OOS AOD trigger mapping|OOS AOD power policy mapping|OOS AOD notification pulse observation|started trigger-only Pixel AOD brief display|expired trigger-only Pixel AOD brief display|blocked trigger-only Pixel AOD brief display|skipped native short-wake Pixel AOD trigger|native short-wake trigger candidate|triggerBrief|AOD policy decision|AOD overlay decision|AOD overlay visibility decision|screen-state|onDreamingStarted|onDreamingStopped|onEnergySavingNotifyHide|notifyHideCallback|reason=non-display-trigger|fingerprint|Fingerprint|FOD|fod'
   extract_logcat_window
   {
     echo "==== current logcat events ($(cat "$OUT_DIR/logcat_window_status.txt")) ===="
@@ -145,6 +145,7 @@ write_summary() {
   local started expired non_display screen_off_brief prox_started active_tail systemui_pid pkg_version
   local display_wake sensor_guard diagnostic pickup_rule tap_rule prox_near_rule prox_far_rule
   local power_allow power_block power_save low_battery charging_power unknown_battery
+  local pulse_candidate pulse_filtered pulse_clear pulse_ranking pulse_empty
   local log_window_status
   started="$(count_events 'started trigger-only Pixel AOD brief display')"
   expired="$(count_events 'expired trigger-only Pixel AOD brief display')"
@@ -165,6 +166,11 @@ write_summary() {
   low_battery="$(count_events 'OOS AOD power policy mapping.*category=battery-low')"
   charging_power="$(count_events 'OOS AOD power policy mapping.*category=battery-charging')"
   unknown_battery="$(count_events 'OOS AOD power policy mapping.*reason=battery-unknown')"
+  pulse_candidate="$(count_events 'OOS AOD notification pulse observation.*category=pulse-candidate')"
+  pulse_filtered="$(count_events 'OOS AOD notification pulse observation.*category=pulse-filtered')"
+  pulse_clear="$(count_events 'OOS AOD notification pulse observation.*category=pulse-clear')"
+  pulse_ranking="$(count_events 'OOS AOD notification pulse observation.*rule=ranking-update')"
+  pulse_empty="$(count_events 'OOS AOD notification pulse observation.*rule=empty-snapshot')"
   systemui_pid="$(run_adb shell pidof com.android.systemui 2>/dev/null | tr -d '\r' || true)"
   pkg_version="$({ run_adb shell dumpsys package dev.codex.pixelaod 2>/dev/null \
     | grep -E 'versionCode=|versionName=' || true; } | tr -d '\r' | paste -sd ';' -)"
@@ -198,6 +204,11 @@ write_summary() {
     echo "counts.powerCategoryLowBattery=$low_battery"
     echo "counts.powerCategoryCharging=$charging_power"
     echo "counts.powerReasonBatteryUnknown=$unknown_battery"
+    echo "counts.notificationPulseCandidate=$pulse_candidate"
+    echo "counts.notificationPulseFiltered=$pulse_filtered"
+    echo "counts.notificationPulseClear=$pulse_clear"
+    echo "counts.notificationPulseRanking=$pulse_ranking"
+    echo "counts.notificationPulseEmpty=$pulse_empty"
     echo
     echo "verdict:"
     if [[ "$screen_off_brief" -gt 0 ]]; then

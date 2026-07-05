@@ -527,6 +527,10 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static void setActiveNotifications(StatusBarNotification[] notifications) {
+        setActiveNotifications(notifications, "setActiveNotifications");
+    }
+
+    static void setActiveNotifications(StatusBarNotification[] notifications, String source) {
         int rawCount = notifications == null ? 0 : notifications.length;
         int usableCount;
         int mediaCandidateCount;
@@ -566,8 +570,17 @@ public final class PixelAodClockView extends FrameLayout {
                     + " usable=" + usableCount
                     + " trace=" + trace
                     + " state={" + state + "}");
+            OosAodLifecycleAdapter.recordNotificationPulseObservation(
+                    source,
+                    rawCount,
+                    usableCount,
+                    mediaCandidateCount,
+                    -1,
+                    packageSummary,
+                    trace,
+                    state);
         }
-        refreshInstancesFromNotificationSnapshot("setActiveNotifications");
+        refreshInstancesFromNotificationSnapshot(source);
         PixelLockscreenClockView.setActiveNotifications(activeNotifications);
     }
 
@@ -578,7 +591,7 @@ public final class PixelAodClockView extends FrameLayout {
         }
         PixelAodLog.log("refreshing AOD notification filtering trace=" + currentAodTraceId()
                 + " source=" + source + " state={" + describeAodState(appContext) + "}");
-        setActiveNotifications(rawSnapshot);
+        setActiveNotifications(rawSnapshot, source);
     }
 
     static void updateLockscreenVisibilityFromProvider(StatusBarNotification sbn,
@@ -1806,18 +1819,27 @@ public final class PixelAodClockView extends FrameLayout {
             }
             PixelAodLog.log("updated AOD notification ranking lockscreen overrides count="
                     + snapshot.size());
+            OosAodLifecycleAdapter.recordNotificationPulseObservation(
+                    "ranking-map",
+                    -1,
+                    -1,
+                    -1,
+                    snapshot.size(),
+                    "rankings",
+                    currentAodTraceId(),
+                    describeAodState(appContext));
             StatusBarNotification[] rawSnapshot;
             synchronized (PixelAodClockView.class) {
                 rawSnapshot = rawNotifications;
             }
-            setActiveNotifications(rawSnapshot);
+            setActiveNotifications(rawSnapshot, "ranking-map");
         } catch (Throwable t) {
             PixelAodLog.log("failed to update AOD notification ranking map", t);
         }
     }
 
     static void clearActiveNotifications() {
-        setActiveNotifications(null);
+        setActiveNotifications(null, "clearActiveNotifications");
     }
 
     static void setMediaNotificationCandidates(StatusBarNotification[] notifications, String source) {

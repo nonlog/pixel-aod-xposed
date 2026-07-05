@@ -87,6 +87,25 @@ final class OosAodLifecycleAdapter {
                 + " state={" + stateDescription + "}");
     }
 
+    static void recordNotificationPulseObservation(String source, int rawCount,
+            int usableCount, int mediaCandidateCount, int rankingCount,
+            String packageSummary, String trace, String stateDescription) {
+        NotificationPulseRule rule = mapNotificationPulseRule(source, rawCount,
+                usableCount, rankingCount);
+        PixelAodLog.log("OOS AOD notification pulse observation event=" + rule.eventLabel
+                + " rule=" + rule.label
+                + " category=" + rule.category
+                + " futureAction=" + rule.futureAction
+                + " raw=" + rawCount
+                + " usable=" + usableCount
+                + " media=" + mediaCandidateCount
+                + " rankings=" + rankingCount
+                + " packages=" + emptyAsNone(packageSummary)
+                + " source=" + normalizeSource(source)
+                + " trace=" + emptyAsNone(trace)
+                + " state={" + stateDescription + "}");
+    }
+
     static boolean matchesExpectedTrace(String expectedTrace, String currentTrace) {
         return TextUtils.isEmpty(expectedTrace) || TextUtils.equals(expectedTrace, currentTrace);
     }
@@ -407,6 +426,35 @@ final class OosAodLifecycleAdapter {
                 && sourceContains(lowerSource, "boolean(false)"));
     }
 
+    private static NotificationPulseRule mapNotificationPulseRule(String source, int rawCount,
+            int usableCount, int rankingCount) {
+        String normalizedSource = normalizeSource(source).toLowerCase(Locale.US);
+        if (sourceContains(normalizedSource, "onnotificationremoved")
+                || sourceContains(normalizedSource, "onremovenotification")
+                || sourceContains(normalizedSource, "clear")) {
+            return NotificationPulseRule.REMOVED_OR_CLEARED;
+        }
+        if (sourceContains(normalizedSource, "ranking")) {
+            return NotificationPulseRule.RANKING_UPDATE;
+        }
+        if (sourceContains(normalizedSource, "onnotificationposted")
+                || sourceContains(normalizedSource, "onreceivenotification")
+                || sourceContains(normalizedSource, "posted")) {
+            return usableCount > 0
+                    ? NotificationPulseRule.POSTED_PULSE_CANDIDATE
+                    : NotificationPulseRule.POSTED_FILTERED;
+        }
+        if (rankingCount > 0 && rawCount < 0) {
+            return NotificationPulseRule.RANKING_UPDATE;
+        }
+        if (rawCount <= 0 && usableCount <= 0) {
+            return NotificationPulseRule.EMPTY_SNAPSHOT;
+        }
+        return usableCount > 0
+                ? NotificationPulseRule.SNAPSHOT_PULSE_CANDIDATE
+                : NotificationPulseRule.SNAPSHOT_FILTERED;
+    }
+
     private static boolean sourceContains(String source, String token) {
         return !TextUtils.isEmpty(source) && source.contains(token);
     }
@@ -501,6 +549,36 @@ final class OosAodLifecycleAdapter {
         PowerPolicyDecision toDecision(int levelPercent, int thresholdPercent) {
             return new PowerPolicyDecision(allowsDisplay, reason, category, futureAction,
                     levelPercent, thresholdPercent);
+        }
+    }
+
+    private enum NotificationPulseRule {
+        POSTED_PULSE_CANDIDATE("notification-posted", "posted-pulse-candidate",
+                "pulse-candidate", "observe-native-pulse"),
+        POSTED_FILTERED("notification-posted", "posted-filtered",
+                "pulse-filtered", "do-not-pulse"),
+        SNAPSHOT_PULSE_CANDIDATE("notification-snapshot", "snapshot-pulse-candidate",
+                "pulse-candidate", "observe-native-pulse"),
+        SNAPSHOT_FILTERED("notification-snapshot", "snapshot-filtered",
+                "pulse-filtered", "do-not-pulse"),
+        REMOVED_OR_CLEARED("notification-removed", "removed-or-cleared",
+                "pulse-clear", "observe-native-clear"),
+        RANKING_UPDATE("notification-ranking", "ranking-update",
+                "diagnostic-only", "refresh-pulse-inputs"),
+        EMPTY_SNAPSHOT("notification-snapshot", "empty-snapshot",
+                "diagnostic-only", "observe-empty-snapshot");
+
+        final String eventLabel;
+        final String label;
+        final String category;
+        final String futureAction;
+
+        NotificationPulseRule(String eventLabel, String label, String category,
+                String futureAction) {
+            this.eventLabel = eventLabel;
+            this.label = label;
+            this.category = category;
+            this.futureAction = futureAction;
         }
     }
 

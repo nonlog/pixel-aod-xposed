@@ -146,6 +146,10 @@ runtime behavior observable and reversible.
   `OosAodLifecycleAdapter`. This keeps behavior unchanged while making the
   reason for hiding or allowing Pixel AOD visible in logs. The current rule
   table is recorded in `docs/OOS_POWER_POLICY_MAPPING.md`.
+- Phase 5.4 starts by observing native notification-pulse inputs without
+  starting a custom pulse. Notification snapshot, ranking, posted, removed,
+  and clear events now map to stable pulse-observation logs. The current rule
+  table is recorded in `docs/OOS_NOTIFICATION_PULSE_MAPPING.md`.
 - Treat AOD display as one of two explicit modes:
 - `Continuous + Trigger`: continuously displays during the configured schedule while respecting power saver, low battery, proximity, and pocket policy; outside the schedule it can still display briefly when OOS provides a native short-wake / trigger window.
 - `Trigger-only`: never keeps AOD visible continuously; it only displays during native short-wake / pickup / tap style trigger windows and expires automatically.

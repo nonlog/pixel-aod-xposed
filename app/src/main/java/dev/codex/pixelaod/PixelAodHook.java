@@ -856,7 +856,7 @@ final class PixelAodHook {
                     }
                 }
             }
-            PixelAodClockView.setActiveNotifications(notifications);
+            PixelAodClockView.setActiveNotifications(notifications, source);
             PixelAodClockView.setMediaNotificationCandidates(notifications, source);
             PixelAodLog.log("captured active notifications from " + source
                     + " count=" + notifications.length
@@ -874,7 +874,7 @@ final class PixelAodHook {
                 NOTIFICATION_CACHE.put(sbn.getKey(), sbn);
                 snapshot = NOTIFICATION_CACHE.values().toArray(new StatusBarNotification[0]);
             }
-            PixelAodClockView.setActiveNotifications(snapshot);
+            PixelAodClockView.setActiveNotifications(snapshot, source);
             PixelAodClockView.cacheMediaNotificationCandidate(sbn, source);
             PixelAodLog.log("cached notification from " + source
                     + " pkg=" + sbn.getPackageName()
@@ -894,7 +894,7 @@ final class PixelAodHook {
                 NOTIFICATION_CACHE.remove(sbn.getKey());
                 snapshot = NOTIFICATION_CACHE.values().toArray(new StatusBarNotification[0]);
             }
-            PixelAodClockView.setActiveNotifications(snapshot);
+            PixelAodClockView.setActiveNotifications(snapshot, source);
             PixelAodClockView.removeMediaNotificationCandidate(sbn, source);
             PixelAodLog.log("removed notification from " + source
                     + " pkg=" + sbn.getPackageName()
@@ -956,7 +956,7 @@ final class PixelAodHook {
             if (lastNotificationListener != null) {
                 refreshNotificationsFromLastListener(source + "#merged-oplus-subset");
             } else {
-                PixelAodClockView.setActiveNotifications(snapshot);
+                PixelAodClockView.setActiveNotifications(snapshot, source);
             }
             PixelAodLog.log("merged OPlus AOD notification subset from " + source
                     + " subset=" + notifications.length
@@ -1022,7 +1022,7 @@ final class PixelAodHook {
             synchronized (NOTIFICATION_CACHE) {
                 snapshot = NOTIFICATION_CACHE.values().toArray(new StatusBarNotification[0]);
             }
-            PixelAodClockView.setActiveNotifications(snapshot);
+            PixelAodClockView.setActiveNotifications(snapshot, source);
             PixelAodLog.log("kept fallback native AOD notification icons from "
                     + source + " count=" + snapshot.length
                     + " trace=" + PixelAodClockView.currentAodTraceId()
@@ -2823,7 +2823,8 @@ final class PixelAodHook {
                 if (lastNotificationListener != null) {
                     refreshNotificationsFromLastListener("runtime-NotificationView#merged-oplus-subset");
                 } else {
-                    PixelAodClockView.setActiveNotifications(snapshot);
+                    PixelAodClockView.setActiveNotifications(snapshot,
+                            "runtime-NotificationView#" + marker);
                 }
                 PixelAodLog.log("merged AOD notifications from runtime view subset="
                         + array.length + " cache=" + snapshot.length
