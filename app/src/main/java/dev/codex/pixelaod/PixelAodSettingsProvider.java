@@ -28,43 +28,9 @@ public final class PixelAodSettingsProvider extends ContentProvider {
         }
         SharedPreferences prefs = PixelAodSettings.getSharedPreferences(context);
         PixelAodSettings.normalizeAlwaysEnabledPreferences(prefs);
-        putBoolean(cursor, PixelAodSettings.KEY_MODULE_ENABLED,
-                prefs.getBoolean(PixelAodSettings.KEY_MODULE_ENABLED, true));
-        putBoolean(cursor, PixelAodSettings.KEY_CUSTOM_AOD,
-                prefs.getBoolean(PixelAodSettings.KEY_CUSTOM_AOD, true));
-        putBoolean(cursor, PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE,
-                prefs.getBoolean(PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, false));
-        putBoolean(cursor, PixelAodSettings.KEY_LOCKSCREEN_CLOCK,
-                prefs.getBoolean(PixelAodSettings.KEY_LOCKSCREEN_CLOCK, true));
-        putString(cursor, PixelAodSettings.KEY_AOD_DISPLAY_MODE,
-                prefs.getString(PixelAodSettings.KEY_AOD_DISPLAY_MODE,
-                        PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS));
-        putBoolean(cursor, PixelAodSettings.KEY_WEATHER,
-                prefs.getBoolean(PixelAodSettings.KEY_WEATHER, true));
-        putBoolean(cursor, PixelAodSettings.KEY_NOTIFICATION_ICONS, true);
-        putBoolean(cursor, PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY,
-                prefs.getBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true));
-        putBoolean(cursor, PixelAodSettings.KEY_DEBUG_LOGGING,
-                prefs.getBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, false));
-        putFloat(cursor, PixelAodSettings.KEY_AOD_WEIGHT,
-                prefs.getFloat(PixelAodSettings.KEY_AOD_WEIGHT,
-                        PixelAodSettings.DEFAULT_AOD_WEIGHT));
-        putFloat(cursor, PixelAodSettings.KEY_LOCKSCREEN_WEIGHT,
-                prefs.getFloat(PixelAodSettings.KEY_LOCKSCREEN_WEIGHT,
-                        PixelAodSettings.DEFAULT_LOCKSCREEN_WEIGHT));
-        putBoolean(cursor, PixelAodSettings.KEY_FORCE_ENGLISH_DATE,
-                prefs.getBoolean(PixelAodSettings.KEY_FORCE_ENGLISH_DATE, false));
-        putBoolean(cursor, PixelAodSettings.KEY_DISABLE_BURN_IN_OFFSET,
-                prefs.getBoolean(PixelAodSettings.KEY_DISABLE_BURN_IN_OFFSET, false));
-        putBoolean(cursor, PixelAodSettings.KEY_POCKET_MODE, true);
-        putBoolean(cursor, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED,
-                prefs.getBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, false));
-        putString(cursor, PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME,
-                prefs.getString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, "22:00"));
-        putString(cursor, PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME,
-                prefs.getString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, "07:00"));
-        putString(cursor, PixelAodSettings.KEY_WEATHER_ICON_PACK,
-                prefs.getString(PixelAodSettings.KEY_WEATHER_ICON_PACK, ""));
+        for (PixelAodSettingsSchema.SettingSpec spec : PixelAodSettingsSchema.allSpecs()) {
+            putSetting(cursor, prefs, spec);
+        }
         return cursor;
     }
 
@@ -98,9 +64,11 @@ public final class PixelAodSettingsProvider extends ContentProvider {
             return 0;
         }
         SharedPreferences.Editor editor = PixelAodSettings.getSharedPreferences(context).edit();
-        if (PixelAodSettings.isAlwaysEnabledKey(key)) {
-            editor.putBoolean(key, true);
-        } else if (rawValue instanceof Boolean) {
+        PixelAodSettingsSchema.SettingSpec spec = PixelAodSettingsSchema.spec(key);
+        if (writeKnownSetting(editor, spec, key, rawValue)) {
+            return commitUpdate(context, editor);
+        }
+        if (rawValue instanceof Boolean) {
             editor.putBoolean(key, (Boolean) rawValue);
         } else if (rawValue instanceof Integer) {
             editor.putInt(key, (Integer) rawValue);
@@ -126,6 +94,67 @@ public final class PixelAodSettingsProvider extends ContentProvider {
                 }
             }
         }
+        return commitUpdate(context, editor);
+    }
+
+    private static void putSetting(MatrixCursor cursor, SharedPreferences prefs,
+            PixelAodSettingsSchema.SettingSpec spec) {
+        if (spec == null) {
+            return;
+        }
+        if (spec.type == PixelAodSettingsSchema.Type.BOOLEAN) {
+            putBoolean(cursor, spec.key, spec.alwaysEnabled
+                    || prefs.getBoolean(spec.key, spec.defaultBoolean()));
+            return;
+        }
+        if (spec.type == PixelAodSettingsSchema.Type.FLOAT) {
+            putFloat(cursor, spec.key, prefs.getFloat(spec.key, spec.defaultFloat()));
+            return;
+        }
+        putString(cursor, spec.key, prefs.getString(spec.key, spec.defaultString()));
+    }
+
+    private static boolean writeKnownSetting(SharedPreferences.Editor editor,
+            PixelAodSettingsSchema.SettingSpec spec, String key, Object rawValue) {
+        if (spec == null) {
+            return false;
+        }
+        if (spec.alwaysEnabled) {
+            editor.putBoolean(key, true);
+            return true;
+        }
+        if (spec.type == PixelAodSettingsSchema.Type.BOOLEAN) {
+            editor.putBoolean(key, rawValue instanceof Boolean
+                    ? (Boolean) rawValue
+                    : Boolean.parseBoolean(String.valueOf(rawValue)));
+            return true;
+        }
+        if (spec.type == PixelAodSettingsSchema.Type.FLOAT) {
+            editor.putFloat(key, parseFloat(rawValue, spec.defaultFloat()));
+            return true;
+        }
+        editor.putString(key, String.valueOf(rawValue));
+        return true;
+    }
+
+    private static float parseFloat(Object rawValue, float fallback) {
+        if (rawValue instanceof Float) {
+            return (Float) rawValue;
+        }
+        if (rawValue instanceof Double) {
+            return ((Double) rawValue).floatValue();
+        }
+        if (rawValue instanceof Number) {
+            return ((Number) rawValue).floatValue();
+        }
+        try {
+            return Float.parseFloat(String.valueOf(rawValue));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static int commitUpdate(Context context, SharedPreferences.Editor editor) {
         if (!editor.commit()) {
             return 0;
         }

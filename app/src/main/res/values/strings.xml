@@ -3,8 +3,6 @@
     <string name="module_description">OPlus 的 Pixel 风格双排 AOD 时钟</string>
     <string name="title_module_enabled">模块总开关</string>
     <string name="desc_module_enabled">关闭后重启 SystemUI，模块 Hook 不再生效</string>
-    <string name="title_skip_doze_off_state">跳过 AOD 黑屏</string>
-    <string name="desc_skip_doze_off_state">实验性：跳过 AOD 入口黑屏与暂停态</string>
     <string name="title_weather">天气信息</string>
     <string name="desc_weather">Breezy Weather / Gadgetbridge</string>
     <string name="title_weather_icon_pack">天气图标包</string>

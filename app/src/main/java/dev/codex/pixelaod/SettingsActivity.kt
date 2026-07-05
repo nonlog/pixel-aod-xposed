@@ -107,7 +107,13 @@ class SettingsActivity : ComponentActivity() {
          */
         fun applyLanguage(base: Context): Context {
             val lang = PixelAodSettings.getSharedPreferences(base)
-                .getString(PixelAodSettings.KEY_LANGUAGE, PixelAodSettings.LANGUAGE_SYSTEM)
+                .getString(
+                    PixelAodSettings.KEY_LANGUAGE,
+                    PixelAodSettings.defaultString(
+                        PixelAodSettings.KEY_LANGUAGE,
+                        PixelAodSettings.LANGUAGE_SYSTEM
+                    )
+                )
                 ?: PixelAodSettings.LANGUAGE_SYSTEM
             val locale = when (lang) {
                 PixelAodSettings.LANGUAGE_CHINESE -> Locale.SIMPLIFIED_CHINESE
@@ -161,6 +167,19 @@ private fun updateModuleStringSetting(context: Context, key: String, value: Stri
     PixelAodSettings.getSharedPreferences(context).edit().putString(key, value).apply()
     PixelAodSettings.refresh(context)
     context.contentResolver.notifyChange(PixelAodSettingsProvider.URI, null)
+}
+
+private fun android.content.SharedPreferences.schemaBoolean(key: String, fallback: Boolean): Boolean {
+    return getBoolean(key, PixelAodSettings.defaultBoolean(key, fallback))
+}
+
+private fun android.content.SharedPreferences.schemaString(key: String, fallback: String): String {
+    return getString(key, PixelAodSettings.defaultString(key, fallback))
+        ?: PixelAodSettings.defaultString(key, fallback)
+}
+
+private fun android.content.SharedPreferences.schemaFloat(key: String, fallback: Float): Float {
+    return getFloat(key, PixelAodSettings.defaultFloat(key, fallback))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -227,44 +246,42 @@ private fun SettingsContent(
     }
 
     val moduleEnabled = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_MODULE_ENABLED, true))
-    }
-    val skipDozeOffState = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, false))
+        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_MODULE_ENABLED, true))
     }
     val aodDisplayMode = remember {
         mutableStateOf(
-            prefs.getString(
+            prefs.schemaString(
                 PixelAodSettings.KEY_AOD_DISPLAY_MODE,
                 PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS
-            ) ?: PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS
+            )
         )
     }
     val weather = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_WEATHER, true))
+        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_WEATHER, true))
     }
     val lockscreenPolicy = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true))
+        mutableStateOf(
+            prefs.schemaBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true)
+        )
     }
     val debugLogging = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, false))
+        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, false))
     }
     val weatherIconPack = remember {
-        mutableStateOf(prefs.getString(PixelAodSettings.KEY_WEATHER_ICON_PACK, "") ?: "")
+        mutableStateOf(prefs.schemaString(PixelAodSettings.KEY_WEATHER_ICON_PACK, ""))
     }
     val aodScheduleEnabled = remember {
-        mutableStateOf(prefs.getBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, false))
+        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, false))
     }
     val aodScheduleStartTime = remember {
-        mutableStateOf(prefs.getString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, "22:00") ?: "22:00")
+        mutableStateOf(prefs.schemaString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, "22:00"))
     }
     val aodScheduleEndTime = remember {
-        mutableStateOf(prefs.getString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, "07:00") ?: "07:00")
+        mutableStateOf(prefs.schemaString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, "07:00"))
     }
     val language = remember {
         mutableStateOf(
-            prefs.getString(PixelAodSettings.KEY_LANGUAGE, PixelAodSettings.LANGUAGE_SYSTEM)
-                ?: PixelAodSettings.LANGUAGE_SYSTEM
+            prefs.schemaString(PixelAodSettings.KEY_LANGUAGE, PixelAodSettings.LANGUAGE_SYSTEM)
         )
     }
     // ── Clock dial picker state ──
@@ -289,12 +306,12 @@ private fun SettingsContent(
     }
     val aodWeight = remember {
         mutableFloatStateOf(
-            prefs.getFloat(PixelAodSettings.KEY_AOD_WEIGHT, PixelAodSettings.DEFAULT_AOD_WEIGHT)
+            prefs.schemaFloat(PixelAodSettings.KEY_AOD_WEIGHT, PixelAodSettings.DEFAULT_AOD_WEIGHT)
         )
     }
     val lockscreenWeight = remember {
         mutableFloatStateOf(
-            prefs.getFloat(
+            prefs.schemaFloat(
                 PixelAodSettings.KEY_LOCKSCREEN_WEIGHT,
                 PixelAodSettings.DEFAULT_LOCKSCREEN_WEIGHT
             )
@@ -396,10 +413,6 @@ private fun SettingsContent(
         }
 
         SettingsSection(stringResource(R.string.section_advanced)) {
-            ToggleCard(Icons.Outlined.Bolt, stringResource(R.string.title_skip_doze_off_state), stringResource(R.string.desc_skip_doze_off_state), skipDozeOffState.value) {
-                skipDozeOffState.value = it
-                prefs.edit().putBoolean(PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, it).apply()
-            }
             ToggleCard(Icons.Outlined.BugReport, stringResource(R.string.title_debug_logging), stringResource(R.string.desc_debug_logging), debugLogging.value) {
                 debugLogging.value = it
                 updateModuleBooleanSetting(context, PixelAodSettings.KEY_DEBUG_LOGGING, it)

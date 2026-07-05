@@ -4,6 +4,15 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.146] - 2026-07-05
+### Removed
+- Remove the ineffective `Skip AOD black frame` advanced option and its old doze screen-state rewrite hook, so stale enabled preferences no longer install that compatibility path.
+
+## [0.1.145] - 2026-07-05
+### Internal
+- Add `PixelAodSettingsSchema` to centralize setting keys, defaults, always-enabled flags, and SystemUI restart metadata.
+- Refactor `PixelAodSettingsProvider` and the settings UI to read defaults from the shared schema instead of duplicating fallback values.
+
 ## [0.1.144] - 2026-07-05
 ### Internal
 - Add `AodNotificationPipeline` and move AOD notification visibility filtering, ranking snapshots, lockscreen visibility decisions, media candidate detection, notification signatures, and system notification classification out of `PixelAodClockView`.

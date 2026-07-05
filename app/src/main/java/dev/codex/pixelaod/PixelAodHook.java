@@ -10,7 +10,6 @@ import android.os.Looper;
 import android.service.dreams.DreamService;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
-import android.view.Display;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
@@ -42,10 +41,6 @@ final class PixelAodHook {
     private static final String CLOCK_LAYOUT = "com.oplus.systemui.aod.aodclock.off.AodClockLayout";
     private static final String AOD_ROOT_LAYOUT = "com.oplus.systemui.aod.aodclock.off.AodRootLayout";
     private static final String AOD_RECORD = "com.oplus.systemui.aod.AodRecord";
-    private static final String AOD_DISPLAY_UTIL =
-            "com.oplus.systemui.aod.display.AODDisplayUtil";
-    private static final String AOD_SMOOTH_TRANSITION_CONTROLLER =
-            "com.oplus.systemui.aod.display.SmoothTransitionController";
     private static final String AOD_UPDATE_MANAGER =
             "com.oplus.systemui.aod.aodclock.off.AodUpdateManager";
     private static final String[] OPLUS_WAKE_UP_CONTROLLER_CANDIDATES = {
@@ -139,7 +134,6 @@ final class PixelAodHook {
         hookOplusEnergySavingHideGuards(classLoader);
         hookOplusAodTriggerDiagnostics(classLoader);
         hookPowerManagerWakeTriggers();
-        hookSkipDozeOffState(appContext, classLoader);
         if (ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS) {
             hookStockClockVisibilityAndAlphaSuppression();
         } else {
@@ -1730,100 +1724,6 @@ final class PixelAodHook {
         }
     }
 
-    private static void hookSkipDozeOffState(Context context, ClassLoader classLoader) {
-        if (!PixelAodSettings.getBoolean(context, PixelAodSettings.KEY_SKIP_DOZE_OFF_STATE, false)) {
-            return;
-        }
-        hookAodDisplayUtilScreenState(context, classLoader);
-        try {
-            ModernHookBridge.hookBefore(DreamService.class, "setDozeScreenState", param -> {
-                if (!(param.thisObject instanceof DreamService) || param.args == null
-                        || param.args.length == 0 || !(param.args[0] instanceof Integer)) {
-                    return;
-                }
-                DreamService service = (DreamService) param.thisObject;
-                rewriteAodEntryState(service, param.args, 0, "DreamService#setDozeScreenState");
-            }, int.class);
-        } catch (Throwable t) {
-            PixelAodLog.log("failed to hook DreamService doze OFF skip", t);
-        }
-    }
-
-    private static void hookAodDisplayUtilScreenState(Context context, ClassLoader classLoader) {
-        try {
-            Class<?> utilClass = ModernHookBridge.findClass(AOD_DISPLAY_UTIL, classLoader);
-            ModernHookBridge.hookBefore(utilClass, "requestScreenState",
-                    param -> rewriteAodEntryState(context, param.args, 0,
-                            "AODDisplayUtil#requestScreenState(int,int,String)"),
-                    int.class, int.class, String.class);
-            ModernHookBridge.hookBefore(utilClass, "requestScreenState",
-                    param -> rewriteAodEntryState(viewContextOr(context, param.args, 0),
-                            param.args, 1, "AODDisplayUtil#requestScreenState(View,int,boolean)"),
-                    View.class, int.class, boolean.class);
-            ModernHookBridge.hookBefore(utilClass, "requestScreenStateWhileDreamingStart",
-                    param -> rewriteAodEntryState(context, param.args, 0,
-                            "AODDisplayUtil#requestScreenStateWhileDreamingStart"),
-                    int.class, String.class, boolean.class);
-            PixelAodLog.log("hooked " + AOD_DISPLAY_UTIL + " screen-state entry rewrite");
-        } catch (Throwable t) {
-            PixelAodLog.log("failed to hook AODDisplayUtil screen-state entry rewrite", t);
-        }
-        try {
-            Class<?> smoothClass = ModernHookBridge.findClass(AOD_SMOOTH_TRANSITION_CONTROLLER,
-                    classLoader);
-            ModernHookBridge.hookBefore(smoothClass, "requestScreenState",
-                    param -> rewriteAodEntryState(context, param.args, 0,
-                            "SmoothTransitionController#requestScreenState"),
-                    int.class);
-            PixelAodLog.log("hooked " + AOD_SMOOTH_TRANSITION_CONTROLLER
-                    + " screen-state entry rewrite");
-        } catch (Throwable t) {
-            PixelAodLog.log("failed to hook SmoothTransitionController screen-state entry rewrite", t);
-        }
-    }
-
-    private static Context viewContextOr(Context fallback, Object[] args, int index) {
-        if (args != null && args.length > index && args[index] instanceof View) {
-            Context context = ((View) args[index]).getContext();
-            if (context != null) {
-                return context;
-            }
-        }
-        return fallback;
-    }
-
-    private static boolean shouldBypassStateRewrite(Object[] args) {
-        return findStateRewriteBypassReason(args) != null;
-    }
-
-    private static String findStateRewriteBypassReason(Object[] args) {
-        if (args == null) {
-            return null;
-        }
-        for (Object arg : args) {
-            if (arg instanceof String) {
-                String str = ((String) arg).toLowerCase(Locale.US);
-                if (str.contains("prox")
-                        || str.contains("pocket")
-                        || str.contains("sensor")
-                        || str.contains("near")
-                        || str.contains("timeout")
-                        || str.contains("power")
-                        || str.contains("key")
-                        || str.contains("fold")
-                        || str.contains("lid")
-                        || str.contains("close")
-                        || str.contains("suspend")
-                        || str.contains("sleep")
-                        || str.contains("saver")
-                        || str.contains("schedule")) {
-                    return str;
-                }
-            }
-        }
-        return null;
-    }
-
     private static String classifyAodTriggerKeyword(String value) {
         if (TextUtils.isEmpty(value)) {
             return "";
@@ -1948,112 +1848,6 @@ final class PixelAodHook {
             PixelAodLog.log("failed to check AOD system settings", t);
         }
         return true;
-    }
-
-    private static void rewriteAodEntryState(Context context, Object[] args, int stateIndex,
-            String source) {
-        if (args == null || args.length <= stateIndex || !(args[stateIndex] instanceof Integer)) {
-            return;
-        }
-        int requestedState = (Integer) args[stateIndex];
-        if (requestedState != Display.STATE_OFF
-                && requestedState != Display.STATE_DOZE_SUSPEND) {
-            return;
-        }
-        if (context != null && PixelAodClockView.isDeviceInteractive(context)) {
-            PixelAodLog.log("skipped AOD rewrite source=" + source
-                    + " requestedState=" + requestedState
-                    + " reason=interactive"
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-            return;
-        }
-
-        if (context != null && !isAodAllowedBySystemSettings(context)) {
-            PixelAodLog.log("skipped AOD rewrite source=" + source
-                    + " requestedState=" + requestedState
-                    + " reason=system-settings"
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-            return;
-        }
-        OosAodLifecycleAdapter.AodPolicyDecision decision =
-                PixelAodClockView.evaluateAodPolicy(context, source + "#state-rewrite");
-        if (!decision.modulePolicyAllowsDisplay) {
-            PixelAodLog.log("skipped AOD rewrite source=" + source
-                    + " requestedState=" + requestedState
-                    + " reason=" + decision.modulePolicyReason
-                    + " shouldKeepNativeDozeAlive="
-                    + decision.shouldKeepNativeDozeAlive
-                    + " shouldAllowNativeHideCallbacks="
-                    + decision.shouldAllowNativeHideCallbacks
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-            return;
-        }
-        if (requestedState == Display.STATE_DOZE_SUSPEND
-                && decision.shouldKeepNativeDozeAlive
-                && PixelAodClockView.isInAodEntryTransitionWindow(
-                AOD_ENTRY_STATE_REWRITE_WINDOW_MILLIS)) {
-            args[stateIndex] = Display.STATE_DOZE;
-            PixelAodLog.i("rewrote " + source
-                    + " DOZE_SUSPEND->DOZE during AOD entry"
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-            return;
-        }
-        String bypassReason = findStateRewriteBypassReason(args);
-        if (bypassReason != null) {
-            String triggerType = classifyAodTriggerKeyword(bypassReason);
-            if (!TextUtils.isEmpty(triggerType)) {
-                PixelAodClockView.noteNativeTrigger(triggerType,
-                        source + "#state-request-bypass",
-                        "requestedState=" + requestedState
-                                + ",reason=" + bypassReason
-                                + ",args=" + summarizeArgs(args, 4));
-            }
-            PixelAodLog.log("skipped AOD rewrite source=" + source
-                    + " requestedState=" + requestedState
-                    + " reason=bypass-keywords"
-                    + " bypass=" + bypassReason
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-            return;
-        }
-
-        if (!decision.shouldKeepNativeDozeAlive) {
-            PixelAodLog.log("skipped AOD rewrite source=" + source
-                    + " requestedState=" + requestedState
-                    + " reason=" + decision.keepNativeDozeReason
-                    + " shouldAllowNativeHideCallbacks="
-                    + decision.shouldAllowNativeHideCallbacks
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-            return;
-        }
-        if (context != null) {
-            PixelAodClockView.noteScreenOffIfUnset(source + "#off-request");
-        }
-        if (!PixelAodClockView.isInAodEntryTransitionWindow(
-                AOD_ENTRY_STATE_REWRITE_WINDOW_MILLIS)) {
-            PixelAodLog.log("skipped AOD rewrite source=" + source
-                    + " requestedState=" + requestedState
-                    + " reason=outside-entry-window"
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-            return;
-        }
-        args[stateIndex] = Display.STATE_DOZE;
-        logAodStateRewrite(source, requestedState);
-    }
-
-    private static void logAodStateRewrite(String source, int requestedState) {
-        String stateName = requestedState == Display.STATE_DOZE_SUSPEND
-                ? "DOZE_SUSPEND"
-                : "OFF";
-        PixelAodLog.log("rewrote " + source + " " + stateName + "->DOZE during AOD entry"
-                + " trace=" + PixelAodClockView.currentAodTraceId()
-                + " state={" + PixelAodClockView.describeAodState(null) + "}");
     }
 
     private static void inspectLockscreenClockCandidate(Object candidate, String source) {

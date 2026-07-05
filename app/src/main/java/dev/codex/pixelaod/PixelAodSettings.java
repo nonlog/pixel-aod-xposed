@@ -9,33 +9,42 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class PixelAodSettings {
-    public static final String PREFS = "pixel_aod_settings";
-    public static final String KEY_MODULE_ENABLED = "module_enabled";
-    public static final String KEY_CUSTOM_AOD = "custom_aod";
-    public static final String KEY_SKIP_DOZE_OFF_STATE = "skip_doze_off_state";
-    public static final String KEY_LOCKSCREEN_CLOCK = "lockscreen_clock";
-    public static final String KEY_AOD_DISPLAY_MODE = "module_aod_display_mode";
-    public static final String KEY_WEATHER = "weather";
-    public static final String KEY_WEATHER_ICON_PACK = "weather_icon_pack";
-    public static final String KEY_NOTIFICATION_ICONS = "notification_icons";
-    public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY = "lockscreen_notification_policy";
-    public static final String KEY_DEBUG_LOGGING = "debug_logging";
-    public static final String KEY_AOD_WEIGHT = "aod_weight";
-    public static final String KEY_LOCKSCREEN_WEIGHT = "lockscreen_weight";
-    public static final String KEY_FORCE_ENGLISH_DATE = "force_english_date";
-    public static final String KEY_DISABLE_BURN_IN_OFFSET = "disable_burn_in_offset";
-    public static final String KEY_POCKET_MODE = "pocket_mode";
-    public static final String KEY_AOD_SCHEDULE_ENABLED = "aod_schedule_enabled";
-    public static final String KEY_AOD_SCHEDULE_START_TIME = "aod_schedule_start_time";
-    public static final String KEY_AOD_SCHEDULE_END_TIME = "aod_schedule_end_time";
-    public static final String KEY_LANGUAGE = "ui_language";
-    public static final String AOD_DISPLAY_MODE_CONTINUOUS = "continuous";
-    public static final String AOD_DISPLAY_MODE_TRIGGER_ONLY = "trigger_only";
-    public static final String LANGUAGE_SYSTEM = "system";
-    public static final String LANGUAGE_CHINESE = "zh";
-    public static final String LANGUAGE_ENGLISH = "en";
-    public static final float DEFAULT_AOD_WEIGHT = 280f;
-    public static final float DEFAULT_LOCKSCREEN_WEIGHT = 520f;
+    public static final String PREFS = PixelAodSettingsSchema.PREFS;
+    public static final String KEY_MODULE_ENABLED = PixelAodSettingsSchema.KEY_MODULE_ENABLED;
+    public static final String KEY_CUSTOM_AOD = PixelAodSettingsSchema.KEY_CUSTOM_AOD;
+    public static final String KEY_LOCKSCREEN_CLOCK = PixelAodSettingsSchema.KEY_LOCKSCREEN_CLOCK;
+    public static final String KEY_AOD_DISPLAY_MODE = PixelAodSettingsSchema.KEY_AOD_DISPLAY_MODE;
+    public static final String KEY_WEATHER = PixelAodSettingsSchema.KEY_WEATHER;
+    public static final String KEY_WEATHER_ICON_PACK = PixelAodSettingsSchema.KEY_WEATHER_ICON_PACK;
+    public static final String KEY_NOTIFICATION_ICONS =
+            PixelAodSettingsSchema.KEY_NOTIFICATION_ICONS;
+    public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY =
+            PixelAodSettingsSchema.KEY_LOCKSCREEN_NOTIFICATION_POLICY;
+    public static final String KEY_DEBUG_LOGGING = PixelAodSettingsSchema.KEY_DEBUG_LOGGING;
+    public static final String KEY_AOD_WEIGHT = PixelAodSettingsSchema.KEY_AOD_WEIGHT;
+    public static final String KEY_LOCKSCREEN_WEIGHT = PixelAodSettingsSchema.KEY_LOCKSCREEN_WEIGHT;
+    public static final String KEY_FORCE_ENGLISH_DATE =
+            PixelAodSettingsSchema.KEY_FORCE_ENGLISH_DATE;
+    public static final String KEY_DISABLE_BURN_IN_OFFSET =
+            PixelAodSettingsSchema.KEY_DISABLE_BURN_IN_OFFSET;
+    public static final String KEY_POCKET_MODE = PixelAodSettingsSchema.KEY_POCKET_MODE;
+    public static final String KEY_AOD_SCHEDULE_ENABLED =
+            PixelAodSettingsSchema.KEY_AOD_SCHEDULE_ENABLED;
+    public static final String KEY_AOD_SCHEDULE_START_TIME =
+            PixelAodSettingsSchema.KEY_AOD_SCHEDULE_START_TIME;
+    public static final String KEY_AOD_SCHEDULE_END_TIME =
+            PixelAodSettingsSchema.KEY_AOD_SCHEDULE_END_TIME;
+    public static final String KEY_LANGUAGE = PixelAodSettingsSchema.KEY_LANGUAGE;
+    public static final String AOD_DISPLAY_MODE_CONTINUOUS =
+            PixelAodSettingsSchema.AOD_DISPLAY_MODE_CONTINUOUS;
+    public static final String AOD_DISPLAY_MODE_TRIGGER_ONLY =
+            PixelAodSettingsSchema.AOD_DISPLAY_MODE_TRIGGER_ONLY;
+    public static final String LANGUAGE_SYSTEM = PixelAodSettingsSchema.LANGUAGE_SYSTEM;
+    public static final String LANGUAGE_CHINESE = PixelAodSettingsSchema.LANGUAGE_CHINESE;
+    public static final String LANGUAGE_ENGLISH = PixelAodSettingsSchema.LANGUAGE_ENGLISH;
+    public static final float DEFAULT_AOD_WEIGHT = PixelAodSettingsSchema.DEFAULT_AOD_WEIGHT;
+    public static final float DEFAULT_LOCKSCREEN_WEIGHT =
+            PixelAodSettingsSchema.DEFAULT_LOCKSCREEN_WEIGHT;
     private static final Map<String, String> CACHE = new HashMap<>();
     private static long lastLoadMillis;
     private static final long CACHE_TTL_MILLIS = 2_000L;
@@ -48,11 +57,27 @@ public final class PixelAodSettings {
             return true;
         }
         String value = getValue(context, key);
-        return value == null ? fallback : Boolean.parseBoolean(value);
+        return value == null ? defaultBoolean(key, fallback) : Boolean.parseBoolean(value);
     }
 
     public static boolean isAlwaysEnabledKey(String key) {
-        return KEY_NOTIFICATION_ICONS.equals(key) || KEY_POCKET_MODE.equals(key);
+        return PixelAodSettingsSchema.isAlwaysEnabledKey(key);
+    }
+
+    public static boolean requiresSystemUiRestart(String key) {
+        return PixelAodSettingsSchema.requiresSystemUiRestart(key);
+    }
+
+    public static boolean defaultBoolean(String key, boolean fallback) {
+        return PixelAodSettingsSchema.booleanDefault(key, fallback);
+    }
+
+    public static String defaultString(String key, String fallback) {
+        return PixelAodSettingsSchema.stringDefault(key, fallback);
+    }
+
+    public static float defaultFloat(String key, float fallback) {
+        return PixelAodSettingsSchema.floatDefault(key, fallback);
     }
 
     public static boolean normalizeAlwaysEnabledPreferences(SharedPreferences prefs) {
@@ -61,12 +86,13 @@ public final class PixelAodSettings {
         }
         boolean changed = false;
         SharedPreferences.Editor editor = null;
-        if (!prefs.getBoolean(KEY_NOTIFICATION_ICONS, true)) {
+        if (!prefs.getBoolean(KEY_NOTIFICATION_ICONS,
+                defaultBoolean(KEY_NOTIFICATION_ICONS, true))) {
             editor = prefs.edit();
             editor.putBoolean(KEY_NOTIFICATION_ICONS, true);
             changed = true;
         }
-        if (!prefs.getBoolean(KEY_POCKET_MODE, true)) {
+        if (!prefs.getBoolean(KEY_POCKET_MODE, defaultBoolean(KEY_POCKET_MODE, true))) {
             if (editor == null) {
                 editor = prefs.edit();
             }
@@ -78,18 +104,18 @@ public final class PixelAodSettings {
 
     public static String getString(Context context, String key, String fallback) {
         String value = getValue(context, key);
-        return value == null ? fallback : value;
+        return value == null ? defaultString(key, fallback) : value;
     }
 
     public static float getFloat(Context context, String key, float fallback) {
         String value = getValue(context, key);
         if (value == null) {
-            return fallback;
+            return defaultFloat(key, fallback);
         }
         try {
             return Float.parseFloat(value);
         } catch (NumberFormatException ignored) {
-            return fallback;
+            return defaultFloat(key, fallback);
         }
     }
 
@@ -147,7 +173,8 @@ public final class PixelAodSettings {
             CACHE.putAll(values);
         }
         PixelAodLog.setDebugEnabled(Boolean.parseBoolean(
-                values.getOrDefault(KEY_DEBUG_LOGGING, "false")));
+                values.getOrDefault(KEY_DEBUG_LOGGING,
+                        Boolean.toString(defaultBoolean(KEY_DEBUG_LOGGING, false)))));
     }
 
     private static Context storageContext(Context context) {
