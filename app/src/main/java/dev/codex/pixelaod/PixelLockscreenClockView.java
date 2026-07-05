@@ -44,7 +44,9 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static final int COMPACT_CLOCK_VISUAL_START_OFFSET_DP =
             PixelAodVisualStyle.COMPACT_CLOCK_VISUAL_START_OFFSET_DP;
     private static final int LARGE_INFO_TOP_DP = PixelAodVisualStyle.LARGE_INFO_TOP_DP;
+    private static final int LARGE_INFO_TEXT_DP = PixelAodVisualStyle.LARGE_INFO_TEXT_DP;
     private static final int SMALL_INFO_TOP_DP = PixelAodVisualStyle.SMALL_INFO_TOP_DP;
+    private static final int COMPACT_INFO_TEXT_DP = PixelAodVisualStyle.COMPACT_INFO_TEXT_DP;
     private static final int SMALL_NOTIFICATION_TOP_DP =
             PixelAodVisualStyle.NOTIFICATION_LINE_TOP_DP;
     private static final float CLOCK_LINE_SPACING = PixelAodVisualStyle.CLOCK_LINE_SPACING;
@@ -173,7 +175,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         addView(clockView, clockParams);
 
         dateView = PixelAodClockView.makeInfoLine(context, infoTypeface,
-                INFO_LOCKSCREEN_WEIGHT, 16, Gravity.START);
+                INFO_LOCKSCREEN_WEIGHT, LARGE_INFO_TEXT_DP, Gravity.START);
         FrameLayout.LayoutParams dateParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -727,7 +729,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             clockParams.gravity = Gravity.TOP | Gravity.START;
             clockParams.leftMargin = dp(EDGE_DP - COMPACT_CLOCK_VISUAL_START_OFFSET_DP);
             clockParams.topMargin = dp(SMALL_CLOCK_TOP_DP);
-            dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, COMPACT_INFO_TEXT_DP);
             dateView.setVisibility(View.VISIBLE);
             dateParams.topMargin = dp(SMALL_INFO_TOP_DP);
             notificationParams.topMargin = dp(SMALL_NOTIFICATION_TOP_DP);
@@ -738,7 +740,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             clockParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
             clockParams.leftMargin = 0;
             clockParams.topMargin = dp(LARGE_CLOCK_TOP_DP);
-            dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, LARGE_INFO_TEXT_DP);
             dateView.setVisibility(View.VISIBLE);
             dateParams.topMargin = dp(LARGE_INFO_TOP_DP);
             notificationParams.topMargin = dp(SMALL_NOTIFICATION_TOP_DP);

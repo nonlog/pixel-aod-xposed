@@ -4,6 +4,10 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.163] - 2026-07-05
+### Internal
+- Move date, media, battery, and charge-bolt sizing into the centralized visual style profile while preserving the current rendered dimensions.
+
 ## [0.1.162] - 2026-07-05
 ### Internal
 - Centralize AOD / lockscreen clock, info, and media alpha values in the visual style profile without changing their rendered values.

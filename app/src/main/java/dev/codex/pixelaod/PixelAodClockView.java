@@ -93,12 +93,14 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int COMPACT_CLOCK_VISUAL_START_OFFSET_DP =
             PixelAodVisualStyle.COMPACT_CLOCK_VISUAL_START_OFFSET_DP;
     private static final int LARGE_INFO_TOP_DP = PixelAodVisualStyle.LARGE_INFO_TOP_DP;
+    private static final int LARGE_INFO_TEXT_DP = PixelAodVisualStyle.LARGE_INFO_TEXT_DP;
     private static final int LARGE_NOTIFICATION_LINE_TOP_DP =
             PixelAodVisualStyle.NOTIFICATION_LINE_TOP_DP;
     private static final int LARGE_MEDIA_TOP_DP = PixelAodVisualStyle.Aod.LARGE_MEDIA_TOP_DP;
     private static final int LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP =
             PixelAodVisualStyle.Aod.LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP;
     private static final int SMALL_INFO_TOP_DP = PixelAodVisualStyle.SMALL_INFO_TOP_DP;
+    private static final int COMPACT_INFO_TEXT_DP = PixelAodVisualStyle.COMPACT_INFO_TEXT_DP;
     private static final int SMALL_NOTIFICATION_LINE_TOP_DP =
             PixelAodVisualStyle.NOTIFICATION_LINE_TOP_DP;
     private static final int SMALL_MEDIA_TOP_DP = PixelAodVisualStyle.Aod.SMALL_MEDIA_TOP_DP;
@@ -109,9 +111,13 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int MEDIA_ICON_SIZE_DP = PixelAodVisualStyle.Aod.MEDIA_ICON_SIZE_DP;
     private static final int MEDIA_ICON_SPACING_DP =
             PixelAodVisualStyle.Aod.MEDIA_ICON_SPACING_DP;
+    private static final int MEDIA_TEXT_DP = PixelAodVisualStyle.Aod.MEDIA_TEXT_DP;
     private static final int MAX_NOTIFICATION_ICONS = 5;
     private static final int ICON_MASK_SAMPLE_SIZE = 48;
     private static final int BATTERY_TOP_DP = PixelAodVisualStyle.Aod.BATTERY_TOP_DP;
+    private static final int BATTERY_TEXT_DP = PixelAodVisualStyle.Aod.BATTERY_TEXT_DP;
+    private static final int CHARGE_BOLT_WIDTH_DP = PixelAodVisualStyle.Aod.CHARGE_BOLT_WIDTH_DP;
+    private static final int CHARGE_BOLT_HEIGHT_DP = PixelAodVisualStyle.Aod.CHARGE_BOLT_HEIGHT_DP;
     private static final float CLOCK_LINE_SPACING = PixelAodVisualStyle.CLOCK_LINE_SPACING;
     private static final float LARGE_CLOCK_LETTER_SPACING =
             PixelAodVisualStyle.LARGE_CLOCK_LETTER_SPACING;
@@ -407,7 +413,8 @@ public final class PixelAodClockView extends FrameLayout {
 
         Typeface infoTypeface = resolveInfoTypeface(context);
 
-        dateView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, 16, Gravity.START);
+        dateView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, LARGE_INFO_TEXT_DP,
+                Gravity.START);
         FrameLayout.LayoutParams dateParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -443,7 +450,8 @@ public final class PixelAodClockView extends FrameLayout {
                 dp(MEDIA_ICON_SIZE_DP), dp(MEDIA_ICON_SIZE_DP));
         mediaRow.addView(mediaIconView, mediaGlyphParams);
 
-        mediaView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, 14, Gravity.START);
+        mediaView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, MEDIA_TEXT_DP,
+                Gravity.START);
         mediaView.setAlpha(MEDIA_ALPHA);
         mediaView.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams mediaTextParams = new LinearLayout.LayoutParams(
@@ -474,13 +482,15 @@ public final class PixelAodClockView extends FrameLayout {
         batteryRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         batteryRow.setAlpha(INFO_ALPHA);
 
-        batteryView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, 13, Gravity.CENTER);
+        batteryView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, BATTERY_TEXT_DP,
+                Gravity.CENTER);
         batteryRow.addView(batteryView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         chargeBoltView = new ChargeBoltView(context);
-        LinearLayout.LayoutParams chargeParams = new LinearLayout.LayoutParams(dp(9), dp(13));
+        LinearLayout.LayoutParams chargeParams = new LinearLayout.LayoutParams(
+                dp(CHARGE_BOLT_WIDTH_DP), dp(CHARGE_BOLT_HEIGHT_DP));
         chargeParams.leftMargin = dp(7);
         batteryRow.addView(chargeBoltView, chargeParams);
 
@@ -4606,7 +4616,7 @@ public final class PixelAodClockView extends FrameLayout {
             clockParams.gravity = Gravity.TOP | Gravity.START;
             clockParams.leftMargin = dp(INFO_EDGE_DP - COMPACT_CLOCK_VISUAL_START_OFFSET_DP);
             clockParams.topMargin = dp(SMALL_CLOCK_TOP_DP);
-            dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, COMPACT_INFO_TEXT_DP);
         } else {
             applySharedClockTextStyle(clockView, getContext(), currentClockWeight,
                     scaledClockTextDp(getContext(), LARGE_CLOCK_TEXT_DP), false);
@@ -4614,7 +4624,7 @@ public final class PixelAodClockView extends FrameLayout {
             clockParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
             clockParams.leftMargin = 0;
             clockParams.topMargin = dp(LARGE_CLOCK_TOP_DP);
-            dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, LARGE_INFO_TEXT_DP);
         }
         clockView.setLayoutParams(clockParams);
         updateInfoStackLayout();

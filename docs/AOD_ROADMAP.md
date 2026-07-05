@@ -195,6 +195,8 @@ runtime behavior observable and reversible.
   style values without touching lifecycle behavior.
 - Phase 6.2 moves AOD / lockscreen alpha values into the centralized visual
   style profile so opacity tweaks can be audited and adjusted from one place.
+- Phase 6.3 moves date, media, battery, and charge-bolt sizing into the visual
+  style profile without changing current rendered dimensions.
 - At a Glance.
 - Richer media line behavior.
 - Possible media artwork / progress / controls only after confirming how Pixel / AOSP / target ROMs handle interaction on AOD.

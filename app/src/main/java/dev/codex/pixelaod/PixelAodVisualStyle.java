@@ -26,6 +26,8 @@ final class PixelAodVisualStyle {
     static final int LARGE_INFO_TOP_DP = 100;
     static final int SMALL_INFO_TOP_DP = 150;
     static final int NOTIFICATION_LINE_TOP_DP = 198;
+    static final int LARGE_INFO_TEXT_DP = 16;
+    static final int COMPACT_INFO_TEXT_DP = 14;
 
     static String aodProfile(int runtimeClockWeight) {
         return commonProfile(runtimeClockWeight, Aod.INFO_WEIGHT)
@@ -33,11 +35,14 @@ final class PixelAodVisualStyle {
                 + ",notificationSpacing=" + Aod.NOTIFICATION_ICON_SPACING_DP
                 + ",mediaIcon=" + Aod.MEDIA_ICON_SIZE_DP
                 + ",mediaSpacing=" + Aod.MEDIA_ICON_SPACING_DP
+                + ",mediaText=" + Aod.MEDIA_TEXT_DP
                 + ",weatherIcon=" + Aod.WEATHER_ICON_SIZE_DP
                 + ",weatherPadding=" + Aod.WEATHER_ICON_PADDING_DP
+                + ",batteryText=" + Aod.BATTERY_TEXT_DP
                 + ",burnInX=" + Aod.BURN_IN_OFFSET_X_DP
                 + ",burnInY=" + Aod.BURN_IN_OFFSET_Y_DP
-                + ",batteryTop=" + Aod.BATTERY_TOP_DP;
+                + ",batteryTop=" + Aod.BATTERY_TOP_DP
+                + ",chargeBolt=" + Aod.CHARGE_BOLT_WIDTH_DP + "x" + Aod.CHARGE_BOLT_HEIGHT_DP;
     }
 
     static String lockscreenProfile(int runtimeClockWeight) {
@@ -56,6 +61,8 @@ final class PixelAodVisualStyle {
                 + ",largeInfoTop=" + LARGE_INFO_TOP_DP
                 + ",smallInfoTop=" + SMALL_INFO_TOP_DP
                 + ",notificationTop=" + NOTIFICATION_LINE_TOP_DP
+                + ",largeInfoText=" + LARGE_INFO_TEXT_DP
+                + ",compactInfoText=" + COMPACT_INFO_TEXT_DP
                 + ",lineSpacing=" + CLOCK_LINE_SPACING
                 + ",largeLetterSpacing=" + LARGE_CLOCK_LETTER_SPACING
                 + ",compactLetterSpacing=" + COMPACT_CLOCK_LETTER_SPACING
@@ -85,7 +92,11 @@ final class PixelAodVisualStyle {
         static final int NOTIFICATION_ICON_SPACING_DP = 8;
         static final int MEDIA_ICON_SIZE_DP = 13;
         static final int MEDIA_ICON_SPACING_DP = 8;
+        static final int MEDIA_TEXT_DP = 14;
         static final int BATTERY_TOP_DP = 720;
+        static final int BATTERY_TEXT_DP = 13;
+        static final int CHARGE_BOLT_WIDTH_DP = 9;
+        static final int CHARGE_BOLT_HEIGHT_DP = 13;
         static final int CLOCK_WEIGHT = 280;
         static final int INFO_WEIGHT = 500;
         static final int WEATHER_ICON_SIZE_DP = 15;
