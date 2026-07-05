@@ -44,6 +44,49 @@ final class OosAodLifecycleAdapter {
         return mapTrigger(normalizedType, normalizedSource, detail);
     }
 
+    static PowerPolicyDecision evaluatePowerPolicy(boolean powerSaveMode,
+            boolean batteryValid, boolean lowBattery, boolean charging,
+            int levelPercent, int thresholdPercent) {
+        if (powerSaveMode) {
+            return PowerPolicyRule.POWER_SAVE_HIDE.toDecision(levelPercent, thresholdPercent);
+        }
+        if (batteryValid && lowBattery && !charging) {
+            return PowerPolicyRule.LOW_BATTERY_HIDE.toDecision(levelPercent, thresholdPercent);
+        }
+        if (batteryValid && lowBattery) {
+            return PowerPolicyRule.LOW_BATTERY_CHARGING_ALLOW.toDecision(
+                    levelPercent, thresholdPercent);
+        }
+        if (batteryValid && charging) {
+            return PowerPolicyRule.CHARGING_ALLOW.toDecision(levelPercent, thresholdPercent);
+        }
+        if (!batteryValid) {
+            return PowerPolicyRule.BATTERY_UNKNOWN_ALLOW.toDecision(
+                    levelPercent, thresholdPercent);
+        }
+        return PowerPolicyRule.NORMAL_ALLOW.toDecision(levelPercent, thresholdPercent);
+    }
+
+    static void recordPowerPolicyDecision(PowerPolicyDecision decision, String source,
+            boolean powerSaveMode, String batteryDescription, String trace,
+            String stateDescription) {
+        PowerPolicyDecision safeDecision = decision != null
+                ? decision
+                : PowerPolicyRule.BATTERY_UNKNOWN_ALLOW.toDecision(-1, -1);
+        PixelAodLog.log("OOS AOD power policy mapping reason=" + safeDecision.reason
+                + " category=" + safeDecision.categoryLabel
+                + " allowsDisplay=" + safeDecision.allowsDisplay
+                + " futureAction=" + safeDecision.futureAction
+                + " powerSave=" + powerSaveMode
+                + " threshold=" + safeDecision.thresholdPercent
+                + " level=" + safeDecision.levelPercent
+                + " source=" + normalizeSource(source)
+                + " battery={" + (TextUtils.isEmpty(batteryDescription)
+                ? "" : batteryDescription) + "}"
+                + " trace=" + emptyAsNone(trace)
+                + " state={" + stateDescription + "}");
+    }
+
     static boolean matchesExpectedTrace(String expectedTrace, String currentTrace) {
         return TextUtils.isEmpty(expectedTrace) || TextUtils.equals(expectedTrace, currentTrace);
     }
@@ -428,6 +471,39 @@ final class OosAodLifecycleAdapter {
         }
     }
 
+    private enum PowerPolicyRule {
+        POWER_SAVE_HIDE("power-save-mode", "system-power-saver", false,
+                "hide-pixel-aod"),
+        LOW_BATTERY_HIDE("low-battery", "battery-low", false,
+                "hide-pixel-aod"),
+        LOW_BATTERY_CHARGING_ALLOW("low-battery-while-charging", "battery-charging",
+                true, "allow-pixel-aod"),
+        CHARGING_ALLOW("charging", "battery-charging", true,
+                "allow-pixel-aod"),
+        BATTERY_UNKNOWN_ALLOW("battery-unknown", "diagnostic-only", true,
+                "allow-pixel-aod"),
+        NORMAL_ALLOW("power-policy-allowed", "power-normal", true,
+                "allow-pixel-aod");
+
+        final String reason;
+        final String category;
+        final boolean allowsDisplay;
+        final String futureAction;
+
+        PowerPolicyRule(String reason, String category, boolean allowsDisplay,
+                String futureAction) {
+            this.reason = reason;
+            this.category = category;
+            this.allowsDisplay = allowsDisplay;
+            this.futureAction = futureAction;
+        }
+
+        PowerPolicyDecision toDecision(int levelPercent, int thresholdPercent) {
+            return new PowerPolicyDecision(allowsDisplay, reason, category, futureAction,
+                    levelPercent, thresholdPercent);
+        }
+    }
+
     private enum TriggerRule {
         PICKUP_BRIEF("pickup-brief", Event.TRIGGER_PICKUP,
                 TriggerCategory.DISPLAY_WAKE, DisplayMode.TRIGGER_ONLY_BRIEF_DISPLAY,
@@ -481,6 +557,25 @@ final class OosAodLifecycleAdapter {
             return new TriggerBehavior(event.label, label, category.label,
                     displayMode.label, futureAction, startsBriefDisplay,
                     blocksDisplay, releasesDisplayGuard);
+        }
+    }
+
+    static final class PowerPolicyDecision {
+        final boolean allowsDisplay;
+        final String reason;
+        final String categoryLabel;
+        final String futureAction;
+        final int levelPercent;
+        final int thresholdPercent;
+
+        PowerPolicyDecision(boolean allowsDisplay, String reason, String categoryLabel,
+                String futureAction, int levelPercent, int thresholdPercent) {
+            this.allowsDisplay = allowsDisplay;
+            this.reason = reason;
+            this.categoryLabel = categoryLabel;
+            this.futureAction = futureAction;
+            this.levelPercent = levelPercent;
+            this.thresholdPercent = thresholdPercent;
         }
     }
 

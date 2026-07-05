@@ -1228,9 +1228,11 @@ public final class PixelAodClockView extends FrameLayout {
             return new OosAodLifecycleAdapter.ModulePolicy(false, false, false, false,
                     "module-disabled", displayMode, withinSchedule, triggerBriefActive);
         }
-        if (!isPowerPolicyAllowingAod(context, source, trace, false)) {
+        OosAodLifecycleAdapter.PowerPolicyDecision powerPolicy =
+                evaluateAndLogPowerPolicy(context, source, trace, false);
+        if (!powerPolicy.allowsDisplay) {
             return new OosAodLifecycleAdapter.ModulePolicy(false, moduleEnabled, false, false,
-                    "power-policy", displayMode, withinSchedule, triggerBriefActive);
+                    powerPolicy.reason, displayMode, withinSchedule, triggerBriefActive);
         }
         boolean continuousAllowed = isContinuousAodAllowedByMode(displayMode)
                 && withinSchedule;
@@ -2539,21 +2541,15 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static boolean isPowerPolicyAllowingAod(
             Context context, String source, String trace, boolean logAllowed) {
-        boolean powerSaveMode = isPowerSaveMode(context);
+        OosAodLifecycleAdapter.PowerPolicyDecision decision =
+                evaluateAndLogPowerPolicy(context, source, trace, logAllowed);
         BatteryStatus batteryStatus = readBatteryStatus(context);
-        if (powerSaveMode) {
+        if (!decision.allowsDisplay) {
             PixelAodLog.log("AOD overlay decision trace=" + trace
                     + " source=" + source
-                    + " visible=false reason=power-save-mode"
-                    + " battery={" + batteryStatus.describeForLog() + "}"
-                    + " state={" + describeAodState(context) + "}");
-            return false;
-        }
-        if (batteryStatus.shouldSuppressAodForLowBattery()) {
-            PixelAodLog.log("AOD overlay decision trace=" + trace
-                    + " source=" + source
-                    + " visible=false reason=low-battery"
-                    + " threshold=" + LOW_BATTERY_AOD_SUPPRESS_THRESHOLD_PERCENT
+                    + " visible=false reason=" + decision.reason
+                    + " powerCategory=" + decision.categoryLabel
+                    + " threshold=" + decision.thresholdPercent
                     + " battery={" + batteryStatus.describeForLog() + "}"
                     + " state={" + describeAodState(context) + "}");
             return false;
@@ -2561,11 +2557,35 @@ public final class PixelAodClockView extends FrameLayout {
         if (logAllowed) {
             PixelAodLog.log("AOD power policy allows overlay trace=" + trace
                     + " source=" + source
-                    + " powerSave=" + powerSaveMode
+                    + " reason=" + decision.reason
+                    + " powerCategory=" + decision.categoryLabel
+                    + " powerSave=" + isPowerSaveMode(context)
                     + " battery={" + batteryStatus.describeForLog() + "}"
                     + " state={" + describeAodState(context) + "}");
         }
         return true;
+    }
+
+    private static OosAodLifecycleAdapter.PowerPolicyDecision evaluateAndLogPowerPolicy(
+            Context context, String source, String trace, boolean logAllowed) {
+        boolean powerSaveMode = isPowerSaveMode(context);
+        BatteryStatus batteryStatus = readBatteryStatus(context);
+        OosAodLifecycleAdapter.PowerPolicyDecision decision =
+                OosAodLifecycleAdapter.evaluatePowerPolicy(
+                        powerSaveMode,
+                        batteryStatus.valid,
+                        batteryStatus.lowBattery,
+                        batteryStatus.charging,
+                        batteryStatus.levelPercent,
+                        LOW_BATTERY_AOD_SUPPRESS_THRESHOLD_PERCENT);
+        OosAodLifecycleAdapter.recordPowerPolicyDecision(
+                decision,
+                source,
+                powerSaveMode,
+                batteryStatus.describeForLog(),
+                trace,
+                describeAodState(context));
+        return decision;
     }
 
     private boolean isWithinAodSchedule() {

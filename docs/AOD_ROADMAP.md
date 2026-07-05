@@ -141,6 +141,11 @@ runtime behavior observable and reversible.
 - Phase 5.2 starts by making OOS trigger / sensor mapping explicit and
   observable. The current rule table is recorded in
   `docs/OOS_TRIGGER_MAPPING.md`.
+- Phase 5.3 starts by making power-saver, low-battery, charging, and unknown
+  battery state checks explicit power-policy decisions inside
+  `OosAodLifecycleAdapter`. This keeps behavior unchanged while making the
+  reason for hiding or allowing Pixel AOD visible in logs. The current rule
+  table is recorded in `docs/OOS_POWER_POLICY_MAPPING.md`.
 - Treat AOD display as one of two explicit modes:
 - `Continuous + Trigger`: continuously displays during the configured schedule while respecting power saver, low battery, proximity, and pocket policy; outside the schedule it can still display briefly when OOS provides a native short-wake / trigger window.
 - `Trigger-only`: never keeps AOD visible continuously; it only displays during native short-wake / pickup / tap style trigger windows and expires automatically.

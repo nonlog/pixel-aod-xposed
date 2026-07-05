@@ -4,6 +4,12 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.154] - 2026-07-05
+### Internal
+- Start Phase 5.3 by routing power-saver, low-battery, charging, and unknown battery state checks through an explicit OOS power-policy decision model.
+- Add stable `OOS AOD power policy mapping` logs with `reason`, `category`, `futureAction`, battery state, and threshold fields.
+- Extend trigger diagnostics to count power-policy mapping categories in the current run window.
+
 ## [0.1.153] - 2026-07-05
 ### Internal
 - Add explicit OOS trigger / sensor mapping rules so pickup, tap, proximity, pocket, generic sensor, and unknown trigger events log stable `rule` and `category` fields.
