@@ -160,10 +160,16 @@ runtime behavior observable and reversible.
   lifecycle state snapshots. This still does not start a custom notification
   pulse.
 - Phase 5.7 adds an explicit notification pulse policy adapter. Native pulse
-  observations are now classified as `can-trigger-brief-display`,
+  observations are now classified as `native-pulse-compatible`,
   `observe-only`, `lockscreen-aod-filtered`, or `sensor-power-blocked`, and the
   result is logged in both pulse observations and AOD lifecycle state snapshots.
   This still does not start a custom notification pulse.
+- Phase 5.8 reframes notification pulse diagnostics as native OOS pulse
+  coexistence auditing. Notification events must not start a module-owned brief
+  display path, and `MODE=pulse` now reports that as a RED signal.
+- Phase 5.9 adds `scripts/diagnose_aod_smoke_suite.sh`, a compact smoke suite
+  that runs screen-off entry plus native notification pulse coexistence checks
+  and aggregates RED / SUSPECT signals.
 - Treat AOD display as one of two explicit modes:
 - `Continuous + Trigger`: continuously displays during the configured schedule while respecting power saver, low battery, proximity, and pocket policy; outside the schedule it can still display briefly when OOS provides a native short-wake / trigger window.
 - `Trigger-only`: never keeps AOD visible continuously; it only displays during native short-wake / pickup / tap style trigger windows and expires automatically.
@@ -177,7 +183,7 @@ runtime behavior observable and reversible.
 - Add or align tap-to-show behavior.
 - Add proximity and pocket-aware behavior.
 - Add charging-state and low-battery handling.
-- Defer custom notification pulse until the core lifecycle is stable; use OOS native pulse behavior where possible.
+- Defer custom notification pulse to a later roadmap stage; use OOS native pulse behavior for now.
 
 ### Phase 6: Later Pixel Features
 

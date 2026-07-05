@@ -4,10 +4,16 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.159] - 2026-07-05
+### Diagnostics
+- Reframe notification pulse policy diagnostics around OOS native pulse coexistence instead of future custom module pulse triggering.
+- Strengthen `MODE=pulse` so native notification pulse samples report whether module brief display was incorrectly started during the audit window.
+- Add `scripts/diagnose_aod_smoke_suite.sh` to run a compact AOD smoke suite covering screen-off entry and native notification pulse coexistence.
+
 ## [0.1.158] - 2026-07-05
 ### Internal
-- Add a notification pulse policy adapter that classifies native pulse observations as triggerable, observe-only, lockscreen/AOD-filtered, or sensor/power-blocked without changing AOD display behavior.
-- Include notification pulse policy fields in AOD lifecycle state snapshots so future custom notification pulse work can be based on explicit policy evidence.
+- Add a notification pulse policy adapter that classifies native pulse observations as native-compatible, observe-only, lockscreen/AOD-filtered, or sensor/power-blocked without changing AOD display behavior.
+- Include notification pulse policy fields in AOD lifecycle state snapshots so OOS native pulse coexistence can be audited with explicit policy evidence.
 - Extend the pulse diagnostic summary with notification pulse policy counters.
 
 ## [0.1.157] - 2026-07-05

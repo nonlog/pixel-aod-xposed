@@ -181,7 +181,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static String lastNotificationPulsePolicy = "none";
     private static String lastNotificationPulsePolicyReason = "none";
     private static String lastNotificationPulsePolicyAction = "none";
-    private static boolean lastNotificationPulsePolicyCanTriggerBrief;
+    private static boolean lastNotificationPulsePolicyNativeCompatible;
     private static boolean lastNotificationPulsePolicyBlocked;
     private static int lastNotificationPulseRawCount = -1;
     private static int lastNotificationPulseUsableCount = -1;
@@ -629,7 +629,7 @@ public final class PixelAodClockView extends FrameLayout {
                 ? "none" : observation.policyReason;
         lastNotificationPulsePolicyAction = TextUtils.isEmpty(observation.policyAction)
                 ? "none" : observation.policyAction;
-        lastNotificationPulsePolicyCanTriggerBrief = observation.policyCanTriggerBriefDisplay;
+        lastNotificationPulsePolicyNativeCompatible = observation.policyNativePulseCompatible;
         lastNotificationPulsePolicyBlocked = observation.policyBlocked;
         lastNotificationPulseRawCount = rawCount;
         lastNotificationPulseUsableCount = usableCount;
@@ -1641,7 +1641,7 @@ public final class PixelAodClockView extends FrameLayout {
         String notificationPulsePolicy;
         String notificationPulsePolicyReason;
         String notificationPulsePolicyAction;
-        boolean notificationPulsePolicyCanTriggerBrief;
+        boolean notificationPulsePolicyNativeCompatible;
         boolean notificationPulsePolicyBlocked;
         int notificationPulseRawCount;
         int notificationPulseUsableCount;
@@ -1675,8 +1675,8 @@ public final class PixelAodClockView extends FrameLayout {
             notificationPulsePolicy = lastNotificationPulsePolicy;
             notificationPulsePolicyReason = lastNotificationPulsePolicyReason;
             notificationPulsePolicyAction = lastNotificationPulsePolicyAction;
-            notificationPulsePolicyCanTriggerBrief =
-                    lastNotificationPulsePolicyCanTriggerBrief;
+            notificationPulsePolicyNativeCompatible =
+                    lastNotificationPulsePolicyNativeCompatible;
             notificationPulsePolicyBlocked = lastNotificationPulsePolicyBlocked;
             notificationPulseRawCount = lastNotificationPulseRawCount;
             notificationPulseUsableCount = lastNotificationPulseUsableCount;
@@ -1727,7 +1727,7 @@ public final class PixelAodClockView extends FrameLayout {
                 notificationPulseCategory, notificationPulseSource, notificationPulseTrace,
                 notificationPulsePackages, notificationPulsePolicy,
                 notificationPulsePolicyReason, notificationPulsePolicyAction,
-                notificationPulsePolicyCanTriggerBrief, notificationPulsePolicyBlocked,
+                notificationPulsePolicyNativeCompatible, notificationPulsePolicyBlocked,
                 notificationPulseRawCount,
                 notificationPulseUsableCount, notificationPulseMediaCount,
                 notificationPulseAt);
@@ -1770,7 +1770,7 @@ public final class PixelAodClockView extends FrameLayout {
         final String notificationPulsePolicy;
         final String notificationPulsePolicyReason;
         final String notificationPulsePolicyAction;
-        final boolean notificationPulsePolicyCanTriggerBrief;
+        final boolean notificationPulsePolicyNativeCompatible;
         final boolean notificationPulsePolicyBlocked;
         final int notificationPulseRawCount;
         final int notificationPulseUsableCount;
@@ -1791,7 +1791,7 @@ public final class PixelAodClockView extends FrameLayout {
                 String notificationPulseSource, String notificationPulseTrace,
                 String notificationPulsePackages, String notificationPulsePolicy,
                 String notificationPulsePolicyReason, String notificationPulsePolicyAction,
-                boolean notificationPulsePolicyCanTriggerBrief,
+                boolean notificationPulsePolicyNativeCompatible,
                 boolean notificationPulsePolicyBlocked, int notificationPulseRawCount,
                 int notificationPulseUsableCount, int notificationPulseMediaCount,
                 long notificationPulseAt) {
@@ -1831,7 +1831,7 @@ public final class PixelAodClockView extends FrameLayout {
             this.notificationPulsePolicy = notificationPulsePolicy;
             this.notificationPulsePolicyReason = notificationPulsePolicyReason;
             this.notificationPulsePolicyAction = notificationPulsePolicyAction;
-            this.notificationPulsePolicyCanTriggerBrief = notificationPulsePolicyCanTriggerBrief;
+            this.notificationPulsePolicyNativeCompatible = notificationPulsePolicyNativeCompatible;
             this.notificationPulsePolicyBlocked = notificationPulsePolicyBlocked;
             this.notificationPulseRawCount = notificationPulseRawCount;
             this.notificationPulseUsableCount = notificationPulseUsableCount;
@@ -1904,8 +1904,8 @@ public final class PixelAodClockView extends FrameLayout {
                     + " notificationPulsePolicy=" + notificationPulsePolicy
                     + " notificationPulsePolicyReason=" + notificationPulsePolicyReason
                     + " notificationPulsePolicyAction=" + notificationPulsePolicyAction
-                    + " notificationPulsePolicyCanTriggerBrief="
-                    + notificationPulsePolicyCanTriggerBrief
+                    + " notificationPulsePolicyNativeCompatible="
+                    + notificationPulsePolicyNativeCompatible
                     + " notificationPulsePolicyBlocked=" + notificationPulsePolicyBlocked
                     + " notificationPulseRaw=" + notificationPulseRawCount
                     + " notificationPulseUsable=" + notificationPulseUsableCount

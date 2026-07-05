@@ -108,7 +108,7 @@ final class OosAodLifecycleAdapter {
                 + " pulsePolicy=" + observation.policyLabel
                 + " pulsePolicyReason=" + observation.policyReason
                 + " pulsePolicyAction=" + observation.policyAction
-                + " pulsePolicyCanTriggerBrief=" + observation.policyCanTriggerBriefDisplay
+                + " pulsePolicyNativeCompatible=" + observation.policyNativePulseCompatible
                 + " pulsePolicyBlocked=" + observation.policyBlocked
                 + " raw=" + rawCount
                 + " usable=" + usableCount
@@ -617,7 +617,7 @@ final class OosAodLifecycleAdapter {
                     : NotificationPulsePolicy.observeOnly("no-policy-context");
             return new NotificationPulseObservation(eventLabel, label, category, futureAction,
                     safePolicy.label, safePolicy.reason, safePolicy.futureAction,
-                    safePolicy.canTriggerBriefDisplay, safePolicy.blocked);
+                    safePolicy.nativePulseCompatible, safePolicy.blocked);
         }
     }
 
@@ -625,15 +625,15 @@ final class OosAodLifecycleAdapter {
         final String label;
         final String reason;
         final String futureAction;
-        final boolean canTriggerBriefDisplay;
+        final boolean nativePulseCompatible;
         final boolean blocked;
 
         private NotificationPulsePolicy(String label, String reason, String futureAction,
-                boolean canTriggerBriefDisplay, boolean blocked) {
+                boolean nativePulseCompatible, boolean blocked) {
             this.label = label;
             this.reason = reason;
             this.futureAction = futureAction;
-            this.canTriggerBriefDisplay = canTriggerBriefDisplay;
+            this.nativePulseCompatible = nativePulseCompatible;
             this.blocked = blocked;
         }
 
@@ -649,9 +649,9 @@ final class OosAodLifecycleAdapter {
             switch (rule) {
                 case POSTED_PULSE_CANDIDATE:
                     return new NotificationPulsePolicy(
-                            "can-trigger-brief-display",
+                            "native-pulse-compatible",
                             "posted-usable-lockscreen-aod-notification",
-                            "brief-show-candidate",
+                            "coexist-with-native-pulse",
                             true,
                             false);
                 case POSTED_FILTERED:
@@ -687,7 +687,7 @@ final class OosAodLifecycleAdapter {
             return new NotificationPulsePolicy(
                     "sensor-power-blocked",
                     emptyAsNone(reason),
-                    "block-brief-pulse",
+                    "block-native-pulse",
                     false,
                     true);
         }
@@ -786,13 +786,13 @@ final class OosAodLifecycleAdapter {
         final String policyLabel;
         final String policyReason;
         final String policyAction;
-        final boolean policyCanTriggerBriefDisplay;
+        final boolean policyNativePulseCompatible;
         final boolean policyBlocked;
 
         NotificationPulseObservation(String eventLabel, String ruleLabel,
                 String categoryLabel, String futureAction, String policyLabel,
                 String policyReason, String policyAction,
-                boolean policyCanTriggerBriefDisplay, boolean policyBlocked) {
+                boolean policyNativePulseCompatible, boolean policyBlocked) {
             this.eventLabel = eventLabel;
             this.ruleLabel = ruleLabel;
             this.categoryLabel = categoryLabel;
@@ -800,7 +800,7 @@ final class OosAodLifecycleAdapter {
             this.policyLabel = policyLabel;
             this.policyReason = policyReason;
             this.policyAction = policyAction;
-            this.policyCanTriggerBriefDisplay = policyCanTriggerBriefDisplay;
+            this.policyNativePulseCompatible = policyNativePulseCompatible;
             this.policyBlocked = policyBlocked;
         }
 

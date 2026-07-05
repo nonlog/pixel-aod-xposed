@@ -171,7 +171,8 @@ write_summary() {
   local pulse_candidate pulse_filtered pulse_clear pulse_ranking pulse_empty
   local pulse_recent
   local pulse_post_marker pulse_clear_marker test_notification_skipped
-  local pulse_policy_trigger pulse_policy_observe pulse_policy_filtered pulse_policy_blocked
+  local pulse_policy_native pulse_policy_observe pulse_policy_filtered pulse_policy_blocked
+  local stock_hide_pass native_hide_callbacks overlay_hidden
   local display_state_doze display_state_off aod_visible_phase entering_aod_phase
   local log_window_status
   local verdict_signal
@@ -203,10 +204,13 @@ write_summary() {
   pulse_post_marker="$(count_events 'PixelAodDiag.*pulse-post')"
   pulse_clear_marker="$(count_events 'PixelAodDiag.*pulse-clear')"
   test_notification_skipped="$(count_events 'test notification skipped')"
-  pulse_policy_trigger="$(count_events '(pulsePolicy|notificationPulsePolicy)=can-trigger-brief-display')"
+  pulse_policy_native="$(count_events '(pulsePolicy|notificationPulsePolicy)=native-pulse-compatible')"
   pulse_policy_observe="$(count_events '(pulsePolicy|notificationPulsePolicy)=observe-only')"
   pulse_policy_filtered="$(count_events '(pulsePolicy|notificationPulsePolicy)=lockscreen-aod-filtered')"
   pulse_policy_blocked="$(count_events '(pulsePolicy|notificationPulsePolicy)=sensor-power-blocked')"
+  stock_hide_pass="$(count_events 'stock AOD hide pass|stock keyguard hide pass')"
+  native_hide_callbacks="$(count_events 'notifyHideCallback|onEnergySavingNotifyHide')"
+  overlay_hidden="$(count_events 'AOD overlay visibility decision.*visible=false|Pixel AOD overlay visibility=hidden')"
   display_state_doze="$(count_events 'displayState=DOZE')"
   display_state_off="$(count_events 'displayState=OFF')"
   aod_visible_phase="$(count_events 'phase=aod-visible')"
@@ -254,10 +258,13 @@ write_summary() {
     echo "counts.pulsePostMarker=$pulse_post_marker"
     echo "counts.pulseClearMarker=$pulse_clear_marker"
     echo "counts.testNotificationSkipped=$test_notification_skipped"
-    echo "counts.notificationPulsePolicyCanTriggerBrief=$pulse_policy_trigger"
+    echo "counts.notificationPulsePolicyNativeCompatible=$pulse_policy_native"
     echo "counts.notificationPulsePolicyObserveOnly=$pulse_policy_observe"
     echo "counts.notificationPulsePolicyLockscreenAodFiltered=$pulse_policy_filtered"
     echo "counts.notificationPulsePolicySensorPowerBlocked=$pulse_policy_blocked"
+    echo "counts.stockHidePass=$stock_hide_pass"
+    echo "counts.nativeHideCallbacks=$native_hide_callbacks"
+    echo "counts.overlayHiddenDecisions=$overlay_hidden"
     echo "counts.displayStateDoze=$display_state_doze"
     echo "counts.displayStateOff=$display_state_off"
     echo "counts.phaseAodVisible=$aod_visible_phase"
@@ -298,9 +305,13 @@ write_summary() {
         echo "SUSPECT pulse candidate did not reach AOD lifecycle state snapshots"
         verdict_signal=1
       fi
-      if [[ "$pulse_candidate" -gt 0 && "$pulse_policy_trigger" -eq 0
+      if [[ "$started" -gt 0 ]]; then
+        echo "RED module brief display started during native notification pulse audit"
+        verdict_signal=1
+      fi
+      if [[ "$pulse_candidate" -gt 0 && "$pulse_policy_native" -eq 0
           && "$pulse_policy_blocked" -eq 0 ]]; then
-        echo "SUSPECT pulse candidate was not classified as triggerable or policy-blocked"
+        echo "SUSPECT pulse candidate was not classified as native-compatible or policy-blocked"
         verdict_signal=1
       fi
     fi
