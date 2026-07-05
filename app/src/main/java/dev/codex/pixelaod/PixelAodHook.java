@@ -7,6 +7,7 @@ import android.database.ContentObserver;
 import android.graphics.Canvas;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.service.dreams.DreamService;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
@@ -93,6 +94,7 @@ final class PixelAodHook {
     private static final long[] AOD_NATIVE_TIMEOUT_REASSERT_DELAYS_MILLIS = {
             80L, 450L, 1200L
     };
+    private static final long FOD_ONLY_NATIVE_HIDE_SKIP_WINDOW_MILLIS = 300L;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_REAPPLY = false;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_DUMPS = false;
     private static final boolean ENABLE_NOTIFICATION_VIEW_REFLECTION_DUMP = false;
@@ -118,6 +120,12 @@ final class PixelAodHook {
     private static WeakReference<ViewGroup> lastPixelHost = new WeakReference<>(null);
     private static WeakReference<ViewGroup> lastShadeHost = new WeakReference<>(null);
     private static volatile Context systemUiContext;
+    private static volatile WeakReference<Object> lastBiometricAuthController =
+            new WeakReference<>(null);
+    private static volatile WeakReference<Object> lastOnScreenFingerprintUiMech =
+            new WeakReference<>(null);
+    private static volatile long lastFodOnlyNativeTimeoutHideSuppressionMs;
+    private static volatile String lastFodOnlyNativeTimeoutHideTrace;
 
     private PixelAodHook() {
     }
@@ -1167,6 +1175,7 @@ final class PixelAodHook {
                 targetMethod.setAccessible(true);
                 ModernHookBridge.hookAfter(targetMethod, param -> {
                     Context context = contextFromHookParam(param);
+                    rememberFingerprintAodInstance(sourceClass, param.thisObject);
                     PixelAodLog.log("FOD AOD diagnostic source=" + source
                             + " args=" + summarizeArgs(param.args, 6)
                             + " result=" + summarizeValue(param.getResult())
@@ -1195,6 +1204,19 @@ final class PixelAodHook {
             }
         }
         return false;
+    }
+
+    private static void rememberFingerprintAodInstance(String sourceClass, Object instance) {
+        if (instance == null || TextUtils.isEmpty(sourceClass)) {
+            return;
+        }
+        if ("OplusBiometricAuthController".equals(sourceClass)) {
+            lastBiometricAuthController = new WeakReference<>(instance);
+            return;
+        }
+        if ("OnScreenFingerprintUiMech".equals(sourceClass)) {
+            lastOnScreenFingerprintUiMech = new WeakReference<>(instance);
+        }
     }
 
     private static void hookOplusAodTriggerDiagnostics(ClassLoader classLoader) {
@@ -1480,6 +1502,16 @@ final class PixelAodHook {
             return false;
         }
         if (decision.shouldAllowNativeHideCallbacks) {
+            if (shouldUseFodOnlyNativeTimeoutHide(checkContext, source, decision)
+                    && dispatchFodOnlyNativeTimeoutHide(checkContext, source)) {
+                PixelAodLog.i("suppressed OPlus AOD native-timeout hide via FOD-only path"
+                        + " source=" + source
+                        + " reason=" + decision.nativeHideCallbackReason
+                        + " keepDozeReason=" + decision.keepNativeDozeReason
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
+                return true;
+            }
             PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
                     + " reason=" + decision.nativeHideCallbackReason
                     + " shouldKeepNativeDozeAlive="
@@ -1502,6 +1534,89 @@ final class PixelAodHook {
                 + " trace=" + PixelAodClockView.currentAodTraceId()
                 + " state={" + state + "}");
         return true;
+    }
+
+    private static boolean shouldUseFodOnlyNativeTimeoutHide(Context context, String source,
+            OosAodLifecycleAdapter.AodPolicyDecision decision) {
+        return context != null
+                && decision != null
+                && decision.shouldKeepNativeDozeAlive
+                && "native-timeout-callback".equals(decision.nativeHideCallbackReason)
+                && isNativeAodTimeoutHideSource(source);
+    }
+
+    private static boolean dispatchFodOnlyNativeTimeoutHide(Context context, String source) {
+        String trace = PixelAodClockView.peekAodTraceId();
+        Object uiMech = lastOnScreenFingerprintUiMech.get();
+        boolean dispatched = invokeFirstNoArgFodMethod(uiMech, "OnScreenFingerprintUiMech",
+                source, trace,
+                "notifyHideAodIcon",
+                "hideFingerprintIconTemporarily",
+                "hideFingerprintIcon",
+                "fpIconHide");
+        if (!dispatched) {
+            PixelAodLog.log("allowed OPlus AOD native-timeout hide source=" + source
+                    + " reason=fod-only-unavailable"
+                    + " trace=" + trace
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            return false;
+        }
+        lastFodOnlyNativeTimeoutHideSuppressionMs = SystemClock.uptimeMillis();
+        lastFodOnlyNativeTimeoutHideTrace = trace;
+        PixelAodClockView.markRecentAodOverlayVisible(source + "#fod-only-native-timeout-hide");
+        return true;
+    }
+
+    private static boolean invokeFirstNoArgFodMethod(Object target, String targetName,
+            String source, String trace, String... methodNames) {
+        if (target == null || methodNames == null || methodNames.length == 0) {
+            return false;
+        }
+        for (String methodName : methodNames) {
+            Method method = findNoArgMethod(target.getClass(), methodName);
+            if (method == null) {
+                continue;
+            }
+            try {
+                method.setAccessible(true);
+                Object result = method.invoke(target);
+                PixelAodLog.log("FOD-only native-timeout hide invoked"
+                        + " target=" + targetName
+                        + " method=" + methodSignature(method)
+                        + " source=" + source
+                        + " result=" + summarizeValue(result)
+                        + " trace=" + trace
+                        + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
+                return true;
+            } catch (Throwable t) {
+                PixelAodLog.log("failed FOD-only native-timeout hide"
+                        + " target=" + targetName
+                        + " method=" + methodName
+                        + " source=" + source
+                        + " trace=" + trace, t);
+            }
+        }
+        PixelAodLog.log("FOD-only native-timeout hide target had no usable method"
+                + " target=" + targetName
+                + " source=" + source
+                + " trace=" + trace
+                + " class=" + target.getClass().getName());
+        return false;
+    }
+
+    private static Method findNoArgMethod(Class<?> clazz, String methodName) {
+        Class<?> current = clazz;
+        while (current != null) {
+            for (Method method : current.getDeclaredMethods()) {
+                if (methodName.equals(method.getName())
+                        && method.getParameterTypes().length == 0
+                        && !Modifier.isAbstract(method.getModifiers())) {
+                    return method;
+                }
+            }
+            current = current.getSuperclass();
+        }
+        return null;
     }
 
     private static void reassertPixelAodAfterEnergySavingHide(Context context, String source) {
@@ -1529,6 +1644,13 @@ final class PixelAodHook {
         }
         Context checkContext = context != null ? context : systemUiContext;
         String expectedTrace = PixelAodClockView.peekAodTraceId();
+        if (wasFodOnlyNativeTimeoutHideJustSuppressed(expectedTrace)) {
+            PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
+                    + " reason=fod-only-native-timeout-suppressed"
+                    + " expectedTrace=" + expectedTrace
+                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
+            return;
+        }
         if (checkContext == null) {
             PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
                     + " reason=no-context expectedTrace=" + expectedTrace
@@ -1568,6 +1690,14 @@ final class PixelAodHook {
                 + " keepDozeReason=" + decision.keepNativeDozeReason
                 + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
         reassertPixelAodAfterNativeTimeoutHide(checkContext, source, expectedTrace);
+    }
+
+    private static boolean wasFodOnlyNativeTimeoutHideJustSuppressed(String expectedTrace) {
+        long ageMs = SystemClock.uptimeMillis() - lastFodOnlyNativeTimeoutHideSuppressionMs;
+        return ageMs >= 0
+                && ageMs <= FOD_ONLY_NATIVE_HIDE_SKIP_WINDOW_MILLIS
+                && OosAodLifecycleAdapter.matchesExpectedTrace(
+                expectedTrace, lastFodOnlyNativeTimeoutHideTrace);
     }
 
     private static boolean isNativeAodTimeoutHideSource(String source) {

@@ -4,6 +4,11 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.152] - 2026-07-05
+### Experimental Fixes
+- Try a narrower native-timeout path for Continuous AOD: when OOS attempts to hide the whole native AOD for the fingerprint timeout callback, invoke the captured FOD-only hide method first and suppress the broader native AOD hide if that succeeds.
+- Extend the black-frame diagnostic script to report FOD-only suppression and whether `AodData-->setAodIsInShow:false` still appears afterward.
+
 ## [0.1.151] - 2026-07-05
 ### Diagnostics
 - Add targeted FOD / UDFPS AOD diagnostics around OOS fingerprint icon show/hide callbacks so the remaining AOD entry black-frame window can be correlated with native fingerprint timeout behavior.

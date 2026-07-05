@@ -74,7 +74,7 @@ collect_logcat() {
 
 filter_events() {
   local pattern
-  pattern='PixelAodOPlus|FOD AOD diagnostic|AOD policy decision|AOD overlay decision|AOD overlay visibility decision|Pixel AOD overlay visibility|requested AOD frame refresh|notifyHideCallback|onEnergySavingNotifyHide|hideByTimeoutReceiver|native-timeout|AodData-->setAodIsInShow|DreamService\[DozeService\]|setDozeScreenState|UpdateDoze|screenTurnedOff|screenTurningOff|SurfaceFlinger|OplusSurfaceFlinger|Setting power mode|blank_mode|DisplayPowerController|dozeScreenState|fingerprint|Fingerprint|Udfps|udfps|FOD|fod'
+  pattern='PixelAodOPlus|FOD AOD diagnostic|FOD-only native-timeout hide|AOD policy decision|AOD overlay decision|AOD overlay visibility decision|Pixel AOD overlay visibility|requested AOD frame refresh|notifyHideCallback|onEnergySavingNotifyHide|hideByTimeoutReceiver|native-timeout|AodData-->setAodIsInShow|DreamService\[DozeService\]|setDozeScreenState|UpdateDoze|screenTurnedOff|screenTurningOff|SurfaceFlinger|OplusSurfaceFlinger|Setting power mode|blank_mode|DisplayPowerController|dozeScreenState|fingerprint|Fingerprint|Udfps|udfps|FOD|fod'
   {
     echo "==== LSPosed module events ===="
     grep -E "$pattern" "$OUT_DIR/lspd_modules.txt" || true
@@ -112,11 +112,13 @@ count_trace_events() {
 }
 
 write_summary() {
-  local trace fod_events fod_hide_events native_allowed native_scheduled native_reasserted
+  local trace fod_events fod_hide_events fod_only_invoked fod_only_suppressed native_allowed native_scheduled native_reasserted
   local aod_false surface_power black_proxy overlay_false overlay_true doze_off_rewritten
   trace="$(latest_screen_off_trace || true)"
   fod_events="$(count_events 'FOD AOD diagnostic')"
   fod_hide_events="$(count_events 'FOD AOD diagnostic.*(hide|Hide|setFpIconVisibilityInAOD|setFingerprintIconShow)')"
+  fod_only_invoked="$(count_events 'FOD-only native-timeout hide invoked')"
+  fod_only_suppressed="$(count_events 'suppressed OPlus AOD native-timeout hide via FOD-only path')"
   native_allowed="$(count_events 'allowed OPlus AOD energy-saving hide.*(notifyHideCallback|onEnergySavingNotifyHide|native-timeout-callback)')"
   native_scheduled="$(count_events 'scheduling Pixel AOD native-timeout reassert')"
   native_reasserted="$(count_events 'reasserted Pixel AOD after native timeout hide')"
@@ -138,6 +140,8 @@ write_summary() {
     echo
     echo "counts.fodDiagnostic=$fod_events"
     echo "counts.fodHideLikeDiagnostic=$fod_hide_events"
+    echo "counts.fodOnlyHideInvoked=$fod_only_invoked"
+    echo "counts.fodOnlyNativeTimeoutSuppressed=$fod_only_suppressed"
     echo "counts.nativeTimeoutAllowed=$native_allowed"
     echo "counts.nativeTimeoutReassertScheduled=$native_scheduled"
     echo "counts.nativeTimeoutReasserted=$native_reasserted"
@@ -157,6 +161,12 @@ write_summary() {
     fi
     if [[ "$native_allowed" -gt 0 && "$aod_false" -gt 0 && "$native_reasserted" -gt 0 ]]; then
       echo "SUSPECT full native AOD hide window: native timeout allowed, AodData=false, then Pixel reassert"
+    fi
+    if [[ "$fod_only_suppressed" -gt 0 && "$aod_false" -eq 0 ]]; then
+      echo "GOOD FOD-only native timeout path suppressed whole-AOD false signal"
+    fi
+    if [[ "$fod_only_suppressed" -gt 0 && "$aod_false" -gt 0 ]]; then
+      echo "SUSPECT FOD-only path ran but whole-AOD false signal still occurred"
     fi
     if [[ "$fod_hide_events" -gt 0 && "$aod_false" -eq 0 ]]; then
       echo "INFO FOD hide-like callbacks fired without whole-AOD false signal"
