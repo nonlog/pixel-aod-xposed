@@ -32,22 +32,29 @@ import java.util.WeakHashMap;
 final class PixelLockscreenClockView extends FrameLayout {
     private static final Set<PixelLockscreenClockView> INSTANCES =
             Collections.newSetFromMap(new WeakHashMap<>());
-    private static final int CLOCK_COLOR = Color.rgb(232, 234, 237);
-    private static final int INFO_COLOR = Color.rgb(218, 220, 224);
-    private static final int LARGE_CLOCK_TEXT_DP = 150;
-    private static final int LARGE_CLOCK_TOP_DP = 144;
-    private static final int SMALL_CLOCK_TEXT_DP = 56;
-    private static final int SMALL_CLOCK_TOP_DP = 74;
-    private static final int EDGE_DP = 34;
-    private static final int COMPACT_CLOCK_VISUAL_START_OFFSET_DP = 7;
-    private static final int LARGE_INFO_TOP_DP = 100;
-    private static final int SMALL_INFO_TOP_DP = 150;
-    private static final int SMALL_NOTIFICATION_TOP_DP = 198;
-    private static final float CLOCK_LINE_SPACING = 0.70f;
-    private static final float LARGE_CLOCK_LETTER_SPACING = -0.02f;
-    private static final float SMALL_CLOCK_LETTER_SPACING = -0.025f;
-    private static final int CLOCK_LOCKSCREEN_WEIGHT = 520;
-    private static final int INFO_LOCKSCREEN_WEIGHT = 500;
+    private static final int CLOCK_COLOR = Color.rgb(PixelAodVisualStyle.CLOCK_COLOR_RED,
+            PixelAodVisualStyle.CLOCK_COLOR_GREEN, PixelAodVisualStyle.CLOCK_COLOR_BLUE);
+    private static final int INFO_COLOR = Color.rgb(PixelAodVisualStyle.INFO_COLOR_RED,
+            PixelAodVisualStyle.INFO_COLOR_GREEN, PixelAodVisualStyle.INFO_COLOR_BLUE);
+    private static final int LARGE_CLOCK_TEXT_DP = PixelAodVisualStyle.LARGE_CLOCK_TEXT_DP;
+    private static final int LARGE_CLOCK_TOP_DP = PixelAodVisualStyle.LARGE_CLOCK_TOP_DP;
+    private static final int SMALL_CLOCK_TEXT_DP = PixelAodVisualStyle.SMALL_CLOCK_TEXT_DP;
+    private static final int SMALL_CLOCK_TOP_DP = PixelAodVisualStyle.SMALL_CLOCK_TOP_DP;
+    private static final int EDGE_DP = PixelAodVisualStyle.EDGE_DP;
+    private static final int COMPACT_CLOCK_VISUAL_START_OFFSET_DP =
+            PixelAodVisualStyle.COMPACT_CLOCK_VISUAL_START_OFFSET_DP;
+    private static final int LARGE_INFO_TOP_DP = PixelAodVisualStyle.LARGE_INFO_TOP_DP;
+    private static final int SMALL_INFO_TOP_DP = PixelAodVisualStyle.SMALL_INFO_TOP_DP;
+    private static final int SMALL_NOTIFICATION_TOP_DP =
+            PixelAodVisualStyle.NOTIFICATION_LINE_TOP_DP;
+    private static final float CLOCK_LINE_SPACING = PixelAodVisualStyle.CLOCK_LINE_SPACING;
+    private static final float LARGE_CLOCK_LETTER_SPACING =
+            PixelAodVisualStyle.LARGE_CLOCK_LETTER_SPACING;
+    private static final float SMALL_CLOCK_LETTER_SPACING =
+            PixelAodVisualStyle.COMPACT_CLOCK_LETTER_SPACING;
+    private static final int CLOCK_LOCKSCREEN_WEIGHT =
+            PixelAodVisualStyle.Lockscreen.CLOCK_WEIGHT;
+    private static final int INFO_LOCKSCREEN_WEIGHT = PixelAodVisualStyle.Lockscreen.INFO_WEIGHT;
     private static final long AOD_TRANSITION_ANIMATION_WINDOW_MS = 1800L;
     private static final long RECENT_AOD_FALLBACK_WINDOW_MS = 120_000L;
     private static final long LOCKSCREEN_TO_AOD_ANIMATION_WINDOW_MS = 2500L;

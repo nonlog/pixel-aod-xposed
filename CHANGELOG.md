@@ -4,6 +4,11 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.160] - 2026-07-05
+### UI
+- Start Phase 6.0 by centralizing Pixel AOD / lockscreen visual style constants without changing lifecycle behavior.
+- Make the dark-mode startup splash explicitly use the same adaptive launcher icon as light mode, so the splash icon can follow the system icon shape mask.
+
 ## [0.1.159] - 2026-07-05
 ### Diagnostics
 - Reframe notification pulse policy diagnostics around OOS native pulse coexistence instead of future custom module pulse triggering.

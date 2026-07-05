@@ -81,38 +81,50 @@ import org.json.JSONObject;
 
 public final class PixelAodClockView extends FrameLayout {
     private static final Set<PixelAodClockView> INSTANCES = Collections.newSetFromMap(new WeakHashMap<>());
-    private static final int CLOCK_COLOR = Color.rgb(232, 234, 237);
-    private static final int INFO_COLOR = Color.rgb(218, 220, 224);
-    private static final int LARGE_CLOCK_TEXT_DP = 150;
-    private static final int LARGE_CLOCK_TOP_DP = 144;
-    private static final int SMALL_CLOCK_TEXT_DP = 56;
-    private static final int SMALL_CLOCK_TOP_DP = 74;
-    private static final int INFO_EDGE_DP = 34;
-    private static final int COMPACT_CLOCK_VISUAL_START_OFFSET_DP = 7;
-    private static final int LARGE_INFO_TOP_DP = 100;
-    private static final int LARGE_NOTIFICATION_LINE_TOP_DP = 198;
-    private static final int LARGE_MEDIA_TOP_DP = 132;
-    private static final int LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP = 224;
-    private static final int SMALL_INFO_TOP_DP = 150;
-    private static final int SMALL_NOTIFICATION_LINE_TOP_DP = 198;
-    private static final int SMALL_MEDIA_TOP_DP = 234;
-    private static final int NOTIFICATION_ICON_SIZE_DP = 14;
-    private static final int NOTIFICATION_ICON_SPACING_DP = 8;
-    private static final int MEDIA_ICON_SIZE_DP = 13;
-    private static final int MEDIA_ICON_SPACING_DP = 8;
+    private static final int CLOCK_COLOR = Color.rgb(PixelAodVisualStyle.CLOCK_COLOR_RED,
+            PixelAodVisualStyle.CLOCK_COLOR_GREEN, PixelAodVisualStyle.CLOCK_COLOR_BLUE);
+    private static final int INFO_COLOR = Color.rgb(PixelAodVisualStyle.INFO_COLOR_RED,
+            PixelAodVisualStyle.INFO_COLOR_GREEN, PixelAodVisualStyle.INFO_COLOR_BLUE);
+    private static final int LARGE_CLOCK_TEXT_DP = PixelAodVisualStyle.LARGE_CLOCK_TEXT_DP;
+    private static final int LARGE_CLOCK_TOP_DP = PixelAodVisualStyle.LARGE_CLOCK_TOP_DP;
+    private static final int SMALL_CLOCK_TEXT_DP = PixelAodVisualStyle.SMALL_CLOCK_TEXT_DP;
+    private static final int SMALL_CLOCK_TOP_DP = PixelAodVisualStyle.SMALL_CLOCK_TOP_DP;
+    private static final int INFO_EDGE_DP = PixelAodVisualStyle.EDGE_DP;
+    private static final int COMPACT_CLOCK_VISUAL_START_OFFSET_DP =
+            PixelAodVisualStyle.COMPACT_CLOCK_VISUAL_START_OFFSET_DP;
+    private static final int LARGE_INFO_TOP_DP = PixelAodVisualStyle.LARGE_INFO_TOP_DP;
+    private static final int LARGE_NOTIFICATION_LINE_TOP_DP =
+            PixelAodVisualStyle.NOTIFICATION_LINE_TOP_DP;
+    private static final int LARGE_MEDIA_TOP_DP = PixelAodVisualStyle.Aod.LARGE_MEDIA_TOP_DP;
+    private static final int LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP =
+            PixelAodVisualStyle.Aod.LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP;
+    private static final int SMALL_INFO_TOP_DP = PixelAodVisualStyle.SMALL_INFO_TOP_DP;
+    private static final int SMALL_NOTIFICATION_LINE_TOP_DP =
+            PixelAodVisualStyle.NOTIFICATION_LINE_TOP_DP;
+    private static final int SMALL_MEDIA_TOP_DP = PixelAodVisualStyle.Aod.SMALL_MEDIA_TOP_DP;
+    private static final int NOTIFICATION_ICON_SIZE_DP =
+            PixelAodVisualStyle.Aod.NOTIFICATION_ICON_SIZE_DP;
+    private static final int NOTIFICATION_ICON_SPACING_DP =
+            PixelAodVisualStyle.Aod.NOTIFICATION_ICON_SPACING_DP;
+    private static final int MEDIA_ICON_SIZE_DP = PixelAodVisualStyle.Aod.MEDIA_ICON_SIZE_DP;
+    private static final int MEDIA_ICON_SPACING_DP =
+            PixelAodVisualStyle.Aod.MEDIA_ICON_SPACING_DP;
     private static final int MAX_NOTIFICATION_ICONS = 5;
     private static final int ICON_MASK_SAMPLE_SIZE = 48;
-    private static final int BATTERY_TOP_DP = 720;
-    private static final float CLOCK_LINE_SPACING = 0.70f;
-    private static final float LARGE_CLOCK_LETTER_SPACING = -0.02f;
-    private static final float COMPACT_CLOCK_LETTER_SPACING = -0.025f;
-    private static final float INFO_LETTER_SPACING = 0.01f;
-    private static final int CLOCK_AOD_WEIGHT = 280;
-    private static final int INFO_AOD_WEIGHT = 500;
-    private static final int WEATHER_ICON_SIZE_DP = 15;
-    private static final int WEATHER_ICON_PADDING_DP = 6;
-    private static final int BURN_IN_OFFSET_X_DP = 8;
-    private static final int BURN_IN_OFFSET_Y_DP = 12;
+    private static final int BATTERY_TOP_DP = PixelAodVisualStyle.Aod.BATTERY_TOP_DP;
+    private static final float CLOCK_LINE_SPACING = PixelAodVisualStyle.CLOCK_LINE_SPACING;
+    private static final float LARGE_CLOCK_LETTER_SPACING =
+            PixelAodVisualStyle.LARGE_CLOCK_LETTER_SPACING;
+    private static final float COMPACT_CLOCK_LETTER_SPACING =
+            PixelAodVisualStyle.COMPACT_CLOCK_LETTER_SPACING;
+    private static final float INFO_LETTER_SPACING = PixelAodVisualStyle.INFO_LETTER_SPACING;
+    private static final int CLOCK_AOD_WEIGHT = PixelAodVisualStyle.Aod.CLOCK_WEIGHT;
+    private static final int INFO_AOD_WEIGHT = PixelAodVisualStyle.Aod.INFO_WEIGHT;
+    private static final int WEATHER_ICON_SIZE_DP = PixelAodVisualStyle.Aod.WEATHER_ICON_SIZE_DP;
+    private static final int WEATHER_ICON_PADDING_DP =
+            PixelAodVisualStyle.Aod.WEATHER_ICON_PADDING_DP;
+    private static final int BURN_IN_OFFSET_X_DP = PixelAodVisualStyle.Aod.BURN_IN_OFFSET_X_DP;
+    private static final int BURN_IN_OFFSET_Y_DP = PixelAodVisualStyle.Aod.BURN_IN_OFFSET_Y_DP;
     private static final int LOW_BATTERY_AOD_SUPPRESS_THRESHOLD_PERCENT = 15;
     private static final long AOD_ENTRY_SECOND_REFRESH_DELAY_MS = 500L;
     private static final float BURN_IN_PREVENTION_PERIOD_X_MINUTES = 83f;

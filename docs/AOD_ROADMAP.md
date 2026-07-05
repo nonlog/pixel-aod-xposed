@@ -187,6 +187,9 @@ runtime behavior observable and reversible.
 
 ### Phase 6: Later Pixel Features
 
+- Phase 6.0 starts a low-risk visual parity pass by centralizing Pixel AOD /
+  lockscreen typography, spacing, icon, and burn-in style constants in code
+  without changing lifecycle behavior.
 - At a Glance.
 - Richer media line behavior.
 - Possible media artwork / progress / controls only after confirming how Pixel / AOSP / target ROMs handle interaction on AOD.
