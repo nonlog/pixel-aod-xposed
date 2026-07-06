@@ -3568,28 +3568,6 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
-    private static Drawable loadApplicationIconDrawable(Context context, String packageName, boolean monochrome) {
-        if (TextUtils.isEmpty(packageName)) {
-            return null;
-        }
-        try {
-            PackageManager packageManager = context.getPackageManager();
-            Drawable drawable = loadApplicationIcon(packageManager, packageName);
-            if (drawable == null) {
-                return null;
-            }
-            Drawable result = drawable.mutate();
-            if (monochrome) {
-                result.setTint(resolveMaterialInfoColor(context));
-                result.setTintMode(PorterDuff.Mode.SRC_IN);
-            }
-            return result;
-        } catch (Throwable t) {
-            PixelAodLog.log("failed to load AOD application icon pkg=" + packageName, t);
-            return null;
-        }
-    }
-
     private static Drawable loadApplicationIcon(PackageManager packageManager, String packageName)
             throws PackageManager.NameNotFoundException {
         ApplicationInfo info = packageManager.getApplicationInfo(packageName, 0);
@@ -3646,18 +3624,11 @@ public final class PixelAodClockView extends FrameLayout {
                     logNotificationIconChoice(sbn.getPackageName(), "app-monochrome-fallback");
                     return monochrome;
                 }
-                Drawable appIcon = loadApplicationIconDrawable(context, sbn.getPackageName(), false);
-                if (appIcon != null) {
-                    logNotificationIconChoice(sbn.getPackageName(),
-                            "app-launcher-icon-fallback filled=" + filledMask
-                                    + " tiny=" + tinyForeground);
-                    return appIcon;
-                }
                 Drawable tinted = drawable.mutate();
                 tinted.setTint(resolveMaterialInfoColor(context));
                 tinted.setTintMode(PorterDuff.Mode.SRC_IN);
                 logNotificationIconChoice(sbn.getPackageName(),
-                        "app-original-tint-fallback filled=" + filledMask
+                        "notification-smallIcon-filled-mask-tint filled=" + filledMask
                                 + " tiny=" + tinyForeground);
                 return tinted;
             }

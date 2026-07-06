@@ -4,6 +4,10 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.168] - 2026-07-06
+### Fixed
+- Keep third-party AOD notification icons on the notification `smallIcon` or app monochrome path; filled-mask detection no longer falls back to the colorful launcher icon when a usable `smallIcon` exists.
+
 ## [0.1.167] - 2026-07-06
 ### Fixed
 - Refresh AOD clock, date, notification icons, and media content before making the module overlay visible again after proximity / pocket restore, preventing the first visible frame from showing the stale pre-hide time.
