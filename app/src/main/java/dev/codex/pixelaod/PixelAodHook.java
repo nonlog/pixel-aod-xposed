@@ -94,6 +94,7 @@ final class PixelAodHook {
     private static final long[] AOD_NATIVE_TIMEOUT_REASSERT_DELAYS_MILLIS = {
             80L, 450L, 1200L
     };
+    private static final long NATIVE_AOD_FRAME_KICK_MIN_INTERVAL_MILLIS = 1200L;
     private static final long FOD_ONLY_NATIVE_HIDE_SKIP_WINDOW_MILLIS = 300L;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_REAPPLY = false;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_DUMPS = false;
@@ -124,6 +125,12 @@ final class PixelAodHook {
             new WeakReference<>(null);
     private static volatile WeakReference<Object> lastOnScreenFingerprintUiMech =
             new WeakReference<>(null);
+    private static volatile WeakReference<Object> lastNativeAodClockLayout =
+            new WeakReference<>(null);
+    private static volatile Method nativeAodClockRefreshMethod;
+    private static volatile Object[] nativeAodClockRefreshArgs = new Object[0];
+    private static volatile boolean nativeAodFrameKickInProgress;
+    private static volatile long lastNativeAodFrameKickAt;
     private static volatile long lastFodOnlyNativeTimeoutHideSuppressionMs;
     private static volatile String lastFodOnlyNativeTimeoutHideTrace;
 
@@ -567,8 +574,12 @@ final class PixelAodHook {
             final String source = sourceClass + "#" + methodSignature(method);
             try {
                 targetMethod.setAccessible(true);
-                ModernHookBridge.hookAfter(targetMethod, param -> MAIN.post(() ->
-                        PixelAodClockView.refreshAllForNativeAodTick(source)));
+                rememberNativeAodClockRefreshMethod(sourceClass, targetMethod);
+                ModernHookBridge.hookAfter(targetMethod, param -> {
+                    rememberNativeAodClockRefreshTarget(sourceClass, targetMethod,
+                            param.thisObject, param.args);
+                    MAIN.post(() -> PixelAodClockView.refreshAllForNativeAodTick(source));
+                });
                 hooked = true;
                 PixelAodLog.log("hooked native AOD refresh callback " + source);
             } catch (Throwable t) {
@@ -1136,6 +1147,175 @@ final class PixelAodHook {
             }
         }
         return hooked;
+    }
+
+    static void requestNativeAodFrameRefreshKick(String source) {
+        MAIN.post(() -> runNativeAodFrameRefreshKick(source));
+    }
+
+    private static void runNativeAodFrameRefreshKick(String source) {
+        Context context = systemUiContext;
+        if (context == null) {
+            PixelAodLog.log("skipped native AOD frame kick source=" + source
+                    + " reason=no-context trace=" + PixelAodClockView.currentAodTraceId());
+            return;
+        }
+        if (PixelAodClockView.isDeviceInteractive(context)) {
+            PixelAodLog.log("skipped native AOD frame kick source=" + source
+                    + " reason=interactive trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            return;
+        }
+        if (!PixelAodClockView.isAodActive()) {
+            PixelAodLog.log("skipped native AOD frame kick source=" + source
+                    + " reason=aod-inactive trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            return;
+        }
+        OosAodLifecycleAdapter.AodPolicyDecision decision =
+                PixelAodClockView.evaluateAodPolicy(context, source + "#frame-kick");
+        if (!decision.shouldApplyModuleAod || !decision.shouldKeepNativeDozeAlive) {
+            PixelAodLog.log("skipped native AOD frame kick source=" + source
+                    + " reason=policy"
+                    + " shouldApplyModuleAod=" + decision.shouldApplyModuleAod
+                    + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            return;
+        }
+        Method method = nativeAodClockRefreshMethod;
+        Object receiver = lastNativeAodClockLayout.get();
+        if (method == null || receiver == null) {
+            PixelAodLog.log("skipped native AOD frame kick source=" + source
+                    + " reason=no-native-target method=" + method
+                    + " receiver=" + (receiver != null ? receiver.getClass().getName() : "null")
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            return;
+        }
+        long now = SystemClock.uptimeMillis();
+        long ageMs = now - lastNativeAodFrameKickAt;
+        if (lastNativeAodFrameKickAt > 0L && ageMs >= 0L
+                && ageMs < NATIVE_AOD_FRAME_KICK_MIN_INTERVAL_MILLIS) {
+            PixelAodLog.log("skipped native AOD frame kick source=" + source
+                    + " reason=throttled ageMs=" + ageMs
+                    + " minIntervalMs=" + NATIVE_AOD_FRAME_KICK_MIN_INTERVAL_MILLIS
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            return;
+        }
+        if (nativeAodFrameKickInProgress) {
+            PixelAodLog.log("skipped native AOD frame kick source=" + source
+                    + " reason=in-progress trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            return;
+        }
+        Object[] args = nativeAodFrameKickArgs(method);
+        try {
+            nativeAodFrameKickInProgress = true;
+            lastNativeAodFrameKickAt = now;
+            method.invoke(receiver, args);
+            PixelAodLog.log("requested native AOD frame kick source=" + source
+                    + " method=" + methodSignature(method)
+                    + " args=" + summarizeArgs(args, 4)
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed native AOD frame kick source=" + source
+                    + " method=" + methodSignature(method)
+                    + " args=" + summarizeArgs(args, 4)
+                    + " trace=" + PixelAodClockView.currentAodTraceId(), t);
+        } finally {
+            nativeAodFrameKickInProgress = false;
+        }
+    }
+
+    private static void rememberNativeAodClockRefreshMethod(String sourceClass, Method method) {
+        if (!"AodClockLayout".equals(sourceClass) || !canInvokeNativeAodClockRefresh(method)) {
+            return;
+        }
+        Method current = nativeAodClockRefreshMethod;
+        if (current != null
+                && nativeAodClockRefreshPriority(current) >= nativeAodClockRefreshPriority(method)) {
+            return;
+        }
+        nativeAodClockRefreshMethod = method;
+        nativeAodClockRefreshArgs = defaultNativeAodFrameKickArgs(method);
+        PixelAodLog.log("remembered native AOD refresh method method="
+                + methodSignature(method)
+                + " priority=" + nativeAodClockRefreshPriority(method));
+    }
+
+    private static void rememberNativeAodClockRefreshTarget(String sourceClass, Method method,
+            Object receiver, Object[] args) {
+        if (!"AodClockLayout".equals(sourceClass)
+                || receiver == null
+                || !canInvokeNativeAodClockRefresh(method)) {
+            return;
+        }
+        lastNativeAodClockLayout = new WeakReference<>(receiver);
+        nativeAodClockRefreshMethod = method;
+        nativeAodClockRefreshArgs = compatibleNativeAodFrameKickArgs(method, args)
+                ? args.clone()
+                : defaultNativeAodFrameKickArgs(method);
+    }
+
+    private static void rememberNativeAodClockLayout(Object receiver) {
+        if (receiver != null) {
+            lastNativeAodClockLayout = new WeakReference<>(receiver);
+        }
+    }
+
+    private static boolean canInvokeNativeAodClockRefresh(Method method) {
+        if (method == null) {
+            return false;
+        }
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        return parameterTypes.length == 0
+                || (parameterTypes.length == 1
+                && (parameterTypes[0] == boolean.class || parameterTypes[0] == Boolean.class));
+    }
+
+    private static int nativeAodClockRefreshPriority(Method method) {
+        if (method == null) {
+            return 0;
+        }
+        if ("performAodUpdate".equals(method.getName())) {
+            return 3;
+        }
+        if ("refreshAodTime".equals(method.getName())) {
+            return 2;
+        }
+        return 1;
+    }
+
+    private static Object[] nativeAodFrameKickArgs(Method method) {
+        Object[] args = nativeAodClockRefreshArgs;
+        if (compatibleNativeAodFrameKickArgs(method, args)) {
+            return args.clone();
+        }
+        return defaultNativeAodFrameKickArgs(method);
+    }
+
+    private static boolean compatibleNativeAodFrameKickArgs(Method method, Object[] args) {
+        if (method == null || args == null) {
+            return false;
+        }
+        Class<?>[] parameterTypes = method.getParameterTypes();
+        if (parameterTypes.length != args.length) {
+            return false;
+        }
+        if (parameterTypes.length == 0) {
+            return true;
+        }
+        return parameterTypes[0] == boolean.class || parameterTypes[0] == Boolean.class;
+    }
+
+    private static Object[] defaultNativeAodFrameKickArgs(Method method) {
+        if (method == null || method.getParameterTypes().length == 0) {
+            return new Object[0];
+        }
+        return new Object[] { Boolean.TRUE };
     }
 
     private static void hookOplusFingerprintAodDiagnostics(ClassLoader classLoader) {
@@ -2074,6 +2254,7 @@ final class PixelAodHook {
 
     private static void handleClockLayout(Context context, Object clockLayoutObject, String source) {
         try {
+            rememberNativeAodClockLayout(clockLayoutObject);
             if (!(clockLayoutObject instanceof ViewGroup)) {
                 PixelAodLog.log("AodClockLayout is not ViewGroup from " + source + ": " + clockLayoutObject);
                 return;

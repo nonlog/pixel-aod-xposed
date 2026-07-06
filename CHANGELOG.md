@@ -4,6 +4,20 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.167] - 2026-07-06
+### Fixed
+- Refresh AOD clock, date, notification icons, and media content before making the module overlay visible again after proximity / pocket restore, preventing the first visible frame from showing the stale pre-hide time.
+
+## [0.1.166] - 2026-07-06
+### Fixed
+- Request a guarded native OOS AOD refresh kick when the module media row text changes or clears, so DOZE/DOZE_SUSPEND does not wait for the next minute tick before showing updated media information.
+
+## [0.1.165] - 2026-07-06
+### Fixed
+- Treat media metadata and media notification content changes as fresh media activity so AOD media text updates promptly after switching tracks, even when the player reports an idle or none playback state.
+### Diagnostics
+- Add hash-based AOD media line and media notification cache logs for future latency debugging without writing raw song titles to logs.
+
 ## [0.1.164] - 2026-07-05
 ### Diagnostics
 - Add visual profile revision and runtime display metrics to AOD / lockscreen init logs so future visual parity changes can be compared across density and font-scale environments.

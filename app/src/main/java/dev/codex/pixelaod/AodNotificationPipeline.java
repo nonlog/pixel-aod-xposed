@@ -316,10 +316,30 @@ final class AodNotificationPipeline {
             if (sbn == null) {
                 continue;
             }
-            entries.add(sbn.getKey() + '@' + sbn.getPostTime());
+            entries.add(sbn.getKey() + '@' + sbn.getPostTime()
+                    + '#' + mediaCandidateContentHash(sbn));
         }
         Collections.sort(entries);
         return TextUtils.join("|", entries);
+    }
+
+    private static int mediaCandidateContentHash(StatusBarNotification sbn) {
+        try {
+            Notification notification = sbn != null ? sbn.getNotification() : null;
+            Bundle extras = notification != null ? notification.extras : null;
+            if (extras == null) {
+                return 0;
+            }
+            String title = String.valueOf(extras.getCharSequence(Notification.EXTRA_TITLE, ""));
+            String titleBig = String.valueOf(extras.getCharSequence(Notification.EXTRA_TITLE_BIG, ""));
+            String text = String.valueOf(extras.getCharSequence(Notification.EXTRA_TEXT, ""));
+            String subText = String.valueOf(extras.getCharSequence(Notification.EXTRA_SUB_TEXT, ""));
+            String summary = String.valueOf(extras.getCharSequence(Notification.EXTRA_SUMMARY_TEXT, ""));
+            return (title + '\u0001' + titleBig + '\u0001' + text + '\u0001'
+                    + subText + '\u0001' + summary).hashCode();
+        } catch (Throwable ignored) {
+            return 0;
+        }
     }
 
     static String rankingSignature(Map<String, RankingSnapshot> snapshot) {

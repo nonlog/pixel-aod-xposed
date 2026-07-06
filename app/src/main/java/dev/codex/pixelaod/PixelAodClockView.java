@@ -2012,17 +2012,19 @@ public final class PixelAodClockView extends FrameLayout {
     static void setMediaNotificationCandidates(StatusBarNotification[] notifications, String source) {
         int count;
         boolean changed;
+        ArrayList<String> mediaPackages;
         synchronized (PixelAodClockView.class) {
             count = replaceMediaNotificationCandidatesLocked(notifications);
             String signature = mediaCandidatesSignatureLocked();
             changed = !TextUtils.equals(lastMediaCandidatesSignature, signature);
             lastMediaCandidatesSignature = signature;
+            mediaPackages = mediaNotificationPackagesLocked();
         }
         if (!changed) {
             return;
         }
         logMediaNotificationCache("replaced", source, count);
-        refreshMediaLines();
+        refreshMediaLinesForMediaActivity(mediaPackages, source + "#media-candidates");
     }
 
     private static int replaceMediaNotificationCandidatesLocked(StatusBarNotification[] notifications) {
@@ -2044,13 +2046,23 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         int count;
+        boolean contentChanged;
+        String oldText;
+        String newText = formatMediaNotificationText(sbn);
         synchronized (PixelAodClockView.class) {
+            oldText = formatMediaNotificationText(mediaNotificationCache.get(sbn.getKey()));
+            contentChanged = !TextUtils.equals(oldText, newText);
             mediaNotificationCache.put(sbn.getKey(), sbn);
             count = mediaNotificationCache.size();
             lastMediaCandidatesSignature = mediaCandidatesSignatureLocked();
         }
-        logMediaNotificationCache("cached", source, count);
-        refreshMediaLines();
+        logMediaNotificationCache("cached", source, count, sbn.getPackageName(), contentChanged, newText);
+        if (contentChanged) {
+            refreshMediaLinesForMediaActivity(Collections.singletonList(sbn.getPackageName()),
+                    source + "#media-notification-content");
+        } else {
+            refreshMediaLines();
+        }
     }
 
     static void removeMediaNotificationCandidate(StatusBarNotification sbn, String source) {
@@ -2654,6 +2666,9 @@ public final class PixelAodClockView extends FrameLayout {
                 + " currentVisibility=" + getVisibility()
                 + " state={" + describeAodState(getContext()) + "}");
         if (visibilityChanged) {
+            if (visible) {
+                refreshAodContentBeforeVisible(source);
+            }
             setVisibility(desiredVisibility);
             if (visible) {
                 if (briefDisplay) {
@@ -2684,6 +2699,19 @@ public final class PixelAodClockView extends FrameLayout {
         } else {
             resetBurnInTranslation();
         }
+    }
+
+    private void refreshAodContentBeforeVisible(String source) {
+        updateTime();
+        rebuildNotificationIcons(source + "#before-visible");
+        updateMediaLine(source + "#before-visible");
+        requestAodFrameRefresh(source + "#before-visible");
+        PixelAodLog.log("refreshed AOD content before visible frame trace=" + currentAodTraceId()
+                + " source=" + source
+                + " clock=" + String.valueOf(clockView.getText()).replace('\n', '/')
+                + " visibility=" + getVisibility()
+                + " shown=" + isShown()
+                + " state={" + describeAodState(getContext()) + "}");
     }
 
     private void scheduleAodVisibilityUpdate(String source, long delayMillis) {
@@ -2935,6 +2963,11 @@ public final class PixelAodClockView extends FrameLayout {
 
                     @Override
                     public void onMetadataChanged(MediaMetadata metadata) {
+                        noteMediaContentActivity(controller.getPackageName(), "media-metadata");
+                        PixelAodLog.log("AOD media metadata callback pkg=" + controller.getPackageName()
+                                + " text=" + describeMediaTextForLog(formatMediaText(metadata))
+                                + " state=" + playbackStateName(safePlaybackState(controller))
+                                + " trace=" + currentAodTraceId());
                         updateMediaLine("media-metadata");
                     }
 
@@ -2994,9 +3027,18 @@ public final class PixelAodClockView extends FrameLayout {
             if (!TextUtils.isEmpty(mediaText) && mediaRow.getVisibility() != View.VISIBLE) {
                 mediaRow.setVisibility(View.VISIBLE);
                 requestAodFrameRefresh(source + "#media-visible");
+                PixelAodHook.requestNativeAodFrameRefreshKick(source + "#media-visible");
             }
             return;
         }
+        PixelAodLog.log("AOD media line update source=" + source
+                + " pkg=" + controller.getPackageName()
+                + " state=" + playbackStateName(safePlaybackState(controller))
+                + " notificationKey=" + mediaKey
+                + " oldText=" + describeMediaTextForLog(lastMediaLineText)
+                + " newText=" + describeMediaTextForLog(mediaText)
+                + " expired=" + isExpiredInactiveMediaPackage(controller.getPackageName())
+                + " trace=" + currentAodTraceId());
         lastMediaLineText = mediaText;
         lastMediaLineKey = mediaKey;
         lastMediaIconSignature = iconSignature;
@@ -3010,6 +3052,7 @@ public final class PixelAodClockView extends FrameLayout {
         mediaRow.setVisibility(View.VISIBLE);
         rebuildNotificationIcons(source);
         requestAodFrameRefresh(source + "#media");
+        PixelAodHook.requestNativeAodFrameRefreshKick(source + "#media");
     }
 
     private void updateMediaIcon(MediaController controller, StatusBarNotification notification) {
@@ -3025,6 +3068,16 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void clearMediaLine(String source) {
+        boolean hadMedia = !TextUtils.isEmpty(lastMediaLineText)
+                || mediaRow.getVisibility() == View.VISIBLE
+                || currentMediaNotificationKey != null;
+        if (hadMedia) {
+            PixelAodLog.log("AOD media line cleared source=" + source
+                    + " oldText=" + describeMediaTextForLog(lastMediaLineText)
+                    + " notificationKey=" + currentMediaNotificationKey
+                    + " expiredMedia=" + expiredInactiveMediaPackageSignature()
+                    + " trace=" + currentAodTraceId());
+        }
         currentMediaNotificationKey = null;
         // Reset the dedupe signature so that resuming the SAME track later is not
         // mistaken for an unchanged state and silently skipped (which previously
@@ -3037,6 +3090,9 @@ public final class PixelAodClockView extends FrameLayout {
         mediaRow.setVisibility(View.GONE);
         rebuildNotificationIcons(source);
         requestAodFrameRefresh(source + "#media-cleared");
+        if (hadMedia) {
+            PixelAodHook.requestNativeAodFrameRefreshKick(source + "#media-cleared");
+        }
     }
 
     private static boolean isStoppedPlaybackState(PlaybackState state) {
@@ -3074,6 +3130,17 @@ public final class PixelAodClockView extends FrameLayout {
             return false;
         }
         return state.getState() == PlaybackState.STATE_NONE;
+    }
+
+    private static PlaybackState safePlaybackState(MediaController controller) {
+        if (controller == null) {
+            return null;
+        }
+        try {
+            return controller.getPlaybackState();
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     // True when the controller can produce a non-empty media line (either from a
@@ -3182,6 +3249,13 @@ public final class PixelAodClockView extends FrameLayout {
             return title.toString();
         }
         return title + " - " + artist;
+    }
+
+    private static String describeMediaTextForLog(String text) {
+        if (TextUtils.isEmpty(text)) {
+            return "empty";
+        }
+        return "len=" + text.length() + ",hash=" + text.hashCode();
     }
 
     private static String formatMediaNotificationText(StatusBarNotification sbn) {
@@ -3623,6 +3697,42 @@ public final class PixelAodClockView extends FrameLayout {
         return null;
     }
 
+    private void noteMediaContentActivity(String packageName, String source) {
+        if (TextUtils.isEmpty(packageName)) {
+            return;
+        }
+        clearExpiredInactiveMediaPackage(packageName, source);
+        for (MediaController controller : mediaControllers) {
+            if (controller == null || !TextUtils.equals(packageName, controller.getPackageName())) {
+                continue;
+            }
+            PlaybackState state = safePlaybackState(controller);
+            if (isPlayingPlaybackState(state)) {
+                clearInactiveMediaTracking(controller, source + "#playing");
+            } else {
+                restartInactiveMediaTracking(controller, state, source);
+            }
+        }
+    }
+
+    private void restartInactiveMediaTracking(MediaController controller, PlaybackState state, String source) {
+        String key = mediaControllerKey(controller);
+        if (TextUtils.isEmpty(key)) {
+            return;
+        }
+        clearInactiveMediaTimeout(key);
+        long startedAt = SystemClock.elapsedRealtime();
+        Long previous = inactiveMediaStartedAt.put(key, startedAt);
+        PixelAodLog.log("AOD media content activity pkg=" + controller.getPackageName()
+                + " key=" + key
+                + " source=" + source
+                + " state=" + playbackStateName(state)
+                + " previousInactiveAt=" + previous
+                + " restartedAt=" + startedAt
+                + " trace=" + currentAodTraceId());
+        scheduleInactiveMediaTimeoutCheck(controller, key);
+    }
+
     private void notePlaybackState(MediaController controller, PlaybackState state) {
         if (controller == null) {
             return;
@@ -3798,7 +3908,7 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
-    private void clearExpiredInactiveMediaPackage(String packageName, String source) {
+    private static void clearExpiredInactiveMediaPackage(String packageName, String source) {
         if (TextUtils.isEmpty(packageName)) {
             return;
         }
@@ -4066,6 +4176,18 @@ public final class PixelAodClockView extends FrameLayout {
         return AodNotificationPipeline.mediaCandidatesSignature(mediaNotificationCache.values());
     }
 
+    private static ArrayList<String> mediaNotificationPackagesLocked() {
+        ArrayList<String> packages = new ArrayList<>();
+        for (StatusBarNotification sbn : mediaNotificationCache.values()) {
+            if (sbn == null || TextUtils.isEmpty(sbn.getPackageName())
+                    || packages.contains(sbn.getPackageName())) {
+                continue;
+            }
+            packages.add(sbn.getPackageName());
+        }
+        return packages;
+    }
+
     private static String expiredInactiveMediaPackageSignature() {
         synchronized (PixelAodClockView.class) {
             if (expiredInactiveMediaPackages.isEmpty()) {
@@ -4101,12 +4223,39 @@ public final class PixelAodClockView extends FrameLayout {
                 + " trace=" + currentAodTraceId());
     }
 
+    private static void logMediaNotificationCache(String action, String source, int count,
+            String packageName, boolean contentChanged, String mediaText) {
+        PixelAodLog.log("AOD media notification cache " + action
+                + " source=" + source
+                + " count=" + count
+                + " pkg=" + packageName
+                + " contentChanged=" + contentChanged
+                + " text=" + describeMediaTextForLog(mediaText)
+                + " trace=" + currentAodTraceId());
+    }
+
     private static void refreshMediaLines() {
         mainHandler().post(() -> {
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
                     view.updateMediaLine("refreshMediaLines");
                 }
+            }
+        });
+    }
+
+    private static void refreshMediaLinesForMediaActivity(List<String> packages, String source) {
+        mainHandler().post(() -> {
+            for (PixelAodClockView view : INSTANCES) {
+                if (view == null) {
+                    continue;
+                }
+                if (packages != null) {
+                    for (String packageName : packages) {
+                        view.noteMediaContentActivity(packageName, source);
+                    }
+                }
+                view.updateMediaLine(source);
             }
         });
     }
