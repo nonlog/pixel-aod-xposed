@@ -2,9 +2,14 @@ package dev.codex.pixelaod;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.database.ContentObserver;
 import android.graphics.Canvas;
+import android.hardware.camera2.CameraManager;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -40,6 +45,10 @@ import java.util.regex.Pattern;
 final class PixelAodHook {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
     private static final AtomicBoolean SETTINGS_OBSERVER_REGISTERED = new AtomicBoolean(false);
+    private static final AtomicBoolean TORCH_CALLBACK_REGISTERED = new AtomicBoolean(false);
+    private static final AtomicBoolean TORCH_REFRESH_RECEIVER_REGISTERED = new AtomicBoolean(false);
+    private static final String ACTION_SWITCH_FLASHLIGHT =
+            "com.android.systemui.ACTION_SWITCH_FLASHLIGHT";
     private static final String CLOCK_LAYOUT = "com.oplus.systemui.aod.aodclock.off.AodClockLayout";
     private static final String AOD_ROOT_LAYOUT = "com.oplus.systemui.aod.aodclock.off.AodRootLayout";
     private static final String AOD_RECORD = "com.oplus.systemui.aod.AodRecord";
@@ -181,6 +190,8 @@ final class PixelAodHook {
         if (notificationIcons) {
             hookNotificationListenerService();
             hookSystemUiNotificationListener(classLoader);
+            registerTorchStateCallback(appContext);
+            registerTorchRefreshReceiver(appContext);
         }
         if (lockscreenPolicy) {
             hookLockscreenNotificationPolicy(classLoader);
@@ -224,6 +235,147 @@ final class PixelAodHook {
         } catch (Throwable t) {
             PixelAodLog.log("failed to register Pixel AOD settings observer", t);
         }
+    }
+
+    private static void registerTorchStateCallback(Context context) {
+        if (context == null || !TORCH_CALLBACK_REGISTERED.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            CameraManager cameraManager = context.getSystemService(CameraManager.class);
+            if (cameraManager == null) {
+                PixelAodLog.log("failed to register torch callback reason=no-camera-manager");
+                return;
+            }
+            cameraManager.registerTorchCallback(new CameraManager.TorchCallback() {
+                @Override
+                public void onTorchModeChanged(String cameraId, boolean enabled) {
+                    onTorchStateChanged("onTorchModeChanged", cameraId, enabled);
+                }
+
+                @Override
+                public void onTorchModeUnavailable(String cameraId) {
+                    onTorchStateChanged("onTorchModeUnavailable", cameraId, false);
+                }
+            }, MAIN);
+            PixelAodLog.log("registered torch callback for AOD notification refresh");
+        } catch (Throwable t) {
+            TORCH_CALLBACK_REGISTERED.set(false);
+            PixelAodLog.log("failed to register torch callback for AOD notification refresh", t);
+        }
+    }
+
+    private static void registerTorchRefreshReceiver(Context context) {
+        if (context == null || !TORCH_REFRESH_RECEIVER_REGISTERED.compareAndSet(false, true)) {
+            return;
+        }
+        final Context appContext = context.getApplicationContext() != null
+                ? context.getApplicationContext() : context;
+        try {
+            IntentFilter filter = new IntentFilter(ACTION_SWITCH_FLASHLIGHT);
+            BroadcastReceiver receiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context receiveContext, Intent intent) {
+                    String action = intent != null ? intent.getAction() : null;
+                    scheduleLiveAlertNotificationRefresh(
+                            "flashlight-broadcast#" + action,
+                            "systemui-flashlight-action");
+                }
+            };
+            if (Build.VERSION.SDK_INT >= 33) {
+                appContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
+            } else {
+                appContext.registerReceiver(receiver, filter);
+            }
+            PixelAodLog.log("registered flashlight action receiver for AOD notification refresh");
+        } catch (Throwable t) {
+            TORCH_REFRESH_RECEIVER_REGISTERED.set(false);
+            PixelAodLog.log("failed to register flashlight action receiver for AOD notification refresh",
+                    t);
+        }
+    }
+
+    private static void onTorchStateChanged(String source, String cameraId, boolean enabled) {
+        PixelAodLog.log("observed torch state source=" + source
+                + " cameraId=" + cameraId
+                + " enabled=" + enabled
+                + " trace=" + PixelAodClockView.currentAodTraceId()
+                + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
+        scheduleTorchNotificationRefresh(source, cameraId, enabled, 40L);
+        scheduleTorchNotificationRefresh(source, cameraId, enabled, 280L);
+        scheduleTorchNotificationRefresh(source, cameraId, enabled, 900L);
+    }
+
+    private static void scheduleTorchNotificationRefresh(String source, String cameraId,
+            boolean enabled, long delayMillis) {
+        MAIN.postDelayed(() -> {
+            String refreshSource = "torch-state-" + (enabled ? "on" : "off")
+                    + "#" + source + "#" + delayMillis + "ms";
+            refreshNotificationsFromLastListener(refreshSource);
+            PixelAodClockView.forceRefreshNotificationIcons(refreshSource);
+            requestNativeAodFrameRefreshKickForLiveAlert(refreshSource, delayMillis);
+            PixelAodLog.log("requested AOD notification refresh from torch state"
+                    + " cameraId=" + cameraId
+                    + " enabled=" + enabled
+                    + " delayMs=" + delayMillis
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
+        }, delayMillis);
+    }
+
+    private static void scheduleLiveAlertNotificationRefresh(String source, String reason) {
+        scheduleLiveAlertNotificationRefresh(source, reason, 40L);
+        scheduleLiveAlertNotificationRefresh(source, reason, 280L);
+        scheduleLiveAlertNotificationRefresh(source, reason, 900L);
+    }
+
+    private static void scheduleLiveAlertNotificationRefresh(String source, String reason,
+            long delayMillis) {
+        MAIN.postDelayed(() -> {
+            String refreshSource = "live-alert#" + source + "#" + delayMillis + "ms";
+            refreshNotificationsFromLastListener(refreshSource);
+            PixelAodClockView.forceRefreshNotificationIcons(refreshSource);
+            requestNativeAodFrameRefreshKickForLiveAlert(refreshSource, delayMillis);
+            PixelAodLog.log("requested AOD notification refresh from live alert"
+                    + " source=" + source
+                    + " reason=" + reason
+                    + " delayMs=" + delayMillis
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
+        }, delayMillis);
+    }
+
+    private static void requestNativeAodFrameRefreshKickForLiveAlert(String source,
+            long delayMillis) {
+        if (delayMillis < 280L) {
+            return;
+        }
+        requestNativeAodFrameRefreshKick(source);
+    }
+
+    private static void maybeScheduleFlashlightNotificationRefresh(StatusBarNotification sbn,
+            String source, String action) {
+        if (!AodNotificationPipeline.isOosFlashlightLiveAlert(sbn)) {
+            return;
+        }
+        scheduleLiveAlertNotificationRefresh(
+                "flashlight-notification-" + action + "#" + source,
+                "flashlight-notification-" + action);
+    }
+
+    private static void maybeScheduleBlackScreenGestureNotificationRefresh(String source,
+            String args, String triggerType) {
+        String combined = (TextUtils.isEmpty(source) ? "" : source) + " "
+                + (TextUtils.isEmpty(args) ? "" : args);
+        if (!combined.toLowerCase(Locale.US).contains("oplusblackscreengestureevent")) {
+            return;
+        }
+        if (PixelAodClockView.isDeviceInteractive(systemUiContext)) {
+            return;
+        }
+        scheduleLiveAlertNotificationRefresh(
+                "black-screen-gesture#" + triggerType + "#" + source,
+                "oplus-black-screen-gesture");
     }
 
     private static void hookStockClockDrawSuppression() {
@@ -893,6 +1045,7 @@ final class PixelAodHook {
                     + " count=" + snapshot.length
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(null) + "}");
+            maybeScheduleFlashlightNotificationRefresh(sbn, source, "posted");
         } catch (Throwable t) {
             PixelAodLog.log("failed to cache notification from " + source, t);
         }
@@ -913,6 +1066,7 @@ final class PixelAodHook {
                     + " count=" + snapshot.length
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(null) + "}");
+            maybeScheduleFlashlightNotificationRefresh(sbn, source, "removed");
         } catch (Throwable t) {
             PixelAodLog.log("failed to remove notification from " + source, t);
         }
@@ -1455,6 +1609,7 @@ final class PixelAodHook {
                     }
                     PixelAodClockView.noteNativeTrigger(triggerType, source,
                             "args=" + args + ",result=" + summarizeValue(param.getResult()));
+                    maybeScheduleBlackScreenGestureNotificationRefresh(source, args, triggerType);
                 });
                 hooked = true;
                 PixelAodLog.log("hooked OPlus AOD trigger diagnostic " + source);

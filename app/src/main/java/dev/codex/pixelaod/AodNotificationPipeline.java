@@ -72,13 +72,16 @@ final class AodNotificationPipeline {
             return false;
         }
         boolean systemNotification = isSystemNotificationCandidate(sbn);
-        if ("com.android.systemui".equals(sbn.getPackageName()) && !systemNotification) {
+        boolean oosLiveAlert = isOosLiveAlertNotification(sbn);
+        if ("com.android.systemui".equals(sbn.getPackageName())
+                && !systemNotification
+                && !oosLiveAlert) {
             return false;
         }
         RankingSnapshot ranking = rankings != null ? rankings.get(sbn.getKey()) : null;
         LockscreenVisibilityDecision lockscreenDecision =
                 lockscreenDecisions != null ? lockscreenDecisions.get(sbn.getKey()) : null;
-        if (!systemNotification) {
+        if (!systemNotification && !oosLiveAlert) {
             String silentHiddenReason = lockscreenPolicySilentHiddenReason(
                     lockscreenPolicyEnabled,
                     sbn,
@@ -96,13 +99,15 @@ final class AodNotificationPipeline {
         String lockscreenHiddenReason = lockscreenDecision != null
                 ? lockscreenDecision.hiddenReason()
                 : null;
-        if (!systemNotification && !testNotification && lockscreenHiddenReason != null) {
+        if (!systemNotification && !testNotification && !oosLiveAlert
+                && lockscreenHiddenReason != null) {
             logFilteredNotification(sbn, lockscreenHiddenReason
                     + " decision=" + lockscreenDecision
                     + " ranking=" + ranking, trace);
             return false;
         }
-        logKeptNotification(sbn, ranking, trace);
+        logKeptNotification(sbn, ranking, trace,
+                oosLiveAlert ? "oos-live-alert" : "lockscreen-visible");
         return true;
     }
 
@@ -129,6 +134,146 @@ final class AodNotificationPipeline {
             return "lockscreen-policy-ranking-importance-low-or-less importance=" + importance;
         }
         return null;
+    }
+
+    static boolean isOosLiveAlertCarrier(StatusBarNotification sbn) {
+        if (sbn == null || sbn.getNotification() == null
+                || sbn.getNotification().getSmallIcon() == null) {
+            return false;
+        }
+        try {
+            Bundle extras = sbn.getNotification().extras;
+            if (extras == null || extras.isEmpty()) {
+                return false;
+            }
+            for (String key : extras.keySet()) {
+                String normalized = normalizeOosExtraKey(key);
+                if (normalized.contains("opfluid")
+                        || normalized.contains("oplusfluid")
+                        || normalized.contains("fluidservice")
+                        || normalized.contains("livealert")
+                        || normalized.contains("seedling")
+                        || normalized.contains("capsule")) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    static boolean isOosLiveAlertNotification(StatusBarNotification sbn) {
+        return isOosLiveAlertCarrier(sbn) || isOosFlashlightLiveAlert(sbn);
+    }
+
+    static boolean isOosFlashlightLiveAlert(StatusBarNotification sbn) {
+        if (sbn == null || sbn.getNotification() == null
+                || !"com.android.systemui".equals(sbn.getPackageName())) {
+            return false;
+        }
+        if (sbn.getId() == 10011) {
+            return true;
+        }
+        Notification notification = sbn.getNotification();
+        String group = notification.getGroup();
+        if (group != null) {
+            String normalizedGroup = group.toLowerCase(Locale.US);
+            if (normalizedGroup.contains("torch") || normalizedGroup.contains("flashlight")) {
+                return true;
+            }
+        }
+        String joined = systemNotificationText(sbn);
+        if (joined.contains("torch") || joined.contains("flashlight")) {
+            return true;
+        }
+        return extrasContain(sbn, "torch") || extrasContain(sbn, "flashlight");
+    }
+
+    static boolean isOosDeskClockLiveAlert(StatusBarNotification sbn) {
+        return sbn != null
+                && "com.oneplus.deskclock".equals(sbn.getPackageName())
+                && isOosLiveAlertCarrier(sbn);
+    }
+
+    static String notificationIconDedupeKey(StatusBarNotification sbn) {
+        if (sbn == null) {
+            return "";
+        }
+        String packageName = sbn.getPackageName();
+        if (isOosLiveAlertNotification(sbn)) {
+            return packageName + "|live-alert|" + liveAlertSubtype(sbn) + "|"
+                    + stableNotificationIdentity(sbn);
+        }
+        if (isSystemUiUsbNotification(sbn)) {
+            return packageName + "|usb";
+        }
+        return packageName != null ? packageName : "";
+    }
+
+    private static String liveAlertSubtype(StatusBarNotification sbn) {
+        if (isOosFlashlightLiveAlert(sbn)) {
+            return "flashlight";
+        }
+        if (isOosDeskClockLiveAlert(sbn)) {
+            return "deskclock";
+        }
+        try {
+            Notification notification = sbn.getNotification();
+            Bundle extras = notification != null ? notification.extras : null;
+            if (extras != null) {
+                for (String key : extras.keySet()) {
+                    String normalizedKey = normalizeOosExtraKey(key);
+                    if (normalizedKey.contains("seedlingevent")) {
+                        Object value = extras.get(key);
+                        if (value != null) {
+                            return normalizeOosExtraKey(String.valueOf(value));
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return "generic";
+    }
+
+    private static String stableNotificationIdentity(StatusBarNotification sbn) {
+        String key = sbn.getKey();
+        if (!TextUtils.isEmpty(key)) {
+            return key;
+        }
+        return sbn.getId() + "|" + String.valueOf(sbn.getTag());
+    }
+
+    private static boolean extrasContain(StatusBarNotification sbn, String needle) {
+        try {
+            Notification notification = sbn != null ? sbn.getNotification() : null;
+            Bundle extras = notification != null ? notification.extras : null;
+            if (extras == null || TextUtils.isEmpty(needle)) {
+                return false;
+            }
+            String normalizedNeedle = needle.toLowerCase(Locale.US);
+            for (String key : extras.keySet()) {
+                Object value = extras.get(key);
+                String normalizedKey = key != null ? key.toLowerCase(Locale.US) : "";
+                String normalizedValue = value != null ? String.valueOf(value).toLowerCase(Locale.US) : "";
+                if (normalizedKey.contains(normalizedNeedle)
+                        || normalizedValue.contains(normalizedNeedle)) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static String normalizeOosExtraKey(String key) {
+        if (key == null) {
+            return "";
+        }
+        return key.toLowerCase(Locale.US)
+                .replace("_", "")
+                .replace("-", "")
+                .replace(".", "");
     }
 
     static boolean isSystemUiUsbNotification(StatusBarNotification sbn) {
@@ -371,11 +516,13 @@ final class AodNotificationPipeline {
                 + " trace=" + trace);
     }
 
-    private static void logKeptNotification(StatusBarNotification sbn, RankingSnapshot ranking, String trace) {
+    private static void logKeptNotification(StatusBarNotification sbn, RankingSnapshot ranking,
+            String trace, String reason) {
         PixelAodLog.log("kept AOD notification pkg=" + sbn.getPackageName()
                 + " key=" + sbn.getKey()
                 + " category=" + sbn.getNotification().category
                 + " visibility=" + sbn.getNotification().visibility
+                + " reason=" + reason
                 + " ranking=" + ranking
                 + " trace=" + trace);
     }

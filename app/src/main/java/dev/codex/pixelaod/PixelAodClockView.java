@@ -2562,6 +2562,31 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    static void forceRefreshNotificationIcons(String source) {
+        Runnable task = () -> {
+            int count = 0;
+            for (PixelAodClockView view : INSTANCES) {
+                if (view != null) {
+                    count++;
+                    view.lastNotificationIconSignature = "";
+                    view.rebuildNotificationIcons("force-" + source);
+                    view.updateAodVisibility("force-" + source);
+                    view.requestAodFrameRefresh("force-" + source);
+                }
+            }
+            PixelAodLog.log("force refreshed Pixel AOD notification icons trace="
+                    + currentAodTraceId()
+                    + " source=" + source
+                    + " count=" + count
+                    + " state={" + describeAodState(appContext) + "}");
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            task.run();
+        } else {
+            mainHandler().post(task);
+        }
+    }
+
     private TextView makeClock(Context context) {
         int weight = aodClockWeight(context);
         TextView textView = new TextView(context);
@@ -3330,7 +3355,7 @@ public final class PixelAodClockView extends FrameLayout {
         int emitted = 0;
         int loadFailures = 0;
         int skippedMedia = 0;
-        HashSet<String> seenPackages = new HashSet<>();
+        HashSet<String> seenIconKeys = new HashSet<>();
         for (StatusBarNotification sbn : notifications) {
             if (sbn == null) {
                 continue;
@@ -3344,10 +3369,12 @@ public final class PixelAodClockView extends FrameLayout {
                         + " state={" + describeAodState(getContext()) + "}");
                 continue;
             }
-            if (!seenPackages.add(sbn.getPackageName())) {
+            String dedupeKey = AodNotificationPipeline.notificationIconDedupeKey(sbn);
+            if (!seenIconKeys.add(dedupeKey)) {
                 PixelAodLog.log("skipped AOD notification icon trace=" + currentAodTraceId()
                         + " source=" + source
-                        + " reason=duplicate-package pkg=" + sbn.getPackageName()
+                        + " reason=duplicate-icon-key pkg=" + sbn.getPackageName()
+                        + " dedupeKey=" + dedupeKey
                         + " key=" + sbn.getKey()
                         + " state={" + describeAodState(getContext()) + "}");
                 continue;
@@ -3600,6 +3627,19 @@ public final class PixelAodClockView extends FrameLayout {
             }
             boolean filledMask = looksLikeFilledNotificationMask(drawable);
             boolean tinyForeground = looksLikeTinyForeground(drawable);
+            if (AodNotificationPipeline.isOosLiveAlertNotification(sbn)) {
+                Drawable liveAlertIcon = loadOosLiveAlertIcon(context, sbn);
+                if (liveAlertIcon != null) {
+                    logNotificationIconChoice(sbn.getPackageName(), "oos-live-alert-glyph");
+                    return liveAlertIcon;
+                }
+                if (filledMask || tinyForeground) {
+                    logNotificationIconChoice(sbn.getPackageName(),
+                            "dropped-blocky-live-alert-smallIcon filled=" + filledMask
+                                    + " tiny=" + tinyForeground);
+                    return null;
+                }
+            }
             if (AodNotificationPipeline.isSystemNotificationCandidate(sbn)) {
                 Drawable glyph = loadSystemNotificationIcon(context, sbn);
                 if (glyph != null) {
@@ -3666,6 +3706,56 @@ public final class PixelAodClockView extends FrameLayout {
             return loadSystemNotificationGlyph(context, sbn);
         }
         return null;
+    }
+
+    private static Drawable loadOosLiveAlertIcon(Context context, StatusBarNotification sbn) {
+        int color = resolveMaterialInfoColor(context);
+        if (AodNotificationPipeline.isOosFlashlightLiveAlert(sbn)) {
+            Drawable nativeIcon = loadTintedPackageDrawable(context, color, "com.android.systemui",
+                    "stat_sys_flashlight",
+                    "ic_qs_flashlight",
+                    "ic_qs_flashlight_enabled",
+                    "ic_flashlight",
+                    "ic_flashlight_on",
+                    "op_ic_flashlight",
+                    "op_ic_qs_flashlight");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+            nativeIcon = loadTintedPackageDrawable(context, color, MODULE_PACKAGE,
+                    "ic_aosp_qs_flashlight");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+            return new SystemNotificationGlyphDrawable(color,
+                    SystemNotificationGlyphDrawable.TYPE_FLASHLIGHT);
+        }
+        if (AodNotificationPipeline.isOosDeskClockLiveAlert(sbn)) {
+            Drawable nativeIcon = loadTintedSystemDrawable(context, color,
+                    "stat_notify_alarm",
+                    "stat_sys_alarm",
+                    "ic_lock_idle_alarm",
+                    "ic_dialog_time");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+            nativeIcon = loadTintedPackageDrawable(context, color, "com.oneplus.deskclock",
+                    "stat_notify_alarm",
+                    "stat_notify_timer",
+                    "ic_stat_timer",
+                    "ic_stat_alarm",
+                    "ic_timer",
+                    "ic_stopwatch",
+                    "ic_alarm",
+                    "ic_clock");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+            return new SystemNotificationGlyphDrawable(color,
+                    SystemNotificationGlyphDrawable.TYPE_TIMER);
+        }
+        return new SystemNotificationGlyphDrawable(color,
+                SystemNotificationGlyphDrawable.TYPE_LIVE_ALERT);
     }
 
     private void noteMediaContentActivity(String packageName, String source) {
@@ -3957,6 +4047,71 @@ public final class PixelAodClockView extends FrameLayout {
         result.setTint(color);
         result.setTintMode(PorterDuff.Mode.SRC_IN);
         return result;
+    }
+
+    private static Drawable loadTintedPackageDrawable(Context context, int color,
+            String resourcePackage, String... names) {
+        Drawable drawable = loadPackageDrawableByName(context, resourcePackage, names);
+        if (drawable == null) {
+            return null;
+        }
+        Drawable result = drawable.mutate();
+        result.setTint(color);
+        result.setTintMode(PorterDuff.Mode.SRC_IN);
+        return result;
+    }
+
+    private static Drawable loadPackageDrawableByName(Context context, String resourcePackage,
+            String... names) {
+        if (context == null || TextUtils.isEmpty(resourcePackage)
+                || names == null || names.length == 0) {
+            return null;
+        }
+        try {
+            Context packageContext = context.createPackageContext(
+                    resourcePackage, Context.CONTEXT_IGNORE_SECURITY);
+            Resources resources = packageContext.getResources();
+            for (String name : names) {
+                if (TextUtils.isEmpty(name)) {
+                    continue;
+                }
+                try {
+                    int resId = resources.getIdentifier(name, "drawable", resourcePackage);
+                    if (resId == 0) {
+                        continue;
+                    }
+                    Drawable drawable = resources.getDrawable(resId, packageContext.getTheme());
+                    if (drawable != null) {
+                        String logKey = resourcePackage + ":" + name;
+                        synchronized (loggedNativeSystemDrawableNames) {
+                            if (loggedNativeSystemDrawableNames.add(logKey)) {
+                                PixelAodLog.log("loaded native package drawable package="
+                                        + resourcePackage + " name=" + name
+                                        + " resId=" + resId);
+                            }
+                        }
+                        return drawable;
+                    }
+                } catch (Throwable t) {
+                    String logKey = "fail:" + resourcePackage + ":" + name;
+                    synchronized (loggedNativeSystemDrawableNames) {
+                        if (loggedNativeSystemDrawableNames.add(logKey)) {
+                            PixelAodLog.log("failed to load native package drawable package="
+                                    + resourcePackage + " name=" + name, t);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            String logKey = "fail:" + resourcePackage;
+            synchronized (loggedNativeSystemDrawableNames) {
+                if (loggedNativeSystemDrawableNames.add(logKey)) {
+                    PixelAodLog.log("failed to load native package drawable package="
+                            + resourcePackage, t);
+                }
+            }
+        }
+        return null;
     }
 
     private static Drawable loadSystemDrawableByName(Context context, String... names) {
@@ -5740,8 +5895,12 @@ public final class PixelAodClockView extends FrameLayout {
     private static final class SystemNotificationGlyphDrawable extends Drawable {
         static final int TYPE_CHECK = 1;
         static final int TYPE_NETWORK = 2;
+        static final int TYPE_FLASHLIGHT = 3;
+        static final int TYPE_TIMER = 4;
+        static final int TYPE_LIVE_ALERT = 5;
 
         private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final int type;
         private int alpha = 255;
 
@@ -5751,6 +5910,8 @@ public final class PixelAodClockView extends FrameLayout {
             stroke.setStyle(Paint.Style.STROKE);
             stroke.setStrokeCap(Paint.Cap.ROUND);
             stroke.setStrokeJoin(Paint.Join.ROUND);
+            fill.setColor(color);
+            fill.setStyle(Paint.Style.FILL);
         }
 
         @Override
@@ -5764,9 +5925,16 @@ public final class PixelAodClockView extends FrameLayout {
             canvas.translate(bounds.left + (bounds.width() - size) / 2f,
                     bounds.top + (bounds.height() - size) / 2f);
             stroke.setAlpha(alpha);
+            fill.setAlpha(alpha);
             stroke.setStrokeWidth(Math.max(2.2f, size * 0.085f));
             if (type == TYPE_NETWORK) {
                 drawNetwork(canvas, size);
+            } else if (type == TYPE_FLASHLIGHT) {
+                drawFlashlight(canvas, size);
+            } else if (type == TYPE_TIMER) {
+                drawTimer(canvas, size);
+            } else if (type == TYPE_LIVE_ALERT) {
+                drawLiveAlert(canvas, size);
             } else {
                 drawCheck(canvas, size);
             }
@@ -5792,6 +5960,36 @@ public final class PixelAodClockView extends FrameLayout {
             canvas.drawPoint(size * 0.50f, size * 0.78f, stroke);
         }
 
+        private void drawFlashlight(Canvas canvas, float size) {
+            int save = canvas.save();
+            canvas.rotate(-22f, size * 0.50f, size * 0.52f);
+            RectF head = new RectF(size * 0.35f, size * 0.14f, size * 0.65f, size * 0.30f);
+            RectF body = new RectF(size * 0.40f, size * 0.30f, size * 0.60f, size * 0.78f);
+            canvas.drawRoundRect(head, size * 0.04f, size * 0.04f, stroke);
+            canvas.drawRoundRect(body, size * 0.08f, size * 0.08f, stroke);
+            canvas.drawCircle(size * 0.50f, size * 0.66f, size * 0.035f, fill);
+            canvas.restoreToCount(save);
+
+            canvas.drawLine(size * 0.66f, size * 0.16f, size * 0.82f, size * 0.06f, stroke);
+            canvas.drawLine(size * 0.72f, size * 0.32f, size * 0.90f, size * 0.34f, stroke);
+        }
+
+        private void drawTimer(Canvas canvas, float size) {
+            canvas.drawCircle(size * 0.50f, size * 0.58f, size * 0.30f, stroke);
+            canvas.drawLine(size * 0.42f, size * 0.18f, size * 0.58f, size * 0.18f, stroke);
+            canvas.drawLine(size * 0.50f, size * 0.18f, size * 0.50f, size * 0.27f, stroke);
+            canvas.drawLine(size * 0.70f, size * 0.30f, size * 0.78f, size * 0.23f, stroke);
+            canvas.drawLine(size * 0.50f, size * 0.58f, size * 0.50f, size * 0.42f, stroke);
+            canvas.drawLine(size * 0.50f, size * 0.58f, size * 0.63f, size * 0.66f, stroke);
+        }
+
+        private void drawLiveAlert(Canvas canvas, float size) {
+            RectF capsule = new RectF(size * 0.22f, size * 0.32f, size * 0.78f, size * 0.68f);
+            canvas.drawRoundRect(capsule, size * 0.18f, size * 0.18f, stroke);
+            canvas.drawCircle(size * 0.40f, size * 0.50f, size * 0.045f, fill);
+            canvas.drawCircle(size * 0.60f, size * 0.50f, size * 0.045f, fill);
+        }
+
         @Override
         public void setAlpha(int alpha) {
             this.alpha = alpha;
@@ -5801,6 +5999,7 @@ public final class PixelAodClockView extends FrameLayout {
         @Override
         public void setColorFilter(ColorFilter colorFilter) {
             stroke.setColorFilter(colorFilter);
+            fill.setColorFilter(colorFilter);
             invalidateSelf();
         }
 

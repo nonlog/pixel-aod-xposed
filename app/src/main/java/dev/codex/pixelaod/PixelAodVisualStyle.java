@@ -27,7 +27,7 @@ final class PixelAodVisualStyle {
     static final float MEDIA_ALPHA = 0.82f;
 
     static final int LARGE_CLOCK_TEXT_DP = 150;
-    static final int LARGE_CLOCK_TOP_DP = 144;
+    static final int LARGE_CLOCK_TOP_DP = 184;
     static final int SMALL_CLOCK_TEXT_DP = 56;
     static final int SMALL_CLOCK_TOP_DP = 74;
     static final int EDGE_DP = 34;

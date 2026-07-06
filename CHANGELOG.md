@@ -4,6 +4,32 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.174] - 2026-07-06
+### Changed
+- Move the two-line large AOD clock down from `144dp` to `184dp` so it sits closer to the visual center between the date row and the fingerprint / bottom status area.
+
+## [0.1.173] - 2026-07-06
+### Fixed
+- Treat SystemUI Torch / Flash Light `id=10011` as an OOS Live Alert even when the carrier extras are missing, keeping it on the Live Alert glyph and dedupe path instead of the generic SystemUI notification path.
+- Request a guarded native OOS AOD frame kick after delayed Torch / Live Alert notification refreshes, so DOZE/DOZE_SUSPEND can repaint the icon row without waiting for the next tap, minute tick, or other native AOD event.
+
+## [0.1.172] - 2026-07-06
+### Fixed
+- Refresh AOD notification icons from Android torch state changes, OOS flashlight action broadcasts, OOS black-screen gesture callbacks, and Torch notification cache changes, so the Flash Light Live Alert icon can show or disappear without waiting for a tap, minute tick, or other AOD refresh event.
+
+## [0.1.171] - 2026-07-06
+### Fixed
+- Use the AOSP flashlight quick-settings vector as the fallback AOD icon for OOS Flash Light / Torch Live Alerts, replacing the rough hand-drawn fallback while keeping native SystemUI resources preferred when available.
+
+## [0.1.170] - 2026-07-06
+### Fixed
+- Let OOS Live Alerts use distinct AOD notification icon dedupe keys, so SystemUI Flash Light / Torch and USB notifications do not suppress each other just because both come from `com.android.systemui`.
+- Render OOS Timer and Flash Light Live Alert carriers with stable monochrome AOD glyph fallbacks instead of tinting filled notification masks into circular white blocks.
+
+## [0.1.169] - 2026-07-06
+### Fixed
+- Allow OOS Live Alerts / Fluid Cloud carrier notifications, such as Timer, to contribute their notification `smallIcon` to the module AOD icon row even when their ranking importance is LOW, without relaxing the normal silent-notification filtering policy.
+
 ## [0.1.168] - 2026-07-06
 ### Fixed
 - Keep third-party AOD notification icons on the notification `smallIcon` or app monochrome path; filled-mask detection no longer falls back to the colorful launcher icon when a usable `smallIcon` exists.
