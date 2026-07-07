@@ -3782,14 +3782,18 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         clearInactiveMediaTimeout(key);
-        long startedAt = SystemClock.elapsedRealtime();
+        Long existing = inactiveMediaStartedAt.get(key);
+        long startedAt = existing != null && existing > 0L
+                ? existing
+                : SystemClock.elapsedRealtime();
         Long previous = inactiveMediaStartedAt.put(key, startedAt);
         PixelAodLog.log("AOD media content activity pkg=" + controller.getPackageName()
                 + " key=" + key
                 + " source=" + source
                 + " state=" + playbackStateName(state)
                 + " previousInactiveAt=" + previous
-                + " restartedAt=" + startedAt
+                + " startedAt=" + startedAt
+                + " preserved=" + (existing != null && existing > 0L)
                 + " trace=" + currentAodTraceId());
         scheduleInactiveMediaTimeoutCheck(controller, key);
     }
@@ -3818,9 +3822,10 @@ public final class PixelAodClockView extends FrameLayout {
         if (TextUtils.isEmpty(key)) {
             return;
         }
-        long startedAt = inactiveMediaStartFromState(state);
+        Long existing = inactiveMediaStartedAt.get(key);
+        long stateStartedAt = inactiveMediaStartFromState(state);
+        long startedAt = existing != null && existing > 0L ? existing : stateStartedAt;
         if (startedAt <= 0L) {
-            Long existing = inactiveMediaStartedAt.get(key);
             startedAt = existing != null ? existing : SystemClock.elapsedRealtime();
         }
         Long previous = inactiveMediaStartedAt.put(key, startedAt);
@@ -3829,8 +3834,10 @@ public final class PixelAodClockView extends FrameLayout {
                 + " key=" + key
                 + " reason=" + reason
                 + " state=" + playbackStateName(state)
+                + " stateStartedAt=" + stateStartedAt
                 + " startedAt=" + startedAt
                 + " previous=" + previous
+                + " preserved=" + (existing != null && existing > 0L)
                 + " ageMs=" + age
                 + " trace=" + currentAodTraceId());
         scheduleInactiveMediaTimeoutCheck(controller, key);

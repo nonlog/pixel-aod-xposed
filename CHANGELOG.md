@@ -4,6 +4,10 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.175] - 2026-07-07
+### Fixed
+- Keep the AOD media idle timeout anchored to the first paused / idle state in the current non-playing cycle, so later player state updates such as `PAUSED` -> `NONE` do not restart the 10-minute grace window.
+
 ## [0.1.174] - 2026-07-06
 ### Changed
 - Move the two-line large AOD clock down from `144dp` to `184dp` so it sits closer to the visual center between the date row and the fingerprint / bottom status area.
