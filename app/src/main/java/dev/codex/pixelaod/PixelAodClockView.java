@@ -3602,6 +3602,16 @@ public final class PixelAodClockView extends FrameLayout {
         return drawable != null ? drawable : packageManager.getApplicationIcon(packageName);
     }
 
+    private static Drawable loadApplicationColorIcon(Context context, String packageName) {
+        try {
+            Drawable drawable = loadApplicationIcon(context.getPackageManager(), packageName);
+            return drawable != null ? drawable.mutate() : null;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to load AOD notification app color icon pkg=" + packageName, t);
+            return null;
+        }
+    }
+
     static Drawable loadSmallIconDrawable(Context context, StatusBarNotification sbn) {
         try {
             Notification notification = sbn.getNotification();
@@ -3664,6 +3674,16 @@ public final class PixelAodClockView extends FrameLayout {
                     logNotificationIconChoice(sbn.getPackageName(), "app-monochrome-fallback");
                     return monochrome;
                 }
+                if (isOplusPushBitmapSmallIcon(sbn, icon)) {
+                    Drawable appIcon = loadApplicationColorIcon(context, sbn.getPackageName());
+                    if (appIcon != null) {
+                        logNotificationIconChoice(sbn.getPackageName(),
+                                "oplus-push-bitmap-app-color-fallback filled=" + filledMask
+                                        + " tiny=" + tinyForeground
+                                        + " iconType=" + icon.getType());
+                        return appIcon;
+                    }
+                }
                 Drawable tinted = drawable.mutate();
                 tinted.setTint(resolveMaterialInfoColor(context));
                 tinted.setTintMode(PorterDuff.Mode.SRC_IN);
@@ -3681,6 +3701,41 @@ public final class PixelAodClockView extends FrameLayout {
             PixelAodLog.log("failed to load native notification smallIcon", t);
             return null;
         }
+    }
+
+    private static boolean isOplusPushBitmapSmallIcon(StatusBarNotification sbn, Icon icon) {
+        if (sbn == null || icon == null || !isBitmapIcon(icon)) {
+            return false;
+        }
+        Notification notification = sbn.getNotification();
+        if (notification == null) {
+            return false;
+        }
+        Bundle extras = notification.extras;
+        if (extras != null) {
+            if (extras.getBoolean("EXTRA_IS_MCS", false)) {
+                return true;
+            }
+            if (extras.containsKey("oplus_smallicon_use_app_icon")) {
+                return true;
+            }
+            String appPackage = extras.getString("appPackage");
+            if (TextUtils.equals(appPackage, sbn.getPackageName())) {
+                return true;
+            }
+        }
+        String channelId = notification.getChannelId();
+        return TextUtils.equals("Heytap PUSH", channelId)
+                || TextUtils.equals("Notify PUSH", channelId)
+                || TextUtils.equals("Silent PUSH", channelId);
+    }
+
+    private static boolean isBitmapIcon(Icon icon) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return false;
+        }
+        int type = icon.getType();
+        return type == Icon.TYPE_BITMAP || type == Icon.TYPE_ADAPTIVE_BITMAP;
     }
 
     private static Drawable loadSystemNotificationIcon(Context context, StatusBarNotification sbn) {
