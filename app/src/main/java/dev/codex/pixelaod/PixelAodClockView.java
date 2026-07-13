@@ -154,6 +154,8 @@ public final class PixelAodClockView extends FrameLayout {
     private static final boolean ENABLE_AOD_SHADE_TREE_GUARD = false;
     private static final long AOD_ENTRY_GRACE_MILLIS = 1800L;
     private static final long AOD_ENTRY_DELAY_MILLIS = 650L;
+    private static final long NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS =
+            AOD_ENTRY_DELAY_MILLIS + 160L;
     private static final long BURN_IN_SETTLE_MILLIS = 8000L;
     private static final long AOD_FORCE_DOZE_RECENT_OVERLAY_MILLIS = 15_000L;
     private static final long TRIGGER_BRIEF_AOD_DURATION_MS = 10_000L;
@@ -218,6 +220,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static long lastAodOverlayVisibleAt;
     private static long lastScreenOffAt;
     private static long lastAodActivatedAt;
+    private static long nonLockscreenAodRevealBlockedUntilAt;
     private static long lastCachedWeatherRequestAt;
     private static String lastNotificationSnapshotSignature = "";
     private static String lastRankingSignature = "";
@@ -358,10 +361,19 @@ public final class PixelAodClockView extends FrameLayout {
                 hideAllAodOverlays("screen-on");
                 PixelAodHook.suppressSystemAodDuringLockscreenTransition("screen-on");
             } else if (intent != null && Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
-                noteScreenOff("screen-off");
+                boolean fromLockscreen =
+                        PixelLockscreenClockView.wasRecentlyInteractiveLockscreenVisibleForAodEntry();
+                noteScreenOff("screen-off", fromLockscreen);
                 scheduleAodVisibilityUpdate("screen-off", 160L);
+                if (!fromLockscreen) {
+                    scheduleAodVisibilityUpdate("screen-off-non-lockscreen-reveal",
+                            NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS + 40L);
+                }
             }
             updateAodVisibility("screen-state");
+            if (intent != null && Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                PixelAodHook.reassertStockAodSuppressionAfterScreenOff("screen-off");
+            }
         }
     };
     private final BroadcastReceiver timeChangedReceiver = new BroadcastReceiver() {
@@ -734,6 +746,11 @@ public final class PixelAodClockView extends FrameLayout {
         boolean continuousAodPolicyAllows = !requestedActive
                 || isContinuousAodPolicyAllowingDisplay(appContext, source + "#set-active");
         boolean changed;
+        boolean delayedNonLockscreenReveal = false;
+        long revealBlockedUntil = 0L;
+        long now = android.os.SystemClock.uptimeMillis();
+        boolean fromInteractiveLockscreen =
+                PixelLockscreenClockView.wasRecentlyInteractiveLockscreenVisibleForAodEntry();
         synchronized (PixelAodClockView.class) {
             if (requestedActive && !continuousAodPolicyAllows) {
                 active = false;
@@ -743,10 +760,23 @@ public final class PixelAodClockView extends FrameLayout {
             aodActive = active;
             if (active) {
                 if (changed) {
-                    lastAodActivatedAt = android.os.SystemClock.uptimeMillis();
+                    lastAodActivatedAt = now;
+                    if (!fromInteractiveLockscreen) {
+                        if (lastScreenOffAt <= 0L
+                                || !isAllowedAodEntryAge(now, lastScreenOffAt)) {
+                            lastScreenOffAt = now;
+                        }
+                        revealBlockedUntil = now + NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS;
+                        nonLockscreenAodRevealBlockedUntilAt = revealBlockedUntil;
+                        lastAodOverlayVisibleAt = 0L;
+                        delayedNonLockscreenReveal = true;
+                    } else {
+                        nonLockscreenAodRevealBlockedUntilAt = 0L;
+                    }
                 }
             } else {
                 lastAodActivatedAt = 0L;
+                nonLockscreenAodRevealBlockedUntilAt = 0L;
                 if (!requestedActive) {
                     clearBriefAodTriggerLocked();
                 }
@@ -756,7 +786,18 @@ public final class PixelAodClockView extends FrameLayout {
             startAodTrace(source);
         }
         if (active) {
-            markRecentAodOverlayVisible(source + "#active");
+            if (delayedNonLockscreenReveal) {
+                PixelAodLog.log("delayed non-lockscreen Pixel AOD reveal trace="
+                        + currentAodTraceId()
+                        + " source=" + source
+                        + " revealDelayMs=" + Math.max(0L, revealBlockedUntil - now)
+                        + " recentLockscreen={"
+                        + PixelLockscreenClockView.describeRecentInteractiveLockscreenForAodEntry()
+                        + "}"
+                        + " state={" + describeAodState(appContext) + "}");
+            } else {
+                markRecentAodOverlayVisible(source + "#active");
+            }
             if (changed) {
                 boolean pocketModeEnabled = PixelAodSettings.getBoolean(appContext, PixelAodSettings.KEY_POCKET_MODE, true);
                 if (pocketModeEnabled) {
@@ -772,13 +813,16 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         final boolean finalActive = active;
+        final boolean finalDelayedNonLockscreenReveal = delayedNonLockscreenReveal;
         mainHandler().post(() -> {
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
                     view.updateAodVisibility(source);
                     if (finalActive) {
                         view.refreshActiveMediaControllers();
-                        view.requestAodFrameRefresh(source + "#active");
+                        if (!finalDelayedNonLockscreenReveal) {
+                            view.requestAodFrameRefresh(source + "#active");
+                        }
                     }
                 }
             }
@@ -786,10 +830,20 @@ public final class PixelAodClockView extends FrameLayout {
                 PixelAodHook.refreshKnownAodHostVisibility(source + "#active");
             }
         });
+        if (delayedNonLockscreenReveal) {
+            long delayMs = Math.max(0L,
+                    revealBlockedUntil - android.os.SystemClock.uptimeMillis()) + 40L;
+            scheduleAodVisibilityUpdateForAll(source + "#non-lockscreen-reveal", delayMs);
+        }
         PixelAodLog.log("Pixel AOD active=" + active + " changed=" + changed
                 + " source=" + source
                 + " requestedActive=" + requestedActive
                 + " continuousAodPolicyAllows=" + continuousAodPolicyAllows
+                + " delayedNonLockscreenReveal=" + delayedNonLockscreenReveal
+                + " fromInteractiveLockscreen=" + fromInteractiveLockscreen
+                + " recentLockscreen={"
+                + PixelLockscreenClockView.describeRecentInteractiveLockscreenForAodEntry()
+                + "}"
                 + " trace=" + currentAodTraceId()
                 + " state={" + describeAodState(appContext) + "}");
         logAodPhaseIfChanged(appContext, source + "#setAodActive");
@@ -1145,6 +1199,7 @@ public final class PixelAodClockView extends FrameLayout {
             aodActive = false;
             lastScreenOffAt = 0L;
             lastAodActivatedAt = 0L;
+            nonLockscreenAodRevealBlockedUntilAt = 0L;
             clearBriefAodTriggerLocked();
         }
         startAodTrace(source);
@@ -1173,27 +1228,62 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static void noteScreenOff(String source) {
+        noteScreenOff(source,
+                PixelLockscreenClockView.wasRecentlyInteractiveLockscreenVisibleForAodEntry());
+    }
+
+    static void noteScreenOff(String source, boolean fromLockscreenSurface) {
+        long now = android.os.SystemClock.uptimeMillis();
+        long revealBlockedUntil = fromLockscreenSurface
+                ? 0L
+                : now + NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS;
         synchronized (PixelAodClockView.class) {
-            lastScreenOffAt = android.os.SystemClock.uptimeMillis();
+            lastScreenOffAt = now;
+            nonLockscreenAodRevealBlockedUntilAt = revealBlockedUntil;
+            if (!fromLockscreenSurface) {
+                lastAodOverlayVisibleAt = 0L;
+            }
         }
         startAodTrace(source);
         PixelAodLog.log("noted Pixel AOD screen-off trace=" + currentAodTraceId()
-                + " source=" + source + " state={" + describeAodState(appContext) + "}");
+                + " source=" + source
+                + " fromInteractiveLockscreen=" + fromLockscreenSurface
+                + " revealDelayMs=" + (revealBlockedUntil > now ? revealBlockedUntil - now : 0L)
+                + " recentLockscreen={"
+                + PixelLockscreenClockView.describeRecentInteractiveLockscreenForAodEntry()
+                + "}"
+                + " state={" + describeAodState(appContext) + "}");
         logAodPhaseIfChanged(appContext, source + "#noteScreenOff");
     }
 
     static void noteScreenOffIfUnset(String source) {
         boolean noted = false;
+        boolean fromLockscreenSurface =
+                PixelLockscreenClockView.wasRecentlyInteractiveLockscreenVisibleForAodEntry();
+        long now = android.os.SystemClock.uptimeMillis();
+        long revealBlockedUntil = fromLockscreenSurface
+                ? 0L
+                : now + NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS;
         synchronized (PixelAodClockView.class) {
             if (lastScreenOffAt <= 0L) {
-                lastScreenOffAt = android.os.SystemClock.uptimeMillis();
+                lastScreenOffAt = now;
+                nonLockscreenAodRevealBlockedUntilAt = revealBlockedUntil;
+                if (!fromLockscreenSurface) {
+                    lastAodOverlayVisibleAt = 0L;
+                }
                 noted = true;
             }
         }
         if (noted) {
             startAodTrace(source);
             PixelAodLog.log("seeded Pixel AOD screen-off trace=" + currentAodTraceId()
-                    + " source=" + source + " state={" + describeAodState(appContext) + "}");
+                    + " source=" + source
+                    + " fromInteractiveLockscreen=" + fromLockscreenSurface
+                    + " revealDelayMs=" + (revealBlockedUntil > now ? revealBlockedUntil - now : 0L)
+                    + " recentLockscreen={"
+                    + PixelLockscreenClockView.describeRecentInteractiveLockscreenForAodEntry()
+                    + "}"
+                    + " state={" + describeAodState(appContext) + "}");
             logAodPhaseIfChanged(appContext, source + "#noteScreenOffIfUnset");
         }
     }
@@ -1236,6 +1326,18 @@ public final class PixelAodClockView extends FrameLayout {
 
     static boolean shouldApplyModuleAodNow(Context context, String source) {
         return evaluateAodPolicy(context, source).shouldApplyModuleAod;
+    }
+
+    static boolean isBriefAodDisplayActive(Context context) {
+        if (context == null) {
+            return false;
+        }
+        AodLifecycleState state = currentAodLifecycleState(context);
+        return state != null
+                && !state.interactive
+                && state.triggerBriefActive
+                && isModuleEnabled(context)
+                && isTriggerBriefAllowedByMode(aodDisplayMode(context));
     }
 
     static boolean shouldKeepDozeScreenActive(Context context) {
@@ -1672,6 +1774,7 @@ public final class PixelAodClockView extends FrameLayout {
         int notificationPulseUsableCount;
         int notificationPulseMediaCount;
         long notificationPulseAt;
+        long revealBlockedUntilAt;
         synchronized (PixelAodClockView.class) {
             if (TextUtils.isEmpty(lastAodTraceId)) {
                 startAodTraceLocked("auto");
@@ -1680,6 +1783,7 @@ public final class PixelAodClockView extends FrameLayout {
             screenOffAt = lastScreenOffAt;
             aodActivatedAt = lastAodActivatedAt;
             overlayVisibleAt = lastAodOverlayVisibleAt;
+            revealBlockedUntilAt = nonLockscreenAodRevealBlockedUntilAt;
             traceId = lastAodTraceId;
             traceSource = lastAodTraceSource;
             traceAt = lastAodTraceAt;
@@ -1738,15 +1842,20 @@ public final class PixelAodClockView extends FrameLayout {
                 || isAllowedAodEntryAge(now, aodActivatedAt);
         boolean recentOverlayVisible =
                 isRecentUptime(now, overlayVisibleAt, AOD_FORCE_DOZE_RECENT_OVERLAY_MILLIS);
-        boolean shouldDrawPixelAod = context != null
+        boolean rawShouldDrawPixelAod = context != null
                 && !interactive
                 && (displayAod || entryDelay || triggerBriefActive || (active && graceWindow));
+        boolean revealBlocked = rawShouldDrawPixelAod
+                && revealBlockedUntilAt > 0L
+                && now >= screenOffAt
+                && now < revealBlockedUntilAt;
+        boolean shouldDrawPixelAod = rawShouldDrawPixelAod && !revealBlocked;
         return new AodLifecycleState(now, active, screenOffAt, aodActivatedAt,
-                overlayVisibleAt, traceId, traceSource, traceAt, displayState,
-                previousDisplayState, displayStateChangedAt, displayStateChanged,
-                interactive, displayAod, entryDelay, graceWindow,
-                recentOverlayVisible, shouldDrawPixelAod, triggerType,
-                triggerSource, triggerDetail, triggerAt, triggerBriefActive,
+                overlayVisibleAt, revealBlockedUntilAt, revealBlocked, traceId,
+                traceSource, traceAt, displayState, previousDisplayState,
+                displayStateChangedAt, displayStateChanged, interactive, displayAod,
+                entryDelay, graceWindow, recentOverlayVisible, shouldDrawPixelAod,
+                triggerType, triggerSource, triggerDetail, triggerAt, triggerBriefActive,
                 briefTriggerType, briefTriggerSource, briefTriggerDetail,
                 briefTriggerStartedAt, briefTriggerUntilAt, notificationPulseRule,
                 notificationPulseCategory, notificationPulseSource, notificationPulseTrace,
@@ -1764,6 +1873,8 @@ public final class PixelAodClockView extends FrameLayout {
         final long screenOffAt;
         final long aodActivatedAt;
         final long overlayVisibleAt;
+        final long revealBlockedUntilAt;
+        final boolean revealBlocked;
         final String traceId;
         final String traceSource;
         final long traceAt;
@@ -1803,11 +1914,12 @@ public final class PixelAodClockView extends FrameLayout {
         final long notificationPulseAt;
 
         AodLifecycleState(long now, boolean active, long screenOffAt, long aodActivatedAt,
-                long overlayVisibleAt, String traceId, String traceSource, long traceAt,
-                int displayState, int previousDisplayState, long displayStateChangedAt,
-                boolean displayStateChanged, boolean interactive, boolean displayAod,
-                boolean entryDelay, boolean graceWindow, boolean recentOverlayVisible,
-                boolean shouldDrawPixelAod, String nativeTriggerType,
+                long overlayVisibleAt, long revealBlockedUntilAt, boolean revealBlocked,
+                String traceId, String traceSource, long traceAt, int displayState,
+                int previousDisplayState, long displayStateChangedAt, boolean displayStateChanged,
+                boolean interactive, boolean displayAod, boolean entryDelay,
+                boolean graceWindow, boolean recentOverlayVisible, boolean shouldDrawPixelAod,
+                String nativeTriggerType,
                 String nativeTriggerSource, String nativeTriggerDetail, long nativeTriggerAt,
                 boolean triggerBriefActive, String triggerBriefType,
                 String triggerBriefSource, String triggerBriefDetail,
@@ -1825,6 +1937,8 @@ public final class PixelAodClockView extends FrameLayout {
             this.screenOffAt = screenOffAt;
             this.aodActivatedAt = aodActivatedAt;
             this.overlayVisibleAt = overlayVisibleAt;
+            this.revealBlockedUntilAt = revealBlockedUntilAt;
+            this.revealBlocked = revealBlocked;
             this.traceId = traceId;
             this.traceSource = traceSource;
             this.traceAt = traceAt;
@@ -1880,6 +1994,9 @@ public final class PixelAodClockView extends FrameLayout {
             if (displayAod && shouldDrawPixelAod) {
                 return "aod-visible";
             }
+            if (revealBlocked) {
+                return "entering-aod-reveal-blocked";
+            }
             if (entryDelay) {
                 return "entering-aod";
             }
@@ -1906,6 +2023,8 @@ public final class PixelAodClockView extends FrameLayout {
                     + " aodAgeMs=" + ageSince(now, aodActivatedAt)
                     + " overlayAgeMs=" + ageSince(now, overlayVisibleAt)
                     + " recentOverlayVisible=" + recentOverlayVisible
+                    + " revealBlocked=" + revealBlocked
+                    + " revealRemainingMs=" + Math.max(0L, revealBlockedUntilAt - now)
                     + " trace=" + traceId
                     + " traceSource=" + traceSource
                     + " traceAgeMs=" + ageSince(now, traceAt)
@@ -2742,6 +2861,19 @@ public final class PixelAodClockView extends FrameLayout {
     private void scheduleAodVisibilityUpdate(String source, long delayMillis) {
         mainHandler().postDelayed(() -> updateAodVisibility(source + "+" + delayMillis),
                 delayMillis);
+    }
+
+    private static void scheduleAodVisibilityUpdateForAll(String source, long delayMillis) {
+        mainHandler().postDelayed(() -> {
+            String delayedSource = source + "+" + delayMillis;
+            for (PixelAodClockView view : INSTANCES) {
+                if (view != null) {
+                    view.updateAodVisibility(delayedSource);
+                    view.requestAodFrameRefresh(delayedSource);
+                }
+            }
+            PixelAodHook.refreshKnownAodHostVisibility(delayedSource);
+        }, delayMillis);
     }
 
     private boolean shouldDrawAodOverlay(String source) {

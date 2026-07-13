@@ -339,6 +339,41 @@ final class PixelLockscreenClockView extends FrameLayout {
         }
     }
 
+    static boolean isLockscreenSurfaceVisible() {
+        synchronized (PixelLockscreenClockView.class) {
+            return lockscreenSurfaceVisible;
+        }
+    }
+
+    static boolean wasRecentlyInteractiveLockscreenVisibleForAodEntry() {
+        synchronized (PixelLockscreenClockView.class) {
+            long now = android.os.SystemClock.uptimeMillis();
+            long age = now - recentInteractiveLockscreenVisibleAt;
+            long visibleFor = recentInteractiveLockscreenVisibleAt - interactiveLockscreenVisibleSince;
+            return recentInteractiveLockscreenVisibleAt > 0L
+                    && interactiveLockscreenVisibleSince > 0L
+                    && age >= 0L
+                    && age <= LOCKSCREEN_TO_AOD_ANIMATION_WINDOW_MS
+                    && visibleFor >= MIN_LOCKSCREEN_VISIBLE_FOR_AOD_ANIMATION_MS;
+        }
+    }
+
+    static String describeRecentInteractiveLockscreenForAodEntry() {
+        synchronized (PixelLockscreenClockView.class) {
+            long now = android.os.SystemClock.uptimeMillis();
+            long age = recentInteractiveLockscreenVisibleAt > 0L
+                    ? now - recentInteractiveLockscreenVisibleAt
+                    : -1L;
+            long visibleFor = recentInteractiveLockscreenVisibleAt > 0L
+                    && interactiveLockscreenVisibleSince > 0L
+                    ? recentInteractiveLockscreenVisibleAt - interactiveLockscreenVisibleSince
+                    : -1L;
+            return "surfaceVisible=" + lockscreenSurfaceVisible
+                    + ",interactiveVisibleAgeMs=" + age
+                    + ",interactiveVisibleForMs=" + visibleFor;
+        }
+    }
+
     static void prepareAodToLockscreenTransition(String source) {
         PixelAodClockView.BurnInOffset offset = PixelAodClockView.currentBurnInOffset();
         synchronized (PixelLockscreenClockView.class) {

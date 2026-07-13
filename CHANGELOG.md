@@ -4,6 +4,23 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.180] - 2026-07-13
+### Fixed
+- Hide the OOS AOD battery and notification status views immediately when the real plugin AOD host arrives in Trigger-only mode, instead of waiting for the 1800ms delayed suppression pass.
+
+## [0.1.179] - 2026-07-13
+### Fixed
+- Apply stock AOD suppression immediately while Trigger-only AOD is briefly visible, instead of treating its `aodActive=false` state as permission to show OOS battery and notification icon views.
+
+## [0.1.178] - 2026-07-07
+### Fixed
+- Treat non-lockscreen screen-off entry as a delayed Pixel AOD reveal using the last real interactive lockscreen visibility, not the stale OOS lockscreen host state observed after dreaming has already started.
+- Keep native doze alive and stock AOD suppressed during the delayed reveal gate while preventing the module overlay from marking itself as already visible.
+
+## [0.1.177] - 2026-07-07
+### Changed
+- Delay Pixel AOD overlay reveal for screen-off transitions that start outside the lockscreen surface, keeping stock AOD suppression active while waiting for the unavoidable black frame to pass before drawing the module AOD.
+
 ## [0.1.176] - 2026-07-07
 ### Fixed
 - Restore the colorful app-icon fallback only for OPlus / Heytap push bitmap notification carriers whose small icon renders as a filled mask, so Taobao-style push notifications no longer become white blocks while normal resource small icons such as Bybit stay on the smallIcon / monochrome path.

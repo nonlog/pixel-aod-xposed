@@ -103,6 +103,9 @@ final class PixelAodHook {
     private static final long[] AOD_NATIVE_TIMEOUT_REASSERT_DELAYS_MILLIS = {
             80L, 450L, 1200L
     };
+    private static final long[] SCREEN_OFF_STOCK_SUPPRESSION_REASSERT_DELAYS_MILLIS = {
+            0L, 160L, 620L
+    };
     private static final long NATIVE_AOD_FRAME_KICK_MIN_INTERVAL_MILLIS = 1200L;
     private static final long FOD_ONLY_NATIVE_HIDE_SKIP_WINDOW_MILLIS = 300L;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_REAPPLY = false;
@@ -142,6 +145,7 @@ final class PixelAodHook {
     private static volatile long lastNativeAodFrameKickAt;
     private static volatile long lastFodOnlyNativeTimeoutHideSuppressionMs;
     private static volatile String lastFodOnlyNativeTimeoutHideTrace;
+    private static volatile String lastScreenOffStockSuppressionTrace;
 
     private PixelAodHook() {
     }
@@ -480,10 +484,6 @@ final class PixelAodHook {
     }
 
     private static boolean shouldSuppressStockClockByHook(View view) {
-        if (!PixelAodClockView.isAodActive()) {
-            logStockSuppressionMiss("hook", view, "aod-inactive");
-            return false;
-        }
         if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
                 || hasCustomClockAncestor(view)) {
             return false;
@@ -495,6 +495,11 @@ final class PixelAodHook {
         Context context = view.getContext();
         if (context == null) {
             logStockSuppressionMiss("hook", view, "no-context");
+            return false;
+        }
+        if (!PixelAodClockView.isAodActive()
+                && !PixelAodClockView.isBriefAodDisplayActive(context)) {
+            logStockSuppressionMiss("hook", view, "aod-inactive");
             return false;
         }
         if (isChargingUiView(view)) {
@@ -2665,6 +2670,7 @@ final class PixelAodHook {
             if (screenOff && !moduleAodPolicyAllows) {
                 restoreAdjustedStatusViews();
                 hideStockClockViews(host);
+                adjustPluginStatusViews(context, host);
                 hideStockKeyguardClockViews(highestParentGroup(host));
                 scheduleStockSuppressionReapply(host, source + "#module-aod-policy");
                 PixelAodLog.log("suppressed stock AOD without Pixel overlay source=" + source
@@ -2782,8 +2788,29 @@ final class PixelAodHook {
         });
     }
 
-    static void refreshKnownAodHostVisibility(String source) {
+    static void reassertStockAodSuppressionAfterScreenOff(String source) {
         final String expectedTrace = PixelAodClockView.peekAodTraceId();
+        if (TextUtils.isEmpty(expectedTrace)
+                || TextUtils.equals(expectedTrace, lastScreenOffStockSuppressionTrace)) {
+            return;
+        }
+        lastScreenOffStockSuppressionTrace = expectedTrace;
+        for (long delayMillis : SCREEN_OFF_STOCK_SUPPRESSION_REASSERT_DELAYS_MILLIS) {
+            String passSource = source + "#stock-suppression-reapply-" + delayMillis + "ms";
+            MAIN.postDelayed(() -> refreshKnownAodHostVisibility(passSource, expectedTrace),
+                    delayMillis);
+        }
+        PixelAodLog.log("scheduled screen-off stock AOD suppression reapply source=" + source
+                + " expectedTrace=" + expectedTrace
+                + " delaysMs=" + java.util.Arrays.toString(
+                SCREEN_OFF_STOCK_SUPPRESSION_REASSERT_DELAYS_MILLIS));
+    }
+
+    static void refreshKnownAodHostVisibility(String source) {
+        refreshKnownAodHostVisibility(source, PixelAodClockView.peekAodTraceId());
+    }
+
+    private static void refreshKnownAodHostVisibility(String source, String expectedTrace) {
         MAIN.post(() -> {
             ViewGroup stockHost = lastStockHost.get();
             ViewGroup pixelHost = lastPixelHost.get();
@@ -2812,9 +2839,14 @@ final class PixelAodHook {
             if (host == null || context == null) {
                 return;
             }
-            if (!PixelAodClockView.isAodActive()) {
+            OosAodLifecycleAdapter.AodPolicyDecision decision =
+                    PixelAodClockView.evaluateAodPolicy(context, source + "#known-host");
+            if (!decision.shouldSuppressStockAodViews) {
                 PixelAodLog.log("skipped refreshing known AOD host visibility source=" + source
-                        + " reason=aod-inactive"
+                        + " reason=policy"
+                        + " shouldSuppressStockAodViews="
+                        + decision.shouldSuppressStockAodViews
+                        + " stockReason=" + decision.stockSuppressionReason
                         + " host=" + hostSummary(host)
                         + " trace=" + currentTrace
                         + " state={" + state + "}");
@@ -2825,6 +2857,7 @@ final class PixelAodHook {
             adjustPluginStatusViews(context, host);
             PixelAodLog.log("refreshed known AOD host visibility source=" + source
                     + " host=" + hostSummary(host)
+                    + " stockReason=" + decision.stockSuppressionReason
                     + " trace=" + currentTrace
                     + " state={" + state + "}");
         });

@@ -204,6 +204,7 @@ final class OosAodLifecycleAdapter {
             PixelAodClockView.AodLifecycleState state, ModulePolicy modulePolicy) {
         return state != null
                 && !state.interactive
+                && !state.revealBlocked
                 && state.active
                 && modulePolicy.allowsDisplay
                 && modulePolicy.continuousAllowed;
@@ -212,7 +213,7 @@ final class OosAodLifecycleAdapter {
     static boolean shouldKeepDozeScreenActive(PixelAodClockView.AodLifecycleState state) {
         return state != null
                 && !state.interactive
-                && (state.recentOverlayVisible || shouldDrawPixelAod(state));
+                && (state.revealBlocked || state.recentOverlayVisible || shouldDrawPixelAod(state));
     }
 
     static boolean shouldBridgeLockscreenDuringAodEntry(
