@@ -24,10 +24,6 @@ import android.graphics.drawable.AdaptiveIconDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.hardware.display.DisplayManager;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
-import android.hardware.SensorManager;
 import android.media.MediaDescription;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
@@ -156,6 +152,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static final long AOD_ENTRY_DELAY_MILLIS = 650L;
     private static final long NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS =
             AOD_ENTRY_DELAY_MILLIS + 160L;
+    private static final long PANEL_HANDOFF_PRESENTATION_HOLD_MS = 520L;
     private static final long BURN_IN_SETTLE_MILLIS = 8000L;
     private static final long AOD_FORCE_DOZE_RECENT_OVERLAY_MILLIS = 15_000L;
     private static final long TRIGGER_BRIEF_AOD_DURATION_MS = 10_000L;
@@ -191,6 +188,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static String lastNativeTriggerSource = "none";
     private static String lastNativeTriggerDetail = "";
     private static long lastNativeTriggerAt;
+    private static long lastExplicitWakeTriggerAt;
     private static String briefAodTriggerType = "none";
     private static String briefAodTriggerSource = "none";
     private static String briefAodTriggerDetail = "";
@@ -221,6 +219,9 @@ public final class PixelAodClockView extends FrameLayout {
     private static long lastScreenOffAt;
     private static long lastAodActivatedAt;
     private static long nonLockscreenAodRevealBlockedUntilAt;
+    private static final PanelHandoffGate PANEL_HANDOFF_GATE =
+            new PanelHandoffGate(PANEL_HANDOFF_PRESENTATION_HOLD_MS);
+    private static Runnable panelHandoffCompletionRunnable;
     private static long lastCachedWeatherRequestAt;
     private static String lastNotificationSnapshotSignature = "";
     private static String lastRankingSignature = "";
@@ -235,86 +236,47 @@ public final class PixelAodClockView extends FrameLayout {
             new HashMap<>();
     private static final Map<String, AodNotificationPipeline.LockscreenVisibilityDecision> lockscreenVisibilityDecisions =
             new HashMap<>();
-    private static SensorManager proximitySensorManager;
-    private static Sensor proximitySensor;
-    private static boolean proximityNear;
-    private static boolean proximityListening;
-    private static final SensorEventListener proximityListener = new SensorEventListener() {
-        @Override
-        public void onSensorChanged(SensorEvent event) {
-            if (event.values == null || event.values.length == 0) {
-                return;
-            }
-            float distance = event.values[0];
-            float maxRange = event.sensor.getMaximumRange();
-            boolean near = false;
-            if (distance < maxRange && distance < 5.0f) {
-                near = true;
-            }
-            if (proximityNear != near) {
-                proximityNear = near;
-                String triggerType = near ? "proximity-near" : "proximity-far";
-                noteNativeTrigger(triggerType, "module-proximity-listener",
-                        "distance=" + distance + ",maxRange=" + maxRange);
-                PixelAodLog.i("proximity sensor state changed: near=" + near + " distance=" + distance + " maxRange=" + maxRange);
-                mainHandler().post(() -> {
-                    for (PixelAodClockView view : INSTANCES) {
-                        if (view != null) {
-                            view.updateAodVisibility("proximity");
-                        }
-                    }
-                });
-            }
-        }
+    private static final ProximityAuthorityGate PROXIMITY_AUTHORITY_GATE =
+            new ProximityAuthorityGate();
 
-        @Override
-        public void onAccuracyChanged(Sensor sensor, int accuracy) {
-        }
-    };
-
-    private static void startProximityListening(Context context) {
-        if (context == null) {
+    static void updateProximityFromOos(boolean near, String source, String detail) {
+        String normalizedSource = TextUtils.isEmpty(source) ? "unknown" : source;
+        String normalizedDetail = TextUtils.isEmpty(detail) ? "" : detail;
+        boolean pocketModeEnabled = appContext != null
+                && PixelAodSettings.getBoolean(
+                appContext, PixelAodSettings.KEY_POCKET_MODE, true);
+        boolean changed = pocketModeEnabled
+                ? PROXIMITY_AUTHORITY_GATE.update(
+                ProximityAuthorityGate.Source.OOS_NATIVE, near)
+                : PROXIMITY_AUTHORITY_GATE.reset();
+        noteNativeTrigger(near ? "proximity-near" : "proximity-far",
+                normalizedSource, normalizedDetail);
+        if (!changed) {
             return;
         }
-        if (proximityListening) {
-            return;
+        if (near) {
+            cancelPanelHandoffPresentation("oos-proximity-near", false);
         }
-        try {
-            if (proximitySensorManager == null) {
-                proximitySensorManager = (SensorManager) context.getApplicationContext().getSystemService(Context.SENSOR_SERVICE);
+        PixelAodLog.i("OOS proximity state changed: near=" + near
+                + " appliedNear=" + isProximityNear()
+                + " pocketModeEnabled=" + pocketModeEnabled
+                + " source=" + normalizedSource
+                + " detail={" + normalizedDetail + "}");
+        mainHandler().post(() -> {
+            for (PixelAodClockView view : INSTANCES) {
+                if (view != null) {
+                    view.updateAodVisibility("oos-proximity");
+                }
             }
-            if (proximitySensorManager != null && proximitySensor == null) {
-                proximitySensor = proximitySensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY);
-            }
-            if (proximitySensorManager != null && proximitySensor != null) {
-                proximitySensorManager.registerListener(proximityListener, proximitySensor, SensorManager.SENSOR_DELAY_NORMAL);
-                proximityListening = true;
-                PixelAodLog.i("registered proximity sensor listener");
-            }
-        } catch (Throwable t) {
-            PixelAodLog.e("failed to register proximity sensor listener", t);
-        }
+        });
     }
 
-    private static void stopProximityListening() {
-        if (!proximityListening) {
-            proximityNear = false;
-            return;
-        }
-        try {
-            if (proximitySensorManager != null && proximitySensor != null) {
-                proximitySensorManager.unregisterListener(proximityListener);
-                PixelAodLog.i("unregistered proximity sensor listener");
-            }
-        } catch (Throwable t) {
-            PixelAodLog.e("failed to unregister proximity sensor listener", t);
-        }
-        proximityListening = false;
-        proximityNear = false;
+    private static void clearProximityState() {
+        PROXIMITY_AUTHORITY_GATE.reset();
     }
 
     static boolean isProximityNear() {
-        return proximityNear;
+        return PROXIMITY_AUTHORITY_GATE.isNear();
     }
 
     private static final BroadcastReceiver BREEZY_WEATHER_RECEIVER = new BroadcastReceiver() {
@@ -405,12 +367,6 @@ public final class PixelAodClockView extends FrameLayout {
         Context applicationContext = context.getApplicationContext();
         appContext = applicationContext != null ? applicationContext : context;
         ensureBreezyWeatherReceiver(appContext);
-        if (isAodActive()) {
-            boolean pocketModeEnabled = PixelAodSettings.getBoolean(appContext, PixelAodSettings.KEY_POCKET_MODE, true);
-            if (pocketModeEnabled) {
-                startProximityListening(appContext);
-            }
-        }
         setClipChildren(false);
         setClipToPadding(false);
         setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
@@ -616,7 +572,7 @@ public final class PixelAodClockView extends FrameLayout {
             OosAodLifecycleAdapter.NotificationPulseObservation pulseObservation =
                     OosAodLifecycleAdapter.evaluateNotificationPulseObservation(
                             source, rawCount, usableCount, -1,
-                            pulseModulePolicy, proximityNear);
+                            pulseModulePolicy, isProximityNear());
             if (pulseObservation.isPulseCandidate()) {
                 markNotificationPulseCandidateLocked(pulseObservation, source, trace,
                         packageSummary, rawCount, usableCount, mediaCandidateCount);
@@ -644,7 +600,7 @@ public final class PixelAodClockView extends FrameLayout {
                     trace,
                     state,
                     pulseModulePolicy,
-                    proximityNear);
+                    isProximityNear());
         }
         refreshInstancesFromNotificationSnapshot(source);
         PixelLockscreenClockView.setActiveNotifications(activeNotifications);
@@ -798,15 +754,9 @@ public final class PixelAodClockView extends FrameLayout {
             } else {
                 markRecentAodOverlayVisible(source + "#active");
             }
-            if (changed) {
-                boolean pocketModeEnabled = PixelAodSettings.getBoolean(appContext, PixelAodSettings.KEY_POCKET_MODE, true);
-                if (pocketModeEnabled) {
-                    startProximityListening(appContext);
-                }
-            }
         } else {
             if (changed) {
-                stopProximityListening();
+                clearProximityState();
             }
         }
         if (!changed && active) {
@@ -924,6 +874,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static String startAodTrace(String source) {
+        cancelPanelHandoffPresentation(source + "#trace-replaced");
         synchronized (PixelAodClockView.class) {
             return startAodTraceLocked(source);
         }
@@ -976,6 +927,9 @@ public final class PixelAodClockView extends FrameLayout {
             lastNativeTriggerSource = normalizedSource;
             lastNativeTriggerDetail = normalizedDetail;
             lastNativeTriggerAt = now;
+            if (behavior != null && behavior.startsBriefDisplay) {
+                lastExplicitWakeTriggerAt = now;
+            }
             trace = lastAodTraceId;
         }
         boolean behaviorApplied = applyNativeTriggerBehavior(behavior,
@@ -993,6 +947,22 @@ public final class PixelAodClockView extends FrameLayout {
                 + " state={" + stateDescription + "}");
         OosAodLifecycleAdapter.recordTriggerEvent(normalizedType, normalizedSource,
                 normalizedDetail, behaviorApplied, trace, stateDescription);
+    }
+
+    static long currentAodTraceAgeMillis() {
+        long now = SystemClock.uptimeMillis();
+        synchronized (PixelAodClockView.class) {
+            return lastAodTraceAt > 0L && now >= lastAodTraceAt
+                    ? now - lastAodTraceAt : -1L;
+        }
+    }
+
+    static long recentExplicitWakeTriggerAgeMillis() {
+        long now = SystemClock.uptimeMillis();
+        synchronized (PixelAodClockView.class) {
+            return lastExplicitWakeTriggerAt > 0L && now >= lastExplicitWakeTriggerAt
+                    ? now - lastExplicitWakeTriggerAt : -1L;
+        }
     }
 
     private static boolean applyNativeTriggerBehavior(
@@ -1056,7 +1026,7 @@ public final class PixelAodClockView extends FrameLayout {
                     + " state={" + describeAodState(context) + "}");
             return false;
         }
-        if (proximityNear) {
+        if (isProximityNear()) {
             PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
                     + " source=" + source
                     + " reason=proximity-near"
@@ -1074,9 +1044,6 @@ public final class PixelAodClockView extends FrameLayout {
             briefAodTriggerDetail = detail;
             briefAodTriggerStartedAt = now;
             briefAodTriggerUntilAt = until;
-        }
-        if (PixelAodSettings.getBoolean(context, PixelAodSettings.KEY_POCKET_MODE, true)) {
-            startProximityListening(context);
         }
         PixelAodLog.log("started trigger-only Pixel AOD brief display"
                 + " source=" + source
@@ -1117,7 +1084,7 @@ public final class PixelAodClockView extends FrameLayout {
                 + " state={" + describeAodState(appContext) + "}");
         if (hadBriefTrigger) {
             if (!isAodActive()) {
-                stopProximityListening();
+                clearProximityState();
             }
             refreshAodPolicyConsumers(source + "#trigger-brief-blocked");
         }
@@ -1156,7 +1123,7 @@ public final class PixelAodClockView extends FrameLayout {
                 + " trace=" + currentAodTraceId()
                 + " state={" + describeAodState(appContext) + "}");
         if (!isAodActive()) {
-            stopProximityListening();
+            clearProximityState();
         }
         refreshAodPolicyConsumers(source + "#trigger-brief-expired");
     }
@@ -1195,6 +1162,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static void hideAllAodOverlays(String source) {
+        cancelPanelHandoffPresentation(source + "#aod-exit");
         synchronized (PixelAodClockView.class) {
             aodActive = false;
             lastScreenOffAt = 0L;
@@ -1210,9 +1178,10 @@ public final class PixelAodClockView extends FrameLayout {
                 if (view != null) {
                     if (view.getVisibility() != View.GONE) {
                         view.setVisibility(View.GONE);
-                        view.resetBurnInTranslation();
                         hidden++;
                     }
+                    view.setAlpha(1f);
+                    view.resetBurnInTranslation();
                     view.stop();
                 }
             }
@@ -1478,7 +1447,7 @@ public final class PixelAodClockView extends FrameLayout {
         if (!state.displayAod) {
             return false;
         }
-        if (proximityNear) {
+        if (isProximityNear()) {
             PixelAodLog.log("blocked native short-wake Pixel AOD trigger"
                     + " source=" + source
                     + " reason=proximity-near"
@@ -2800,12 +2769,19 @@ public final class PixelAodClockView extends FrameLayout {
     private void updateAodVisibility(String source) {
         logAodPhaseIfChanged(getContext(), source + "#updateAodVisibility");
         boolean visible = shouldDrawAodOverlay(source);
+        String trace = currentAodTraceId();
+        if (!visible && PANEL_HANDOFF_GATE.shouldBlockPresentation(trace)) {
+            cancelPanelHandoffPresentation(source + "#policy-denied");
+        }
+        boolean panelHandoffBlocked = visible
+                && PANEL_HANDOFF_GATE.shouldBlockPresentation(trace);
         boolean briefDisplay = visible && isBriefAodDisplay(getContext());
         int desiredVisibility = visible ? View.VISIBLE : View.GONE;
         boolean visibilityChanged = getVisibility() != desiredVisibility;
         PixelAodLog.log("AOD overlay visibility decision trace=" + currentAodTraceId()
                 + " source=" + source
                 + " visible=" + visible
+                + " panelHandoffBlocked=" + panelHandoffBlocked
                 + " desiredVisibility=" + desiredVisibility
                 + " currentVisibility=" + getVisibility()
                 + " state={" + describeAodState(getContext()) + "}");
@@ -2835,14 +2811,265 @@ public final class PixelAodClockView extends FrameLayout {
                     + " state={" + describeAodState(getContext()) + "}");
         }
         if (visible) {
+            setAlpha(panelHandoffBlocked ? 0f : 1f);
             if (!visibilityChanged && briefDisplay) {
                 applyStableAodClockWeight(source + "#brief-stable");
             }
-            markRecentAodOverlayVisible(source);
+            if (!panelHandoffBlocked) {
+                markRecentAodOverlayVisible(source);
+            }
             applyBurnInTranslation();
         } else {
+            setAlpha(1f);
             resetBurnInTranslation();
         }
+    }
+
+    static void beginPanelHandoffPresentation(Context context, String source) {
+        Context requestedContext = context != null ? context : appContext;
+        long requestedAt = SystemClock.uptimeMillis();
+        Runnable task = () -> beginPanelHandoffPresentationOnMain(
+                requestedContext, source, requestedAt);
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            task.run();
+        } else {
+            mainHandler().postAtFrontOfQueue(task);
+        }
+    }
+
+    private static void beginPanelHandoffPresentationOnMain(
+            Context context, String source, long requestedAt) {
+        String trace = currentAodTraceId();
+        String normalizedSource = TextUtils.isEmpty(source) ? "unknown" : source;
+        if (context == null) {
+            logPanelHandoffSkip(normalizedSource, trace, "no-context");
+            return;
+        }
+        if (isDeviceInteractive(context)) {
+            logPanelHandoffSkip(normalizedSource, trace, "interactive");
+            return;
+        }
+        if (isProximityNear()) {
+            cancelPanelHandoffPresentation(normalizedSource + "#proximity-near");
+            logPanelHandoffSkip(normalizedSource, trace, "proximity-near");
+            return;
+        }
+        OosAodLifecycleAdapter.AodPolicyDecision decision =
+                evaluateAodPolicy(context, normalizedSource + "#panel-handoff");
+        if (!decision.shouldDrawPixelOverlay) {
+            cancelPanelHandoffPresentation(normalizedSource + "#policy-denied");
+            logPanelHandoffSkip(normalizedSource, trace,
+                    "policy-" + decision.drawReason);
+            return;
+        }
+        boolean alreadyBlocked = PANEL_HANDOFF_GATE.shouldBlockPresentation(trace);
+        boolean hasVisibleOverlay = false;
+        for (PixelAodClockView view : INSTANCES) {
+            if (view != null && view.getVisibility() == View.VISIBLE) {
+                hasVisibleOverlay = true;
+                break;
+            }
+        }
+        if (!alreadyBlocked && !hasVisibleOverlay) {
+            logPanelHandoffSkip(normalizedSource, trace, "no-visible-overlay");
+            return;
+        }
+
+        PanelHandoffGate.OpenResult opened =
+                PANEL_HANDOFF_GATE.openOrExtend(trace, requestedAt);
+        if (!opened.accepted) {
+            logPanelHandoffSkip(normalizedSource, trace, "trace-already-finished");
+            return;
+        }
+        int blockedViews = 0;
+        for (PixelAodClockView view : INSTANCES) {
+            if (view != null && view.getVisibility() == View.VISIBLE) {
+                view.setAlpha(0f);
+                blockedViews++;
+            }
+        }
+        long now = SystemClock.uptimeMillis();
+        long remainingMillis = Math.max(0L, opened.deadlineMillis - now);
+        String action = opened.extended ? "extended"
+                : opened.replaced ? "replaced" : "opened";
+        PixelAodLog.log("PanelHandoffGate " + action
+                + " source=" + normalizedSource
+                + " trace=" + opened.traceId
+                + " generation=" + opened.generation
+                + " openedAt=" + opened.openedAtMillis
+                + " deadline=" + opened.deadlineMillis
+                + " requestedAt=" + requestedAt
+                + " remainingMs=" + remainingMillis
+                + " blockedViews=" + blockedViews
+                + " state={" + describeAodState(context) + "}");
+        PixelAodHook.refreshKnownAodHostVisibility(
+                normalizedSource + "#panel-handoff-stock-suppression");
+        Runnable previousCompletion = panelHandoffCompletionRunnable;
+        if (previousCompletion != null) {
+            mainHandler().removeCallbacks(previousCompletion);
+        }
+        Runnable completion = new Runnable() {
+            @Override
+            public void run() {
+                if (panelHandoffCompletionRunnable != this) {
+                    return;
+                }
+                panelHandoffCompletionRunnable = null;
+                preparePanelHandoffReveal(opened, normalizedSource);
+            }
+        };
+        panelHandoffCompletionRunnable = completion;
+        mainHandler().postDelayed(completion, remainingMillis);
+    }
+
+    private static void preparePanelHandoffReveal(
+            PanelHandoffGate.OpenResult opened, String source) {
+        String currentTrace = currentAodTraceId();
+        if (!TextUtils.equals(opened.traceId, currentTrace)) {
+            boolean cancelled = PANEL_HANDOFF_GATE.cancelIfCurrent(
+                    opened.traceId, opened.generation);
+            if (cancelled) {
+                restorePanelHandoffPresentationAlpha();
+            }
+            PixelAodLog.log("PanelHandoffGate stale-generation skip"
+                    + " source=" + source
+                    + " expectedTrace=" + opened.traceId
+                    + " currentTrace=" + currentTrace
+                    + " generation=" + opened.generation
+                    + " cancelled=" + cancelled
+                    + " state={" + describeAodState(appContext) + "}");
+            return;
+        }
+        if (!PANEL_HANDOFF_GATE.shouldBlockPresentation(currentTrace)) {
+            PixelAodLog.log("PanelHandoffGate stale-generation skip"
+                    + " source=" + source
+                    + " trace=" + currentTrace
+                    + " generation=" + opened.generation
+                    + " reason=inactive"
+                    + " state={" + describeAodState(appContext) + "}");
+            return;
+        }
+
+        PixelAodClockView animationAnchor = null;
+        for (PixelAodClockView view : INSTANCES) {
+            if (view != null
+                    && view.getVisibility() == View.VISIBLE
+                    && view.isAttachedToWindow()) {
+                animationAnchor = view;
+                break;
+            }
+        }
+        if (animationAnchor == null) {
+            boolean cancelled = PANEL_HANDOFF_GATE.cancelIfCurrent(
+                    opened.traceId, opened.generation);
+            if (cancelled) {
+                restorePanelHandoffPresentationAlpha();
+            }
+            PixelAodLog.log("PanelHandoffGate cancelled"
+                    + " source=" + source
+                    + " trace=" + currentTrace
+                    + " generation=" + opened.generation
+                    + " reason=no-animation-anchor"
+                    + " state={" + describeAodState(appContext) + "}");
+            return;
+        }
+
+        int refreshedViews = 0;
+        for (PixelAodClockView view : INSTANCES) {
+            if (view == null || view.getVisibility() != View.VISIBLE) {
+                continue;
+            }
+            view.refreshAodContentBeforeVisible(source + "#panel-handoff");
+            refreshedViews++;
+        }
+        final int finalRefreshedViews = refreshedViews;
+        Runnable reveal = () -> completePanelHandoffReveal(
+                opened, source, finalRefreshedViews);
+        animationAnchor.postOnAnimation(reveal);
+    }
+
+    private static void completePanelHandoffReveal(
+            PanelHandoffGate.OpenResult opened, String source, int refreshedViews) {
+        long now = SystemClock.uptimeMillis();
+        String currentTrace = currentAodTraceId();
+        if (!TextUtils.equals(opened.traceId, currentTrace)
+                || !PANEL_HANDOFF_GATE.completeIfCurrent(
+                        opened.traceId, opened.generation, now)) {
+            PixelAodLog.log("PanelHandoffGate stale-generation skip"
+                    + " source=" + source
+                    + " expectedTrace=" + opened.traceId
+                    + " currentTrace=" + currentTrace
+                    + " generation=" + opened.generation
+                    + " reason=reveal-not-current"
+                    + " state={" + describeAodState(appContext) + "}");
+            return;
+        }
+
+        int revealedViews = 0;
+        for (PixelAodClockView view : INSTANCES) {
+            if (view != null) {
+                view.updateAodVisibility(source + "#panel-handoff-complete");
+                view.requestAodFrameRefresh(source + "#panel-handoff-complete");
+                if (view.getVisibility() == View.VISIBLE && view.getAlpha() > 0f) {
+                    revealedViews++;
+                }
+            }
+        }
+        PixelAodHook.refreshKnownAodHostVisibility(
+                source + "#panel-handoff-complete");
+        PixelAodLog.log("PanelHandoffGate completed"
+                + " source=" + source
+                + " trace=" + opened.traceId
+                + " generation=" + opened.generation
+                + " openToRevealMs=" + Math.max(0L, now - opened.openedAtMillis)
+                + " refreshedViews=" + refreshedViews
+                + " revealedViews=" + revealedViews
+                + " state={" + describeAodState(appContext) + "}");
+    }
+
+    private static void cancelPanelHandoffPresentation(String source) {
+        cancelPanelHandoffPresentation(source, true);
+    }
+
+    private static void cancelPanelHandoffPresentation(String source, boolean restoreAlpha) {
+        if (!PANEL_HANDOFF_GATE.cancel()) {
+            return;
+        }
+        Runnable pendingCompletion = panelHandoffCompletionRunnable;
+        panelHandoffCompletionRunnable = null;
+        if (pendingCompletion != null) {
+            mainHandler().removeCallbacks(pendingCompletion);
+        }
+        if (restoreAlpha) {
+            restorePanelHandoffPresentationAlpha();
+        }
+        PixelAodLog.log("PanelHandoffGate cancelled"
+                + " source=" + source
+                + " trace=" + currentAodTraceId()
+                + " state={" + describeAodState(appContext) + "}");
+    }
+
+    private static void restorePanelHandoffPresentationAlpha() {
+        Runnable task = () -> {
+            for (PixelAodClockView view : INSTANCES) {
+                if (view != null) {
+                    view.setAlpha(1f);
+                }
+            }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            task.run();
+        } else {
+            mainHandler().postAtFrontOfQueue(task);
+        }
+    }
+
+    private static void logPanelHandoffSkip(String source, String trace, String reason) {
+        PixelAodLog.log("PanelHandoffGate skipped"
+                + " source=" + source
+                + " trace=" + trace
+                + " reason=" + reason
+                + " state={" + describeAodState(appContext) + "}");
     }
 
     private void refreshAodContentBeforeVisible(String source) {
@@ -2880,7 +3107,8 @@ public final class PixelAodClockView extends FrameLayout {
         String trace = ensureAodTrace(source);
         boolean expandedShadeBlocked = isInsideExpandedSystemShade();
         OosAodLifecycleAdapter.AodPolicyDecision decision =
-                evaluateAodPolicy(getContext(), source, proximityNear, expandedShadeBlocked);
+                evaluateAodPolicy(getContext(), source,
+                        isProximityNear(), expandedShadeBlocked);
         if (expandedShadeBlocked && !decision.shouldDrawPixelOverlay) {
             PixelAodLog.log("suppressed Pixel AOD overlay in expanded shade trace=" + trace
                     + " source=" + source

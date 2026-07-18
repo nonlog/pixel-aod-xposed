@@ -145,6 +145,7 @@ final class PixelAodHook {
     private static volatile long lastNativeAodFrameKickAt;
     private static volatile long lastFodOnlyNativeTimeoutHideSuppressionMs;
     private static volatile String lastFodOnlyNativeTimeoutHideTrace;
+    private static volatile long lastOosProximityFarAt;
     private static volatile String lastScreenOffStockSuppressionTrace;
 
     private PixelAodHook() {
@@ -1509,9 +1510,22 @@ final class PixelAodHook {
             }
             candidates.append(methodSignature(method));
             final Method targetMethod = method;
+            final Class<?> returnType = method.getReturnType();
             final String source = sourceClass + "#" + methodSignature(method);
             try {
                 targetMethod.setAccessible(true);
+                if (PassiveFodShowGate.isPotentialFodShowMethod(targetMethod.getName())) {
+                    ModernHookBridge.hookBefore(targetMethod, param -> {
+                        Context context = contextFromHookParam(param);
+                        if (!PassiveFodShowGate.isFodShowInvocation(
+                                targetMethod.getName(), param.args)
+                                || !shouldSuppressPassiveFodShow(context, source)) {
+                            return;
+                        }
+                        param.setResult(defaultReturnValue(returnType));
+                        dismissExistingPassiveFod(param.thisObject, source);
+                    });
+                }
                 ModernHookBridge.hookAfter(targetMethod, param -> {
                     Context context = contextFromHookParam(param);
                     rememberFingerprintAodInstance(sourceClass, param.thisObject);
@@ -1531,6 +1545,54 @@ final class PixelAodHook {
                 + " hooked=" + hooked
                 + " methods=" + (candidates.length() > 0 ? candidates : "none"));
         return hooked;
+    }
+
+    private static boolean shouldSuppressPassiveFodShow(Context context, String source) {
+        Context checkContext = context != null ? context : systemUiContext;
+        if (checkContext == null
+                || PixelAodClockView.isDeviceInteractive(checkContext)
+                || !PixelAodClockView.isAodActive()) {
+            return false;
+        }
+        long now = SystemClock.uptimeMillis();
+        long proximityFarAgeMs = lastOosProximityFarAt > 0L
+                && now >= lastOosProximityFarAt
+                ? now - lastOosProximityFarAt : -1L;
+        long traceAgeMs = PixelAodClockView.currentAodTraceAgeMillis();
+        long explicitWakeAgeMs = PixelAodClockView.recentExplicitWakeTriggerAgeMillis();
+        if (!PassiveFodShowGate.shouldSuppress(
+                traceAgeMs, proximityFarAgeMs, explicitWakeAgeMs)) {
+            return false;
+        }
+        PixelAodLog.i("suppressed passive OPlus FOD show"
+                + " source=" + source
+                + " proximityFarAgeMs=" + proximityFarAgeMs
+                + " explicitWakeAgeMs=" + explicitWakeAgeMs
+                + " traceAgeMs=" + traceAgeMs
+                + " trace=" + PixelAodClockView.currentAodTraceId()
+                + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
+        return true;
+    }
+
+    private static void dismissExistingPassiveFod(Object sourceInstance, String source) {
+        Object uiMech = sourceInstance != null
+                && OPLUS_ON_SCREEN_FINGERPRINT_UI_MECH.equals(sourceInstance.getClass().getName())
+                ? sourceInstance : lastOnScreenFingerprintUiMech.get();
+        boolean dismissed = invokeFirstNoArgFodMethod(uiMech, "OnScreenFingerprintUiMech",
+                source, PixelAodClockView.currentAodTraceId(),
+                "notifyHideAodIcon", "hideFingerprintIconTemporarily", "hideFingerprintIcon",
+                "fpIconHide");
+        if (!dismissed) {
+            Object controller = sourceInstance != null
+                    && OPLUS_BIOMETRIC_AUTH_CONTROLLER.equals(sourceInstance.getClass().getName())
+                    ? sourceInstance : lastBiometricAuthController.get();
+            dismissed = invokeFirstNoArgFodMethod(controller, "OplusBiometricAuthController",
+                    source, PixelAodClockView.currentAodTraceId(), "hideUdfpsOverlay");
+        }
+        PixelAodLog.i("dismissed passive OPlus FOD after suppressed show"
+                + " source=" + source
+                + " dismissed=" + dismissed
+                + " trace=" + PixelAodClockView.currentAodTraceId());
     }
 
     private static boolean isFingerprintAodDiagnosticMethod(Method method) {
@@ -1612,8 +1674,18 @@ final class PixelAodHook {
                                 + " result=" + summarizeValue(param.getResult()));
                         return;
                     }
-                    PixelAodClockView.noteNativeTrigger(triggerType, source,
-                            "args=" + args + ",result=" + summarizeValue(param.getResult()));
+                    String detail = "args=" + args
+                            + ",result=" + summarizeValue(param.getResult());
+                    if ("getProxNear".equals(targetMethod.getName())
+                            && param.getResult() instanceof Boolean) {
+                        boolean near = (Boolean) param.getResult();
+                        lastOosProximityFarAt = near
+                                ? 0L : SystemClock.uptimeMillis();
+                        PixelAodClockView.updateProximityFromOos(
+                                near, source, detail);
+                    } else {
+                        PixelAodClockView.noteNativeTrigger(triggerType, source, detail);
+                    }
                     maybeScheduleBlackScreenGestureNotificationRefresh(source, args, triggerType);
                 });
                 hooked = true;
@@ -1692,6 +1764,8 @@ final class PixelAodHook {
                     return;
                 }
                 Context context = contextFromHookParam(param);
+                PixelAodClockView.beginPanelHandoffPresentation(context,
+                        "DreamService#setDozeScreenState(OFF)");
                 if (!shouldRewriteDozeScreenOffToDoze(context,
                         "DreamService#setDozeScreenState(OFF)")) {
                     return;
@@ -3577,6 +3651,8 @@ final class PixelAodHook {
 
             String marker = markerFor(view);
             if (looksLikeSystemAodMediaView(marker)) {
+                stats[0]++;
+                StockAodVisibilityController.hideView(view, marker, false);
                 return false;
             }
 

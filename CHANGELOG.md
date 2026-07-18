@@ -4,6 +4,29 @@
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.
 
+## [0.1.186] - 2026-07-17
+### Fixed
+- Treat an OOS passive proximity-far callback as a short FOD suppression session, covering delayed fingerprint show callbacks rather than only the first 250ms after the sensor query.
+- Cover OOS fingerprint visibility setters in addition to the direct show APIs, and request a FOD hide when a passive show is suppressed so an already-created fingerprint window cannot remain visible.
+
+## [0.1.185] - 2026-07-17
+### Fixed
+- Use OOS's confirmed proximity state instead of a module-owned raw sensor listener, preventing noisy `0.0/5.0` samples from repeatedly hiding AOD and recreating the fingerprint icon while the device is idle.
+- Suppress steady-AOD fingerprint re-show requests caused only by passive proximity-far callbacks, while preserving initial entry and recent tap/pickup-triggered shows.
+
+### Changed
+- Extend the unavoidable OOS panel handoff blank into one guarded 520 ms presentation blackout, then refresh and reveal the module AOD once on the next animation frame without changing brightness or the final Doze power state.
+- Keep the lockscreen-to-AOD weight animation running behind the presentation gate instead of hiding the AOD view and cancelling its animator.
+
+### Diagnostics
+- Add trace- and generation-guarded panel handoff logs and unit tests for duplicate events, cancellation, stale callbacks, and single-reveal behavior.
+
+## [0.1.183] - 2026-07-14
+### Fixed
+- Suppress the OOS stock AOD media subtree while the module AOD is active, instead of preserving the native media card alongside the module media row.
+- Recognize the SystemUI Do Not Disturb notice as an AOD-visible system notification so AOD and lockscreen clock modes remain consistent.
+- Force a fresh lockscreen notification-card scan on the first visible frame before choosing the compact or large clock layout, preventing the clock from jumping after AOD exit.
+
 ## [0.1.180] - 2026-07-13
 ### Fixed
 - Hide the OOS AOD battery and notification status views immediately when the real plugin AOD host arrives in Trigger-only mode, instead of waiting for the 1800ms delayed suppression pass.

@@ -13,8 +13,8 @@ android {
         applicationId "dev.codex.pixelaod"
         minSdk 26
         targetSdk 36
-        versionCode 187
-        versionName "0.1.180"
+        versionCode 193
+        versionName "0.1.186"
     }
 
     buildTypes {
@@ -57,6 +57,7 @@ dependencies {
         exclude group: "io.github.libxposed", module: "api"
     }
     compileOnly(project(":libxposed-stubs"))
+    testImplementation("junit:junit:4.13.2")
 }
 
 

@@ -332,6 +332,9 @@ final class AodNotificationPipeline {
         if (isSystemUiUsbNotification(sbn)) {
             return true;
         }
+        if (isSystemUiDndNotification(sbn)) {
+            return true;
+        }
         String joined = systemNotificationText(sbn);
         return joined.contains("module update")
                 || joined.contains("network status")
@@ -340,6 +343,23 @@ final class AodNotificationPipeline {
                 || joined.contains("usb")
                 || joined.contains("debugging enabled")
                 || joined.contains("charging this device");
+    }
+
+    private static boolean isSystemUiDndNotification(StatusBarNotification sbn) {
+        if (sbn == null || !"com.android.systemui".equals(sbn.getPackageName())) {
+            return false;
+        }
+        Notification notification = sbn.getNotification();
+        if (notification == null) {
+            return false;
+        }
+        String channelId = notification.getChannelId();
+        if ("channel_dnd_notice".equals(channelId)) {
+            return true;
+        }
+        String joined = systemNotificationText(sbn);
+        return sbn.getId() == 10001
+                && (joined.contains("do not disturb") || joined.contains("勿扰"));
     }
 
     static boolean isMediaIconCandidate(StatusBarNotification sbn) {
