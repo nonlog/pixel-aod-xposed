@@ -145,10 +145,60 @@ final class PixelAodHook {
     private static volatile long lastNativeAodFrameKickAt;
     private static volatile long lastFodOnlyNativeTimeoutHideSuppressionMs;
     private static volatile String lastFodOnlyNativeTimeoutHideTrace;
+    private static final OosProximityTransitionGate OOS_PROXIMITY_TRANSITION_GATE =
+            new OosProximityTransitionGate();
     private static volatile long lastOosProximityFarAt;
     private static volatile String lastScreenOffStockSuppressionTrace;
 
     private PixelAodHook() {
+    }
+
+    static void removeLegacyClockOverlays(String source) {
+        if (!ClockPluginHostController.hasValidatedHost()) {
+            return;
+        }
+        removeLegacyClockOverlay(lastStockHost.get(), CUSTOM_TAG, PixelAodClockView.class, source);
+        removeLegacyClockOverlay(lastStockHost.get(), LOCKSCREEN_CUSTOM_TAG,
+                PixelLockscreenClockView.class, source);
+        removeLegacyClockOverlay(lastPixelHost.get(), CUSTOM_TAG, PixelAodClockView.class, source);
+        removeLegacyClockOverlay(lastPixelHost.get(), LOCKSCREEN_CUSTOM_TAG,
+                PixelLockscreenClockView.class, source);
+        removeLegacyClockOverlay(lastShadeHost.get(), CUSTOM_TAG, PixelAodClockView.class, source);
+        removeLegacyClockOverlay(lastShadeHost.get(), LOCKSCREEN_CUSTOM_TAG,
+                PixelLockscreenClockView.class, source);
+    }
+
+    /**
+     * Once a ClockPlugin host has produced a real frame it owns both module clock scenes.  The
+     * legacy NotificationShadeWindowView overlays remain only as a startup fallback.
+     */
+    private static boolean refreshPersistentClockPluginHost(String source) {
+        if (!ClockPluginHostController.hasValidatedHost()) {
+            return false;
+        }
+        removeLegacyClockOverlays(source + "#remove-legacy");
+        return true;
+    }
+
+    private static void removeLegacyClockOverlay(ViewGroup host, String tag,
+            Class<?> expectedType, String source) {
+        if (host == null) {
+            return;
+        }
+        View overlay = host.findViewWithTag(tag);
+        if (overlay == null || !expectedType.isInstance(overlay)
+                || !(overlay.getParent() instanceof ViewGroup)) {
+            return;
+        }
+        ((ViewGroup) overlay.getParent()).removeView(overlay);
+        PixelAodLog.log("removed legacy Pixel clock overlay source=" + source
+                + " tag=" + tag + " host=" + hostSummary(host));
+    }
+
+    private static boolean isPixelClockOverlay(View view) {
+        return view instanceof PixelClockPluginHostView
+                || view instanceof PixelAodClockView
+                || view instanceof PixelLockscreenClockView;
     }
 
     static void install(Context context, ClassLoader classLoader) {
@@ -178,6 +228,7 @@ final class PixelAodHook {
         if (weather) {
             PixelAodClockView.ensureBreezyWeatherReceiver(appContext);
         }
+        ClockPluginHostController.install(appContext, classLoader);
         hookClockLayout(appContext, classLoader);
         hookNativeAodRefreshCallbacks(classLoader);
         hookNotificationView(classLoader);
@@ -401,12 +452,14 @@ final class PixelAodHook {
     }
 
     private static boolean shouldSuppressStockClockDraw(View view) {
-        if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
-                || hasCustomClockAncestor(view)) {
+        if (isPixelClockOverlay(view) || hasCustomClockAncestor(view)) {
             return false;
         }
         String className = view.getClass().getName();
         if (!isStockDrawSuppressionClassCandidate(className)) {
+            return false;
+        }
+        if (containsPersistentClockPluginHost(view)) {
             return false;
         }
         Context context = view.getContext();
@@ -485,12 +538,14 @@ final class PixelAodHook {
     }
 
     private static boolean shouldSuppressStockClockByHook(View view) {
-        if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView
-                || hasCustomClockAncestor(view)) {
+        if (isPixelClockOverlay(view) || hasCustomClockAncestor(view)) {
             return false;
         }
         String className = view.getClass().getName();
         if (!isStockDrawSuppressionClassCandidate(className)) {
+            return false;
+        }
+        if (containsPersistentClockPluginHost(view)) {
             return false;
         }
         Context context = view.getContext();
@@ -582,7 +637,9 @@ final class PixelAodHook {
         ViewParent parent = view.getParent();
         int depth = 0;
         while (parent instanceof View && depth < 8) {
-            if (parent instanceof PixelAodClockView || parent instanceof PixelLockscreenClockView) {
+            if (parent instanceof PixelClockPluginHostView
+                    || parent instanceof PixelAodClockView
+                    || parent instanceof PixelLockscreenClockView) {
                 return true;
             }
             parent = ((View) parent).getParent();
@@ -1679,8 +1736,19 @@ final class PixelAodHook {
                     if ("getProxNear".equals(targetMethod.getName())
                             && param.getResult() instanceof Boolean) {
                         boolean near = (Boolean) param.getResult();
-                        lastOosProximityFarAt = near
-                                ? 0L : SystemClock.uptimeMillis();
+                        OosProximityTransitionGate.Transition transition =
+                                OOS_PROXIMITY_TRANSITION_GATE.update(near);
+                        if (transition == OosProximityTransitionGate.Transition.NEAR) {
+                            lastOosProximityFarAt = 0L;
+                        } else if (transition == OosProximityTransitionGate.Transition.FAR) {
+                            lastOosProximityFarAt = SystemClock.uptimeMillis();
+                        }
+                        if (transition != OosProximityTransitionGate.Transition.NONE) {
+                            PixelAodLog.log("OOS proximity suppression edge"
+                                    + " transition=" + transition
+                                    + " near=" + near
+                                    + " source=" + source);
+                        }
                         PixelAodClockView.updateProximityFromOos(
                                 near, source, detail);
                     } else {
@@ -2682,7 +2750,9 @@ final class PixelAodHook {
                     .append(" parentRoot=").append(markerFor(highestParentGroup(view)));
             if (PixelLockscreenClockView.shouldShowOnLockscreen(view.getContext())) {
                 hideStockKeyguardClockViews(highestParentGroup(view));
-                hideView(view, markerFor(view));
+                if (!containsPersistentClockPluginHost(view)) {
+                    hideView(view, markerFor(view));
+                }
             }
             if (view instanceof ViewGroup) {
                 appendViewTree(builder, view, 0, 4, 0);
@@ -2698,8 +2768,11 @@ final class PixelAodHook {
             ViewGroup pixelHost = findPixelClockInjectionHost(host);
             lastStockHost = new WeakReference<>(host);
             lastPixelHost = new WeakReference<>(pixelHost);
-            injectPixelClock(context, pixelHost);
-            injectPixelLockscreenClock(context, pixelHost);
+            boolean persistentHost = refreshPersistentClockPluginHost(source);
+            if (!persistentHost) {
+                injectPixelClock(context, pixelHost);
+                injectPixelLockscreenClock(context, pixelHost);
+            }
             PixelLockscreenClockView.refreshAll(source);
             boolean screenOff = !PixelAodClockView.isDeviceInteractive(context);
             boolean lockscreenVisible = isLikelyLockscreenSurfaceVisible(context, host, pixelHost);
@@ -2763,12 +2836,16 @@ final class PixelAodHook {
                     scheduleParentDebugDumps(host, source);
                 }
             } else if (lockscreenVisible) {
-                applyLockscreenClockReplacement(context, host, pixelHost, source);
+                if (persistentHost) {
+                    hideStockKeyguardClockViews(highestParentGroup(host));
+                } else {
+                    applyLockscreenClockReplacement(context, host, pixelHost, source);
+                }
             } else {
                 restoreAdjustedStatusViews();
                 restoreHiddenStockViews();
             }
-            if (ENABLE_EXPENSIVE_DEBUG_REAPPLY && PixelAodLog.isDebugEnabled()) {
+            if (!persistentHost && ENABLE_EXPENSIVE_DEBUG_REAPPLY && PixelAodLog.isDebugEnabled()) {
                 scheduleReapply(context, host, pixelHost, source);
             }
             PixelAodLog.log("customized AOD clock host from " + source + " host="
@@ -2811,6 +2888,22 @@ final class PixelAodHook {
             if (lastStockHost.get() == null) {
                 lastStockHost = new WeakReference<>(host);
             }
+            if (refreshPersistentClockPluginHost(source)) {
+                boolean surfaceVisible = isLikelyLockscreenSurfaceVisible(context, host, host);
+                PixelLockscreenClockView.setLockscreenSurfaceVisible(surfaceVisible,
+                        source + "#persistent-host");
+                if (surfaceVisible) {
+                    PixelLockscreenClockView.markInteractiveLockscreenSurface(context,
+                            source + "#persistent-host");
+                    hideStockKeyguardClockViews(highestParentGroup(host));
+                }
+                PixelAodLog.log("prepared persistent ClockPlugin lockscreen host from " + source
+                        + " surfaceVisible=" + surfaceVisible
+                        + " host=" + markerFor(host)
+                        + " trace=" + PixelAodClockView.currentAodTraceId()
+                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                return;
+            }
             disableClippingUpwards(host);
             injectPixelClock(context, host);
             injectPixelLockscreenClock(context, host);
@@ -2829,6 +2922,9 @@ final class PixelAodHook {
     }
 
     static void reapplyLockscreenClockFromKnownHost(String source) {
+        if (refreshPersistentClockPluginHost("known-host-" + source)) {
+            return;
+        }
         if (!ENABLE_EXPENSIVE_DEBUG_REAPPLY) {
             PixelLockscreenClockView.refreshAll("known-host-" + source);
             return;
@@ -2913,6 +3009,8 @@ final class PixelAodHook {
             if (host == null || context == null) {
                 return;
             }
+            boolean persistentHost = refreshPersistentClockPluginHost(
+                    source + "#refresh-known-aod-host");
             OosAodLifecycleAdapter.AodPolicyDecision decision =
                     PixelAodClockView.evaluateAodPolicy(context, source + "#known-host");
             if (!decision.shouldSuppressStockAodViews) {
@@ -2931,6 +3029,7 @@ final class PixelAodHook {
             adjustPluginStatusViews(context, host);
             PixelAodLog.log("refreshed known AOD host visibility source=" + source
                     + " host=" + hostSummary(host)
+                    + " persistentHost=" + persistentHost
                     + " stockReason=" + decision.stockSuppressionReason
                     + " trace=" + currentTrace
                     + " state={" + state + "}");
@@ -2969,6 +3068,9 @@ final class PixelAodHook {
     }
 
     private static void injectPixelClock(Context context, ViewGroup host) {
+        if (refreshPersistentClockPluginHost("inject-aod-clock")) {
+            return;
+        }
         View existing = host.findViewWithTag(CUSTOM_TAG);
         if (existing instanceof PixelAodClockView) {
             existing.bringToFront();
@@ -2993,6 +3095,9 @@ final class PixelAodHook {
     }
 
     private static void injectPixelLockscreenClock(Context context, ViewGroup host) {
+        if (refreshPersistentClockPluginHost("inject-lockscreen-clock")) {
+            return;
+        }
         View existing = host.findViewWithTag(LOCKSCREEN_CUSTOM_TAG);
         if (existing instanceof PixelLockscreenClockView) {
             existing.bringToFront();
@@ -3091,6 +3196,26 @@ final class PixelAodHook {
                         + " pixelHost=" + hostSummary(pixelHost)
                         + " state={" + PixelAodClockView.describeAodState(context) + "}");
                 PixelLockscreenClockView.refreshAll("delayed-reapply");
+                if (refreshPersistentClockPluginHost(source + "#delayed-reapply")) {
+                    if (screenOff) {
+                        if (stockHost != null) {
+                            hideStockClockViews(stockHost);
+                            hideStockKeyguardClockViews(highestParentGroup(stockHost));
+                            adjustPluginStatusViews(context, stockHost);
+                        }
+                    } else if (lockscreenVisible) {
+                        if (stockHost != null) {
+                            hideStockKeyguardClockViews(highestParentGroup(stockHost));
+                        }
+                        if (pixelHost != null) {
+                            hideStockKeyguardClockViews(highestParentGroup(pixelHost));
+                        }
+                    } else {
+                        restoreAdjustedStatusViews();
+                        restoreHiddenStockViews();
+                    }
+                    return;
+                }
                 if (screenOff && !moduleAodPolicyAllows) {
                     restoreAdjustedStatusViews();
                     hideStockClockViews(stockHost);
@@ -3148,6 +3273,21 @@ final class PixelAodHook {
             restoreHiddenStockViews();
             return;
         }
+        if (refreshPersistentClockPluginHost(source + "#lockscreen-replacement")) {
+            if (stockHost != null) {
+                hideStockKeyguardClockViews(highestParentGroup(stockHost));
+            }
+            if (pixelHost != null) {
+                hideStockKeyguardClockViews(highestParentGroup(pixelHost));
+            }
+            PixelAodLog.log("lockscreen replacement delegated to persistent ClockPlugin host from "
+                    + source
+                    + " stockHost=" + hostSummary(stockHost)
+                    + " pixelHost=" + hostSummary(pixelHost)
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            return;
+        }
         boolean hasNotificationCards = false;
         if (stockHost != null) {
             ViewGroup root = highestParentGroup(stockHost);
@@ -3183,8 +3323,11 @@ final class PixelAodHook {
 
     private static void adjustPluginStatusViews(Context context, ViewGroup root) {
         traverse(root, view -> {
-            if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
+            if (isPixelClockOverlay(view)) {
                 return false;
+            }
+            if (containsPersistentClockPluginHost(view)) {
+                return true;
             }
             if (isSystemUiHeaderOrQsView(view)) {
                 return false;
@@ -3231,7 +3374,7 @@ final class PixelAodHook {
     }
 
     private static String findAtAGlanceExtra(View view) {
-        if (view == null || view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
+        if (view == null || isPixelClockOverlay(view)) {
             return null;
         }
         String marker = markerFor(view);
@@ -3642,8 +3785,12 @@ final class PixelAodHook {
     private static void hideStockClockViews(ViewGroup root) {
         final int[] stats = new int[2];
         traverse(root, view -> {
-            if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
+            if (isPixelClockOverlay(view)) {
                 return false;
+            }
+            if (containsPersistentClockPluginHost(view)) {
+                stats[1]++;
+                return true;
             }
             if (isSystemUiHeaderOrQsView(view)) {
                 return false;
@@ -3708,8 +3855,12 @@ final class PixelAodHook {
     private static void hideStockKeyguardClockViews(ViewGroup root) {
         final int[] stats = new int[2];
         traverse(root, view -> {
-            if (view instanceof PixelAodClockView || view instanceof PixelLockscreenClockView) {
+            if (isPixelClockOverlay(view)) {
                 return false;
+            }
+            if (containsPersistentClockPluginHost(view)) {
+                stats[1]++;
+                return true;
             }
             if (isSystemUiHeaderOrQsView(view)) {
                 return false;
@@ -4049,7 +4200,45 @@ final class PixelAodHook {
         return false;
     }
 
+    /**
+     * The persistent ClockPlugin host is a child of OPlus' own ClockViewRoot.  Never hide,
+     * alpha, or short-circuit draw on that root, otherwise the replacement child is hidden too.
+     */
+    private static boolean containsPersistentClockPluginHost(View view) {
+        if (view instanceof PixelClockPluginHostView) {
+            return true;
+        }
+        if (!(view instanceof ViewGroup)) {
+            return false;
+        }
+        return containsPersistentClockPluginHost((ViewGroup) view, 0);
+    }
+
+    private static boolean containsPersistentClockPluginHost(ViewGroup root, int depth) {
+        if (root instanceof PixelClockPluginHostView) {
+            return true;
+        }
+        if (depth >= 12) {
+            return false;
+        }
+        int childCount = Math.min(root.getChildCount(), 120);
+        for (int i = 0; i < childCount; i++) {
+            View child = root.getChildAt(i);
+            if (child instanceof PixelClockPluginHostView) {
+                return true;
+            }
+            if (child instanceof ViewGroup
+                    && containsPersistentClockPluginHost((ViewGroup) child, depth + 1)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void hideView(View view, String marker) {
+        if (containsPersistentClockPluginHost(view)) {
+            return;
+        }
         StockAodVisibilityController.hideView(view, marker, looksLikeSystemAodMediaView(marker));
     }
 

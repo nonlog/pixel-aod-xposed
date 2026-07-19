@@ -18,6 +18,8 @@ import java.util.Map;
 
 final class AodNotificationPipeline {
     static final int NOTIFICATION_FLAG_SILENT = 0x00020000;
+    private static final int NOTIFICATION_FLAG_GROUP_SUMMARY = 0x00000200;
+    private static final int NOTIFICATION_FLAG_AUTOGROUP_SUMMARY = 0x00000400;
     static final String MODULE_PACKAGE = "dev.codex.pixelaod";
     static final String LOCK_SCREEN_SHOW_NOTIFICATIONS = "lock_screen_show_notifications";
     private static final StatusBarNotification[] EMPTY_NOTIFICATIONS = new StatusBarNotification[0];
@@ -56,6 +58,10 @@ final class AodNotificationPipeline {
         boolean testNotification = isTestNotification(sbn);
         if (MODULE_PACKAGE.equals(sbn.getPackageName()) && !testNotification) {
             logFilteredNotification(sbn, "module-package-not-test-notification", trace);
+            return false;
+        }
+        if (isSyntheticAutogroupSummaryFlags(notification.flags)) {
+            logFilteredNotification(sbn, "synthetic-autogroup-summary", trace);
             return false;
         }
         if (Notification.CATEGORY_TRANSPORT.equals(notification.category)
@@ -115,6 +121,24 @@ final class AodNotificationPipeline {
         return sbn != null
                 && MODULE_PACKAGE.equals(sbn.getPackageName())
                 && TestNotificationReceiver.TEST_TAG.equals(sbn.getTag());
+    }
+
+    static boolean isSyntheticAutogroupSummaryFlags(int flags) {
+        return (flags & NOTIFICATION_FLAG_GROUP_SUMMARY) != 0
+                && (flags & NOTIFICATION_FLAG_AUTOGROUP_SUMMARY) != 0;
+    }
+
+    static boolean isLauncherStyleSmallIconResourceName(String resourceName) {
+        if (resourceName == null || resourceName.isEmpty()) {
+            return false;
+        }
+        String normalized = resourceName.toLowerCase(Locale.US);
+        int slash = normalized.lastIndexOf('/');
+        String entryName = slash >= 0 ? normalized.substring(slash + 1) : normalized;
+        return entryName.equals("ic_launcher")
+                || entryName.startsWith("ic_launcher_")
+                || entryName.equals("launcher_icon")
+                || entryName.startsWith("launcher_icon_");
     }
 
     static String lockscreenPolicySilentHiddenReason(boolean lockscreenPolicyEnabled,

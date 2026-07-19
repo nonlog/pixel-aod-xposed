@@ -4,6 +4,7 @@ import android.content.Context;
 import android.os.Handler;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -73,6 +74,34 @@ final class StockAodVisibilityController {
             HIDDEN_STOCK_VIEWS.clear();
         }
         PixelAodLog.log("restored hidden stock AOD views");
+    }
+
+    static int restoreHiddenAncestorChain(View descendant, String source) {
+        int restored = 0;
+        for (View current = descendant; current != null; ) {
+            HiddenState state;
+            synchronized (HIDDEN_STOCK_VIEWS) {
+                state = HIDDEN_STOCK_VIEWS.remove(current);
+            }
+            if (state != null) {
+                try {
+                    current.setVisibility(state.visibility);
+                    current.setAlpha(state.alpha);
+                    restored++;
+                    PixelAodLog.log("restored persistent ClockPlugin ancestor source=" + source
+                            + " view=" + current.getClass().getName()
+                            + " id=" + current.getId()
+                            + " visibility=" + state.visibility
+                            + " alpha=" + state.alpha);
+                } catch (Throwable t) {
+                    PixelAodLog.log("restore persistent ClockPlugin ancestor failed source="
+                            + source + " view=" + current.getClass().getName(), t);
+                }
+            }
+            ViewParent parent = current.getParent();
+            current = parent instanceof View ? (View) parent : null;
+        }
+        return restored;
     }
 
     static void restoreAdjustedStatusViews() {

@@ -1,5 +1,100 @@
 # Changelog
 
+## [0.1.212] - 2026-07-19
+### Fixed
+- Restore only module-hidden ancestors of the persistent OPlus ClockPlugin host before presenting a lockscreen or AOD scene. A cold SystemUI start can no longer leave `CustomOplusKeyguardStyleClock` visible but fully transparent after the module host is attached.
+- Require the complete persistent-host ancestor chain to be attached, visible, and non-transparent before removing the legacy clock overlays. The existing OOS panel blank behavior is unchanged.
+
+### Diagnostics
+- Log restored ClockPlugin ancestors and the exact node that defers persistent-host validation.
+
+## [0.1.211] - 2026-07-19
+### Fixed
+- Start the passive FOD suppression window only on a real OOS proximity `near -> far` transition. Repeated `getProxNear() == false` polls no longer suppress legitimate fingerprint recovery after the proximity sensor is uncovered.
+
+### Diagnostics
+- Log the OOS proximity suppression edge that starts or clears the passive FOD window.
+
+## [0.1.210] - 2026-07-19
+### Fixed
+- Keep each clock glyph on its lockscreen-weight advance during the visible lockscreen-to-AOD weight animation, preventing the digits and colon from shifting as Google Sans Flex changes weight.
+- Mirror the already-filtered AOD notification icons on the persistent lockscreen handoff layer, so they are visible before the existing OOS panel blank and transfer with the AOD layer afterward.
+- Drop Android synthetic autogroup summary carriers before icon deduplication, allowing the real hotspot notification to use its native system glyph.
+- Preserve the original color of a notification-provided launcher resource smallIcon instead of tinting it into a solid shape, including the OPlus Weather notification.
+
+## [0.1.209] - 2026-07-19
+### Fixed
+- Start the visible persistent lockscreen clock's 300-to-AOD weight animation as soon as OPlus reports its early AOD render state, while retaining the lockscreen scene until the module lifecycle is ready.
+- Continue the hidden AOD layer from the visible layer's actual handoff weight and avoid restarting an in-flight transition, so the configured AOD weight is reached before the existing panel blank instead of jumping after it.
+- Restore the lockscreen weight if an early AOD entry is cancelled. The OOS panel blank timing is unchanged.
+
+## [0.1.208] - 2026-07-19
+### Fixed
+- Preserve the committed ClockPlugin scene while OPlus reports an early AOD render state before the module lifecycle is ready, including while the display is still interactive. This prevents the transient state from hiding both persistent clock layers.
+
+## [0.1.207] - 2026-07-19
+### Fixed
+- Keep the lockscreen clock visible through the complete 300-to-AOD-weight animation while the AOD layer transitions invisibly to its final weight.
+- Start the existing layer crossfade only after both clock layers reach the configured AOD weight, preventing an intermediate visible AOD 300-weight frame.
+
+## [0.1.206] - 2026-07-19
+### Fixed
+- Start the AOD child and visible lockscreen child weight animations together with the persistent-host crossfade. The visible clock now transitions continuously from the configured lockscreen weight to the configured AOD weight instead of completing behind a transparent AOD layer.
+- Keep compact-clock letter spacing constant through every font-weight frame, eliminating the weight-dependent spacing drift after the AOD handoff.
+
+### Diagnostics
+- Log the prepare, start, finish, and cancellation states of the persistent lockscreen-to-AOD weight handoff.
+
+## [0.1.205] - 2026-07-19
+### Fixed
+- Prewarm the bundled Google Sans Flex file and both configured clock weights before the OPlus ClockPlugin creates any module clock views.
+- Build both base and weighted clock Typefaces through the same file-backed `Typeface.Builder` path. The module no longer selects OOS `AndroidClock.ttf` as its clock fallback during AOD entry.
+
+## [0.1.204] - 2026-07-19
+### Fixed
+- Keep the prebuilt weighted Google Sans Flex Typeface as the only clock weight source during the lockscreen-to-AOD transition. OOS no longer receives a second TextView font-variation mutation that can briefly replace the file font with a system fallback.
+- Reapply the final AOD weight Typeface after the animator ends, including when its final frame already reached the target weight.
+
+## [0.1.203] - 2026-07-19
+### Fixed
+- Do not alpha-suppress an OPlus ClockPlugin view when it is the persistent module host, contains that host, or is contained by it. This prevents an opaque vendor `getView(int)` slot from blacking out the complete module clock surface.
+
+### Diagnostics
+- Log the class, ID, alpha, and parent of each rejected unsafe ClockPlugin native-visual candidate.
+
+## [0.1.202] - 2026-07-18
+### Fixed
+- Preserve a committed persistent AOD scene through OPlus's `lifecycle-not-ready` gap when the module display policy still allows AOD. This prevents a transient policy callback from collapsing the host to `HIDDEN`.
+- Recreate the lockscreen scene when OPlus reports animated `uiState=1`, even if a previous transient AOD callback hid the persistent host.
+
+## [0.1.201] - 2026-07-18
+### Fixed
+- Read OPlus ClockPlugin's `UiState.isAnim` flag. An animated transient `uiState=1` no longer hides an already-visible persistent lockscreen host; only a settled unlocked state may hide it. The value is included in ClockPlugin host-sync diagnostics for verification.
+
+## [0.1.200] - 2026-07-18
+### Fixed
+- Revert the experimental persistent-host per-frame lockscreen timestamp update from 0.1.199. On this OOS build it could leave both persistent clock layers invisible after the early lockscreen-to-AOD handoff. The previous stable host visibility behavior is restored while retaining the Google Sans preparation fix.
+
+## [0.1.199] - 2026-07-18
+### Fixed
+- Keep the persistent ClockPlugin lockscreen layer's interactive-visible timestamp fresh while it is drawn. Lockscreen screen-off is now classified as a lockscreen-to-AOD handoff instead of a delayed non-lockscreen reveal, so the AOD weight transition begins before the OOS panel blank rather than jumping after it.
+
+## [0.1.198] - 2026-07-18
+### Fixed
+- Keep the persistent ClockPlugin AOD child on its prepared Google Sans weight transition during the lockscreen-layer crossfade. This prevents the transition from being skipped and avoids exposing a stale/default-font AOD frame before the final AOD weight is applied.
+
+## [0.1.197] - 2026-07-18
+### Fixed
+- Do not apply the legacy stock-clock draw, alpha, visibility, or probe suppression to an OPlus `ClockViewRoot` that contains the persistent module host. The previous experimental build could make the host's visible child layers unrenderable by hiding their parent container.
+
+## [0.1.196] - 2026-07-18
+### Changed
+- Move the module clock handoff onto one persistent host attached to OPlus `ClockPlugin#getView(0)`. The host keeps its root attached while internal lockscreen and AOD layers transition, instead of handing off between separate `NotificationShadeWindowView` overlays.
+
+### Fixed
+- Keep the already-rendered lockscreen scene in place when ClockPlugin reports AOD one frame before the module lifecycle policy is ready, preventing an intentional pre-AOD hide from creating a visible first-frame gap.
+- After the persistent host has drawn and validated, block legacy overlay injection, delayed reapply, and panel-handoff visibility mutations from competing with the new host. Native OOS clock suppression remains active.
+
 ## [Unreleased]
 ### Deferred
 - Silent notifications can still briefly flash during the OOS lockscreen-to-AOD transition when the affected silent channel also has lockscreen display permission enabled. This is not fixed yet; current workaround is to disable lockscreen display permission for those silent notification channels. The unfinished experimental row/card suppression code is parked in git stash `wip: defer silent notification flash experiment`.

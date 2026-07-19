@@ -39,7 +39,10 @@ import android.os.SystemClock;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.provider.Settings;
+import android.text.SpannableString;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.ReplacementSpan;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
@@ -137,7 +140,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static final String GOOGLE_SANS_FLEX_VARIABLE_ASSET = "assets/fonts/GoogleSansFlex-Variable.ttf";
     private static final String GOOGLE_SANS_FLEX_VARIABLE_CACHE = "GoogleSansFlex-Variable.ttf";
     private static final String GOOGLE_SANS_FLEX_VARIABLE_CACHE_PREFIX = "GoogleSansFlex-Variable-";
-    private static final String ANDROID_CLOCK_FONT = "/system/fonts/AndroidClock.ttf";
+    private static final int GOOGLE_SANS_FLEX_BASE_WEIGHT = 400;
     private static final String MODULE_PACKAGE = "dev.codex.pixelaod";
     private static final String BREEZY_PACKAGE = "org.breezyweather";
     private static final String THEME_CUSTOMIZATION_OVERLAY_PACKAGES =
@@ -361,6 +364,7 @@ public final class PixelAodClockView extends FrameLayout {
     private boolean screenStateReceiverRegistered;
     private boolean notificationSettingsObserverRegistered;
     private boolean timeReceiverRegistered;
+    private boolean clockPluginManaged;
 
     public PixelAodClockView(Context context) {
         super(context);
@@ -481,6 +485,35 @@ public final class PixelAodClockView extends FrameLayout {
             cachedInfoTypeface = null;
             cachedClockTypefaceByWeight.clear();
         }
+    }
+
+    /**
+     * Resolves the file-backed font before a ClockPlugin view is constructed.  OOS can draw a
+     * newly attached TextView before a later style pass reaches it, so the initial Typeface must
+     * already be the same Google Sans Flex family used by the weighted animation frames.
+     */
+    static void prewarmGoogleSansFlex(Context context) {
+        if (context == null) {
+            return;
+        }
+        File fontFile = googleSansFlexFontFile(context);
+        if (fontFile == null) {
+            PixelAodLog.i("Google Sans Flex prewarm unavailable; no bundled font file resolved");
+            return;
+        }
+        int lockscreenWeight = lockscreenClockWeight(context);
+        int aodWeight = aodClockWeight(context);
+        Typeface baseTypeface = resolveClockTypeface(context);
+        Typeface lockscreenTypeface = resolveClockTypeface(context, lockscreenWeight);
+        Typeface aodTypeface = resolveClockTypeface(context, aodWeight);
+        PixelAodLog.i("prepared Google Sans Flex before clock host creation path="
+                + fontFile.getAbsolutePath()
+                + " bytes=" + fontFile.length()
+                + " base=" + (baseTypeface != null)
+                + " lockscreenWeight=" + lockscreenWeight
+                + " lockscreen=" + (lockscreenTypeface != null)
+                + " aodWeight=" + aodWeight
+                + " aod=" + (aodTypeface != null));
     }
 
     static void ensureBreezyWeatherReceiver(Context context) {
@@ -741,6 +774,9 @@ public final class PixelAodClockView extends FrameLayout {
         if (changed) {
             startAodTrace(source);
         }
+        if (active && changed && fromInteractiveLockscreen) {
+            ClockPluginHostController.noteLockscreenToAodHandoff(source);
+        }
         if (active) {
             if (delayedNonLockscreenReveal) {
                 PixelAodLog.log("delayed non-lockscreen Pixel AOD reveal trace="
@@ -779,6 +815,7 @@ public final class PixelAodClockView extends FrameLayout {
             if (finalActive) {
                 PixelAodHook.refreshKnownAodHostVisibility(source + "#active");
             }
+            ClockPluginHostController.refreshAll(source + "#set-aod-active");
         });
         if (delayedNonLockscreenReveal) {
             long delayMs = Math.max(0L,
@@ -1149,6 +1186,7 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
             PixelAodHook.refreshKnownAodHostVisibility(source);
+            ClockPluginHostController.refreshAll(source + "#policy");
         });
     }
 
@@ -1174,8 +1212,13 @@ public final class PixelAodClockView extends FrameLayout {
         logAodPhaseIfChanged(appContext, source + "#hideAllAodOverlays");
         Runnable task = () -> {
             int hidden = 0;
+            int managed = 0;
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
+                    if (view.isClockPluginManaged()) {
+                        managed++;
+                        continue;
+                    }
                     if (view.getVisibility() != View.GONE) {
                         view.setVisibility(View.GONE);
                         hidden++;
@@ -1187,7 +1230,9 @@ public final class PixelAodClockView extends FrameLayout {
             }
             PixelAodLog.log("hid Pixel AOD overlays trace=" + currentAodTraceId()
                     + " source=" + source + " count=" + hidden
+                    + " managedSkipped=" + managed
                     + " state={" + describeAodState(appContext) + "}");
+            ClockPluginHostController.refreshAll(source + "#hide-legacy-overlays");
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
             task.run();
@@ -2492,12 +2537,18 @@ public final class PixelAodClockView extends FrameLayout {
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         INSTANCES.add(this);
-        registerScreenStateReceiver();
         registerNotificationSettingsObserver();
-        updateAodVisibility("attach");
+        if (!clockPluginManaged) {
+            registerScreenStateReceiver();
+            updateAodVisibility("attach");
+        }
         start();
         startMediaListening();
-        refreshPresentation();
+        if (clockPluginManaged) {
+            refreshClockPluginAodContent("attach");
+        } else {
+            refreshPresentation();
+        }
     }
 
     @Override
@@ -2505,7 +2556,13 @@ public final class PixelAodClockView extends FrameLayout {
         unregisterNotificationSettingsObserver();
         unregisterScreenStateReceiver();
         stopMediaListening();
-        stop();
+        if (clockPluginManaged) {
+            running = false;
+            unregisterTimeReceiver();
+            resetBurnInTranslation();
+        } else {
+            stop();
+        }
         INSTANCES.remove(this);
         super.onDetachedFromWindow();
     }
@@ -2521,21 +2578,138 @@ public final class PixelAodClockView extends FrameLayout {
 
     public void start() {
         if (running) {
-            updateAodVisibility("start-existing");
-            refreshPresentation();
+            if (clockPluginManaged) {
+                refreshClockPluginAodContent("start-existing");
+            } else {
+                updateAodVisibility("start-existing");
+                refreshPresentation();
+            }
             return;
         }
         running = true;
         registerTimeReceiver();
-        updateAodVisibility("start");
-        refreshPresentation();
-        scheduleEntrySecondRefresh();
+        if (clockPluginManaged) {
+            refreshClockPluginAodContent("start");
+        } else {
+            updateAodVisibility("start");
+            refreshPresentation();
+            scheduleEntrySecondRefresh();
+        }
     }
 
     public void stop() {
+        if (clockPluginManaged) {
+            return;
+        }
         running = false;
         unregisterTimeReceiver();
         resetBurnInTranslation();
+    }
+
+    void setClockPluginManaged(boolean managed, String source) {
+        if (clockPluginManaged == managed) {
+            return;
+        }
+        clockPluginManaged = managed;
+        if (managed) {
+            unregisterScreenStateReceiver();
+            if (clockWeightAnimator != null) {
+                clockWeightAnimator.cancel();
+                clockWeightAnimator = null;
+            }
+            setVisibility(View.INVISIBLE);
+            resetBurnInTranslation();
+            if (isAttachedToWindow()) {
+                start();
+                refreshClockPluginAodContent(source + "#managed");
+            }
+        } else if (isAttachedToWindow()) {
+            registerScreenStateReceiver();
+            updateAodVisibility(source + "#legacy");
+        }
+        PixelAodLog.log("configured ClockPlugin AOD layer managed=" + managed
+                + " source=" + source + " trace=" + currentAodTraceId());
+    }
+
+    boolean isClockPluginManaged() {
+        return clockPluginManaged;
+    }
+
+    void presentClockPluginAod(boolean compact, boolean deferLockscreenWeightTransition,
+            int handoffStartWeight, String source) {
+        if (!clockPluginManaged) {
+            return;
+        }
+        if (!running) {
+            start();
+        }
+        applyMaterialColors();
+        applyClockMode(compact);
+        rebuildNotificationIcons(source + "#ClockPlugin");
+        updateMediaLine(source + "#ClockPlugin");
+        if (deferLockscreenWeightTransition) {
+            prepareClockPluginAodWeightForHandoff(handoffStartWeight,
+                    source + "#ClockPlugin");
+        } else {
+            applyStableAodClockWeight(source + "#ClockPlugin");
+        }
+        // Avoid exposing the TextView before its weighted Google Sans Typeface is ready.
+        setVisibility(View.VISIBLE);
+        applyBurnInTranslation();
+        requestAodFrameRefresh(source + "#ClockPlugin");
+    }
+
+    void startClockPluginAodWeightTransition(String source) {
+        startClockPluginAodWeightTransition(source, null);
+    }
+
+    void startClockPluginAodWeightTransition(String source, Runnable onFinished) {
+        if (!clockPluginManaged) {
+            return;
+        }
+        beginLockscreenToAodWeightTransition(source + "#ClockPlugin", onFinished,
+                currentClockWeight);
+    }
+
+    private void prepareClockPluginAodWeightForHandoff(int handoffStartWeight, String source) {
+        if (clockWeightAnimator != null) {
+            clockWeightAnimator.cancel();
+            clockWeightAnimator = null;
+        }
+        int fromWeight = normalizeClockWeight(handoffStartWeight);
+        int toWeight = aodClockWeight(getContext());
+        setClockWeight(fromWeight, true);
+        PixelAodLog.log("prepared ClockPlugin AOD weight handoff source=" + source
+                + " fromWeight=" + fromWeight
+                + " toWeight=" + toWeight
+                + " alpha=" + getAlpha()
+                + " visibility=" + getVisibility()
+                + " trace=" + currentAodTraceId());
+    }
+
+    void refreshClockPluginAodContent(String source) {
+        if (!clockPluginManaged) {
+            return;
+        }
+        applyMaterialColors();
+        updateTime();
+        rebuildNotificationIcons(source + "#ClockPlugin");
+        updateMediaLine(source + "#ClockPlugin");
+        requestAodFrameRefresh(source + "#ClockPlugin");
+    }
+
+    void setClockPluginLayerVisible(boolean visible) {
+        if (!clockPluginManaged) {
+            return;
+        }
+        if (!visible && clockWeightAnimator != null) {
+            clockWeightAnimator.cancel();
+            clockWeightAnimator = null;
+        }
+        setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
+        if (!visible) {
+            resetBurnInTranslation();
+        }
     }
 
     static void tickAllInstances() {
@@ -2615,6 +2789,10 @@ public final class PixelAodClockView extends FrameLayout {
             PixelAodLog.log("ignored native AOD refresh while stopped trace="
                     + currentAodTraceId() + " source=" + source
                     + " state={" + describeAodState(getContext()) + "}");
+            return;
+        }
+        if (clockPluginManaged) {
+            refreshClockPluginAodContent(source);
             return;
         }
         updateTime();
@@ -2767,6 +2945,9 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void updateAodVisibility(String source) {
+        if (clockPluginManaged) {
+            return;
+        }
         logAodPhaseIfChanged(getContext(), source + "#updateAodVisibility");
         boolean visible = shouldDrawAodOverlay(source);
         String trace = currentAodTraceId();
@@ -2865,7 +3046,9 @@ public final class PixelAodClockView extends FrameLayout {
         boolean alreadyBlocked = PANEL_HANDOFF_GATE.shouldBlockPresentation(trace);
         boolean hasVisibleOverlay = false;
         for (PixelAodClockView view : INSTANCES) {
-            if (view != null && view.getVisibility() == View.VISIBLE) {
+            if (view != null
+                    && !view.isClockPluginManaged()
+                    && view.getVisibility() == View.VISIBLE) {
                 hasVisibleOverlay = true;
                 break;
             }
@@ -2883,7 +3066,9 @@ public final class PixelAodClockView extends FrameLayout {
         }
         int blockedViews = 0;
         for (PixelAodClockView view : INSTANCES) {
-            if (view != null && view.getVisibility() == View.VISIBLE) {
+            if (view != null
+                    && !view.isClockPluginManaged()
+                    && view.getVisibility() == View.VISIBLE) {
                 view.setAlpha(0f);
                 blockedViews++;
             }
@@ -2953,6 +3138,7 @@ public final class PixelAodClockView extends FrameLayout {
         PixelAodClockView animationAnchor = null;
         for (PixelAodClockView view : INSTANCES) {
             if (view != null
+                    && !view.isClockPluginManaged()
                     && view.getVisibility() == View.VISIBLE
                     && view.isAttachedToWindow()) {
                 animationAnchor = view;
@@ -2976,7 +3162,9 @@ public final class PixelAodClockView extends FrameLayout {
 
         int refreshedViews = 0;
         for (PixelAodClockView view : INSTANCES) {
-            if (view == null || view.getVisibility() != View.VISIBLE) {
+            if (view == null
+                    || view.isClockPluginManaged()
+                    || view.getVisibility() != View.VISIBLE) {
                 continue;
             }
             view.refreshAodContentBeforeVisible(source + "#panel-handoff");
@@ -3007,7 +3195,7 @@ public final class PixelAodClockView extends FrameLayout {
 
         int revealedViews = 0;
         for (PixelAodClockView view : INSTANCES) {
-            if (view != null) {
+            if (view != null && !view.isClockPluginManaged()) {
                 view.updateAodVisibility(source + "#panel-handoff-complete");
                 view.requestAodFrameRefresh(source + "#panel-handoff-complete");
                 if (view.getVisibility() == View.VISIBLE && view.getAlpha() > 0f) {
@@ -3052,7 +3240,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static void restorePanelHandoffPresentationAlpha() {
         Runnable task = () -> {
             for (PixelAodClockView view : INSTANCES) {
-                if (view != null) {
+                if (view != null && !view.isClockPluginManaged()) {
                     view.setAlpha(1f);
                 }
             }
@@ -4028,6 +4216,12 @@ public final class PixelAodClockView extends FrameLayout {
                 logNotificationIconChoice(sbn.getPackageName(), "system-smallIcon");
                 return mutated;
             }
+            String resourceName = notificationSmallIconResourceName(context, sbn, icon);
+            if (AodNotificationPipeline.isLauncherStyleSmallIconResourceName(resourceName)) {
+                logNotificationIconChoice(sbn.getPackageName(),
+                        "notification-launcher-resource-original-color resource=" + resourceName);
+                return drawable.mutate();
+            }
             if (filledMask || tinyForeground) {
                 Drawable monochrome = loadApplicationMonochromeIcon(context, sbn.getPackageName());
                 if (monochrome != null) {
@@ -4060,6 +4254,26 @@ public final class PixelAodClockView extends FrameLayout {
         } catch (Throwable t) {
             PixelAodLog.log("failed to load native notification smallIcon", t);
             return null;
+        }
+    }
+
+    private static String notificationSmallIconResourceName(Context context,
+            StatusBarNotification sbn, Icon icon) {
+        if (context == null || sbn == null || icon == null || icon.getType() != Icon.TYPE_RESOURCE) {
+            return "";
+        }
+        try {
+            String resourcePackage = icon.getResPackage();
+            if (TextUtils.isEmpty(resourcePackage)) {
+                resourcePackage = sbn.getPackageName();
+            }
+            Resources resources = context.getPackageManager()
+                    .getResourcesForApplication(resourcePackage);
+            return resources.getResourceName(icon.getResId());
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to resolve AOD notification smallIcon resource pkg="
+                    + sbn.getPackageName() + " iconType=" + icon.getType(), t);
+            return "";
         }
     }
 
@@ -5172,7 +5386,7 @@ public final class PixelAodClockView extends FrameLayout {
                 weather, currentAtAGlanceExtra(), batteryStatus.percentText,
                 batteryStatus.charging);
         CharSequence previousClockText = clockView.getText();
-        clockView.setText(model.clockText);
+        applySharedClockText(clockView, getContext(), model.clockText, compactClock);
         int infoColor = resolveMaterialInfoColor(getContext());
         dateView.setText(model.dateText);
         applyWeatherIcon(dateView, model.weather, infoColor);
@@ -5347,7 +5561,7 @@ public final class PixelAodClockView extends FrameLayout {
             clockWeightAnimator = null;
         }
         int targetWeight = aodClockWeight(getContext());
-        setClockWeight(targetWeight);
+        setClockWeight(targetWeight, true);
         PixelAodLog.log("applied stable AOD clock weight source=" + source
                 + " weight=" + targetWeight
                 + " variation=" + sharedClockFontVariationSettings(targetWeight)
@@ -5357,20 +5571,33 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void beginLockscreenToAodWeightTransition(String source) {
+        beginLockscreenToAodWeightTransition(source, null);
+    }
+
+    private void beginLockscreenToAodWeightTransition(String source, Runnable onFinished) {
+        beginLockscreenToAodWeightTransition(source, onFinished,
+                lockscreenClockWeight(getContext()));
+    }
+
+    private void beginLockscreenToAodWeightTransition(String source, Runnable onFinished,
+            int requestedFromWeight) {
         if (clockWeightAnimator != null) {
             clockWeightAnimator.cancel();
         }
-        int fromWeight = lockscreenClockWeight(getContext());
+        int fromWeight = normalizeClockWeight(requestedFromWeight);
         int toWeight = aodClockWeight(getContext());
         if (fromWeight == toWeight) {
-            setClockWeight(toWeight);
+            setClockWeight(toWeight, true);
             PixelAodLog.log("skipped AOD clock weight transition source=" + source
                     + " reason=equal-weight weight=" + toWeight
                     + " trace=" + currentAodTraceId()
                     + " state={" + describeAodState(getContext(), compactClock, toWeight) + "}");
+            if (onFinished != null) {
+                postOnAnimation(onFinished);
+            }
             return;
         }
-        setClockWeight(fromWeight);
+        setClockWeight(fromWeight, true);
         clockWeightAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f);
         clockWeightAnimator.setDuration(700L);
         clockWeightAnimator.setInterpolator(new android.view.animation.DecelerateInterpolator(1.4f));
@@ -5397,12 +5624,17 @@ public final class PixelAodClockView extends FrameLayout {
                 if (cancelled[0]) {
                     return;
                 }
-                setClockWeight(toWeight);
+                // The final animator update can already carry toWeight. Reapply the
+                // prebuilt Typeface so OOS cannot retain a transient system fallback.
+                setClockWeight(toWeight, true);
                 clockWeightAnimator = null;
                 PixelAodLog.log("finished AOD clock weight transition source=" + source
                         + " toWeight=" + toWeight
                         + " trace=" + currentAodTraceId()
                         + " state={" + describeAodState(getContext(), compactClock, currentClockWeight) + "}");
+                if (onFinished != null) {
+                    postOnAnimation(onFinished);
+                }
             }
         });
         clockWeightAnimator.start();
@@ -5417,14 +5649,18 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void setClockWeight(int weight) {
+        setClockWeight(weight, false);
+    }
+
+    private void setClockWeight(int weight, boolean forceTypeface) {
         weight = normalizeClockWeight(weight);
-        if (currentClockWeight == weight) {
+        if (!forceTypeface && currentClockWeight == weight) {
             return;
         }
         currentClockWeight = weight;
         setAodPresentationState(compactClock, weight);
         applySharedClockTypeface(clockView, getContext(), weight);
-        applySharedClockLetterSpacing(clockView, getContext(), weight, compactClock);
+        applySharedClockLetterSpacing(clockView, compactClock);
     }
 
     private void updateInfoStackLayout() {
@@ -5524,8 +5760,10 @@ public final class PixelAodClockView extends FrameLayout {
         try {
             Typeface typeface = resolveClockTypeface(context, normalizeClockWeight(weight));
             if (typeface != null) {
+                // Typeface.Builder already owns these axes. Reapplying them through TextView
+                // makes OOS re-resolve the file font through its system fallback mid-animation.
+                clearTextViewFontVariation(textView);
                 textView.setTypeface(typeface);
-                applySharedFontVariation(textView, weight);
                 appliedWeightedTypeface = true;
             } else {
                 textView.setTypeface(resolveClockTypeface(context));
@@ -5557,57 +5795,87 @@ public final class PixelAodClockView extends FrameLayout {
         textView.setSingleLine(compact);
         textView.setLines(compact ? 1 : 2);
         textView.setLineSpacing(0f, compact ? 1f : CLOCK_LINE_SPACING);
-        applySharedClockLetterSpacing(textView, context, weight, compact);
+        applySharedClockLetterSpacing(textView, compact);
         textView.setFontFeatureSettings("tnum");
     }
 
-    static void applySharedClockLetterSpacing(TextView textView, Context context, int weight,
+    static void applySharedClockLetterSpacing(TextView textView, boolean compact) {
+        if (textView == null) {
+            return;
+        }
+        // Clock text uses fixed-advance spans so variable-font weight frames cannot reflow.
+        textView.setLetterSpacing(0f);
+    }
+
+    static void applySharedClockText(TextView textView, Context context, CharSequence text,
             boolean compact) {
         if (textView == null) {
             return;
         }
-        if (!compact) {
-            textView.setLetterSpacing(LARGE_CLOCK_LETTER_SPACING);
+        CharSequence normalizedText = text != null ? text : "";
+        if (normalizedText.length() == 0) {
+            textView.setText(normalizedText);
             return;
         }
-        textView.setLetterSpacing(compactClockLetterSpacingForWeight(textView, context, weight));
-    }
 
-    private static float compactClockLetterSpacingForWeight(TextView textView, Context context,
-            int weight) {
-        CharSequence text = textView.getText();
-        if (TextUtils.isEmpty(text)) {
-            text = "00:00";
+        Paint referencePaint = new Paint(textView.getPaint());
+        Typeface referenceTypeface = resolveClockTypeface(context, lockscreenClockWeight(context));
+        if (referenceTypeface != null) {
+            referencePaint.setTypeface(referenceTypeface);
         }
-        int length = text.length();
-        if (length <= 1 || context == null) {
-            return COMPACT_CLOCK_LETTER_SPACING;
-        }
-        try {
-            int normalizedWeight = normalizeClockWeight(weight);
-            int targetWeight = lockscreenClockWeight(context);
-            float currentWidth = measureCompactClockText(textView, context, normalizedWeight, text);
-            float targetWidth = measureCompactClockText(textView, context, targetWeight, text);
-            float textSizePx = textView.getTextSize();
-            if (currentWidth <= 0f || targetWidth <= 0f || textSizePx <= 0f) {
-                return COMPACT_CLOCK_LETTER_SPACING;
+        referencePaint.setTextScaleX(1f);
+        referencePaint.setLetterSpacing(0f);
+        float letterSpacingPixels = referencePaint.getTextSize()
+                * (compact ? COMPACT_CLOCK_LETTER_SPACING : LARGE_CLOCK_LETTER_SPACING);
+        SpannableString fixedText = new SpannableString(normalizedText);
+        for (int index = 0; index < normalizedText.length(); index++) {
+            char glyph = normalizedText.charAt(index);
+            if (glyph == '\n') {
+                continue;
             }
-            float adjusted = COMPACT_CLOCK_LETTER_SPACING
-                    + ((targetWidth - currentWidth) / (length * textSizePx));
-            return Math.max(-0.08f, Math.min(0.08f, adjusted));
-        } catch (Throwable ignored) {
-            return COMPACT_CLOCK_LETTER_SPACING;
+            boolean lineEnd = index + 1 >= normalizedText.length()
+                    || normalizedText.charAt(index + 1) == '\n';
+            float referenceAdvance = referencePaint.measureText(normalizedText, index, index + 1);
+            fixedText.setSpan(new FixedClockAdvanceSpan(referenceAdvance, letterSpacingPixels,
+                            lineEnd),
+                    index, index + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
+        textView.setLetterSpacing(0f);
+        textView.setText(fixedText, TextView.BufferType.SPANNABLE);
     }
 
-    private static float measureCompactClockText(TextView textView, Context context, int weight,
-            CharSequence text) {
-        Paint paint = new Paint(textView.getPaint());
-        paint.setTypeface(sharedClockTypeface(context, weight));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            paint.setLetterSpacing(COMPACT_CLOCK_LETTER_SPACING);
+    private static final class FixedClockAdvanceSpan extends ReplacementSpan {
+        private final float referenceGlyphAdvance;
+        private final float cellAdvance;
+
+        FixedClockAdvanceSpan(float referenceGlyphAdvance, float letterSpacingPixels,
+                boolean lineEnd) {
+            this.referenceGlyphAdvance = referenceGlyphAdvance;
+            cellAdvance = ClockGlyphMetrics.cellAdvance(
+                    referenceGlyphAdvance, letterSpacingPixels, lineEnd);
         }
-        return paint.measureText(text, 0, text.length());
+
+        @Override
+        public int getSize(Paint paint, CharSequence text, int start, int end,
+                Paint.FontMetricsInt fontMetrics) {
+            if (fontMetrics != null) {
+                Paint.FontMetricsInt source = paint.getFontMetricsInt();
+                fontMetrics.top = source.top;
+                fontMetrics.ascent = source.ascent;
+                fontMetrics.descent = source.descent;
+                fontMetrics.bottom = source.bottom;
+                fontMetrics.leading = source.leading;
+            }
+            return Math.max(1, Math.round(cellAdvance));
+        }
+
+        @Override
+        public void draw(Canvas canvas, CharSequence text, int start, int end, float x,
+                int top, int y, int bottom, Paint paint) {
+            float animatedAdvance = paint.measureText(text, start, end);
+            float offset = ClockGlyphMetrics.centerOffset(referenceGlyphAdvance, animatedAdvance);
+            canvas.drawText(text, start, end, x + offset, y, paint);
+        }
     }
 
     private static Typeface resolveClockTypeface(Context context) {
@@ -5615,28 +5883,10 @@ public final class PixelAodClockView extends FrameLayout {
             if (cachedClockTypeface != null) {
                 return cachedClockTypeface;
             }
-            cachedClockTypeface = loadGoogleSansFlex(context,
-                    GOOGLE_SANS_FLEX_VARIABLE_ASSET,
-                    GOOGLE_SANS_FLEX_VARIABLE_CACHE);
+            cachedClockTypeface = loadGoogleSansFlex(context);
             if (cachedClockTypeface != null) {
-                PixelAodLog.log("loaded bundled Google Sans Flex Variable for AOD clock");
+                PixelAodLog.i("loaded bundled Google Sans Flex Variable base Typeface for clock");
                 return cachedClockTypeface;
-            }
-            File androidClock = new File(ANDROID_CLOCK_FONT);
-            if (androidClock.isFile() && androidClock.canRead()) {
-                try {
-                    cachedClockTypeface = Typeface.createFromFile(androidClock);
-                    PixelAodLog.log("loaded Android clock font " + ANDROID_CLOCK_FONT);
-                    return cachedClockTypeface;
-                } catch (Throwable t) {
-                    PixelAodLog.log("failed to load " + ANDROID_CLOCK_FONT, t);
-                }
-            }
-            try {
-                cachedClockTypeface = Typeface.MONOSPACE;
-                PixelAodLog.log("using fallback AOSP Pixel clock typeface semantics: monospace base");
-                return cachedClockTypeface;
-            } catch (Throwable ignored) {
             }
             cachedClockTypeface = firstUsableTypeface(
                     "google-sans-flex",
@@ -5644,6 +5894,7 @@ public final class PixelAodClockView extends FrameLayout {
                     "google-sans-text",
                     "google-sans",
                     "sans-serif");
+            PixelAodLog.i("bundled Google Sans Flex unavailable; using system sans fallback for clock");
             return cachedClockTypeface;
         }
     }
@@ -5663,18 +5914,13 @@ public final class PixelAodClockView extends FrameLayout {
         if (fontFile == null) {
             return null;
         }
-        try {
-            Typeface typeface = new Typeface.Builder(fontFile)
-                    .setFontVariationSettings(sharedClockFontVariationSettings(weight))
-                    .build();
+        Typeface typeface = buildGoogleSansFlexTypeface(fontFile, weight, "weight-" + weight);
+        if (typeface != null) {
             synchronized (PixelAodClockView.class) {
                 cachedClockTypefaceByWeight.put(weight, typeface);
             }
-            return typeface;
-        } catch (Throwable t) {
-            PixelAodLog.log("failed to build weighted Google Sans Flex clock typeface", t);
-            return null;
         }
+        return typeface;
     }
 
     private static Typeface resolveInfoTypeface(Context context) {
@@ -5682,11 +5928,9 @@ public final class PixelAodClockView extends FrameLayout {
             if (cachedInfoTypeface != null) {
                 return cachedInfoTypeface;
             }
-            cachedInfoTypeface = loadGoogleSansFlex(context,
-                    GOOGLE_SANS_FLEX_VARIABLE_ASSET,
-                    GOOGLE_SANS_FLEX_VARIABLE_CACHE);
+            cachedInfoTypeface = loadGoogleSansFlex(context);
             if (cachedInfoTypeface != null) {
-                PixelAodLog.log("loaded bundled Google Sans Flex Variable for AOD info");
+                PixelAodLog.i("loaded bundled Google Sans Flex Variable base Typeface for info");
                 return cachedInfoTypeface;
             }
             cachedInfoTypeface = firstUsableTypeface(
@@ -5712,16 +5956,32 @@ public final class PixelAodClockView extends FrameLayout {
         return Typeface.DEFAULT;
     }
 
-    private static Typeface loadGoogleSansFlex(Context context, String assetName, String cacheName) {
+    private static Typeface loadGoogleSansFlex(Context context) {
         File fontFile = googleSansFlexFontFile(context);
-        if (fontFile != null) {
-            try {
-                return Typeface.createFromFile(fontFile);
-            } catch (Throwable t) {
-                PixelAodLog.log("failed to load extracted Google Sans Flex", t);
-            }
+        if (fontFile == null) {
+            return null;
         }
-        return null;
+        return buildGoogleSansFlexTypeface(fontFile, GOOGLE_SANS_FLEX_BASE_WEIGHT, "base");
+    }
+
+    private static Typeface buildGoogleSansFlexTypeface(File fontFile, int weight, String source) {
+        if (fontFile == null) {
+            return null;
+        }
+        try {
+            Typeface typeface = new Typeface.Builder(fontFile)
+                    .setFontVariationSettings(sharedClockFontVariationSettings(weight))
+                    .build();
+            if (typeface == null) {
+                PixelAodLog.i("Google Sans Flex Typeface.Builder returned null source=" + source
+                        + " path=" + fontFile.getAbsolutePath());
+            }
+            return typeface;
+        } catch (Throwable t) {
+            PixelAodLog.e("failed to build Google Sans Flex Typeface source=" + source
+                    + " path=" + fontFile.getAbsolutePath(), t);
+            return null;
+        }
     }
 
     private static File googleSansFlexFontFile(Context context) {

@@ -83,6 +83,7 @@ public final class PixelAodModernEntry extends XposedModule {
                             + " process=" + Application.getProcessName()
                             + " loader=" + classLoader);
                     resolveModulePath(context);
+                    PixelAodClockView.prewarmGoogleSansFlex(context);
                     PixelAodHook.install(context, classLoader);
                     showToastOnce(context, "Pixel AOD modern injected: " + context.getPackageName());
                     return result;
