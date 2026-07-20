@@ -18,6 +18,8 @@ public final class PixelAodSettings {
     public static final String KEY_WEATHER_ICON_PACK = PixelAodSettingsSchema.KEY_WEATHER_ICON_PACK;
     public static final String KEY_NOTIFICATION_ICONS =
             PixelAodSettingsSchema.KEY_NOTIFICATION_ICONS;
+    public static final String KEY_PIXEL_FINGERPRINT_ICON =
+            PixelAodSettingsSchema.KEY_PIXEL_FINGERPRINT_ICON;
     public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY =
             PixelAodSettingsSchema.KEY_LOCKSCREEN_NOTIFICATION_POLICY;
     public static final String KEY_DEBUG_LOGGING = PixelAodSettingsSchema.KEY_DEBUG_LOGGING;

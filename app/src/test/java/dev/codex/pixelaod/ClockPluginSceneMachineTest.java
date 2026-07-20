@@ -109,4 +109,36 @@ public final class ClockPluginSceneMachineTest {
         assertFalse(lifecycleGap.changed);
         assertFalse(lifecycleGap.preparingAod);
     }
+
+    @Test
+    public void rejectsStaleKeyguardRenderWhileDisplayRemainsInAod() {
+        ClockPluginSceneMachine machine = new ClockPluginSceneMachine();
+
+        machine.resolve(ClockPluginSceneMachine.UI_STATE_AOD, null,
+                false, true, false, false, false, true, true);
+        ClockPluginSceneMachine.Decision staleKeyguard = machine.resolve(
+                ClockPluginSceneMachine.UI_STATE_KEYGUARD,
+                ClockPluginSceneMachine.CLOCK_SIZE_SMALL,
+                true, true, false, false, false, true, true);
+
+        assertEquals(ClockPluginSceneMachine.Scene.AOD_LARGE, staleKeyguard.scene);
+        assertFalse(staleKeyguard.changed);
+        assertTrue(staleKeyguard.staleLockscreenRenderRejected);
+    }
+
+    @Test
+    public void acceptsKeyguardRenderOnceWakeIsInteractive() {
+        ClockPluginSceneMachine machine = new ClockPluginSceneMachine();
+
+        machine.resolve(ClockPluginSceneMachine.UI_STATE_AOD, null,
+                false, true, false, false, false, true, true);
+        ClockPluginSceneMachine.Decision keyguard = machine.resolve(
+                ClockPluginSceneMachine.UI_STATE_KEYGUARD,
+                ClockPluginSceneMachine.CLOCK_SIZE_SMALL,
+                true, true, false, false, true, true, true);
+
+        assertEquals(ClockPluginSceneMachine.Scene.LOCKSCREEN_SMALL, keyguard.scene);
+        assertTrue(keyguard.changed);
+        assertFalse(keyguard.staleLockscreenRenderRejected);
+    }
 }

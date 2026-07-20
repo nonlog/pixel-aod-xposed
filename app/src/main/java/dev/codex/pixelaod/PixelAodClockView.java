@@ -173,6 +173,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static StatusBarNotification[] rawNotifications = EMPTY_NOTIFICATIONS;
     private static StatusBarNotification[] activeNotifications = EMPTY_NOTIFICATIONS;
     private static Typeface cachedClockTypeface;
+    private static boolean cachedClockTypefaceFromBundledFont;
     private static Typeface cachedInfoTypeface;
     private static final Map<Integer, Typeface> cachedClockTypefaceByWeight = new HashMap<>();
     private static String modulePath;
@@ -295,6 +296,7 @@ public final class PixelAodClockView extends FrameLayout {
     private final TextView batteryView;
     private final ChargeBoltView chargeBoltView;
     private final LinearLayout notificationIconRow;
+    private TextView notificationOverflowView;
     private final LinearLayout mediaRow;
     private final ImageView mediaIconView;
     private android.animation.ValueAnimator clockWeightAnimator;
@@ -482,6 +484,7 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             modulePath = path;
             cachedClockTypeface = null;
+            cachedClockTypefaceFromBundledFont = false;
             cachedInfoTypeface = null;
             cachedClockTypefaceByWeight.clear();
         }
@@ -510,6 +513,9 @@ public final class PixelAodClockView extends FrameLayout {
                 + fontFile.getAbsolutePath()
                 + " bytes=" + fontFile.length()
                 + " base=" + (baseTypeface != null)
+                + " bundledBase=" + cachedClockTypefaceFromBundledFont
+                + " strategy=" + ClockTypefaceResolutionPolicy.strategyName(
+                        cachedClockTypefaceFromBundledFont)
                 + " lockscreenWeight=" + lockscreenWeight
                 + " lockscreen=" + (lockscreenTypeface != null)
                 + " aodWeight=" + aodWeight
@@ -2671,6 +2677,13 @@ public final class PixelAodClockView extends FrameLayout {
                 currentClockWeight);
     }
 
+    void applyClockPluginStableAodWeight(String source) {
+        if (!clockPluginManaged) {
+            return;
+        }
+        applyStableAodClockWeight(source + "#ClockPlugin");
+    }
+
     private void prepareClockPluginAodWeightForHandoff(int handoffStartWeight, String source) {
         if (clockWeightAnimator != null) {
             clockWeightAnimator.cancel();
@@ -3288,6 +3301,7 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
             PixelAodHook.refreshKnownAodHostVisibility(delayedSource);
+            ClockPluginHostController.refreshAll(delayedSource + "#policy");
         }, delayMillis);
     }
 
@@ -3891,6 +3905,7 @@ public final class PixelAodClockView extends FrameLayout {
         }
         lastNotificationIconSignature = signature;
         notificationIconRow.removeAllViews();
+        notificationOverflowView = null;
         if (notifications.isEmpty()) {
             notificationIconRow.setVisibility(View.GONE);
             applyClockMode(false);
@@ -3900,10 +3915,11 @@ public final class PixelAodClockView extends FrameLayout {
                     + " state={" + describeAodState(getContext()) + "}");
             return;
         }
-        int emitted = 0;
         int loadFailures = 0;
         int skippedMedia = 0;
         HashSet<String> seenIconKeys = new HashSet<>();
+        ArrayList<String> loadedIconKeys = new ArrayList<>();
+        ArrayList<Drawable> loadedIcons = new ArrayList<>();
         for (StatusBarNotification sbn : notifications) {
             if (sbn == null) {
                 continue;
@@ -3937,32 +3953,104 @@ public final class PixelAodClockView extends FrameLayout {
                         + " state={" + describeAodState(getContext()) + "}");
                 continue;
             }
+            loadedIconKeys.add(dedupeKey);
+            loadedIcons.add(drawable);
+        }
+        NotificationIconDisplayPlan displayPlan =
+                NotificationIconDisplayPlan.fromEligibleIconKeys(
+                        loadedIconKeys, MAX_NOTIFICATION_ICONS);
+        int emitted = displayPlan.visibleIconCount();
+        for (int index = 0; index < emitted; index++) {
             ImageView iconView = new ImageView(getContext());
             iconView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             iconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-            iconView.setImageDrawable(drawable);
+            iconView.setImageDrawable(loadedIcons.get(index));
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     dp(NOTIFICATION_ICON_SIZE_DP),
                     dp(NOTIFICATION_ICON_SIZE_DP));
-            if (emitted > 0) {
+            if (index > 0) {
                 params.leftMargin = dp(NOTIFICATION_ICON_SPACING_DP);
             }
             notificationIconRow.addView(iconView, params);
-            emitted++;
-            if (emitted >= MAX_NOTIFICATION_ICONS) {
-                break;
-            }
         }
-        notificationIconRow.setVisibility(emitted > 0 ? View.VISIBLE : View.GONE);
-        applyClockMode(emitted > 0);
+        notificationOverflowView = addNotificationOverflowText(notificationIconRow,
+                displayPlan.overflowCount(), emitted > 0,
+                sharedInfoTypeface(getContext(), INFO_AOD_WEIGHT), INFO_AOD_WEIGHT,
+                compactClock ? COMPACT_INFO_TEXT_DP : LARGE_INFO_TEXT_DP);
+        notificationIconRow.setVisibility(
+                displayPlan.totalIconCount() > 0 ? View.VISIBLE : View.GONE);
+        applyClockMode(displayPlan.totalIconCount() > 0);
         PixelAodLog.log("rebuilt native AOD notification icons trace=" + currentAodTraceId()
                 + " source=" + source
                 + " input=" + notifications.size()
                 + " emitted=" + emitted
+                + " eligible=" + displayPlan.totalIconCount()
+                + " overflow=" + displayPlan.overflowCount()
                 + " skippedMedia=" + skippedMedia
                 + " loadFailures=" + loadFailures
                 + " packages=" + AodNotificationPipeline.describePackages(notifications)
                 + " state={" + describeAodState(getContext()) + "}");
+    }
+
+    static TextView addNotificationOverflowText(LinearLayout row, int overflowCount,
+            boolean hasVisibleIcons, Typeface infoTypeface, int infoWeight, int textSizeDp) {
+        if (row == null || overflowCount <= 0) {
+            return null;
+        }
+        Context context = row.getContext();
+        TextView overflowView = makeInfoLine(context, infoTypeface, infoWeight, textSizeDp,
+                Gravity.CENTER);
+        overflowView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        overflowView.setText("+" + overflowCount);
+        overflowView.setAlpha(1f);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(context, NOTIFICATION_ICON_SIZE_DP));
+        if (hasVisibleIcons) {
+            params.leftMargin = dp(context, NOTIFICATION_ICON_SPACING_DP + 1);
+        }
+        row.addView(overflowView, params);
+        return overflowView;
+    }
+
+    static void syncNotificationOverflowStyle(TextView overflowView, TextView styleSource,
+            ViewGroup parent) {
+        if (overflowView == null || styleSource == null) {
+            return;
+        }
+        overflowView.getPaint().set(styleSource.getPaint());
+        overflowView.setTextColor(styleSource.getTextColors());
+        overflowView.setTextSize(TypedValue.COMPLEX_UNIT_PX, styleSource.getTextSize());
+        overflowView.setTypeface(styleSource.getTypeface());
+        overflowView.setIncludeFontPadding(styleSource.getIncludeFontPadding());
+        overflowView.setTextScaleX(styleSource.getTextScaleX());
+        overflowView.setLetterSpacing(styleSource.getLetterSpacing());
+        overflowView.setFontFeatureSettings(styleSource.getFontFeatureSettings());
+        overflowView.setGravity(styleSource.getGravity());
+        overflowView.setTextAlignment(styleSource.getTextAlignment());
+        overflowView.setTextDirection(styleSource.getTextDirection());
+        overflowView.setPadding(styleSource.getPaddingLeft(), styleSource.getPaddingTop(),
+                styleSource.getPaddingRight(), styleSource.getPaddingBottom());
+        overflowView.setLineSpacing(styleSource.getLineSpacingExtra(),
+                styleSource.getLineSpacingMultiplier());
+        overflowView.setEllipsize(styleSource.getEllipsize());
+        overflowView.setMaxLines(styleSource.getMaxLines());
+        overflowView.setMinLines(styleSource.getMinLines());
+        overflowView.setMinHeight(styleSource.getMinHeight());
+        overflowView.setMinWidth(styleSource.getMinWidth());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            overflowView.setBreakStrategy(styleSource.getBreakStrategy());
+            overflowView.setHyphenationFrequency(styleSource.getHyphenationFrequency());
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            overflowView.setElegantTextHeight(styleSource.isElegantTextHeight());
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            overflowView.setFontVariationSettings(styleSource.getFontVariationSettings());
+        }
+        float parentAlpha = parent != null ? parent.getAlpha() : 1f;
+        float sourceAlpha = styleSource.getAlpha();
+        overflowView.setAlpha(parentAlpha > 0.01f
+                ? Math.min(1f, sourceAlpha / parentAlpha) : sourceAlpha);
     }
 
     private boolean isNotificationForCurrentMedia(StatusBarNotification sbn) {
@@ -5027,6 +5115,7 @@ public final class PixelAodClockView extends FrameLayout {
         int infoColor = resolveMaterialInfoColor(getContext());
         clockView.setTextColor(clockColor);
         dateView.setTextColor(infoColor);
+        syncNotificationOverflowStyle(notificationOverflowView, dateView, notificationIconRow);
         mediaView.setTextColor(infoColor);
         batteryView.setTextColor(infoColor);
         chargeBoltView.setTint(infoColor);
@@ -5538,6 +5627,7 @@ public final class PixelAodClockView extends FrameLayout {
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, LARGE_INFO_TEXT_DP);
         }
         clockView.setLayoutParams(clockParams);
+        syncNotificationOverflowStyle(notificationOverflowView, dateView, notificationIconRow);
         updateInfoStackLayout();
         updateTime();
         PixelAodLog.log("applied Pixel AOD clock mode trace=" + currentAodTraceId()
@@ -5652,6 +5742,19 @@ public final class PixelAodClockView extends FrameLayout {
         setClockWeight(weight, false);
     }
 
+    int clockPluginWeight() {
+        return currentClockWeight;
+    }
+
+    String clockPluginDiagnosticState() {
+        return "{compact=" + compactClock
+                + ",weight=" + currentClockWeight
+                + ",layer=" + describeViewForHandoff(this)
+                + ",clock=" + describeClockTextView(clockView)
+                + ',' + describeViewForHandoff(clockView)
+                + '}';
+    }
+
     private void setClockWeight(int weight, boolean forceTypeface) {
         weight = normalizeClockWeight(weight);
         if (!forceTypeface && currentClockWeight == weight) {
@@ -5661,6 +5764,10 @@ public final class PixelAodClockView extends FrameLayout {
         setAodPresentationState(compactClock, weight);
         applySharedClockTypeface(clockView, getContext(), weight);
         applySharedClockLetterSpacing(clockView, compactClock);
+        if (PixelAodLog.isDebugEnabled()) {
+            PixelAodLog.log("clock paint snapshot layer=aod requestedWeight=" + weight
+                    + " state=" + describeClockTextView(clockView));
+        }
     }
 
     private void updateInfoStackLayout() {
@@ -5764,6 +5871,7 @@ public final class PixelAodClockView extends FrameLayout {
                 // makes OOS re-resolve the file font through its system fallback mid-animation.
                 clearTextViewFontVariation(textView);
                 textView.setTypeface(typeface);
+                textView.getPaint().setFakeBoldText(false);
                 appliedWeightedTypeface = true;
             } else {
                 textView.setTypeface(resolveClockTypeface(context));
@@ -5773,7 +5881,51 @@ public final class PixelAodClockView extends FrameLayout {
         }
         if (!appliedWeightedTypeface) {
             applySharedFontVariation(textView, weight);
+            textView.getPaint().setFakeBoldText(false);
         }
+    }
+
+    static String describeClockTextView(TextView textView) {
+        if (textView == null) {
+            return "null";
+        }
+        Typeface typeface = textView.getTypeface();
+        int actualWeight = typeface != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? typeface.getWeight() : -1;
+        return "actualWeight=" + actualWeight
+                + " style=" + (typeface != null ? typeface.getStyle() : -1)
+                + " typeface=" + (typeface != null
+                        ? typeface.getClass().getName() + '@'
+                                + Integer.toHexString(System.identityHashCode(typeface))
+                        : "null")
+                + " fakeBold=" + textView.getPaint().isFakeBoldText()
+                + " variation=" + textView.getFontVariationSettings()
+                + " textScaleX=" + textView.getTextScaleX()
+                + " alpha=" + textView.getAlpha()
+                + " visibility=" + textView.getVisibility();
+    }
+
+    static String describeViewForHandoff(View view) {
+        if (view == null) {
+            return "null";
+        }
+        return view.getClass().getSimpleName()
+                + '@' + Integer.toHexString(System.identityHashCode(view))
+                + "{id=" + view.getId()
+                + ",visibility=" + view.getVisibility()
+                + ",alpha=" + view.getAlpha()
+                + ",shown=" + view.isShown()
+                + ",attached=" + view.isAttachedToWindow()
+                + ",size=" + view.getWidth() + 'x' + view.getHeight()
+                + ",position=" + view.getX() + ',' + view.getY()
+                + ",translation=" + view.getTranslationX() + ',' + view.getTranslationY()
+                + ",scale=" + view.getScaleX() + ',' + view.getScaleY()
+                + ",rotation=" + view.getRotation()
+                + ",pivot=" + view.getPivotX() + ',' + view.getPivotY()
+                + ",matrix=" + view.getMatrix().toShortString()
+                + ",layerType=" + view.getLayerType()
+                + ",hardware=" + view.isHardwareAccelerated()
+                + '}';
     }
 
     static void applySharedClockTextStyle(TextView textView, Context context, int weight,
@@ -5885,9 +6037,11 @@ public final class PixelAodClockView extends FrameLayout {
             }
             cachedClockTypeface = loadGoogleSansFlex(context);
             if (cachedClockTypeface != null) {
+                cachedClockTypefaceFromBundledFont = true;
                 PixelAodLog.i("loaded bundled Google Sans Flex Variable base Typeface for clock");
                 return cachedClockTypeface;
             }
+            cachedClockTypefaceFromBundledFont = false;
             cachedClockTypeface = firstUsableTypeface(
                     "google-sans-flex",
                     "roboto-flex",
@@ -6028,6 +6182,7 @@ public final class PixelAodClockView extends FrameLayout {
                 modulePath = resolvedPath;
                 if (changed) {
                     cachedClockTypeface = null;
+                    cachedClockTypefaceFromBundledFont = false;
                     cachedInfoTypeface = null;
                     cachedClockTypefaceByWeight.clear();
                 }

@@ -71,8 +71,15 @@ final class PixelAodHook {
     private static final String OPLUS_ON_SCREEN_FINGERPRINT_UI_MECH =
             "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech";
     private static final String[] FOD_AOD_DIAGNOSTIC_METHOD_NAMES = {
+            "loadAnimDrawables",
+            "restoreIconDrawable",
+            "restoreIconDrawableDark",
+            "updateFpIconColor",
+            "updateFpColor",
+            "updateFpIconState",
             "hideUdfpsOverlay",
             "setFpIconVisibilityInAOD",
+            "setVisibilityInAOD",
             "showOrHideFingerprintIconTemporarily",
             "showUdfpsOverlay",
             "hidePressAnimImmediately",
@@ -82,8 +89,27 @@ final class PixelAodHook {
             "hideFingerprintIconTemporarily",
             "notifyHideAodIcon",
             "notifyShowAodIcon",
+            "setOnDozeState",
+            "setOnDreamingStart",
+            "onDreamingStart",
+            "onDreamingStopped",
+            "onScreenTurnedOff",
+            "onScreenTurnedOn",
+            "startToAnimInDream",
+            "onFpTouch",
+            "setTouchDownNow",
+            "updateFpIconAlpha",
             "setFingerprintIconShow",
-            "showFingerprintIconTemporarily"
+            "showFingerprintIconTemporarily",
+            "stopOpticalAnimation",
+            "stopPressedAnimation"
+    };
+    private static final String[] FOD_AOD_ASYNC_RUNNABLE_CLASSES = {
+            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$1",
+            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$fpIconShow$2",
+            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$restoreIconDrawable$1",
+            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$touchEvent$2",
+            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$updateFpColor$1"
     };
     private static final String SHADE_WINDOW_VIEW =
             "com.android.systemui.shade.NotificationShadeWindowView";
@@ -218,6 +244,8 @@ final class PixelAodHook {
         registerSettingsObserver(appContext);
         boolean notificationIcons = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_NOTIFICATION_ICONS, true);
+        boolean pixelFingerprintIcon = PixelAodSettings.getBoolean(appContext,
+                PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false);
         boolean lockscreenPolicy = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true);
         boolean weather = PixelAodSettings.getBoolean(appContext,
@@ -258,6 +286,7 @@ final class PixelAodHook {
         PixelAodLog.log("installed Pixel AOD hooks moduleEnabled=" + moduleEnabled
                 + " aodDisplayMode=" + aodDisplayMode
                 + " notificationIcons=" + notificationIcons
+                + " pixelFingerprintIcon=" + pixelFingerprintIcon
                 + " lockscreenPolicy=" + lockscreenPolicy
                 + " weather=" + weather);
     }
@@ -285,6 +314,8 @@ final class PixelAodHook {
                                     + " selfChange=" + selfChange
                                     + " uri=" + uri);
                             PixelAodClockView.refreshAodPolicyFromSettings("settings-provider-change");
+                            PixelFingerprintIconController.refreshLast(
+                                    appContext, "settings-provider-change");
                         }
                     });
             PixelAodLog.log("registered Pixel AOD settings observer");
@@ -1536,10 +1567,60 @@ final class PixelAodHook {
     }
 
     private static void hookOplusFingerprintAodDiagnostics(ClassLoader classLoader) {
+        PixelFingerprintIconController.installImageViewMutationHooks();
+        PixelFingerprintIconController.installVendorViewHooks(classLoader);
         boolean hooked = false;
         hooked |= hookFingerprintAodDiagnosticClass(classLoader, OPLUS_BIOMETRIC_AUTH_CONTROLLER);
         hooked |= hookFingerprintAodDiagnosticClass(classLoader, OPLUS_ON_SCREEN_FINGERPRINT_UI_MECH);
+        for (String className : FOD_AOD_ASYNC_RUNNABLE_CLASSES) {
+            hooked |= hookFingerprintAodAsyncRunnableClass(classLoader, className);
+        }
         PixelAodLog.log("installed FOD AOD diagnostics hooked=" + hooked);
+    }
+
+    private static boolean hookFingerprintAodAsyncRunnableClass(
+            ClassLoader classLoader, String className) {
+        try {
+            Class<?> clazz = ModernHookBridge.findClass(className, classLoader);
+            boolean hooked = false;
+            for (Method method : clazz.getDeclaredMethods()) {
+                if (!"run".equals(method.getName()) || method.getParameterCount() != 0
+                        || Modifier.isAbstract(method.getModifiers())) {
+                    continue;
+                }
+                final Method targetMethod = method;
+                final String source = className + "#run()";
+                targetMethod.setAccessible(true);
+                ModernHookBridge.hookAfter(targetMethod, param -> {
+                    Object uiMech;
+                    try {
+                        uiMech = ModernHookBridge.getObjectField(param.thisObject, "this$0");
+                    } catch (Throwable ignored) {
+                        uiMech = null;
+                    }
+                    if (uiMech == null) {
+                        PixelAodLog.log("fingerprint async refresh skipped source=" + source
+                                + " reason=outer-ui-mech-unavailable");
+                        return;
+                    }
+                    rememberFingerprintAodInstance("OnScreenFingerprintUiMech", uiMech);
+                    PixelFingerprintIconController.refresh(
+                            systemUiContext, uiMech, source, false);
+                });
+                hooked = true;
+                PixelAodLog.log("hooked FOD AOD async refresh " + source);
+            }
+            if (!hooked) {
+                PixelAodLog.log("FOD AOD async refresh class has no run method class="
+                        + className);
+            }
+            return hooked;
+        } catch (ClassNotFoundException ignored) {
+            PixelAodLog.log("FOD AOD async refresh class not found class=" + className);
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook FOD AOD async refresh class=" + className, t);
+        }
+        return false;
     }
 
     private static boolean hookFingerprintAodDiagnosticClass(
@@ -1586,6 +1667,10 @@ final class PixelAodHook {
                 ModernHookBridge.hookAfter(targetMethod, param -> {
                     Context context = contextFromHookParam(param);
                     rememberFingerprintAodInstance(sourceClass, param.thisObject);
+                    if ("OnScreenFingerprintUiMech".equals(sourceClass)) {
+                        PixelFingerprintIconController.refresh(
+                                context, param.thisObject, source, true);
+                    }
                     PixelAodLog.log("FOD AOD diagnostic source=" + source
                             + " args=" + summarizeArgs(param.args, 6)
                             + " result=" + summarizeValue(param.getResult())

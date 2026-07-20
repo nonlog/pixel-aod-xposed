@@ -17,6 +17,7 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_WEATHER = "weather";
     public static final String KEY_WEATHER_ICON_PACK = "weather_icon_pack";
     public static final String KEY_NOTIFICATION_ICONS = "notification_icons";
+    public static final String KEY_PIXEL_FINGERPRINT_ICON = "pixel_fingerprint_icon";
     public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY = "lockscreen_notification_policy";
     public static final String KEY_DEBUG_LOGGING = "debug_logging";
     public static final String KEY_AOD_WEIGHT = "aod_weight";
@@ -49,6 +50,8 @@ public final class PixelAodSettingsSchema {
     public static final SettingSpec WEATHER_ICON_PACK = stringSpec(KEY_WEATHER_ICON_PACK, "", false);
     public static final SettingSpec NOTIFICATION_ICONS =
             alwaysEnabledBooleanSpec(KEY_NOTIFICATION_ICONS);
+    public static final SettingSpec PIXEL_FINGERPRINT_ICON =
+            booleanSpec(KEY_PIXEL_FINGERPRINT_ICON, false, false);
     public static final SettingSpec LOCKSCREEN_NOTIFICATION_POLICY =
             booleanSpec(KEY_LOCKSCREEN_NOTIFICATION_POLICY, true, false);
     public static final SettingSpec DEBUG_LOGGING = booleanSpec(KEY_DEBUG_LOGGING, false, false);

@@ -9,6 +9,8 @@
     <string name="default_weather_icon_pack">默认 (内置单色)</string>
     <string name="title_notification_icons">通知图标</string>
     <string name="desc_notification_icons">AOD 单色通知图标</string>
+    <string name="title_pixel_fingerprint_icon">Pixel 指纹图标</string>
+    <string name="desc_pixel_fingerprint_icon">替换 OOS 原生图标，保留原生位置、显隐与指纹交互</string>
     <string name="title_lockscreen_policy">锁屏通知策略</string>
     <string name="desc_lockscreen_policy">修正 OOS 锁屏显示规则</string>
     <string name="title_debug_logging">调试日志</string>

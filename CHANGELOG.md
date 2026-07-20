@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.1.223] - 2026-07-20
+### Fixed
+- Keep the existing per-weight cache only for exact Google Sans Flex instances built from the module font file. OOS system-family derived Typeface fallbacks are no longer cached or applied during the lockscreen-to-AOD handoff.
+- Do not re-submit a same-weight `300 -> 300` Typeface at the visible handoff boundary. The existing 300-to-AOD-weight animation now starts from the already rendered lockscreen Typeface.
+
+## [0.1.222] - 2026-07-20
+### Fixed
+- Re-sync the persistent ClockPlugin host after the existing delayed lifecycle-ready visibility pass, preventing a large lockscreen clock from remaining on AOD until the next minute tick when notifications require the compact clock.
+
+## [0.1.221] - 2026-07-20
+### Diagnostics
+- Capture the first 12 rendered ClockPlugin handoff frames with module layer, clock Typeface, ancestor transform, and native clock carrier state when debug logging is enabled, without changing AOD presentation behavior.
+
+## [0.1.220] - 2026-07-20
+### Fixed
+- Re-submit the visible ClockPlugin clock's exact Google Sans Flex Typeface at the screen-off handoff boundary even when its logical lockscreen weight is unchanged, closing the unstyled frame before the first 300-to-160 animation update.
+
+## [0.1.219] - 2026-07-20
+### Fixed
+- Preserve the committed ClockPlugin AOD scene when OPlus delivers a stale keyguard render while the device remains non-interactive and the display is still dozing, preventing that callback from restoring the visible clock to the lockscreen weight.
+
+### Diagnostics
+- Record interactivity, doze display state, and rejected stale-lockscreen decisions in ClockPlugin scene logs while continuing to accept real interactive wake transitions.
+
+## [0.1.218] - 2026-07-19
+### Fixed
+- Dispatch Pixel fingerprint drawable mutations through the optical fingerprint view's own handler, preventing `CalledFromWrongThreadException` from crashing System UI and triggering LSPosed safe mode.
+- Normalize the lockscreen fingerprint `colorSurface` circle to opaque RGB before applying the native drawable alpha.
+
+### Diagnostics
+- Record actual clock Typeface weight/style, fake-bold state, variation, alpha, visibility, and persistent host layer overlap during handoff.
+
+## [0.1.217] - 2026-07-19
+### Fixed
+- Leave the OOS pressed fingerprint carrier, its animations, scaling, HBM, and authentication state entirely native while replacing only the primary fingerprint drawable.
+- Keep exact cached Google Sans Flex `wght` instances without also applying `Typeface.Builder.setWeight()`, preventing an over-bold frame at the start of the lockscreen-to-AOD transition.
+
+## [0.1.216] - 2026-07-19
+### Fixed
+- Build and cache each bundled Google Sans Flex clock weight from an exact `wght` variation instance instead of relying on Android's ineffective derived-weight wrapper.
+- Keep every non-interactive fingerprint state on the AOD visual path and draw the lockscreen `colorSurface` circle only on the primary carrier, preventing the pressed carrier from appearing permanently highlighted.
+
+## [0.1.215] - 2026-07-19
+### Fixed
+- Derive every clock weight from one cached bundled Google Sans Flex base typeface, preventing OOS from resolving lockscreen and AOD weights as different font families during handoff.
+- Match the YAAP UDFPS palette with a dynamic `textColorPrimary` lockscreen foreground over a 64 dp `colorSurface` circle that fades out completely for the pure-white AOD fingerprint.
+
+## [0.1.214] - 2026-07-19
+### Fixed
+- Keep the AOD notification overflow label `+X` aligned with the date's font, paint, spacing, color, and alpha styling.
+- Apply the optional Pixel fingerprint drawable to both OOS fingerprint icon carriers and re-apply it after OOS asynchronous visual updates, while leaving native visibility and authentication behavior in control.
+
+## [0.1.213] - 2026-07-19
+### Added
+- Add an opt-in Pixel fingerprint icon that replaces only the native OOS `fpIcon` drawable. Native positioning, visibility, fading, touch handling, HBM, and authentication remain owned by OOS, and the replacement yields when the COUI fingerprint drawable is active.
+- Limit the module AOD notification row to five application icons and show the remaining drawable, deduplicated notifications as `+X`. The persistent lockscreen-to-AOD handoff row uses the same display plan.
+
+### Changed
+- Refresh the fingerprint visual immediately when its setting changes, without requiring a SystemUI restart. The setting remains disabled by default.
+
 ## [0.1.212] - 2026-07-19
 ### Fixed
 - Restore only module-hidden ancestors of the persistent OPlus ClockPlugin host before presenting a lockscreen or AOD scene. A cold SystemUI start can no longer leave `CustomOplusKeyguardStyleClock` visible but fully transparent after the module host is attached.

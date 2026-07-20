@@ -280,6 +280,8 @@ final class ClockPluginHostController {
         }
         boolean compactAod = renderState.clockSizeState != null
                 && renderState.clockSizeState == ClockPluginSceneMachine.CLOCK_SIZE_SMALL;
+        boolean interactive = PixelAodClockView.isDeviceInteractive(context);
+        boolean displayInAodState = PixelAodClockView.isDisplayInAodState(context);
         ClockPluginSceneMachine.Decision decision = record.machine.resolve(
                 renderState.uiState,
                 renderState.clockSizeState,
@@ -287,17 +289,31 @@ final class ClockPluginHostController {
                 moduleAodAllowed,
                 preserveAodWhileLifecycleSettles,
                 compactAod,
-                PixelAodClockView.isDeviceInteractive(context),
-                isKeyguardLockedRaw(context));
+                interactive,
+                isKeyguardLockedRaw(context),
+                displayInAodState);
 
-        if (consumePendingLockscreenHandoff(decision)) {
+        if (decision.staleLockscreenRenderRejected) {
+            PixelAodLog.log("rejected stale ClockPlugin lockscreen render source=" + source
+                    + " uiState=" + renderState.uiState
+                    + " interactive=" + interactive
+                    + " displayInAod=" + displayInAodState
+                    + " hostScene=" + record.host.scene()
+                    + " preservedScene=" + decision.scene
+                    + " reason=noninteractive-dozing-aod-scene"
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
+        } else if (consumePendingLockscreenHandoff(decision)) {
             decision = decision.withEnteringAod(true);
         }
+
+        String lifecycleDetail = " interactive=" + interactive
+                + " displayInAod=" + displayInAodState;
 
         if (decision.scene == ClockPluginSceneMachine.Scene.HIDDEN) {
             record.host.hide(source + "#hidden");
             restoreNativeVisuals(record);
-            logSync(record, source, renderState.describe() + " policy=" + policyReason, decision);
+            logSync(record, source, renderState.describe() + lifecycleDetail
+                    + " policy=" + policyReason, decision);
             return;
         }
 
@@ -317,7 +333,8 @@ final class ClockPluginHostController {
             suppressNativeVisuals(record);
             PixelAodHook.removeLegacyClockOverlays(source + "#ClockPlugin-validated");
         }
-        logSync(record, source, renderState.describe() + " policy=" + policyReason
+        logSync(record, source, renderState.describe() + lifecycleDetail
+                + " policy=" + policyReason
                 + " preserveAodWhileLifecycleSettles=" + preserveAodWhileLifecycleSettles,
                 decision);
     }
@@ -625,7 +642,8 @@ final class ClockPluginHostController {
             ClockPluginSceneMachine.Decision decision) {
         String fingerprint = detail + " scene=" + decision.scene
                 + " enteringAod=" + decision.enteringAod
-                + " preparingAod=" + decision.preparingAod;
+                + " preparingAod=" + decision.preparingAod
+                + " staleLockscreenRejected=" + decision.staleLockscreenRenderRejected;
         if (fingerprint.equals(record.lastSyncFingerprint)) {
             return;
         }

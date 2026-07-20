@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Policy
@@ -267,6 +268,9 @@ private fun SettingsContent(
     val debugLogging = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_DEBUG_LOGGING, false))
     }
+    val pixelFingerprintIcon = remember {
+        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false))
+    }
     val weatherIconPack = remember {
         mutableStateOf(prefs.schemaString(PixelAodSettings.KEY_WEATHER_ICON_PACK, ""))
     }
@@ -338,6 +342,10 @@ private fun SettingsContent(
         }
 
         SettingsSection(stringResource(R.string.section_clock)) {
+            ToggleCard(Icons.Outlined.Fingerprint, stringResource(R.string.title_pixel_fingerprint_icon), stringResource(R.string.desc_pixel_fingerprint_icon), pixelFingerprintIcon.value) {
+                pixelFingerprintIcon.value = it
+                updateModuleBooleanSetting(context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, it)
+            }
             SliderCard(
                 icon = Icons.Outlined.Schedule,
                 title = stringResource(R.string.title_aod_weight),

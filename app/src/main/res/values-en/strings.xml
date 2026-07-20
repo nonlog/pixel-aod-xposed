@@ -9,6 +9,8 @@
     <string name="default_weather_icon_pack">Default (Built-in)</string>
     <string name="title_notification_icons">Notification Icons</string>
     <string name="desc_notification_icons">Monochrome AOD icons</string>
+    <string name="title_pixel_fingerprint_icon">Pixel Fingerprint Icon</string>
+    <string name="desc_pixel_fingerprint_icon">Replace the OOS visual while preserving native position, visibility, and fingerprint interaction</string>
     <string name="title_lockscreen_policy">Lockscreen Policy</string>
     <string name="desc_lockscreen_policy">Fix OOS lockscreen rules</string>
     <string name="title_debug_logging">Debug Logging</string>

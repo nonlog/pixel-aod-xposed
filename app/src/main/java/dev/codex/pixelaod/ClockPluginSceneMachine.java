@@ -39,22 +39,31 @@ final class ClockPluginSceneMachine {
         final boolean enteringAod;
         final boolean leavingAod;
         final boolean preparingAod;
+        final boolean staleLockscreenRenderRejected;
 
         Decision(Scene scene, Scene previousScene, boolean changed,
                 boolean enteringAod, boolean leavingAod, boolean preparingAod) {
+            this(scene, previousScene, changed, enteringAod, leavingAod, preparingAod, false);
+        }
+
+        Decision(Scene scene, Scene previousScene, boolean changed,
+                boolean enteringAod, boolean leavingAod, boolean preparingAod,
+                boolean staleLockscreenRenderRejected) {
             this.scene = scene;
             this.previousScene = previousScene;
             this.changed = changed;
             this.enteringAod = enteringAod;
             this.leavingAod = leavingAod;
             this.preparingAod = preparingAod;
+            this.staleLockscreenRenderRejected = staleLockscreenRenderRejected;
         }
 
         Decision withEnteringAod(boolean value) {
             if (enteringAod == value) {
                 return this;
             }
-            return new Decision(scene, previousScene, changed, value, leavingAod, preparingAod);
+            return new Decision(scene, previousScene, changed, value, leavingAod, preparingAod,
+                    staleLockscreenRenderRejected);
         }
     }
 
@@ -63,6 +72,23 @@ final class ClockPluginSceneMachine {
     Decision resolve(Integer uiState, Integer clockSizeState, boolean uiStateAnimating,
             boolean moduleAodAllowed, boolean preserveAodWhileLifecycleSettles,
             boolean compactAod, boolean interactive, boolean keyguardShowing) {
+        return resolve(uiState, clockSizeState, uiStateAnimating, moduleAodAllowed,
+                preserveAodWhileLifecycleSettles, compactAod, interactive, keyguardShowing,
+                false);
+    }
+
+    Decision resolve(Integer uiState, Integer clockSizeState, boolean uiStateAnimating,
+            boolean moduleAodAllowed, boolean preserveAodWhileLifecycleSettles,
+            boolean compactAod, boolean interactive, boolean keyguardShowing,
+            boolean displayInAodState) {
+        if (committedScene.isAod()
+                && uiState != null
+                && uiState == UI_STATE_KEYGUARD
+                && !interactive
+                && displayInAodState) {
+            return new Decision(committedScene, committedScene, false,
+                    false, false, false, true);
+        }
         Scene requested = resolveRequestedScene(uiState, clockSizeState, uiStateAnimating,
                 moduleAodAllowed, compactAod, interactive, keyguardShowing);
         // ClockPlugin can publish its AOD render state one frame before the module lifecycle

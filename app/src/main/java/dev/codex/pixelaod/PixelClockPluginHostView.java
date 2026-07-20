@@ -1,7 +1,11 @@
 package dev.codex.pixelaod;
 
 import android.content.Context;
+import android.graphics.Canvas;
+import android.os.SystemClock;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.ViewTreeObserver;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
@@ -15,6 +19,14 @@ import android.widget.FrameLayout;
  */
 final class PixelClockPluginHostView extends FrameLayout {
     private static final long ENTRY_CROSSFADE_MILLIS = 360L;
+    private static final long CLOCK_WEIGHT_HANDOFF_MILLIS = 700L;
+    private static final int HANDOFF_DIAGNOSTIC_FRAME_LIMIT = 12;
+    private static final long HANDOFF_DIAGNOSTIC_WINDOW_MILLIS = 2_500L;
+    private static final int HANDOFF_DIAGNOSTIC_ANCESTOR_LIMIT = 8;
+    private static final int HANDOFF_DIAGNOSTIC_CHILD_LIMIT = 12;
+    private static final String HANDOFF_DIAGNOSTIC_PREFIX = "[DEBUG-WEIGHT-HANDOFF]";
+    private static final int VIEW_CLOCK_TIME = 1;
+    private static final int VIEW_DATE_MESSAGE = 11;
 
     private final PixelLockscreenClockView lockscreenLayer;
     private final PixelAodClockView aodLayer;
@@ -23,6 +35,11 @@ final class PixelClockPluginHostView extends FrameLayout {
     private long entryGeneration;
     private Runnable firstPresentationFrameCallback;
     private boolean preparingAodWeight;
+    private int handoffDiagnosticFramesRemaining;
+    private int handoffDiagnosticFrame;
+    private long handoffDiagnosticStartedAt;
+    private String handoffDiagnosticSource = "";
+    private String handoffDiagnosticTrace = "";
 
     PixelClockPluginHostView(Context context) {
         super(context);
@@ -64,7 +81,14 @@ final class PixelClockPluginHostView extends FrameLayout {
     @Override
     protected void onDetachedFromWindow() {
         cancelAodEntry();
+        handoffDiagnosticFramesRemaining = 0;
         super.onDetachedFromWindow();
+    }
+
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        super.dispatchDraw(canvas);
+        logHandoffDiagnosticFrame();
     }
 
     void setFirstPresentationFrameCallback(Runnable callback) {
@@ -84,6 +108,7 @@ final class PixelClockPluginHostView extends FrameLayout {
         if (!decision.changed && scene == target) {
             refreshCurrentLayer(source);
             if (scene.isLockscreen() && decision.preparingAod) {
+                armHandoffDiagnostics(source + "#early-aod-weight");
                 preparingAodWeight = true;
                 lockscreenLayer.beginClockPluginAodWeightTransition(
                         source + "#early-aod-weight");
@@ -147,6 +172,9 @@ final class PixelClockPluginHostView extends FrameLayout {
         setVisibility(View.VISIBLE);
         boolean crossfadeFromLockscreen = enteringAod && scene.isLockscreen()
                 && lockscreenLayer.getVisibility() == View.VISIBLE;
+        if (crossfadeFromLockscreen && !preparingAodWeight) {
+            armHandoffDiagnostics(source + "#aod-scene");
+        }
         int handoffWeight = lockscreenLayer.clockPluginWeight();
         preparingAodWeight = false;
 
@@ -156,6 +184,16 @@ final class PixelClockPluginHostView extends FrameLayout {
         // would consume the visible transition while alpha is still zero.
         aodLayer.presentClockPluginAod(target == ClockPluginSceneMachine.Scene.AOD_SMALL,
                 crossfadeFromLockscreen, handoffWeight, source + "#ClockPlugin-host");
+        PixelAodLog.log("ClockPlugin layer snapshot source=" + source
+                + " enteringAod=" + enteringAod
+                + " crossfade=" + crossfadeFromLockscreen
+                + " lockscreen={visibility=" + lockscreenLayer.getVisibility()
+                + ",alpha=" + lockscreenLayer.getAlpha()
+                + ",weight=" + lockscreenLayer.clockPluginWeight() + "}"
+                + " aod={visibility=" + aodLayer.getVisibility()
+                + ",alpha=" + aodLayer.getAlpha()
+                + ",weight=" + aodLayer.clockPluginWeight() + "}"
+                + " trace=" + PixelAodClockView.currentAodTraceId());
 
         if (!crossfadeFromLockscreen) {
             cancelAodEntry();
@@ -179,10 +217,12 @@ final class PixelClockPluginHostView extends FrameLayout {
             }
             aodLayer.animate().cancel();
             lockscreenLayer.animate().cancel();
-            // Both layers advance on the same frame, so the visible lockscreen glyphs remain
-            // continuous until the prepared AOD layer takes over.
-            lockscreenLayer.beginClockPluginAodWeightTransition(source + "#lockscreen-handoff");
-            aodLayer.startClockPluginAodWeightTransition(source + "#aod-handoff", () -> {
+            if (!lockscreenLayer.isClockPluginWeightTransitionRunning()) {
+                lockscreenLayer.beginClockPluginAodWeightTransition(
+                        source + "#lockscreen-handoff");
+            }
+            aodLayer.applyClockPluginStableAodWeight(source + "#aod-handoff");
+            Runnable finish = () -> {
                 if (generation != entryGeneration || !scene.isAod()) {
                     return;
                 }
@@ -206,10 +246,13 @@ final class PixelClockPluginHostView extends FrameLayout {
                         + source + " generation=" + generation
                         + " weight=" + PixelAodClockView.aodClockWeight()
                         + " trace=" + PixelAodClockView.currentAodTraceId());
-            });
+            };
+            finishAodEntryRunnable = finish;
+            postDelayed(finish, CLOCK_WEIGHT_HANDOFF_MILLIS);
             PixelAodLog.log("started persistent ClockPlugin AOD handoff source=" + source
                     + " generation=" + generation
-                    + " waitingForWeight=true"
+                    + " waitingForWeight=true visibleLayer=lockscreen"
+                    + " aodLayerWeight=stable"
                     + " trace=" + PixelAodClockView.currentAodTraceId());
         };
         finishAodEntryRunnable = start;
@@ -222,6 +265,100 @@ final class PixelClockPluginHostView extends FrameLayout {
             removeCallbacks(finishAodEntryRunnable);
             finishAodEntryRunnable = null;
         }
+    }
+
+    private void armHandoffDiagnostics(String source) {
+        if (!PixelAodLog.isDebugEnabled()) {
+            return;
+        }
+        long now = SystemClock.uptimeMillis();
+        String trace = PixelAodClockView.currentAodTraceId();
+        if (handoffDiagnosticFramesRemaining > 0
+                && now - handoffDiagnosticStartedAt <= HANDOFF_DIAGNOSTIC_WINDOW_MILLIS) {
+            return;
+        }
+        handoffDiagnosticFramesRemaining = HANDOFF_DIAGNOSTIC_FRAME_LIMIT;
+        handoffDiagnosticFrame = 0;
+        handoffDiagnosticStartedAt = now;
+        handoffDiagnosticSource = source;
+        handoffDiagnosticTrace = trace;
+        PixelAodLog.log(HANDOFF_DIAGNOSTIC_PREFIX + " armed source=" + source
+                + " scene=" + scene + " trace=" + trace);
+        invalidate();
+    }
+
+    private void logHandoffDiagnosticFrame() {
+        if (handoffDiagnosticFramesRemaining <= 0 || !PixelAodLog.isDebugEnabled()) {
+            return;
+        }
+        int frame = ++handoffDiagnosticFrame;
+        long elapsed = SystemClock.uptimeMillis() - handoffDiagnosticStartedAt;
+        if (elapsed > HANDOFF_DIAGNOSTIC_WINDOW_MILLIS) {
+            handoffDiagnosticFramesRemaining = 0;
+            PixelAodLog.log(HANDOFF_DIAGNOSTIC_PREFIX + " expired frame=" + frame
+                    + " elapsedMs=" + elapsed
+                    + " source=" + handoffDiagnosticSource
+                    + " trace=" + handoffDiagnosticTrace);
+            return;
+        }
+        handoffDiagnosticFramesRemaining--;
+        String framePrefix = HANDOFF_DIAGNOSTIC_PREFIX
+                + " frame=" + frame + "/" + HANDOFF_DIAGNOSTIC_FRAME_LIMIT
+                + " elapsedMs=" + elapsed
+                + " source=" + handoffDiagnosticSource
+                + " scene=" + scene
+                + " trace=" + handoffDiagnosticTrace;
+        PixelAodLog.log(framePrefix
+                + " section=layers host=" + PixelAodClockView.describeViewForHandoff(this)
+                + " lockscreen=" + lockscreenLayer.clockPluginDiagnosticState()
+                + " aod=" + aodLayer.clockPluginDiagnosticState());
+        PixelAodLog.log(framePrefix + " section=ancestors value=" + describeAncestorChain());
+        PixelAodLog.log(framePrefix + " section=root value=" + describeClockPluginRoot());
+    }
+
+    private String describeAncestorChain() {
+        StringBuilder result = new StringBuilder("[");
+        View current = this;
+        for (int depth = 0; depth < HANDOFF_DIAGNOSTIC_ANCESTOR_LIMIT
+                && current != null; depth++) {
+            if (depth > 0) {
+                result.append(';');
+            }
+            result.append(depth).append(':')
+                    .append(PixelAodClockView.describeViewForHandoff(current));
+            ViewParent parent = current.getParent();
+            current = parent instanceof View ? (View) parent : null;
+        }
+        return result.append(']').toString();
+    }
+
+    private String describeClockPluginRoot() {
+        ViewParent parent = getParent();
+        if (!(parent instanceof ViewGroup)) {
+            return "none";
+        }
+        ViewGroup root = (ViewGroup) parent;
+        StringBuilder result = new StringBuilder("{children=")
+                .append(root.getChildCount())
+                .append(",nativeTime=")
+                .append(PixelAodClockView.describeViewForHandoff(
+                        root.findViewById(VIEW_CLOCK_TIME)))
+                .append(",nativeDate=")
+                .append(PixelAodClockView.describeViewForHandoff(
+                        root.findViewById(VIEW_DATE_MESSAGE)))
+                .append(",direct=[");
+        int childCount = Math.min(root.getChildCount(), HANDOFF_DIAGNOSTIC_CHILD_LIMIT);
+        for (int index = 0; index < childCount; index++) {
+            if (index > 0) {
+                result.append(';');
+            }
+            result.append(index).append(':')
+                    .append(PixelAodClockView.describeViewForHandoff(root.getChildAt(index)));
+        }
+        if (root.getChildCount() > childCount) {
+            result.append(";truncated=").append(root.getChildCount() - childCount);
+        }
+        return result.append("]}").toString();
     }
 
     private void notifyAfterPresentationFrame() {
