@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.224] - 2026-07-20
+### Fixed
+- Reassert stock AOD suppression after OOS's authoritative per-minute `AodClockLayout#performAodUpdate` callback, with a same-trace 56 ms follow-up pass. This prevents native clock, battery, notification, and media views from being restored over the module AOD on alternating minute refreshes.
+
+### Diagnostics
+- Log native minute-tick suppression scheduling, trace mismatches, and duplicate-callback debouncing to make future vendor refresh regressions attributable.
+
 ## [0.1.223] - 2026-07-20
 ### Fixed
 - Keep the existing per-weight cache only for exact Google Sans Flex instances built from the module font file. OOS system-family derived Typeface fallbacks are no longer cached or applied during the lockscreen-to-AOD handoff.

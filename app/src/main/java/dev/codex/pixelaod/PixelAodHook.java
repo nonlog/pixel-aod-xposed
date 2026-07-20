@@ -132,6 +132,8 @@ final class PixelAodHook {
     private static final long[] SCREEN_OFF_STOCK_SUPPRESSION_REASSERT_DELAYS_MILLIS = {
             0L, 160L, 620L
     };
+    private static final long NATIVE_AOD_TICK_STOCK_SUPPRESSION_DEBOUNCE_MILLIS = 250L;
+    private static final long NATIVE_AOD_TICK_STOCK_SUPPRESSION_RECHECK_DELAY_MILLIS = 56L;
     private static final long NATIVE_AOD_FRAME_KICK_MIN_INTERVAL_MILLIS = 1200L;
     private static final long FOD_ONLY_NATIVE_HIDE_SKIP_WINDOW_MILLIS = 300L;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_REAPPLY = false;
@@ -175,6 +177,8 @@ final class PixelAodHook {
             new OosProximityTransitionGate();
     private static volatile long lastOosProximityFarAt;
     private static volatile String lastScreenOffStockSuppressionTrace;
+    private static volatile long lastNativeAodTickStockSuppressionAt;
+    private static volatile String lastNativeAodTickStockSuppressionTrace;
 
     private PixelAodHook() {
     }
@@ -818,13 +822,16 @@ final class PixelAodHook {
             }
             final Method targetMethod = method;
             final String source = sourceClass + "#" + methodSignature(method);
+            final boolean reassertStockAodSuppression = "AodClockLayout".equals(sourceClass)
+                    && "performAodUpdate".equals(targetMethod.getName());
             try {
                 targetMethod.setAccessible(true);
                 rememberNativeAodClockRefreshMethod(sourceClass, targetMethod);
                 ModernHookBridge.hookAfter(targetMethod, param -> {
                     rememberNativeAodClockRefreshTarget(sourceClass, targetMethod,
                             param.thisObject, param.args);
-                    MAIN.post(() -> PixelAodClockView.refreshAllForNativeAodTick(source));
+                    MAIN.post(() -> handleNativeAodRefreshCallback(
+                            source, reassertStockAodSuppression));
                 });
                 hooked = true;
                 PixelAodLog.log("hooked native AOD refresh callback " + source);
@@ -833,6 +840,57 @@ final class PixelAodHook {
             }
         }
         return hooked;
+    }
+
+    private static void handleNativeAodRefreshCallback(String source,
+            boolean reassertStockAodSuppression) {
+        PixelAodClockView.refreshAllForNativeAodTick(source);
+        if (reassertStockAodSuppression) {
+            reassertStockAodSuppressionAfterNativeTick(source);
+        }
+    }
+
+    private static void reassertStockAodSuppressionAfterNativeTick(String source) {
+        String expectedTrace = PixelAodClockView.peekAodTraceId();
+        if (TextUtils.isEmpty(expectedTrace)) {
+            PixelAodLog.log("skipped native AOD tick stock suppression source=" + source
+                    + " reason=no-trace");
+            return;
+        }
+        long now = SystemClock.uptimeMillis();
+        long ageMs = now - lastNativeAodTickStockSuppressionAt;
+        if (TextUtils.equals(expectedTrace, lastNativeAodTickStockSuppressionTrace)
+                && lastNativeAodTickStockSuppressionAt > 0L
+                && ageMs >= 0L
+                && ageMs < NATIVE_AOD_TICK_STOCK_SUPPRESSION_DEBOUNCE_MILLIS) {
+            PixelAodLog.log("skipped native AOD tick stock suppression source=" + source
+                    + " reason=debounced"
+                    + " ageMs=" + ageMs
+                    + " trace=" + expectedTrace);
+            return;
+        }
+        lastNativeAodTickStockSuppressionAt = now;
+        lastNativeAodTickStockSuppressionTrace = expectedTrace;
+        String passSource = source + "#native-tick-stock-suppression";
+        refreshKnownAodHostVisibility(passSource, expectedTrace);
+        MAIN.postDelayed(() -> {
+            String currentTrace = PixelAodClockView.peekAodTraceId();
+            if (!OosAodLifecycleAdapter.matchesExpectedTrace(expectedTrace, currentTrace)) {
+                PixelAodLog.log("skipped native AOD tick stock suppression recheck source="
+                        + source
+                        + " reason=trace-mismatch"
+                        + " expectedTrace=" + expectedTrace
+                        + " currentTrace=" + currentTrace);
+                return;
+            }
+            refreshKnownAodHostVisibility(passSource + "-recheck-"
+                    + NATIVE_AOD_TICK_STOCK_SUPPRESSION_RECHECK_DELAY_MILLIS + "ms",
+                    expectedTrace);
+        }, NATIVE_AOD_TICK_STOCK_SUPPRESSION_RECHECK_DELAY_MILLIS);
+        PixelAodLog.log("scheduled native AOD tick stock suppression source=" + source
+                + " trace=" + expectedTrace
+                + " recheckDelayMs=" + NATIVE_AOD_TICK_STOCK_SUPPRESSION_RECHECK_DELAY_MILLIS
+                + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
     }
 
     private static void hookShadeWindowView(Context context, ClassLoader classLoader) {
