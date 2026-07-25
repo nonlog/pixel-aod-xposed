@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.1.242] - 2026-07-25
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** weight handoff, settings clamp, AOD notification parity, size morph (partial), media timing
+
+### Fixed (verified / user-confirmed OK except size morph)
+- Settings AOD weight 100 applied as 160: both `aodClockWeight()` min clamp and `normalizeClockWeight()` floor were 160 while the settings slider allows 100–500. Both now use 100–500 so typeface `wght` matches the setting. **Success.**
+- LS→AOD weight morph invisible/snap with notifications: compact path ran 340→target on the lockscreen layer then `applyStableAodWeight` on the AOD layer at reveal. Weight morph now transfers to the AOD layer (park at current LS weight, animate on AOD) and crossfades immediately. **Success (user: other issues OK).**
+- Media row lag on AOD entry: denser earlier media retries (0/16/48/100/200/320ms) and media refresh before crossfade. **Success.**
+- AOD→LS weight snap after notifications/hotspot: animate restore when LS layer already at AOD weight; `restoreClockPluginLockscreenWeight` no longer hard-snaps. **Success.**
+- Hotspot / lockscreen-visible system status missing on AOD: NETWORK_STATUS / Tethering / Wi-Fi sharing treated as system status; no importance filter for android/SystemUI. **Success.**
+- Interactive LS wake canceling aod-to-ls / early-aod staging: skip early AOD while interactive; animate restore. **Success.**
+
+### Deferred / still imperfect
+- **Lockscreen/AOD SMALL↔LARGE size morph:** content-bounds + OnPreDraw improved geometry vs whole-layer scale, but user still reports visual flaws (start/end not fully matching true large/small rest positions). **Not fixed; left for later.** No full COUI multi-glyph path port.
+
+## [0.1.241] - 2026-07-25
+### Fixed
+- AOD→lockscreen weight snap after hotspot/notifications enabled: with compact notifications the host uses early-aod-weight on the lockscreen layer (stays LOCKSCREEN at wght~160). Wake called `restoreClockPluginLockscreenWeight` / present without `fromAod`, snapping to 340. Animate restore when layer weight is already near AOD target; treat lockscreen-layer AOD weight as reverse-morph source even if host scene is still lockscreen.
+
+## [0.1.240] - 2026-07-25
+### Fixed
+- AOD notification icons missing lockscreen-visible status rows (e.g. hotspot "1 device is connected via Wi-Fi sharing"): OOS shows channel `NETWORK_STATUS` / group `Tethering` at importance=2 on lockscreen, but AOD filtered them as `lockscreen-policy-ranking-importance-low-or-less` and the system-status whitelist only matched English "hotspot/tether". Treat NETWORK_STATUS/Tethering/Wi-Fi sharing as system status; do not importance-filter `android`/`SystemUI` (same exemption as lockscreen policy); keep rows explicitly marked visible by keyguard visibility hooks.
+
+## [0.1.239] - 2026-07-25
+### Fixed
+- Size morph still wrong in user video v2: large clock uses MATCH_PARENT so view-center/view-size morph used full screen width and wrong pivot (digits oversized and off-target mid-anim). Now morph uses glyph content bounds (`Layout` line box) + `textSize` ratio, pivot at content center, and `OnPreDraw` so the first drawn frame already has the start transform (no post-frame flash).
+
+## [0.1.238] - 2026-07-25
+### Fixed
+- Lockscreen/AOD size morph geometry (user video): no longer scale the whole host layer with a wrong pivot (clock flew off-screen mid-anim). Capture pre-change clock/date center+size, apply target layout, then animate only the TextView(s) with scale+translation from previous center to laid-out center (`PathInterpolator(0.2,0,0,1)`, 550ms). Compact→large AOD entry morph uses the same approach.
+
+## [0.1.237] - 2026-07-25
+### Fixed
+- Lockscreen weight reverts to AOD weight after aod-to-ls anim (logs 20:55 continuous wake/sleep):
+  - Never stage `early-aod-large` / early AOD weight while device is interactive.
+  - When interactive, always accept lockscreen present (do not ignore because AOD weight is running).
+  - If `aod-to-ls` weight anim is cancelled while still interactive on lockscreen, snap to lockscreen weight (340) instead of leaving AOD weight.
+### Added
+- COUI-like SMALL↔LARGE size morph on lockscreen and AOD (`PathInterpolator(0.2,0,0,1)`, 550ms) when clock size changes on an already-visible layer.
+
 ## [0.1.236] - 2026-07-24
 ### Fixed
 - LS→AOD weight bounce hardening (log-verified path):

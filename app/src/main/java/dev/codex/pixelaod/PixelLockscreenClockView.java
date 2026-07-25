@@ -14,10 +14,13 @@ import android.os.Handler;
 import android.os.Looper;
 import android.service.notification.StatusBarNotification;
 import android.text.TextUtils;
+import android.text.Layout;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
+import android.view.animation.PathInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -76,6 +79,10 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static final long NOTIFICATION_LAYOUT_CHECK_INTERVAL_MS = 80L;
     private static final long BOUNCER_CHECK_INTERVAL_MS = 900L;
     private static final boolean ANIMATE_AOD_POSITION_TO_LOCKSCREEN = true;
+    /** COUI applyTargets default duration + PathInterpolator(0.2, 0, 0, 1). */
+    private static final long SIZE_MORPH_MILLIS = 550L;
+    private static final PathInterpolator SIZE_MORPH_INTERPOLATOR =
+            new PathInterpolator(0.2f, 0f, 0f, 1f);
     private static final StatusBarNotification[] EMPTY_NOTIFICATIONS = new StatusBarNotification[0];
 
     private static StatusBarNotification[] activeNotifications = EMPTY_NOTIFICATIONS;
@@ -382,7 +389,24 @@ final class PixelLockscreenClockView extends FrameLayout {
             setVisibility(View.INVISIBLE);
             return;
         }
+        boolean wasVisible = getVisibility() == View.VISIBLE && getAlpha() > 0.01f;
+        boolean sizeChanged = compact != compactClock;
+        // Glyph content bounds + textSize (not MATCH_PARENT view box). Video v2: full-view
+        // width made scale/pivot wrong so digits flew off-screen mid-morph.
+        ViewMorphSnapshot fromClock = null;
+        ViewMorphSnapshot fromDate = null;
+        if (sizeChanged && wasVisible) {
+            fromClock = snapshotTextContentMorph(clockView);
+            if (!fromClock.valid) {
+                fromClock = estimateClockMorphSnapshot(compactClock);
+            }
+            fromDate = snapshotTextContentMorph(dateView);
+        }
         resetTransitionState();
+        clearViewMorphTransforms(clockView);
+        clearViewMorphTransforms(dateView);
+        setScaleX(1f);
+        setScaleY(1f);
         setVisibility(View.VISIBLE);
         markInteractiveLockscreenSurface(getContext(), source + "#ClockPlugin");
         setExpandedNotificationSuppressed(false);
@@ -393,10 +417,23 @@ final class PixelLockscreenClockView extends FrameLayout {
         clearClockPluginAodNotificationIcons(source + "#lockscreen");
         setTranslationX(0f);
         setTranslationY(0f);
-        if (animateWeightFromAod
-                && fromWeight > 0
-                && fromWeight != lockscreenWeight) {
-            beginLockscreenWeightRestoreTransition(fromWeight, lockscreenWeight, source);
+        // OnPreDraw: apply start transform before the first target frame is drawn (no post flash).
+        if (sizeChanged && wasVisible && fromClock != null && fromClock.valid) {
+            startTextContentMorph(clockView, fromClock, source + "#size-morph-clock");
+            if (fromDate != null && fromDate.valid) {
+                startTextContentMorph(dateView, fromDate, source + "#size-morph-date");
+            }
+        }
+        int aodWeight = PixelAodClockView.aodClockWeight(getContext());
+        int weightStart = fromWeight > 0 ? fromWeight : currentClockWeight;
+        // Also reverse-morph when the LS layer is already at AOD weight (early-aod-weight path
+        // never flips host scene to AOD, so animateWeightFromAod may be false).
+        boolean weightLooksLikeAod = Math.abs(currentClockWeight - aodWeight) <= 16
+                && Math.abs(currentClockWeight - lockscreenWeight) > 8;
+        if ((animateWeightFromAod || weightLooksLikeAod)
+                && weightStart > 0
+                && Math.abs(weightStart - lockscreenWeight) > 8) {
+            beginLockscreenWeightRestoreTransition(weightStart, lockscreenWeight, source);
         } else {
             setClockWeight(lockscreenWeight);
         }
@@ -405,6 +442,8 @@ final class PixelLockscreenClockView extends FrameLayout {
                 + " source=" + source
                 + " compact=" + compactClock
                 + " weight=" + currentClockWeight
+                + " sizeChanged=" + sizeChanged
+                + " sizeMorph=" + (sizeChanged && wasVisible)
                 + " animateFromAod=" + animateWeightFromAod
                 + " fromWeight=" + fromWeight);
     }
@@ -440,6 +479,29 @@ final class PixelLockscreenClockView extends FrameLayout {
                 PixelAodClockView.aodClockWeight(getContext()), source + "#ls-to-aod");
     }
 
+    /**
+     * Stop any in-flight weight morph but keep the current intermediate weight
+     * (used when ownership of the morph transfers to the AOD layer).
+     */
+    void cancelClockPluginWeightTransitionKeepCurrent(String source) {
+        if (!clockPluginManaged) {
+            return;
+        }
+        if (clockWeightAnimator == null) {
+            return;
+        }
+        int kept = currentClockWeight;
+        clockWeightAnimator.cancel();
+        clockWeightAnimator = null;
+        clockWeightTransitionPending = false;
+        lastClockTransitionStartedAt = 0L;
+        // Re-apply kept weight in case cancel listener changed it for aod-to-ls snaps.
+        setClockWeight(kept);
+        PixelAodLog.log("cancelled lockscreen weight keep-current source=" + source
+                + " weight=" + kept
+                + " trace=" + PixelAodClockView.currentAodTraceId());
+    }
+
     private void beginLockscreenWeightRestoreTransition(int fromWeight, int toWeight,
             String source) {
         runWeightTransition(fromWeight, toWeight, source + "#aod-to-ls");
@@ -468,6 +530,7 @@ final class PixelLockscreenClockView extends FrameLayout {
                     + " trace=" + PixelAodClockView.currentAodTraceId());
             return;
         }
+        final boolean restoreToLockscreen = source != null && source.contains("aod-to-ls");
         setClockWeight(fromWeight);
         clockWeightAnimator = ValueAnimator.ofFloat(0f, 1f);
         clockWeightAnimator.setDuration(700L);
@@ -485,9 +548,23 @@ final class PixelLockscreenClockView extends FrameLayout {
                 clockWeightTransitionPending = false;
                 lastClockTransitionStartedAt = 0L;
                 clockWeightAnimator = null;
-                PixelAodLog.log("cancelled persistent ClockPlugin lockscreen weight handoff source="
-                        + source + " fromWeight=" + fromWeight + " toWeight=" + toWeight
-                        + " trace=" + PixelAodClockView.currentAodTraceId());
+                // If aod-to-ls is interrupted while the user is still on lockscreen, finish at
+                // lockscreen weight so the clock does not stick at AOD weight (logs 20:55).
+                boolean interactive = PixelAodClockView.isDeviceInteractive(getContext());
+                if (restoreToLockscreen
+                        && interactive
+                        && getVisibility() == View.VISIBLE) {
+                    setClockWeight(toWeight);
+                    PixelAodLog.log("cancelled persistent ClockPlugin lockscreen weight handoff source="
+                            + source + " fromWeight=" + fromWeight + " toWeight=" + toWeight
+                            + " snappedToLockscreen=true"
+                            + " trace=" + PixelAodClockView.currentAodTraceId());
+                } else {
+                    PixelAodLog.log("cancelled persistent ClockPlugin lockscreen weight handoff source="
+                            + source + " fromWeight=" + fromWeight + " toWeight=" + toWeight
+                            + " snappedToLockscreen=false interactive=" + interactive
+                            + " trace=" + PixelAodClockView.currentAodTraceId());
+                }
             }
 
             @Override
@@ -507,6 +584,221 @@ final class PixelLockscreenClockView extends FrameLayout {
         clockWeightAnimator.start();
         PixelAodLog.log("started persistent ClockPlugin lockscreen weight handoff source="
                 + source + " fromWeight=" + fromWeight + " toWeight=" + toWeight
+                + " trace=" + PixelAodClockView.currentAodTraceId());
+    }
+
+    /**
+     * Glyph-content geometry in parent coordinates + local pivot inside the TextView.
+     * Using the full MATCH_PARENT box for large clock made scale ≈ tiny and pivot wrong.
+     */
+    private static final class ViewMorphSnapshot {
+        float centerX;
+        float centerY;
+        float width;
+        float height;
+        /** Content-center X/Y in the TextView's local coordinates (for setPivot). */
+        float pivotX;
+        float pivotY;
+        float textSize;
+        boolean valid;
+    }
+
+    private static void clearViewMorphTransforms(View view) {
+        if (view == null) {
+            return;
+        }
+        view.animate().cancel();
+        view.setScaleX(1f);
+        view.setScaleY(1f);
+        view.setTranslationX(0f);
+        view.setTranslationY(0f);
+    }
+
+    /**
+     * Measure the drawn glyph box (not the MATCH_PARENT hit box) so small "22:17" and large
+     * two-line "22\\n17" morph between real digit bounds.
+     */
+    private ViewMorphSnapshot snapshotTextContentMorph(TextView tv) {
+        ViewMorphSnapshot snap = new ViewMorphSnapshot();
+        if (tv == null) {
+            return snap;
+        }
+        float localLeft;
+        float localTop;
+        float contentW;
+        float contentH;
+        Layout layout = tv.getLayout();
+        if (layout != null && layout.getLineCount() > 0) {
+            float left = Float.MAX_VALUE;
+            float right = Float.MIN_VALUE;
+            for (int i = 0; i < layout.getLineCount(); i++) {
+                left = Math.min(left, layout.getLineLeft(i));
+                right = Math.max(right, layout.getLineRight(i));
+            }
+            contentW = Math.max(1f, right - left);
+            contentH = Math.max(1f, (float) layout.getHeight());
+            localLeft = tv.getTotalPaddingLeft() + left;
+            localTop = tv.getTotalPaddingTop();
+        } else {
+            CharSequence cs = tv.getText();
+            String text = cs != null ? cs.toString() : "";
+            boolean multi = text.indexOf('\n') >= 0;
+            float maxLineW = 1f;
+            if (multi) {
+                for (String line : text.split("\n")) {
+                    maxLineW = Math.max(maxLineW, tv.getPaint().measureText(line));
+                }
+            } else {
+                maxLineW = Math.max(1f, tv.getPaint().measureText(text));
+            }
+            contentW = maxLineW;
+            contentH = Math.max(1f, tv.getTextSize() * (multi ? 2.15f : 1.2f));
+            int vw = tv.getWidth();
+            if (vw > contentW * 1.4f) {
+                // Centered large clock (MATCH_PARENT).
+                localLeft = (vw - contentW) / 2f;
+            } else {
+                localLeft = tv.getTotalPaddingLeft();
+            }
+            localTop = tv.getTotalPaddingTop();
+            if (tv.getWidth() <= 0 || tv.getHeight() <= 0) {
+                return snap;
+            }
+        }
+        snap.width = contentW;
+        snap.height = contentH;
+        snap.pivotX = localLeft + contentW / 2f;
+        snap.pivotY = localTop + contentH / 2f;
+        snap.centerX = tv.getLeft() + snap.pivotX + tv.getTranslationX();
+        snap.centerY = tv.getTop() + snap.pivotY + tv.getTranslationY();
+        snap.textSize = tv.getTextSize();
+        snap.valid = contentW > 1f && contentH > 1f && snap.textSize > 1f;
+        return snap;
+    }
+
+    /** Fallback when the clock has not been measured yet. */
+    private ViewMorphSnapshot estimateClockMorphSnapshot(boolean compact) {
+        ViewMorphSnapshot snap = new ViewMorphSnapshot();
+        float parentW = getWidth() > 0
+                ? getWidth()
+                : getResources().getDisplayMetrics().widthPixels;
+        if (compact) {
+            float textPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP,
+                    PixelAodClockView.scaledClockTextDp(getContext(), SMALL_CLOCK_TEXT_DP),
+                    getResources().getDisplayMetrics());
+            snap.width = textPx * 3.2f;
+            snap.height = textPx * 1.15f;
+            snap.pivotX = snap.width / 2f;
+            snap.pivotY = snap.height / 2f;
+            snap.centerX = dp(EDGE_DP - COMPACT_CLOCK_VISUAL_START_OFFSET_DP) + snap.pivotX;
+            snap.centerY = dp(SMALL_CLOCK_TOP_DP) + snap.pivotY;
+            snap.textSize = textPx;
+        } else {
+            float textPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP,
+                    PixelAodClockView.scaledClockTextDp(getContext(), LARGE_CLOCK_TEXT_DP),
+                    getResources().getDisplayMetrics());
+            // Two-line large clock content ≈ digit width, not full screen width.
+            snap.width = textPx * 1.35f;
+            snap.height = textPx * 2.15f;
+            snap.pivotX = snap.width / 2f;
+            snap.pivotY = snap.height / 2f;
+            snap.centerX = parentW / 2f;
+            snap.centerY = dp(LARGE_CLOCK_TOP_DP) + snap.pivotY;
+            snap.textSize = textPx;
+        }
+        snap.valid = snap.width > 1f && snap.height > 1f;
+        return snap;
+    }
+
+    /**
+     * Target layout is already applied. Before the first draw, park the TextView so its
+     * glyph box matches the previous content center/size, then animate to identity.
+     */
+    private void startTextContentMorph(TextView view, ViewMorphSnapshot from, String source) {
+        if (view == null || from == null || !from.valid) {
+            return;
+        }
+        final TextView target = view;
+        final ViewMorphSnapshot fromSnap = from;
+        ViewTreeObserver observer = target.getViewTreeObserver();
+        if (!observer.isAlive()) {
+            target.post(() -> runTextContentMorph(target, fromSnap, source));
+            return;
+        }
+        observer.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                ViewTreeObserver obs = target.getViewTreeObserver();
+                if (obs.isAlive()) {
+                    obs.removeOnPreDrawListener(this);
+                }
+                runTextContentMorph(target, fromSnap, source);
+                return true;
+            }
+        });
+        target.invalidate();
+    }
+
+    private void runTextContentMorph(TextView target, ViewMorphSnapshot fromSnap, String source) {
+        ViewMorphSnapshot to = snapshotTextContentMorph(target);
+        if (!to.valid) {
+            clearViewMorphTransforms(target);
+            return;
+        }
+        // Prefer textSize ratio so digits grow/shrink continuously (1-line ↔ 2-line layout).
+        float scale = fromSnap.textSize > 1f && to.textSize > 1f
+                ? (fromSnap.textSize / to.textSize)
+                : ((fromSnap.width / to.width) + (fromSnap.height / to.height)) * 0.5f;
+        if (scale < 0.25f) {
+            scale = 0.25f;
+        } else if (scale > 4.5f) {
+            scale = 4.5f;
+        }
+        // Pivot at target glyph center; translation moves that pivot from fromCenter → toCenter.
+        float startTx = fromSnap.centerX - to.centerX;
+        float startTy = fromSnap.centerY - to.centerY;
+        target.animate().cancel();
+        target.setPivotX(to.pivotX);
+        target.setPivotY(to.pivotY);
+        target.setScaleX(scale);
+        target.setScaleY(scale);
+        target.setTranslationX(startTx);
+        target.setTranslationY(startTy);
+        target.animate()
+                .scaleX(1f)
+                .scaleY(1f)
+                .translationX(0f)
+                .translationY(0f)
+                .setDuration(SIZE_MORPH_MILLIS)
+                .setInterpolator(SIZE_MORPH_INTERPOLATOR)
+                .withEndAction(() -> {
+                    clearViewMorphTransforms(target);
+                    PixelAodLog.log("finished lockscreen size morph source=" + source
+                            + " toCx=" + to.centerX
+                            + " toCy=" + to.centerY
+                            + " toW=" + to.width
+                            + " toH=" + to.height
+                            + " toTextSize=" + to.textSize
+                            + " trace=" + PixelAodClockView.currentAodTraceId());
+                })
+                .start();
+        PixelAodLog.log("started lockscreen size morph source=" + source
+                + " fromCx=" + fromSnap.centerX
+                + " fromCy=" + fromSnap.centerY
+                + " fromW=" + fromSnap.width
+                + " fromH=" + fromSnap.height
+                + " fromTextSize=" + fromSnap.textSize
+                + " toCx=" + to.centerX
+                + " toCy=" + to.centerY
+                + " toW=" + to.width
+                + " toH=" + to.height
+                + " toTextSize=" + to.textSize
+                + " pivotX=" + to.pivotX
+                + " pivotY=" + to.pivotY
+                + " startScale=" + scale
+                + " startTx=" + startTx
+                + " startTy=" + startTy
+                + " durationMs=" + SIZE_MORPH_MILLIS
                 + " trace=" + PixelAodClockView.currentAodTraceId());
     }
 
@@ -534,18 +826,31 @@ final class PixelLockscreenClockView extends FrameLayout {
         if (!clockPluginManaged) {
             return;
         }
+        int fromWeight = currentClockWeight;
         if (clockWeightAnimator != null) {
+            // Cancel without treating this as a finished aod-to-ls snap path.
             clockWeightAnimator.cancel();
             clockWeightAnimator = null;
         }
         clockWeightTransitionPending = false;
         lastClockTransitionStartedAt = 0L;
         int targetWeight = PixelAodClockView.lockscreenClockWeight(getContext());
-        setClockWeight(targetWeight);
         clearClockPluginAodNotificationIcons(source + "#restore-lockscreen");
-        PixelAodLog.log("restored persistent ClockPlugin lockscreen weight source=" + source
-                + " weight=" + targetWeight
-                + " trace=" + PixelAodClockView.currentAodTraceId());
+        // cancel-early-aod-interactive used to setClockWeight(340) instantly after early-aod-weight
+        // parked the layer at ~160 — that is the AOD→LS snap regression with notifications.
+        if (fromWeight > 0 && Math.abs(fromWeight - targetWeight) > 8) {
+            beginLockscreenWeightRestoreTransition(fromWeight, targetWeight,
+                    source + "#restore-animated");
+            PixelAodLog.log("restored persistent ClockPlugin lockscreen weight source=" + source
+                    + " animated=true fromWeight=" + fromWeight
+                    + " toWeight=" + targetWeight
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
+        } else {
+            setClockWeight(targetWeight);
+            PixelAodLog.log("restored persistent ClockPlugin lockscreen weight source=" + source
+                    + " animated=false weight=" + targetWeight
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
+        }
     }
 
     void setClockPluginLayerVisible(boolean visible) {
@@ -554,6 +859,11 @@ final class PixelLockscreenClockView extends FrameLayout {
         }
         if (!visible) {
             resetTransitionState();
+            animate().cancel();
+            setScaleX(1f);
+            setScaleY(1f);
+            clearViewMorphTransforms(clockView);
+            clearViewMorphTransforms(dateView);
             clearClockPluginAodNotificationIcons("ClockPlugin-layer-hidden");
         }
         setVisibility(visible ? View.VISIBLE : View.INVISIBLE);

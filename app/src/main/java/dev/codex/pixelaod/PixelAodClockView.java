@@ -2669,6 +2669,21 @@ public final class PixelAodClockView extends FrameLayout {
         // does not draw large/compact clock without the media row for a frame.
         refreshActiveMediaControllers();
         applyMaterialColors();
+        boolean wasVisible = getVisibility() == View.VISIBLE && getAlpha() > 0.01f;
+        boolean sizeChanged = compact != compactClock;
+        // Glyph content + textSize before mode switch (MATCH_PARENT box is wrong for morph).
+        final float[] fromClock = sizeChanged && wasVisible
+                ? snapshotTextContentMorph(clockView)
+                : null;
+        if (clockView != null) {
+            clockView.animate().cancel();
+            clockView.setScaleX(1f);
+            clockView.setScaleY(1f);
+            clockView.setTranslationX(0f);
+            clockView.setTranslationY(0f);
+        }
+        setScaleX(1f);
+        setScaleY(1f);
         applyClockMode(compact);
         rebuildNotificationIcons(source + "#ClockPlugin");
         updateMediaLine(source + "#ClockPlugin");
@@ -2705,29 +2720,168 @@ public final class PixelAodClockView extends FrameLayout {
         setVisibility(View.VISIBLE);
         applyBurnInTranslation();
         if (morphFromCompact && !compact) {
-            // Large layout + media already applied; start visual scale at compact size.
-            float startScale = PixelAodVisualStyle.SMALL_CLOCK_TEXT_DP
-                    / (float) PixelAodVisualStyle.LARGE_CLOCK_TEXT_DP;
-            setScaleX(startScale);
-            setScaleY(startScale);
-            setPivotX(getWidth() > 0 ? getWidth() / 2f : getResources().getDisplayMetrics().widthPixels / 2f);
-            setPivotY(dp(SMALL_CLOCK_TOP_DP));
+            // Entry morph is driven by startCompactToLargeEntryMorph on the host after present.
             if (mediaRow != null) {
                 mediaRow.setAlpha(0f);
             }
-        } else {
-            setScaleX(1f);
-            setScaleY(1f);
+        } else if (sizeChanged && wasVisible && !weightRunning
+                && fromClock != null && fromClock[4] > 1f) {
+            startAodTextContentMorph(fromClock, source + "#aod-size-morph");
             if (mediaRow != null) {
                 mediaRow.setAlpha(MEDIA_ALPHA);
             }
+        } else if (mediaRow != null) {
+            mediaRow.setAlpha(MEDIA_ALPHA);
         }
         requestAodFrameRefresh(source + "#ClockPlugin");
     }
 
     /**
-     * COUI-inspired compact→large entry: scale the already-laid-out large AOD surface
-     * from compact-ish size to 1.0 and fade the media row in. Does not touch power/blank.
+     * @return float[]{centerX, centerY, contentW, contentH, textSize, pivotX, pivotY}
+     *         zeros if unmeasured. Content box only — not MATCH_PARENT width.
+     */
+    private float[] snapshotTextContentMorph(TextView tv) {
+        float[] out = new float[7];
+        if (tv == null) {
+            return out;
+        }
+        float localLeft;
+        float localTop;
+        float contentW;
+        float contentH;
+        android.text.Layout layout = tv.getLayout();
+        if (layout != null && layout.getLineCount() > 0) {
+            float left = Float.MAX_VALUE;
+            float right = Float.MIN_VALUE;
+            for (int i = 0; i < layout.getLineCount(); i++) {
+                left = Math.min(left, layout.getLineLeft(i));
+                right = Math.max(right, layout.getLineRight(i));
+            }
+            contentW = Math.max(1f, right - left);
+            contentH = Math.max(1f, (float) layout.getHeight());
+            localLeft = tv.getTotalPaddingLeft() + left;
+            localTop = tv.getTotalPaddingTop();
+        } else if (tv.getWidth() > 0 && tv.getHeight() > 0) {
+            CharSequence cs = tv.getText();
+            String text = cs != null ? cs.toString() : "";
+            boolean multi = text.indexOf('\n') >= 0;
+            float maxLineW = 1f;
+            if (multi) {
+                for (String line : text.split("\n")) {
+                    maxLineW = Math.max(maxLineW, tv.getPaint().measureText(line));
+                }
+            } else {
+                maxLineW = Math.max(1f, tv.getPaint().measureText(text));
+            }
+            contentW = maxLineW;
+            contentH = Math.max(1f, tv.getTextSize() * (multi ? 2.15f : 1.2f));
+            localLeft = tv.getWidth() > contentW * 1.4f
+                    ? (tv.getWidth() - contentW) / 2f
+                    : tv.getTotalPaddingLeft();
+            localTop = tv.getTotalPaddingTop();
+        } else {
+            return out;
+        }
+        out[5] = localLeft + contentW / 2f;
+        out[6] = localTop + contentH / 2f;
+        out[0] = tv.getLeft() + out[5] + tv.getTranslationX();
+        out[1] = tv.getTop() + out[6] + tv.getTranslationY();
+        out[2] = contentW;
+        out[3] = contentH;
+        out[4] = tv.getTextSize();
+        return out;
+    }
+
+    private void startAodTextContentMorph(float[] from, String source) {
+        if (clockView == null || from == null || from[4] <= 1f) {
+            return;
+        }
+        final float fromCx = from[0];
+        final float fromCy = from[1];
+        final float fromTextSize = from[4];
+        final float fromW = from[2];
+        final float fromH = from[3];
+        android.view.ViewTreeObserver observer = clockView.getViewTreeObserver();
+        if (!observer.isAlive()) {
+            clockView.post(() -> runAodTextContentMorph(
+                    fromCx, fromCy, fromW, fromH, fromTextSize, source));
+            return;
+        }
+        observer.addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                android.view.ViewTreeObserver obs = clockView.getViewTreeObserver();
+                if (obs.isAlive()) {
+                    obs.removeOnPreDrawListener(this);
+                }
+                runAodTextContentMorph(fromCx, fromCy, fromW, fromH, fromTextSize, source);
+                return true;
+            }
+        });
+        clockView.invalidate();
+    }
+
+    private void runAodTextContentMorph(float fromCx, float fromCy, float fromW, float fromH,
+            float fromTextSize, String source) {
+        float[] to = snapshotTextContentMorph(clockView);
+        if (to[4] <= 1f) {
+            clockView.setScaleX(1f);
+            clockView.setScaleY(1f);
+            clockView.setTranslationX(0f);
+            clockView.setTranslationY(0f);
+            return;
+        }
+        float scale = fromTextSize / to[4];
+        if (scale < 0.25f) {
+            scale = 0.25f;
+        } else if (scale > 4.5f) {
+            scale = 4.5f;
+        }
+        float startTx = fromCx - to[0];
+        float startTy = fromCy - to[1];
+        clockView.animate().cancel();
+        clockView.setPivotX(to[5]);
+        clockView.setPivotY(to[6]);
+        clockView.setScaleX(scale);
+        clockView.setScaleY(scale);
+        clockView.setTranslationX(startTx);
+        clockView.setTranslationY(startTy);
+        clockView.animate()
+                .scaleX(1f)
+                .scaleY(1f)
+                .translationX(0f)
+                .translationY(0f)
+                .setDuration(550L)
+                .setInterpolator(new android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f))
+                .withEndAction(() -> {
+                    clockView.setScaleX(1f);
+                    clockView.setScaleY(1f);
+                    clockView.setTranslationX(0f);
+                    clockView.setTranslationY(0f);
+                    PixelAodLog.log("finished AOD size morph source=" + source
+                            + " toCx=" + to[0] + " toCy=" + to[1]
+                            + " toW=" + to[2] + " toH=" + to[3]
+                            + " toTextSize=" + to[4]
+                            + " trace=" + currentAodTraceId());
+                })
+                .start();
+        PixelAodLog.log("started AOD size morph source=" + source
+                + " fromCx=" + fromCx + " fromCy=" + fromCy
+                + " fromW=" + fromW + " fromH=" + fromH
+                + " fromTextSize=" + fromTextSize
+                + " toCx=" + to[0] + " toCy=" + to[1]
+                + " toW=" + to[2] + " toH=" + to[3]
+                + " toTextSize=" + to[4]
+                + " startScale=" + scale
+                + " startTx=" + startTx + " startTy=" + startTy
+                + " durationMs=550"
+                + " trace=" + currentAodTraceId());
+    }
+
+    /**
+     * COUI-inspired compact→large entry: large layout is already applied; morph the clock
+     * TextView from the compact visual center/size to the large target. Media fades in.
+     * Does not scale the whole layer (wrong pivot flew off-screen).
      */
     void startCompactToLargeEntryMorph(long durationMs,
             android.view.animation.Interpolator interpolator, String source) {
@@ -2735,16 +2889,8 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         animate().cancel();
-        float startScale = getScaleX() > 0f && getScaleX() < 1f
-                ? getScaleX()
-                : PixelAodVisualStyle.SMALL_CLOCK_TEXT_DP
-                / (float) PixelAodVisualStyle.LARGE_CLOCK_TEXT_DP;
-        setScaleX(startScale);
-        setScaleY(startScale);
-        if (getWidth() > 0) {
-            setPivotX(getWidth() / 2f);
-        }
-        setPivotY(dp(SMALL_CLOCK_TOP_DP));
+        setScaleX(1f);
+        setScaleY(1f);
         if (mediaRow != null && mediaRow.getVisibility() == View.VISIBLE) {
             mediaRow.setAlpha(0f);
             mediaRow.animate().cancel();
@@ -2754,29 +2900,81 @@ public final class PixelAodClockView extends FrameLayout {
                     .setInterpolator(interpolator)
                     .start();
         }
-        // Scale/media only — weight is owned by startClockPluginAodWeightTransition so the
-        // two animators do not cancel each other (double-start caused weight snap).
-        animate()
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(durationMs)
-                .setInterpolator(interpolator)
-                .withEndAction(() -> {
-                    setScaleX(1f);
-                    setScaleY(1f);
-                    if (mediaRow != null && mediaRow.getVisibility() == View.VISIBLE) {
-                        mediaRow.setAlpha(MEDIA_ALPHA);
-                    }
-                    PixelAodLog.log("finished compact→large AOD entry morph source=" + source
-                            + " mediaVisible=" + hasVisibleMediaLine()
-                            + " trace=" + currentAodTraceId());
-                })
-                .start();
-        PixelAodLog.log("started compact→large AOD entry morph source=" + source
-                + " startScale=" + startScale
-                + " durationMs=" + durationMs
-                + " mediaVisible=" + hasVisibleMediaLine()
-                + " trace=" + currentAodTraceId());
+        if (clockView == null) {
+            return;
+        }
+        // Estimated compact clock bounds → current large layout bounds.
+        float parentW = getWidth() > 0
+                ? getWidth()
+                : getResources().getDisplayMetrics().widthPixels;
+        float smallTextPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP,
+                scaledClockTextDp(getContext(), SMALL_CLOCK_TEXT_DP),
+                getResources().getDisplayMetrics());
+        float fromW = smallTextPx * 3.4f;
+        float fromH = smallTextPx * 1.2f;
+        float fromCx = dp(PixelAodVisualStyle.EDGE_DP
+                - PixelAodVisualStyle.COMPACT_CLOCK_VISUAL_START_OFFSET_DP) + fromW / 2f;
+        float fromCy = dp(SMALL_CLOCK_TOP_DP) + fromH / 2f;
+        float[] from = new float[]{fromCx, fromCy, fromW, fromH};
+        // Reuse rect morph; duration may differ from default 550.
+        final long morphMs = durationMs > 0L ? durationMs : 550L;
+        final android.view.animation.Interpolator morphInterp = interpolator != null
+                ? interpolator
+                : new android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f);
+        clockView.post(() -> {
+            if (clockView.getWidth() <= 0 || clockView.getHeight() <= 0) {
+                return;
+            }
+            float toCx = clockView.getLeft() + clockView.getWidth() / 2f;
+            float toCy = clockView.getTop() + clockView.getHeight() / 2f;
+            float toW = clockView.getWidth();
+            float toH = clockView.getHeight();
+            float scale = ((from[2] / toW) + (from[3] / toH)) * 0.5f;
+            if (scale < 0.2f) {
+                scale = 0.2f;
+            } else if (scale > 5f) {
+                scale = 5f;
+            }
+            float startTx = from[0] - toCx;
+            float startTy = from[1] - toCy;
+            clockView.animate().cancel();
+            clockView.setPivotX(clockView.getWidth() / 2f);
+            clockView.setPivotY(clockView.getHeight() / 2f);
+            clockView.setScaleX(scale);
+            clockView.setScaleY(scale);
+            clockView.setTranslationX(startTx);
+            clockView.setTranslationY(startTy);
+            clockView.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .translationX(0f)
+                    .translationY(0f)
+                    .setDuration(morphMs)
+                    .setInterpolator(morphInterp)
+                    .withEndAction(() -> {
+                        clockView.setScaleX(1f);
+                        clockView.setScaleY(1f);
+                        clockView.setTranslationX(0f);
+                        clockView.setTranslationY(0f);
+                        if (mediaRow != null && mediaRow.getVisibility() == View.VISIBLE) {
+                            mediaRow.setAlpha(MEDIA_ALPHA);
+                        }
+                        PixelAodLog.log("finished compact→large AOD entry morph source=" + source
+                                + " mediaVisible=" + hasVisibleMediaLine()
+                                + " trace=" + currentAodTraceId());
+                    })
+                    .start();
+            PixelAodLog.log("started compact→large AOD entry morph source=" + source
+                    + " startScale=" + scale
+                    + " startTx=" + startTx
+                    + " startTy=" + startTy
+                    + " fromCx=" + from[0]
+                    + " toCx=" + toCx
+                    + " parentW=" + parentW
+                    + " durationMs=" + morphMs
+                    + " mediaVisible=" + hasVisibleMediaLine()
+                    + " trace=" + currentAodTraceId());
+        });
     }
 
     void startClockPluginAodWeightTransition(String source) {
@@ -4635,7 +4833,12 @@ public final class PixelAodClockView extends FrameLayout {
             return loadSystemNotificationGlyph(context, sbn);
         }
         String text = AodNotificationPipeline.systemNotificationText(sbn);
-        if (text.contains("network status") || text.contains("hotspot") || text.contains("tether")) {
+        if (AodNotificationPipeline.isSystemNetworkStatusNotification(sbn)
+                || text.contains("network status")
+                || text.contains("hotspot")
+                || text.contains("tether")
+                || text.contains("wi-fi sharing")
+                || text.contains("wifi sharing")) {
             Drawable nativeIcon = loadTintedSystemDrawable(context, color, "stat_sys_tether_wifi");
             if (nativeIcon != null) {
                 return nativeIcon;
@@ -4979,7 +5182,12 @@ public final class PixelAodClockView extends FrameLayout {
         if (text.contains("module update")) {
             return new SystemNotificationGlyphDrawable(color, SystemNotificationGlyphDrawable.TYPE_CHECK);
         }
-        if (text.contains("network status") || text.contains("hotspot") || text.contains("tether")) {
+        if (AodNotificationPipeline.isSystemNetworkStatusNotification(sbn)
+                || text.contains("network status")
+                || text.contains("hotspot")
+                || text.contains("tether")
+                || text.contains("wi-fi sharing")
+                || text.contains("wifi sharing")) {
             return new SystemNotificationGlyphDrawable(color, SystemNotificationGlyphDrawable.TYPE_NETWORK);
         }
         return null;
@@ -6074,13 +6282,16 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static int aodClockWeight(Context context) {
+        // Must match SettingsActivity slider range (100f..500f). Old min=160 silently
+        // ignored user AOD weight=100 and logged 160.
         return PixelAodSettings.getIntFromFloat(context, PixelAodSettings.KEY_AOD_WEIGHT,
-                PixelAodSettings.DEFAULT_AOD_WEIGHT, 160, 700);
+                PixelAodSettings.DEFAULT_AOD_WEIGHT, 100, 500);
     }
 
     static int lockscreenClockWeight(Context context) {
+        // Must match SettingsActivity slider range (100f..500f).
         return PixelAodSettings.getIntFromFloat(context, PixelAodSettings.KEY_LOCKSCREEN_WEIGHT,
-                PixelAodSettings.DEFAULT_LOCKSCREEN_WEIGHT, 250, 800);
+                PixelAodSettings.DEFAULT_LOCKSCREEN_WEIGHT, 100, 500);
     }
 
     static int scaledClockTextDp(Context context, int baseDp) {
@@ -6545,7 +6756,9 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static int normalizeClockWeight(int weight) {
-        return Math.max(160, Math.min(800, weight));
+        // Align with Settings sliders (100–500). Previous floor 160 made AOD weight=100
+        // still render as wght 160 in typeface/variation.
+        return Math.max(100, Math.min(500, weight));
     }
 
     private int dp(int value) {

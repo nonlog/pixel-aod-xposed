@@ -87,18 +87,28 @@ final class AodNotificationPipeline {
         RankingSnapshot ranking = rankings != null ? rankings.get(sbn.getKey()) : null;
         LockscreenVisibilityDecision lockscreenDecision =
                 lockscreenDecisions != null ? lockscreenDecisions.get(sbn.getKey()) : null;
-        if (!systemNotification && !oosLiveAlert) {
-            String silentHiddenReason = lockscreenPolicySilentHiddenReason(
-                    lockscreenPolicyEnabled,
-                    sbn,
-                    ranking != null ? ranking.importance : NotificationManagerImportance.UNKNOWN);
-            if (silentHiddenReason != null) {
-                logFilteredNotification(sbn, silentHiddenReason + " ranking=" + ranking, trace);
-                return false;
+        // Parity: anything still shown on the lockscreen must stay eligible for AOD icons.
+        // Do not apply a stricter silent/low-importance gate than the lockscreen path.
+        boolean lockscreenExplicitlyVisible = isExplicitlyVisibleOnLockscreen(lockscreenDecision);
+        boolean systemPackage = isSystemUiOrAndroidPackage(sbn.getPackageName());
+        if (!systemNotification && !oosLiveAlert && !lockscreenExplicitlyVisible) {
+            // Mirror PixelAodHook lockscreen force-hide: never importance-filter android/SystemUI
+            // status rows (hotspot NETWORK_STATUS is importance=2 but still on lockscreen).
+            if (!systemPackage) {
+                String silentHiddenReason = lockscreenPolicySilentHiddenReason(
+                        lockscreenPolicyEnabled,
+                        sbn,
+                        ranking != null ? ranking.importance
+                                : NotificationManagerImportance.UNKNOWN);
+                if (silentHiddenReason != null) {
+                    logFilteredNotification(sbn, silentHiddenReason + " ranking=" + ranking, trace);
+                    return false;
+                }
             }
         }
         String rankingHiddenReason = ranking != null ? ranking.hiddenReason() : null;
-        if (!systemNotification && rankingHiddenReason != null) {
+        if (!systemNotification && !lockscreenExplicitlyVisible
+                && rankingHiddenReason != null) {
             logFilteredNotification(sbn, rankingHiddenReason + " ranking=" + ranking, trace);
             return false;
         }
@@ -113,8 +123,29 @@ final class AodNotificationPipeline {
             return false;
         }
         logKeptNotification(sbn, ranking, trace,
-                oosLiveAlert ? "oos-live-alert" : "lockscreen-visible");
+                oosLiveAlert ? "oos-live-alert"
+                        : (systemNotification ? "system-status"
+                                : (lockscreenExplicitlyVisible
+                                        ? "lockscreen-explicitly-visible"
+                                        : "lockscreen-visible")));
         return true;
+    }
+
+    /** True when OOS Keyguard visibility hooks reported the row as not hidden. */
+    static boolean isExplicitlyVisibleOnLockscreen(LockscreenVisibilityDecision decision) {
+        if (decision == null) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(decision.providerHidden)
+                || Boolean.TRUE.equals(decision.filterHidden)) {
+            return false;
+        }
+        return Boolean.FALSE.equals(decision.providerHidden)
+                || Boolean.FALSE.equals(decision.filterHidden);
+    }
+
+    static boolean isSystemUiOrAndroidPackage(String packageName) {
+        return "android".equals(packageName) || "com.android.systemui".equals(packageName);
     }
 
     static boolean isTestNotification(StatusBarNotification sbn) {
@@ -359,14 +390,48 @@ final class AodNotificationPipeline {
         if (isSystemUiDndNotification(sbn)) {
             return true;
         }
+        if (isSystemNetworkStatusNotification(sbn)) {
+            return true;
+        }
         String joined = systemNotificationText(sbn);
         return joined.contains("module update")
                 || joined.contains("network status")
                 || joined.contains("hotspot")
                 || joined.contains("tether")
+                || joined.contains("wi-fi sharing")
+                || joined.contains("wifi sharing")
+                || joined.contains("device is connected")
                 || joined.contains("usb")
                 || joined.contains("debugging enabled")
                 || joined.contains("charging this device");
+    }
+
+    /**
+     * OOS hotspot / tethering status (channel NETWORK_STATUS, group Tethering). Title is often
+     * "1 device is connected via Wi-Fi sharing" without the words hotspot/tether.
+     */
+    static boolean isSystemNetworkStatusNotification(StatusBarNotification sbn) {
+        if (sbn == null || sbn.getNotification() == null
+                || !"android".equals(sbn.getPackageName())) {
+            return false;
+        }
+        Notification notification = sbn.getNotification();
+        String channelId = notification.getChannelId();
+        if ("NETWORK_STATUS".equals(channelId)) {
+            return true;
+        }
+        String group = notification.getGroup();
+        if (group != null) {
+            String normalized = group.toLowerCase(Locale.US);
+            if (normalized.contains("tether") || normalized.contains("hotspot")) {
+                return true;
+            }
+        }
+        String joined = systemNotificationText(sbn);
+        return joined.contains("wi-fi sharing")
+                || joined.contains("wifi sharing")
+                || joined.contains("hotspot")
+                || joined.contains("tether");
     }
 
     private static boolean isSystemUiDndNotification(StatusBarNotification sbn) {
