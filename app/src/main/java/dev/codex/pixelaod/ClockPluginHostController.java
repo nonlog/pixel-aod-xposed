@@ -278,13 +278,75 @@ final class ClockPluginHostController {
                     && policy.modulePolicyAllowsDisplay
                     && "lifecycle-not-ready".equals(policy.drawReason);
         }
-        boolean compactAod = renderState.clockSizeState != null
-                && renderState.clockSizeState == ClockPluginSceneMachine.CLOCK_SIZE_SMALL;
+        // Split lockscreen vs AOD size policy (first decision must be correct — no
+        // user-visible AOD_SMALL frame that later snaps to LARGE):
+        // - Lockscreen: OOS media cards cover large clock → SMALL when media or notifs.
+        // - AOD: module media row under large clock → SMALL only for non-media notifs.
+        boolean moduleNotifs = PixelAodClockView.hasCompactClockNotificationContent();
+        boolean mediaActive = PixelAodClockView.hasActiveDisplayableMedia();
         boolean interactive = PixelAodClockView.isDeviceInteractive(context);
         boolean displayInAodState = PixelAodClockView.isDisplayInAodState(context);
+        Integer effectiveClockSize = renderState.clockSizeState;
+        boolean compactAod;
+        if (renderState.isAod() || (!interactive && displayInAodState)) {
+            // Treat non-interactive doze display as AOD for size, even if uiState lags.
+            compactAod = moduleNotifs;
+            effectiveClockSize = moduleNotifs
+                    ? ClockPluginSceneMachine.CLOCK_SIZE_SMALL
+                    : ClockPluginSceneMachine.CLOCK_SIZE_LARGE;
+            if (renderState.clockSizeState != null
+                    && renderState.clockSizeState == ClockPluginSceneMachine.CLOCK_SIZE_SMALL
+                    && !moduleNotifs) {
+                PixelAodLog.log("overrode ClockPlugin AOD small→large source=" + source
+                        + " reason=media-only-or-empty"
+                        + " oosClockSize=" + renderState.clockSizeState
+                        + " mediaActive=" + mediaActive
+                        + " uiState=" + renderState.uiState
+                        + " interactive=" + interactive
+                        + " displayInAod=" + displayInAodState
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
+            }
+        } else {
+            // Lockscreen size: OOS clockSizeState is authoritative for media-card presence.
+            // Logs showed after swipe-away: oosClockSize=1 (LARGE) while mediaActive stayed
+            // true from a paused MediaSession — forcing SMALL was wrong.
+            if (renderState.clockSizeState != null) {
+                effectiveClockSize = renderState.clockSizeState;
+                if (moduleNotifs
+                        && effectiveClockSize != ClockPluginSceneMachine.CLOCK_SIZE_SMALL) {
+                    effectiveClockSize = ClockPluginSceneMachine.CLOCK_SIZE_SMALL;
+                }
+            } else {
+                boolean lockscreenSmall = moduleNotifs || mediaActive;
+                effectiveClockSize = lockscreenSmall
+                        ? ClockPluginSceneMachine.CLOCK_SIZE_SMALL
+                        : ClockPluginSceneMachine.CLOCK_SIZE_LARGE;
+            }
+            compactAod = false;
+            PixelAodLog.log("ClockPlugin lockscreen size source=" + source
+                    + " oosClockSize=" + renderState.clockSizeState
+                    + " effectiveClockSize=" + effectiveClockSize
+                    + " moduleNotifs=" + moduleNotifs
+                    + " mediaActive=" + mediaActive
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
+        }
+        // When the panel is already dozing but ClockPlugin still publishes KEYGUARD,
+        // promote to AOD uiState so we do not keep painting LOCKSCREEN_SMALL without media.
+        Integer effectiveUiState = renderState.uiState;
+        if (!interactive && displayInAodState && moduleAodAllowed
+                && (effectiveUiState == null
+                || effectiveUiState == ClockPluginSceneMachine.UI_STATE_KEYGUARD
+                || effectiveUiState == 0)) {
+            effectiveUiState = ClockPluginSceneMachine.UI_STATE_AOD;
+            PixelAodLog.log("promoted ClockPlugin uiState→AOD source=" + source
+                    + " oosUiState=" + renderState.uiState
+                    + " interactive=" + interactive
+                    + " displayInAod=" + displayInAodState
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
+        }
         ClockPluginSceneMachine.Decision decision = record.machine.resolve(
-                renderState.uiState,
-                renderState.clockSizeState,
+                effectiveUiState,
+                effectiveClockSize,
                 Boolean.TRUE.equals(renderState.uiStateAnimating),
                 moduleAodAllowed,
                 preserveAodWhileLifecycleSettles,

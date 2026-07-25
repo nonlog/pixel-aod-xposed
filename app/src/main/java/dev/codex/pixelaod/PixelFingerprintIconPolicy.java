@@ -41,6 +41,10 @@ final class PixelFingerprintIconPolicy {
         return primaryCarrier;
     }
 
+    static boolean shouldShowNativePressedLayer(boolean fingerDown) {
+        return fingerDown;
+    }
+
     static boolean isCompetingDrawableClass(String className) {
         return className != null && className.startsWith(COUI_DRAWABLE_PACKAGE);
     }

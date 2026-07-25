@@ -6,6 +6,9 @@ import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 
 import java.lang.ref.WeakReference;
@@ -16,8 +19,15 @@ import java.util.WeakHashMap;
 
 final class PixelFingerprintIconController {
     private static final Map<ImageView, Drawable> ORIGINAL_DRAWABLES = new WeakHashMap<>();
+    private static final Map<ImageView, Drawable> ORIGINAL_BACKGROUNDS = new WeakHashMap<>();
     private static final Map<ImageView, PixelFingerprintDrawable> PIXEL_DRAWABLES =
             new WeakHashMap<>();
+    private static final Map<ImageView, PixelFingerprintBackgroundDrawable> PIXEL_BACKGROUNDS =
+            new WeakHashMap<>();
+    private static final Map<ImageView, View> PIXEL_BACKGROUND_LAYERS = new WeakHashMap<>();
+    private static final Map<ImageView, Float> ORIGINAL_PRESSED_ALPHAS = new WeakHashMap<>();
+    private static final Map<ImageView, Boolean> TRACKED_PRESSED_VIEWS = new WeakHashMap<>();
+    private static final Map<ImageView, Boolean> PRESSED_TOUCH_STATES = new WeakHashMap<>();
     private static final Map<ImageView, Runnable> PENDING_REFRESHES = new WeakHashMap<>();
     private static final Map<ImageView, Runnable> PENDING_RECLAIMS = new WeakHashMap<>();
     private static final Map<Object, Runnable> PENDING_DISCOVERY = new WeakHashMap<>();
@@ -104,9 +114,8 @@ final class PixelFingerprintIconController {
             }
         };
         ImageView anchor = findFingerprintIcon(uiMech);
-        if (PixelFingerprintIconPolicy.dispatchTarget(anchor != null)
-                == PixelFingerprintIconPolicy.DispatchTarget.VIEW_HANDLER) {
-            anchor.postOnAnimation(pending.runnable);
+        if (anchor != null) {
+            runOnViewHandler(anchor, pending.runnable);
         } else {
             MAIN.post(pending.runnable);
         }
@@ -116,7 +125,7 @@ final class PixelFingerprintIconController {
             String source, boolean animate, boolean scheduleReclaim) {
         ImageView anchor = findFingerprintIcon(uiMech);
         if (anchor != null) {
-            anchor.postOnAnimation(() -> refreshOnViewThread(context, uiMech, source,
+            runOnViewHandler(anchor, () -> refreshOnViewThread(context, uiMech, source,
                     animate, scheduleReclaim));
             return;
         }
@@ -128,12 +137,13 @@ final class PixelFingerprintIconController {
         ImageView iconView = findFingerprintIcon(uiMech);
         ImageView pressedIcon = findFingerprintPressedIcon(uiMech);
         if (iconView == null) {
-            restoreOriginalDrawable(pressedIcon, source + "#pressed");
+            restoreNativePressedVisual(pressedIcon, source + "#pressed");
             PixelAodLog.log("Pixel fingerprint icon refresh skipped source=" + source
                     + " reason=primary-fpIcon-unavailable");
             scheduleDiscovery(context, uiMech, source, animate);
             return;
         }
+        logCarrierState("before-refresh", iconView, pressedIcon, source);
         cancelDiscovery(uiMech);
         Context resolvedContext = context != null
                 ? context : iconView.getContext();
@@ -141,9 +151,7 @@ final class PixelFingerprintIconController {
                 resolvedContext, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false);
         if (!enabled) {
             restoreOriginalDrawable(iconView, source);
-            if (pressedIcon != null && pressedIcon != iconView) {
-                restoreOriginalDrawable(pressedIcon, source + "#pressed");
-            }
+            restoreTrackedPressedIcons(source + "#pressed-disabled");
             return;
         }
 
@@ -155,9 +163,8 @@ final class PixelFingerprintIconController {
                 interactive, onDozeState, onDreamingStart, screenTurnedOff);
         boolean dark = isDarkMode(resolvedContext);
 
-        if (pressedIcon != null && pressedIcon != iconView) {
-            restoreOriginalDrawable(pressedIcon, source + "#pressed-native");
-        }
+        trackPressedIcon(pressedIcon);
+        updatePressedVisual(pressedIcon, source + "#pressed-passive");
         if (PixelFingerprintIconPolicy.shouldReplaceCarrier(true)) {
             applyPixelDrawable(resolvedContext, uiMech, iconView, source, animate,
                     aodStyle, dark, onDozeState, onDreamingStart, screenTurnedOff, true);
@@ -165,6 +172,7 @@ final class PixelFingerprintIconController {
         if (scheduleReclaim && PixelFingerprintIconPolicy.shouldReplaceCarrier(true)) {
             scheduleVendorReclaim(resolvedContext, uiMech, iconView, source);
         }
+        logCarrierState("after-refresh", iconView, pressedIcon, source);
     }
 
     private static void applyPixelDrawable(Context context, Object uiMech, ImageView iconView,
@@ -172,23 +180,32 @@ final class PixelFingerprintIconController {
             boolean onDozeState, boolean onDreamingStart, boolean screenTurnedOff,
             boolean primary) {
         Drawable current = iconView.getDrawable();
+        Drawable currentBackground = iconView.getBackground();
         String drawableClass = current != null ? current.getClass().getName() : null;
         PixelFingerprintDrawable pixelDrawable;
+        PixelFingerprintBackgroundDrawable pixelBackground;
         boolean created = false;
         synchronized (PIXEL_DRAWABLES) {
             pixelDrawable = PIXEL_DRAWABLES.get(iconView);
             if (pixelDrawable == null) {
-                pixelDrawable = new PixelFingerprintDrawable(
-                        context, aodStyle, dark, primary);
+                pixelDrawable = new PixelFingerprintDrawable(context, aodStyle, dark);
                 PIXEL_DRAWABLES.put(iconView, pixelDrawable);
                 created = true;
+            }
+        }
+        synchronized (PIXEL_BACKGROUNDS) {
+            pixelBackground = PIXEL_BACKGROUNDS.get(iconView);
+            if (pixelBackground == null) {
+                pixelBackground = new PixelFingerprintBackgroundDrawable(context, aodStyle, dark);
+                PIXEL_BACKGROUNDS.put(iconView, pixelBackground);
             }
         }
         synchronized (TRACKED_VIEWS) {
             TRACKED_VIEWS.put(iconView, Boolean.TRUE);
             VIEW_OWNERS.put(iconView, new WeakReference<>(uiMech));
         }
-        normalizeIconView(iconView);
+        normalizeIconView(iconView, currentBackground);
+        View backgroundLayer = ensurePixelBackgroundLayer(iconView, pixelBackground);
         if (current != pixelDrawable) {
             if (current != null && !(current instanceof PixelFingerprintDrawable)) {
                 synchronized (ORIGINAL_DRAWABLES) {
@@ -198,6 +215,9 @@ final class PixelFingerprintIconController {
             setImageDrawableInternal(iconView, pixelDrawable);
         }
         pixelDrawable.transitionTo(aodStyle, dark, animate && !created);
+        if (backgroundLayer != null) {
+            pixelBackground.transitionTo(aodStyle, dark, animate && !created);
+        }
         logStateIfChanged(iconView, "pixel-" + (aodStyle ? "aod" : "lockscreen"), source,
                 "animate=" + (animate && !created)
                         + " dark=" + dark
@@ -231,6 +251,7 @@ final class PixelFingerprintIconController {
         }
         cancelPendingReclaim(iconView);
         Drawable current = iconView.getDrawable();
+        Drawable currentBackground = iconView.getBackground();
         if (current instanceof PixelFingerprintDrawable) {
             Drawable original;
             synchronized (ORIGINAL_DRAWABLES) {
@@ -240,11 +261,24 @@ final class PixelFingerprintIconController {
             logStateIfChanged(iconView, "vendor-restored", source,
                     "drawable=" + (original != null ? original.getClass().getName() : "null"));
         }
+        removePixelBackgroundLayer(iconView);
+        Drawable originalBackground;
+        boolean hadOriginalBackground;
+        synchronized (ORIGINAL_BACKGROUNDS) {
+            hadOriginalBackground = ORIGINAL_BACKGROUNDS.containsKey(iconView);
+            originalBackground = ORIGINAL_BACKGROUNDS.remove(iconView);
+        }
+        if (currentBackground instanceof PixelFingerprintBackgroundDrawable || hadOriginalBackground) {
+            setBackgroundInternal(iconView, originalBackground);
+        }
         synchronized (ORIGINAL_DRAWABLES) {
             ORIGINAL_DRAWABLES.remove(iconView);
         }
         synchronized (PIXEL_DRAWABLES) {
             PIXEL_DRAWABLES.remove(iconView);
+        }
+        synchronized (PIXEL_BACKGROUNDS) {
+            PIXEL_BACKGROUNDS.remove(iconView);
         }
         synchronized (TRACKED_VIEWS) {
             TRACKED_VIEWS.remove(iconView);
@@ -252,10 +286,17 @@ final class PixelFingerprintIconController {
         }
     }
 
-    private static void normalizeIconView(ImageView iconView) {
+    private static void normalizeIconView(ImageView iconView, Drawable currentBackground) {
         beginInternalMutation();
         try {
-            if (iconView.getBackground() != null) {
+            if (currentBackground != null) {
+                if (!(currentBackground instanceof PixelFingerprintBackgroundDrawable)) {
+                    synchronized (ORIGINAL_BACKGROUNDS) {
+                        if (!ORIGINAL_BACKGROUNDS.containsKey(iconView)) {
+                            ORIGINAL_BACKGROUNDS.put(iconView, currentBackground);
+                        }
+                    }
+                }
                 iconView.setBackground(null);
             }
             if (iconView.getImageTintList() != null) {
@@ -272,12 +313,94 @@ final class PixelFingerprintIconController {
         }
     }
 
+    private static View ensurePixelBackgroundLayer(ImageView iconView,
+            PixelFingerprintBackgroundDrawable pixelBackground) {
+        if (!(iconView.getParent() instanceof FrameLayout)) {
+            PixelAodLog.log("Pixel fingerprint background layer skipped"
+                    + " reason=primary-parent-not-FrameLayout"
+                    + " parent=" + (iconView.getParent() != null
+                    ? iconView.getParent().getClass().getName() : "null"));
+            return null;
+        }
+        FrameLayout parent = (FrameLayout) iconView.getParent();
+        View backgroundLayer;
+        synchronized (PIXEL_BACKGROUND_LAYERS) {
+            backgroundLayer = PIXEL_BACKGROUND_LAYERS.get(iconView);
+            if (backgroundLayer == null) {
+                backgroundLayer = new View(iconView.getContext());
+                backgroundLayer.setClickable(false);
+                backgroundLayer.setLongClickable(false);
+                backgroundLayer.setFocusable(false);
+                backgroundLayer.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+                PIXEL_BACKGROUND_LAYERS.put(iconView, backgroundLayer);
+            }
+        }
+        if (backgroundLayer.getBackground() != pixelBackground) {
+            backgroundLayer.setBackground(pixelBackground);
+        }
+        backgroundLayer.setAlpha(1f);
+        int iconIndex = parent.indexOfChild(iconView);
+        if (backgroundLayer.getParent() != parent) {
+            if (backgroundLayer.getParent() instanceof ViewGroup) {
+                ((ViewGroup) backgroundLayer.getParent()).removeView(backgroundLayer);
+            }
+            parent.addView(backgroundLayer, Math.max(0, iconIndex),
+                    new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT));
+        } else {
+            int backgroundIndex = parent.indexOfChild(backgroundLayer);
+            if (iconIndex >= 0 && backgroundIndex >= iconIndex) {
+                parent.removeView(backgroundLayer);
+                parent.addView(backgroundLayer, iconIndex,
+                        new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+        }
+        return backgroundLayer;
+    }
+
+    private static void removePixelBackgroundLayer(ImageView iconView) {
+        View backgroundLayer;
+        synchronized (PIXEL_BACKGROUND_LAYERS) {
+            backgroundLayer = PIXEL_BACKGROUND_LAYERS.remove(iconView);
+        }
+        if (backgroundLayer != null && backgroundLayer.getParent() instanceof ViewGroup) {
+            ((ViewGroup) backgroundLayer.getParent()).removeView(backgroundLayer);
+        }
+    }
+
     private static void setImageDrawableInternal(ImageView iconView, Drawable drawable) {
         beginInternalMutation();
         try {
             iconView.setImageDrawable(drawable);
         } finally {
             endInternalMutation();
+        }
+    }
+
+    private static void setBackgroundInternal(ImageView iconView, Drawable drawable) {
+        beginInternalMutation();
+        try {
+            iconView.setBackground(drawable);
+        } finally {
+            endInternalMutation();
+        }
+    }
+
+    private static void runOnViewHandler(View view, Runnable runnable) {
+        Handler handler = view != null ? view.getHandler() : null;
+        if (handler == null) {
+            if (view != null) {
+                view.post(runnable);
+            } else {
+                MAIN.post(runnable);
+            }
+            return;
+        }
+        if (Looper.myLooper() == handler.getLooper()) {
+            runnable.run();
+        } else {
+            handler.post(runnable);
         }
     }
 
@@ -363,6 +486,151 @@ final class PixelFingerprintIconController {
         }
     }
 
+    private static void trackPressedIcon(ImageView pressedIcon) {
+        if (pressedIcon == null) {
+            return;
+        }
+        synchronized (TRACKED_PRESSED_VIEWS) {
+            TRACKED_PRESSED_VIEWS.put(pressedIcon, Boolean.TRUE);
+        }
+        synchronized (ORIGINAL_PRESSED_ALPHAS) {
+            if (!ORIGINAL_PRESSED_ALPHAS.containsKey(pressedIcon)) {
+                ORIGINAL_PRESSED_ALPHAS.put(pressedIcon, pressedIcon.getAlpha());
+            }
+        }
+    }
+
+    private static boolean isTrackedPressed(ImageView pressedIcon) {
+        synchronized (TRACKED_PRESSED_VIEWS) {
+            return TRACKED_PRESSED_VIEWS.containsKey(pressedIcon);
+        }
+    }
+
+    private static boolean isPressedTouchActive(ImageView pressedIcon) {
+        synchronized (PRESSED_TOUCH_STATES) {
+            return Boolean.TRUE.equals(PRESSED_TOUCH_STATES.get(pressedIcon));
+        }
+    }
+
+    private static void updatePressedVisual(ImageView pressedIcon, String source) {
+        if (pressedIcon == null || !isTrackedPressed(pressedIcon)) {
+            return;
+        }
+        Runnable apply = () -> {
+            boolean fingerDown = isPressedTouchActive(pressedIcon);
+            float targetAlpha = PixelFingerprintIconPolicy.shouldShowNativePressedLayer(fingerDown)
+                    ? originalPressedAlpha(pressedIcon) : 0f;
+            float beforeAlpha = pressedIcon.getAlpha();
+            if (Float.compare(beforeAlpha, targetAlpha) != 0) {
+                setPressedAlphaInternal(pressedIcon, targetAlpha);
+            }
+            PixelAodLog.log("[FP-PRESSED-A2] applied source=" + source
+                    + " fingerDown=" + fingerDown
+                    + " beforeAlpha=" + beforeAlpha
+                    + " afterAlpha=" + pressedIcon.getAlpha()
+                    + " attached=" + pressedIcon.isAttachedToWindow()
+                    + " thread=" + Thread.currentThread().getName());
+            logStateIfChanged(pressedIcon,
+                    fingerDown ? "pressed-native-touch" : "pressed-native-suppressed",
+                    source, "alpha=" + targetAlpha);
+        };
+        dispatchPressedVisual(pressedIcon, source, apply);
+    }
+
+    private static void dispatchPressedVisual(ImageView pressedIcon, String source, Runnable apply) {
+        Handler handler = pressedIcon.getHandler();
+        Looper currentLooper = Looper.myLooper();
+        boolean sameLooper = handler != null && currentLooper == handler.getLooper();
+        if (sameLooper) {
+            PixelAodLog.log("[FP-PRESSED-A2] dispatch source=" + source
+                    + " route=inline handler=" + describeHandler(handler)
+                    + " currentThread=" + Thread.currentThread().getName());
+            apply.run();
+            return;
+        }
+        boolean posted = handler != null ? handler.post(apply) : pressedIcon.post(apply);
+        PixelAodLog.log("[FP-PRESSED-A2] dispatch source=" + source
+                + " route=" + (handler != null ? "view-handler" : "view-post")
+                + " posted=" + posted
+                + " handler=" + describeHandler(handler)
+                + " currentThread=" + Thread.currentThread().getName());
+    }
+
+    private static void setPressedAlphaInternal(ImageView pressedIcon, float alpha) {
+        beginInternalMutation();
+        try {
+            pressedIcon.setAlpha(alpha);
+        } finally {
+            endInternalMutation();
+        }
+    }
+
+    private static String describeHandler(Handler handler) {
+        if (handler == null) {
+            return "null";
+        }
+        Looper looper = handler.getLooper();
+        Thread thread = looper != null ? looper.getThread() : null;
+        if (looper == null) {
+            return "null-looper";
+        }
+        return looper.getClass().getSimpleName()
+                + "@" + Integer.toHexString(System.identityHashCode(looper))
+                + "/" + (thread != null ? thread.getName() : "null-thread");
+    }
+
+    private static float originalPressedAlpha(ImageView pressedIcon) {
+        synchronized (ORIGINAL_PRESSED_ALPHAS) {
+            Float original = ORIGINAL_PRESSED_ALPHAS.get(pressedIcon);
+            return original != null ? original : 1f;
+        }
+    }
+
+    private static void restoreNativePressedVisual(ImageView pressedIcon, String source) {
+        if (pressedIcon == null) {
+            return;
+        }
+        float originalAlpha = originalPressedAlpha(pressedIcon);
+        synchronized (TRACKED_PRESSED_VIEWS) {
+            TRACKED_PRESSED_VIEWS.remove(pressedIcon);
+        }
+        synchronized (PRESSED_TOUCH_STATES) {
+            PRESSED_TOUCH_STATES.remove(pressedIcon);
+        }
+        synchronized (ORIGINAL_PRESSED_ALPHAS) {
+            ORIGINAL_PRESSED_ALPHAS.remove(pressedIcon);
+        }
+        runOnViewHandler(pressedIcon, () -> {
+            if (Float.compare(pressedIcon.getAlpha(), originalAlpha) != 0) {
+                pressedIcon.setAlpha(originalAlpha);
+            }
+            logStateIfChanged(pressedIcon, "pressed-native-restored", source,
+                    "alpha=" + originalAlpha);
+        });
+    }
+
+    private static void restoreTrackedPressedIcons(String source) {
+        ImageView[] pressedIcons;
+        synchronized (TRACKED_PRESSED_VIEWS) {
+            pressedIcons = TRACKED_PRESSED_VIEWS.keySet().toArray(new ImageView[0]);
+        }
+        for (ImageView pressedIcon : pressedIcons) {
+            restoreNativePressedVisual(pressedIcon, source);
+        }
+    }
+
+    private static Boolean firstBooleanArgument(Object[] args) {
+        if (args == null) {
+            return null;
+        }
+        for (Object arg : args) {
+            if (arg instanceof Boolean) {
+                return (Boolean) arg;
+            }
+        }
+        return null;
+    }
+
     static void installImageViewMutationHooks() {
         synchronized (PixelFingerprintIconController.class) {
             if (imageViewHooksInstalled) {
@@ -387,6 +655,7 @@ final class PixelFingerprintIconController {
                     }
                     ImageView view = (ImageView) param.thisObject;
                     if (isTracked(view)) {
+                        logSingleCarrierState("image-mutation#" + method.getName(), view);
                         scheduleTrackedRefresh(view, "ImageView#" + method.getName());
                     }
                 });
@@ -396,7 +665,27 @@ final class PixelFingerprintIconController {
                         + method.getName(), t);
             }
         }
+        installPressedViewAlphaHook();
         PixelAodLog.log("installed fingerprint ImageView mutation hooks count=" + hooked);
+    }
+
+    private static void installPressedViewAlphaHook() {
+        try {
+            Method setAlpha = View.class.getDeclaredMethod("setAlpha", float.class);
+            ModernHookBridge.hookAfter(setAlpha, param -> {
+                if (INTERNAL_MUTATION_DEPTH.get() > 0
+                        || !(param.thisObject instanceof ImageView)) {
+                    return;
+                }
+                ImageView view = (ImageView) param.thisObject;
+                if (isTrackedPressed(view)) {
+                    updatePressedVisual(view, "View#setAlpha");
+                }
+            });
+            PixelAodLog.log("installed fingerprint pressed View#setAlpha hook");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to install fingerprint pressed View#setAlpha hook", t);
+        }
     }
 
     private static void scheduleTrackedRefresh(ImageView iconView, String source) {
@@ -417,7 +706,25 @@ final class PixelFingerprintIconController {
         if (previous != null) {
             iconView.removeCallbacks(previous);
         }
-        iconView.postOnAnimation(refresh);
+        runOnViewHandler(iconView, refresh);
+    }
+
+    static void onFingerprintTouch(Object uiMech, Object[] args, String source) {
+        Boolean fingerDown = firstBooleanArgument(args);
+        if (fingerDown == null) {
+            PixelAodLog.log("Pixel fingerprint touch state ignored source=" + source
+                    + " reason=boolean-argument-unavailable");
+            return;
+        }
+        ImageView pressedIcon = findFingerprintPressedIcon(uiMech);
+        trackPressedIcon(pressedIcon);
+        if (pressedIcon == null) {
+            return;
+        }
+        synchronized (PRESSED_TOUCH_STATES) {
+            PRESSED_TOUCH_STATES.put(pressedIcon, fingerDown);
+        }
+        updatePressedVisual(pressedIcon, source + "#touch=" + fingerDown);
     }
 
     static void installVendorViewHooks(ClassLoader classLoader) {
@@ -480,7 +787,13 @@ final class PixelFingerprintIconController {
             return;
         }
         ImageView view = (ImageView) object;
+        if (isTrackedPressed(view)) {
+            logSingleCarrierState("pressed-mutation#" + source, view);
+            updatePressedVisual(view, source + "#pressed-mutation");
+            return;
+        }
         if (isTracked(view)) {
+            logSingleCarrierState("vendor-mutation#" + source, view);
             scheduleTrackedRefresh(view, source);
         }
     }
@@ -518,6 +831,7 @@ final class PixelFingerprintIconController {
                 }
             }
             if (!(iconView.getDrawable() instanceof PixelFingerprintDrawable)) {
+                logSingleCarrierState("vendor-reclaim", iconView);
                 requestVisualState(context, uiMech, source + "#vendor-reclaim", false);
             }
         };
@@ -531,6 +845,7 @@ final class PixelFingerprintIconController {
         iconView.postDelayed(reclaim, VENDOR_RECLAIM_DELAY_MS);
         iconView.postDelayed(() -> {
             if (!(iconView.getDrawable() instanceof PixelFingerprintDrawable)) {
+                logSingleCarrierState("vendor-reclaim-second-pass", iconView);
                 requestVisualState(context, uiMech,
                         source + "#vendor-reclaim-second-pass", false);
             }
@@ -657,6 +972,66 @@ final class PixelFingerprintIconController {
         }
         PowerManager powerManager = context.getSystemService(PowerManager.class);
         return powerManager != null && powerManager.isInteractive();
+    }
+
+    private static void logCarrierState(String stage, ImageView primary,
+            ImageView pressed, String source) {
+        if (!PixelAodLog.isDebugEnabled()) {
+            return;
+        }
+        PixelAodLog.log("Pixel fingerprint carrier state"
+                + " stage=" + stage
+                + " source=" + source
+                + " primary={" + describeCarrier(primary) + "}"
+                + " pressed={" + describeCarrier(pressed) + "}");
+    }
+
+    private static void logSingleCarrierState(String stage, ImageView view) {
+        if (!PixelAodLog.isDebugEnabled()) {
+            return;
+        }
+        PixelAodLog.log("Pixel fingerprint carrier state"
+                + " stage=" + stage
+                + " view={" + describeCarrier(view) + "}");
+    }
+
+    private static String describeCarrier(ImageView view) {
+        if (view == null) {
+            return "null";
+        }
+        Drawable drawable = view.getDrawable();
+        Drawable background = view.getBackground();
+        Object parent = view.getParent();
+        return "class=" + view.getClass().getName()
+                + ",visibility=" + visibilityName(view.getVisibility())
+                + ",alpha=" + view.getAlpha()
+                + ",imageAlpha=" + view.getImageAlpha()
+                + ",attached=" + view.isAttachedToWindow()
+                + ",size=" + view.getWidth() + "x" + view.getHeight()
+                + ",xy=" + view.getX() + "," + view.getY()
+                + ",drawable=" + describeDrawable(drawable)
+                + ",background=" + describeDrawable(background)
+                + ",parent=" + (parent != null ? parent.getClass().getName() : "null");
+    }
+
+    private static String describeDrawable(Drawable drawable) {
+        if (drawable == null) {
+            return "null";
+        }
+        return drawable.getClass().getName() + "@alpha=" + drawable.getAlpha();
+    }
+
+    private static String visibilityName(int visibility) {
+        if (visibility == 0) {
+            return "VISIBLE";
+        }
+        if (visibility == 4) {
+            return "INVISIBLE";
+        }
+        if (visibility == 8) {
+            return "GONE";
+        }
+        return String.valueOf(visibility);
     }
 
     private static void logStateIfChanged(ImageView view, String state,

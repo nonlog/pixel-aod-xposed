@@ -363,6 +363,11 @@ public final class PixelAodClockView extends FrameLayout {
     private boolean running;
     private boolean mediaListening;
     private boolean compactClock;
+    /**
+     * Once LS→AOD weight morph has finished at AOD weight, re-presents must not
+     * {@code prepare...fromWeight=lockscreen} (that snaps 160→340). Cleared when leaving AOD.
+     */
+    private boolean aodWeightHandoffSettled;
     private boolean screenStateReceiverRegistered;
     private boolean notificationSettingsObserverRegistered;
     private boolean timeReceiverRegistered;
@@ -2643,26 +2648,135 @@ public final class PixelAodClockView extends FrameLayout {
 
     void presentClockPluginAod(boolean compact, boolean deferLockscreenWeightTransition,
             int handoffStartWeight, String source) {
+        presentClockPluginAod(compact, deferLockscreenWeightTransition, handoffStartWeight,
+                source, false);
+    }
+
+    /**
+     * @param morphFromCompact when true and {@code compact} is false, layout is committed
+     *                         as large immediately but the view starts scaled like compact
+     *                         so {@link #startCompactToLargeEntryMorph} can expand it.
+     */
+    void presentClockPluginAod(boolean compact, boolean deferLockscreenWeightTransition,
+            int handoffStartWeight, String source, boolean morphFromCompact) {
         if (!clockPluginManaged) {
             return;
         }
         if (!running) {
             start();
         }
+        // Re-query media sessions before the first AOD paint so a lockscreen→AOD handoff
+        // does not draw large/compact clock without the media row for a frame.
+        refreshActiveMediaControllers();
         applyMaterialColors();
         applyClockMode(compact);
         rebuildNotificationIcons(source + "#ClockPlugin");
         updateMediaLine(source + "#ClockPlugin");
-        if (deferLockscreenWeightTransition) {
-            prepareClockPluginAodWeightForHandoff(handoffStartWeight,
-                    source + "#ClockPlugin");
+        boolean weightRunning = clockWeightAnimator != null && clockWeightAnimator.isRunning();
+        int aodTargetWeight = aodClockWeight(getContext());
+        int startWeight = normalizeClockWeight(handoffStartWeight);
+        // Settle latch is the bounce guard (finished 160 then prepared 340). Do NOT treat
+        // "current near AOD weight" alone as settled — after presentLockscreen the AOD layer
+        // still holds 160 and must be allowed to re-park at ~340 for the next morph.
+        if (weightRunning) {
+            PixelAodLog.log("kept running AOD weight transition on re-present source=" + source
+                    + " currentWeight=" + currentClockWeight
+                    + " settled=" + aodWeightHandoffSettled
+                    + " trace=" + currentAodTraceId());
+        } else if (aodWeightHandoffSettled) {
+            if (Math.abs(currentClockWeight - aodTargetWeight) > 12) {
+                applyStableAodClockWeight(source + "#ClockPlugin-reassert-settled");
+            }
+            PixelAodLog.log("kept settled AOD weight on re-present source=" + source
+                    + " weight=" + currentClockWeight
+                    + " aodTarget=" + aodTargetWeight
+                    + " settled=true"
+                    + " trace=" + currentAodTraceId());
+        } else if (deferLockscreenWeightTransition
+                && Math.abs(startWeight - aodTargetWeight) > 8) {
+            aodWeightHandoffSettled = false;
+            prepareClockPluginAodWeightForHandoff(startWeight, source + "#ClockPlugin");
+        } else if (deferLockscreenWeightTransition) {
+            applyStableAodClockWeight(source + "#ClockPlugin-already-aod");
         } else {
             applyStableAodClockWeight(source + "#ClockPlugin");
         }
         // Avoid exposing the TextView before its weighted Google Sans Typeface is ready.
         setVisibility(View.VISIBLE);
         applyBurnInTranslation();
+        if (morphFromCompact && !compact) {
+            // Large layout + media already applied; start visual scale at compact size.
+            float startScale = PixelAodVisualStyle.SMALL_CLOCK_TEXT_DP
+                    / (float) PixelAodVisualStyle.LARGE_CLOCK_TEXT_DP;
+            setScaleX(startScale);
+            setScaleY(startScale);
+            setPivotX(getWidth() > 0 ? getWidth() / 2f : getResources().getDisplayMetrics().widthPixels / 2f);
+            setPivotY(dp(SMALL_CLOCK_TOP_DP));
+            if (mediaRow != null) {
+                mediaRow.setAlpha(0f);
+            }
+        } else {
+            setScaleX(1f);
+            setScaleY(1f);
+            if (mediaRow != null) {
+                mediaRow.setAlpha(MEDIA_ALPHA);
+            }
+        }
         requestAodFrameRefresh(source + "#ClockPlugin");
+    }
+
+    /**
+     * COUI-inspired compact→large entry: scale the already-laid-out large AOD surface
+     * from compact-ish size to 1.0 and fade the media row in. Does not touch power/blank.
+     */
+    void startCompactToLargeEntryMorph(long durationMs,
+            android.view.animation.Interpolator interpolator, String source) {
+        if (!clockPluginManaged) {
+            return;
+        }
+        animate().cancel();
+        float startScale = getScaleX() > 0f && getScaleX() < 1f
+                ? getScaleX()
+                : PixelAodVisualStyle.SMALL_CLOCK_TEXT_DP
+                / (float) PixelAodVisualStyle.LARGE_CLOCK_TEXT_DP;
+        setScaleX(startScale);
+        setScaleY(startScale);
+        if (getWidth() > 0) {
+            setPivotX(getWidth() / 2f);
+        }
+        setPivotY(dp(SMALL_CLOCK_TOP_DP));
+        if (mediaRow != null && mediaRow.getVisibility() == View.VISIBLE) {
+            mediaRow.setAlpha(0f);
+            mediaRow.animate().cancel();
+            mediaRow.animate()
+                    .alpha(MEDIA_ALPHA)
+                    .setDuration(durationMs)
+                    .setInterpolator(interpolator)
+                    .start();
+        }
+        // Scale/media only — weight is owned by startClockPluginAodWeightTransition so the
+        // two animators do not cancel each other (double-start caused weight snap).
+        animate()
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(durationMs)
+                .setInterpolator(interpolator)
+                .withEndAction(() -> {
+                    setScaleX(1f);
+                    setScaleY(1f);
+                    if (mediaRow != null && mediaRow.getVisibility() == View.VISIBLE) {
+                        mediaRow.setAlpha(MEDIA_ALPHA);
+                    }
+                    PixelAodLog.log("finished compact→large AOD entry morph source=" + source
+                            + " mediaVisible=" + hasVisibleMediaLine()
+                            + " trace=" + currentAodTraceId());
+                })
+                .start();
+        PixelAodLog.log("started compact→large AOD entry morph source=" + source
+                + " startScale=" + startScale
+                + " durationMs=" + durationMs
+                + " mediaVisible=" + hasVisibleMediaLine()
+                + " trace=" + currentAodTraceId());
     }
 
     void startClockPluginAodWeightTransition(String source) {
@@ -2673,8 +2787,47 @@ public final class PixelAodClockView extends FrameLayout {
         if (!clockPluginManaged) {
             return;
         }
-        beginLockscreenToAodWeightTransition(source + "#ClockPlugin", onFinished,
-                currentClockWeight);
+        if (clockWeightAnimator != null && clockWeightAnimator.isRunning()) {
+            PixelAodLog.log("kept AOD weight transition already running source=" + source
+                    + " currentWeight=" + currentClockWeight
+                    + " trace=" + currentAodTraceId());
+            return;
+        }
+        int aodTarget = aodClockWeight(getContext());
+        if (aodWeightHandoffSettled && Math.abs(currentClockWeight - aodTarget) <= 12) {
+            PixelAodLog.log("skipped AOD weight transition source=" + source
+                    + " reason=already-settled weight=" + currentClockWeight
+                    + " trace=" + currentAodTraceId());
+            if (onFinished != null) {
+                postOnAnimation(onFinished);
+            }
+            return;
+        }
+        aodWeightHandoffSettled = false;
+        // Prefer current layer weight (just parked at lockscreen handoff start).
+        int from = currentClockWeight > 0
+                ? currentClockWeight
+                : lockscreenClockWeight(getContext());
+        beginLockscreenToAodWeightTransition(source + "#ClockPlugin", onFinished, from);
+    }
+
+    boolean isClockPluginWeightTransitionRunning() {
+        return clockWeightAnimator != null && clockWeightAnimator.isRunning();
+    }
+
+    boolean isAodWeightHandoffSettled() {
+        return aodWeightHandoffSettled
+                && Math.abs(currentClockWeight - aodClockWeight(getContext())) <= 12;
+    }
+
+    /** Call when starting a fresh lockscreen→AOD entry so stale AOD weight is not kept. */
+    void clearAodWeightHandoffSettled(String source) {
+        if (aodWeightHandoffSettled) {
+            PixelAodLog.log("cleared AOD weight handoff settled source=" + source
+                    + " previousWeight=" + currentClockWeight
+                    + " trace=" + currentAodTraceId());
+        }
+        aodWeightHandoffSettled = false;
     }
 
     void applyClockPluginStableAodWeight(String source) {
@@ -2682,19 +2835,42 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         applyStableAodClockWeight(source + "#ClockPlugin");
+        aodWeightHandoffSettled = true;
     }
 
     private void prepareClockPluginAodWeightForHandoff(int handoffStartWeight, String source) {
+        int aodTarget = aodClockWeight(getContext());
+        int fromWeight = normalizeClockWeight(handoffStartWeight);
+        int previousWeight = currentClockWeight;
+        // Never cancel a running LS→AOD morph just to re-park at lockscreen weight.
+        if (clockWeightAnimator != null && clockWeightAnimator.isRunning()) {
+            PixelAodLog.log("skipped prepare AOD weight handoff source=" + source
+                    + " reason=weight-anim-running currentWeight=" + previousWeight
+                    + " requestedFrom=" + fromWeight
+                    + " trace=" + currentAodTraceId());
+            return;
+        }
+        // Settle latch is authoritative. After finished→160, re-present must not park 340.
+        // When latch is clear (fresh LS→AOD after presentLockscreen), parking is required
+        // even if the AOD layer still holds residual 160 from the previous session.
+        if (aodWeightHandoffSettled) {
+            PixelAodLog.log("skipped prepare AOD weight handoff source=" + source
+                    + " reason=settled weight=" + previousWeight
+                    + " requestedFrom=" + fromWeight
+                    + " aodTarget=" + aodTarget
+                    + " trace=" + currentAodTraceId());
+            return;
+        }
         if (clockWeightAnimator != null) {
             clockWeightAnimator.cancel();
             clockWeightAnimator = null;
         }
-        int fromWeight = normalizeClockWeight(handoffStartWeight);
-        int toWeight = aodClockWeight(getContext());
+        aodWeightHandoffSettled = false;
         setClockWeight(fromWeight, true);
         PixelAodLog.log("prepared ClockPlugin AOD weight handoff source=" + source
                 + " fromWeight=" + fromWeight
-                + " toWeight=" + toWeight
+                + " toWeight=" + aodTarget
+                + " previousWeight=" + previousWeight
                 + " alpha=" + getAlpha()
                 + " visibility=" + getVisibility()
                 + " trace=" + currentAodTraceId());
@@ -2708,6 +2884,7 @@ public final class PixelAodClockView extends FrameLayout {
         updateTime();
         rebuildNotificationIcons(source + "#ClockPlugin");
         updateMediaLine(source + "#ClockPlugin");
+        // Never reset weight here — media retries / reveal must not cancel LS→AOD morph.
         requestAodFrameRefresh(source + "#ClockPlugin");
     }
 
@@ -2715,9 +2892,12 @@ public final class PixelAodClockView extends FrameLayout {
         if (!clockPluginManaged) {
             return;
         }
-        if (!visible && clockWeightAnimator != null) {
-            clockWeightAnimator.cancel();
-            clockWeightAnimator = null;
+        if (!visible) {
+            if (clockWeightAnimator != null) {
+                clockWeightAnimator.cancel();
+                clockWeightAnimator = null;
+            }
+            aodWeightHandoffSettled = false;
         }
         setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
         if (!visible) {
@@ -4090,6 +4270,49 @@ public final class PixelAodClockView extends FrameLayout {
             }
         }
         return list;
+    }
+
+    /**
+     * Non-media notifications that should force the compact clock on AOD.
+     * Media alone keeps the large AOD clock (module media row).
+     */
+    static boolean hasCompactClockNotificationContent() {
+        synchronized (PixelAodClockView.class) {
+            if (activeNotifications != null) {
+                for (StatusBarNotification sbn : activeNotifications) {
+                    if (sbn != null && sbn.getNotification() != null) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Active media that should force compact on the lockscreen (native media card),
+     * but not on AOD (module media row under the large clock).
+     */
+    static boolean hasActiveDisplayableMedia() {
+        for (PixelAodClockView view : INSTANCES) {
+            if (view == null || !view.running) {
+                continue;
+            }
+            try {
+                MediaController controller = view.chooseVisibleMediaController();
+                if (controller != null && view.hasDisplayableMedia(controller)) {
+                    return true;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return PixelLockscreenClockView.hasPlayingMediaOnAnyInstance();
+    }
+
+    boolean hasVisibleMediaLine() {
+        return mediaRow != null
+                && mediaRow.getVisibility() == View.VISIBLE
+                && !TextUtils.isEmpty(lastMediaLineText);
     }
 
     static boolean isLockscreenPolicyEnabled() {
@@ -5652,8 +5875,11 @@ public final class PixelAodClockView extends FrameLayout {
         }
         int targetWeight = aodClockWeight(getContext());
         setClockWeight(targetWeight, true);
+        // Stable AOD weight means handoff is done — re-present must not park at LS weight.
+        aodWeightHandoffSettled = true;
         PixelAodLog.log("applied stable AOD clock weight source=" + source
                 + " weight=" + targetWeight
+                + " settled=true"
                 + " variation=" + sharedClockFontVariationSettings(targetWeight)
                 + " typeface=builder"
                 + " trace=" + currentAodTraceId()
@@ -5702,9 +5928,11 @@ public final class PixelAodClockView extends FrameLayout {
             public void onAnimationCancel(android.animation.Animator animation) {
                 cancelled[0] = true;
                 clockWeightAnimator = null;
+                aodWeightHandoffSettled = false;
                 PixelAodLog.log("cancelled AOD clock weight transition source=" + source
                         + " fromWeight=" + fromWeight
                         + " toWeight=" + toWeight
+                        + " settled=false"
                         + " trace=" + currentAodTraceId()
                         + " state={" + describeAodState(getContext(), compactClock, currentClockWeight) + "}");
             }
@@ -5718,8 +5946,10 @@ public final class PixelAodClockView extends FrameLayout {
                 // prebuilt Typeface so OOS cannot retain a transient system fallback.
                 setClockWeight(toWeight, true);
                 clockWeightAnimator = null;
+                aodWeightHandoffSettled = true;
                 PixelAodLog.log("finished AOD clock weight transition source=" + source
                         + " toWeight=" + toWeight
+                        + " settled=true"
                         + " trace=" + currentAodTraceId()
                         + " state={" + describeAodState(getContext(), compactClock, currentClockWeight) + "}");
                 if (onFinished != null) {
@@ -5727,6 +5957,7 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
         });
+        aodWeightHandoffSettled = false;
         clockWeightAnimator.start();
         PixelAodLog.log("started AOD clock weight transition source=" + source
                 + " fromWeight=" + fromWeight
@@ -5734,6 +5965,7 @@ public final class PixelAodClockView extends FrameLayout {
                 + " toWeight=" + toWeight
                 + " toVariation=" + sharedClockFontVariationSettings(toWeight)
                 + " typeface=builder"
+                + " settled=false"
                 + " trace=" + currentAodTraceId()
                 + " state={" + describeAodState(getContext(), compactClock, fromWeight) + "}");
     }

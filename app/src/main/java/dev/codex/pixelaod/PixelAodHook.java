@@ -1728,6 +1728,10 @@ final class PixelAodHook {
                     if ("OnScreenFingerprintUiMech".equals(sourceClass)) {
                         PixelFingerprintIconController.refresh(
                                 context, param.thisObject, source, true);
+                        if ("onFpTouch".equals(targetMethod.getName())) {
+                            PixelFingerprintIconController.onFingerprintTouch(
+                                    param.thisObject, param.args, source);
+                        }
                     }
                     PixelAodLog.log("FOD AOD diagnostic source=" + source
                             + " args=" + summarizeArgs(param.args, 6)
@@ -4554,14 +4558,20 @@ final class PixelAodHook {
 
     private static boolean looksLikeLockscreenNotificationCard(String marker, View view) {
         String m = marker.toLowerCase(Locale.US);
-        if (m.contains("qsmediaplayer")
+        // Native OOS media cards sit over the large lockscreen clock — treat them as
+        // compact triggers on the lockscreen. AOD uses a separate module media row and
+        // does not use this probe for clock size.
+        if (looksLikeMediaNotificationSurface(marker)
+                || m.contains("qsmediaplayer")
                 || m.contains("mediacarousel")
                 || m.contains("oplusmedia")
                 || m.contains("keyguardmedia")
                 || m.contains("mediahostview")
                 || m.contains("media_carousel")
                 || m.contains("media_container")
-                || m.contains("media_view")) {
+                || m.contains("media_view")
+                || m.contains("media_player")
+                || m.contains("nowplaying")) {
             return true;
         }
         if (!m.contains("notification") && !m.contains("expandable")) {
@@ -4613,8 +4623,7 @@ final class PixelAodHook {
             if (view.getVisibility() == View.VISIBLE && view instanceof ViewGroup) {
                 NotificationTextSignals signals = new NotificationTextSignals();
                 collectNotificationTextSignals(view, 0, signals);
-                // A media seedling or timer seedling will have some meaningful text (e.g. song name, timer)
-                // Even if relativeTime is false, meaningfulTextCount > 0 will catch it.
+                // Media/timer seedlings with text occupy lockscreen space → compact there.
                 return signals.meaningfulTextCount > 0 || signals.clockTime || signals.relativeTime;
             }
         }

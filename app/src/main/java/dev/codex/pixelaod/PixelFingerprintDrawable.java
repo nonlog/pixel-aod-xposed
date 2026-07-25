@@ -23,7 +23,6 @@ final class PixelFingerprintDrawable extends Drawable {
     private static final float AOD_STROKE_DP = 2f;
     private static final float AOD_DASH_DP = 4f;
     private static final float AOD_DASH_GAP_DP = 4.5f;
-    private static final float LOCKSCREEN_BACKGROUND_RADIUS_DP = 32f;
     private static final float INTRINSIC_SIZE_DP = 80f;
     private static final long TRANSITION_DURATION_MS = 420L;
     private static final PathInterpolator TRANSITION_INTERPOLATOR =
@@ -37,27 +36,21 @@ final class PixelFingerprintDrawable extends Drawable {
     private final Matrix pathMatrix = new Matrix();
     private final Paint solidPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint dashedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final ArgbEvaluator argbEvaluator = new ArgbEvaluator();
 
     private float centerX;
     private float centerY;
     private float lockscreenStrokeWidth;
     private float aodStrokeWidth;
-    private float lockscreenBackgroundRadius;
     private float outlineProgress;
     private int drawableAlpha = 255;
     private int lockscreenForegroundColor;
-    private int lockscreenBackgroundColor;
-    private final boolean primaryCarrier;
     private boolean targetAodStyle;
     private boolean targetDark;
     private ValueAnimator transitionAnimator;
 
-    PixelFingerprintDrawable(Context context, boolean aodStyle, boolean dark,
-            boolean primaryCarrier) {
+    PixelFingerprintDrawable(Context context, boolean aodStyle, boolean dark) {
         this.context = context;
-        this.primaryCarrier = primaryCarrier;
         density = context.getResources().getDisplayMetrics().density;
         intrinsicSize = Math.max(1, Math.round(INTRINSIC_SIZE_DP * density));
         sourcePath = createFingerprintPath();
@@ -136,22 +129,8 @@ final class PixelFingerprintDrawable extends Drawable {
     private void refreshPalette() {
         int foregroundFallback = targetDark
                 ? Color.rgb(228, 225, 233) : Color.rgb(68, 71, 79);
-        int backgroundFallback = targetDark
-                ? Color.rgb(28, 27, 31) : Color.rgb(255, 251, 254);
         lockscreenForegroundColor = resolveThemeColor(
                 android.R.attr.textColorPrimary, foregroundFallback);
-        lockscreenBackgroundColor = resolveInternalThemeColor(
-                "colorSurface",
-                resolveThemeColor(android.R.attr.colorBackground, backgroundFallback));
-    }
-
-    private int resolveInternalThemeColor(String name, int fallback) {
-        try {
-            int attributeId = context.getResources().getIdentifier(name, "attr", "android");
-            return resolveThemeColor(attributeId, fallback);
-        } catch (Throwable ignored) {
-            return fallback;
-        }
     }
 
     private int resolveThemeColor(int attributeId, int fallback) {
@@ -179,17 +158,9 @@ final class PixelFingerprintDrawable extends Drawable {
     public void draw(Canvas canvas) {
         float progress = clamp(outlineProgress);
         float lockscreenProgress = PixelFingerprintIconPolicy.lockscreenLayerAlpha(progress);
-        float backgroundProgress = PixelFingerprintIconPolicy.lockscreenBackgroundAlpha(
-                primaryCarrier, progress);
         int foreground = (Integer) argbEvaluator.evaluate(
                 progress, lockscreenForegroundColor, Color.WHITE);
         float strokeWidth = lerp(lockscreenStrokeWidth, aodStrokeWidth, progress);
-        backgroundPaint.setColor(PixelFingerprintIconPolicy.opaqueColor(
-                lockscreenBackgroundColor));
-        backgroundPaint.setAlpha(modulatedAlpha(backgroundProgress));
-        if (backgroundPaint.getAlpha() > 0) {
-            canvas.drawCircle(centerX, centerY, lockscreenBackgroundRadius, backgroundPaint);
-        }
         solidPaint.setColor(foreground);
         solidPaint.setStrokeWidth(strokeWidth);
         solidPaint.setAlpha(modulatedAlpha(lockscreenProgress));
@@ -219,8 +190,6 @@ final class PixelFingerprintDrawable extends Drawable {
         sourcePath.transform(pathMatrix, drawPath);
         lockscreenStrokeWidth = LOCKSCREEN_STROKE_DP * scale;
         aodStrokeWidth = AOD_STROKE_DP * scale;
-        lockscreenBackgroundRadius = Math.min(
-                squareSize / 2f, LOCKSCREEN_BACKGROUND_RADIUS_DP * density);
         dashedPaint.setPathEffect(new DashPathEffect(
                 new float[] { AOD_DASH_DP * scale, AOD_DASH_GAP_DP * scale }, 0f));
     }

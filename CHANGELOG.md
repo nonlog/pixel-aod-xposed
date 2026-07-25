@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.1.236] - 2026-07-24
+### Fixed
+- LS→AOD weight bounce hardening (log-verified path):
+  - `applyStableAodClockWeight` now sets `aodWeightHandoffSettled=true` so stable 160 cannot be followed by `prepared fromWeight=340`.
+  - Do not clear the settle latch / force `weightStart=340` while the AOD surface is already active and settled (only `presentLockscreen` clears for the next handoff).
+  - `prepare` refuses to cancel a running weight morph just to re-park at lockscreen weight.
+  - Expected LS→AOD log sequence: `prepared/started 340→160` → `finished toWeight=160 settled=true` → `kept settled ... weight=160` (no later `prepared fromWeight=340` until leave AOD).
+
+## [0.1.235] - 2026-07-24
+### Fixed
+- LS→AOD weight bounce after finish (logs: `finished toWeight=160` then `prepared fromWeight=340` from `non-lockscreen-reveal+849`): latch `aodWeightHandoffSettled` when weight morph completes; re-present / reveal must not re-park at lockscreen weight; only a fresh handoff (or leaving AOD) clears the latch.
+
+## [0.1.234] - 2026-07-24
+### Fixed
+- Lockscreen→AOD weight was snapping while AOD→lockscreen still animated: AOD layer kept a stale ~160 from the previous session, so re-present treated it as “already at AOD weight” and called `applyStableAodWeight` instead of parking at ~340 and animating down. Always park at lockscreen handoff start when it differs from AOD target; always start the 700ms LS→AOD weight transition; size morph no longer owns a second weight animator.
+
+## [0.1.233] - 2026-07-24
+### Fixed
+- AOD weight 340→100 then snap back to 340: logs showed mid-entry OOS KEYGUARD frames calling `presentClockPluginLockscreen` (`aod-to-ls` 337→340) and cancelling the AOD weight animator, plus re-present resetting `fromWeight=337`. Ignore lockscreen presents while host is already AOD and non-interactive (or AOD weight anim running); do not restart/reset AOD weight handoff on re-present/media refresh.
+
+## [0.1.232] - 2026-07-24
+### Fixed
+- Restore lockscreen↔AOD **font-weight handoff animation** broken by the large-AOD surface switch: AOD entry again starts at lockscreen weight and animates to AOD weight (~700ms) instead of snapping via `applyStableAodWeight`; AOD→lockscreen animates weight back from the AOD layer weight. Compact→large scale morph still runs in parallel when leaving lockscreen SMALL.
+
+## [0.1.231] - 2026-07-24
+### Fixed
+- Lockscreen stuck compact after dismissing a paused media card: logs showed OOS `clockSizeState=1` (LARGE) while the module forced `LOCKSCREEN_SMALL` because `mediaActive` stayed true on a **paused** MediaSession. ClockPlugin lockscreen size now follows OOS `clockSizeState` (still force SMALL for real module notifications); `hasPlayingMediaLocally` no longer treats PAUSED as compact.
+
+## [0.1.230] - 2026-07-24
+### Fixed
+- Media-only lockscreen→AOD handoff (COUI-inspired, no black-frame changes):
+  - Stop early weight-only animation on lockscreen SMALL when there are no notifications; stage AOD LARGE instead.
+  - Promote dozing KEYGUARD uiState to AOD for size/scene so the first decision is AOD_LARGE (not a later snap).
+  - Active surface switches to AOD LARGE + media immediately; compact→large entry uses scale morph (~380ms, PathInterpolator 0.2/0/0/1) with media fade-in and weight morph in parallel.
+  - Force AOD_SMALL→AOD_LARGE before present when module has no non-media notifications.
+
+## [0.1.229] - 2026-07-24
+### Fixed
+- Pre-blank AOD frame with media-only content: when entering AOD as LARGE (no notifs), immediately switch the visible ClockPlugin surface from the lockscreen SMALL layer (native media already gone) to the prepared AOD layer with large clock + media row, and retry media fill at 0/48/120/280ms. Does not change the platform black-frame path.
+
+## [0.1.228] - 2026-07-24
+### Fixed
+- **Lockscreen:** restore compact clock when a native OOS media card is present (large clock was covered by the media card). Media cards / playing-or-paused sessions force SMALL; real notification cards still do.
+- **AOD:** keep LARGE when only media is active (module media row under the large clock); ClockPlugin size policy is split lockscreen-vs-AOD.
+- **AOD media timing:** prepare media on the AOD layer at present; if media is ready, start the handoff crossfade without the 700ms weight-wait hold so the media row is not stuck invisible under an opaque lockscreen layer. Does not change the platform black-frame / power path.
+
+## [0.1.227] - 2026-07-24
+### Fixed
+- Earlier incomplete media/compact experiment (superseded by 0.1.228).
+
+## [0.1.226] - 2026-07-21
+### Fixed
+- Reassert the native OOS pressed fingerprint layer only while a real fingerprint touch is active, so its inherited View alpha updates cannot leave the optional Pixel lockscreen icon permanently highlighted.
+
+### Diagnostics
+- Record the pressed-layer dispatch route, handler, alpha before/after, and touch state under the `FP-PRESSED-A2` debug marker.
+
+## [0.1.225] - 2026-07-20
+### Fixed
+- Split the Pixel lockscreen fingerprint background from the foreground icon, matching YAAP's independent surface layer so OOS image-alpha updates no longer turn the background translucent.
+- Use a compact 56dp opaque dark/light surface fallback for OOS themes that resolve the private `colorSurface` attribute to the wrong contrast.
+
 ## [0.1.224] - 2026-07-20
 ### Fixed
 - Reassert stock AOD suppression after OOS's authoritative per-minute `AodClockLayout#performAodUpdate` callback, with a same-trace 56 ms follow-up pass. This prevents native clock, battery, notification, and media views from being restored over the module AOD on alternating minute refreshes.

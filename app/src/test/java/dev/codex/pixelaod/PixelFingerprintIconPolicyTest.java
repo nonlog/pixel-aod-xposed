@@ -37,6 +37,12 @@ public final class PixelFingerprintIconPolicyTest {
     }
 
     @Test
+    public void keepsNativePressedLayerVisibleOnlyWhileFingerIsDown() {
+        assertFalse(PixelFingerprintIconPolicy.shouldShowNativePressedLayer(false));
+        assertTrue(PixelFingerprintIconPolicy.shouldShowNativePressedLayer(true));
+    }
+
+    @Test
     public void routesExistingFingerprintViewThroughItsOwnerHandler() {
         assertEquals(PixelFingerprintIconPolicy.DispatchTarget.VIEW_HANDLER,
                 PixelFingerprintIconPolicy.dispatchTarget(true));

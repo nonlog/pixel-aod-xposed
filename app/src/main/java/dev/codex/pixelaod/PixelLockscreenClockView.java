@@ -149,14 +149,30 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     private boolean hasPlayingMediaLocally() {
         for (MediaController controller : mediaControllers) {
+            if (controller == null) {
+                continue;
+            }
             PlaybackState state = controller.getPlaybackState();
             if (state != null) {
                 int st = state.getState();
+                // Only actively playing media. PAUSED alone must not stick compact after the
+                // user dismisses the OOS media card (logs: clockSizeState=1 LARGE while we
+                // still forced SMALL via paused MediaSession).
                 if (st == PlaybackState.STATE_PLAYING || st == PlaybackState.STATE_BUFFERING
                         || st == PlaybackState.STATE_FAST_FORWARDING || st == PlaybackState.STATE_REWINDING
-                        || st == PlaybackState.STATE_SKIPPING_TO_NEXT || st == PlaybackState.STATE_SKIPPING_TO_PREVIOUS) {
+                        || st == PlaybackState.STATE_SKIPPING_TO_NEXT
+                        || st == PlaybackState.STATE_SKIPPING_TO_PREVIOUS) {
                     return true;
                 }
+            }
+        }
+        return false;
+    }
+
+    static boolean hasPlayingMediaOnAnyInstance() {
+        for (PixelLockscreenClockView view : INSTANCES) {
+            if (view != null && view.hasPlayingMediaLocally()) {
+                return true;
             }
         }
         return false;
@@ -346,6 +362,16 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     void presentClockPluginLockscreen(boolean compact, String source) {
+        presentClockPluginLockscreen(compact, source,
+                PixelAodClockView.lockscreenClockWeight(getContext()), false);
+    }
+
+    /**
+     * @param fromWeight when {@code animateWeightFromAod} is true, animate wght from this
+     *                   value to the configured lockscreen weight (AOD→lockscreen handoff).
+     */
+    void presentClockPluginLockscreen(boolean compact, String source, int fromWeight,
+            boolean animateWeightFromAod) {
         if (!clockPluginManaged) {
             return;
         }
@@ -360,18 +386,27 @@ final class PixelLockscreenClockView extends FrameLayout {
         setVisibility(View.VISIBLE);
         markInteractiveLockscreenSurface(getContext(), source + "#ClockPlugin");
         setExpandedNotificationSuppressed(false);
-        setClockWeight(PixelAodClockView.lockscreenClockWeight(getContext()));
+        int lockscreenWeight = PixelAodClockView.lockscreenClockWeight(getContext());
         applyClockMode(compact);
         applyMaterialColors();
         updateTime();
         clearClockPluginAodNotificationIcons(source + "#lockscreen");
         setTranslationX(0f);
         setTranslationY(0f);
+        if (animateWeightFromAod
+                && fromWeight > 0
+                && fromWeight != lockscreenWeight) {
+            beginLockscreenWeightRestoreTransition(fromWeight, lockscreenWeight, source);
+        } else {
+            setClockWeight(lockscreenWeight);
+        }
         PixelAodLog.log("presented ClockPlugin lockscreen layer trace="
                 + PixelAodClockView.currentAodTraceId()
                 + " source=" + source
                 + " compact=" + compactClock
-                + " weight=" + currentClockWeight);
+                + " weight=" + currentClockWeight
+                + " animateFromAod=" + animateWeightFromAod
+                + " fromWeight=" + fromWeight);
     }
 
     void refreshClockPluginLockscreenContent(String source) {
@@ -401,6 +436,16 @@ final class PixelLockscreenClockView extends FrameLayout {
         }
         showingClockPluginAodNotificationIcons = true;
         rebuildNotificationIcons(currentNotifications(), source + "#aod-handoff");
+        runWeightTransition(currentClockWeight,
+                PixelAodClockView.aodClockWeight(getContext()), source + "#ls-to-aod");
+    }
+
+    private void beginLockscreenWeightRestoreTransition(int fromWeight, int toWeight,
+            String source) {
+        runWeightTransition(fromWeight, toWeight, source + "#aod-to-ls");
+    }
+
+    private void runWeightTransition(int fromWeight, int toWeight, String source) {
         if (clockWeightTransitionPending && clockWeightAnimator != null) {
             PixelAodLog.log("kept persistent ClockPlugin lockscreen weight handoff source="
                     + source + " currentWeight=" + currentClockWeight
@@ -414,8 +459,6 @@ final class PixelLockscreenClockView extends FrameLayout {
         }
         clockWeightTransitionPending = true;
         lastClockTransitionStartedAt = android.os.SystemClock.uptimeMillis();
-        int fromWeight = currentClockWeight;
-        int toWeight = PixelAodClockView.aodClockWeight(getContext());
         if (fromWeight == toWeight) {
             setClockWeight(toWeight);
             clockWeightTransitionPending = false;
@@ -782,6 +825,8 @@ final class PixelLockscreenClockView extends FrameLayout {
         List<StatusBarNotification> notifications = currentNotifications();
         boolean hasCards = hasVisibleLockscreenNotificationCards()
                 || hasLiveLockscreenNotificationCards(firstVisibleFrame);
+        // Lockscreen: visible cards (incl. OOS media chrome) force compact. Playing media
+        // alone does not stick compact after the card is dismissed (PAUSED sessions linger).
         boolean compact = !notifications.isEmpty() || hasCards || playingMedia;
         applyClockMode(compact);
         applyMaterialColors();
@@ -1345,6 +1390,8 @@ final class PixelLockscreenClockView extends FrameLayout {
             return hasVisibleLockscreenNotificationCards;
         }
     }
+
+
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
