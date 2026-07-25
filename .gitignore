@@ -9,6 +9,8 @@ logs/
 local.properties
 *.iml
 .idea/
+.vs/
 .omc/
 .omo/
 .agents/
+screenshots/
