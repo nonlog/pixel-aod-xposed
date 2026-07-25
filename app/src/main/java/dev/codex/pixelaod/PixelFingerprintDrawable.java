@@ -18,8 +18,8 @@ import android.view.animation.PathInterpolator;
 
 final class PixelFingerprintDrawable extends Drawable {
     private static final float VIEWPORT_SIZE = 72f;
-    private static final float FOREGROUND_SCALE = 0.5f;
-    private static final float LOCKSCREEN_STROKE_DP = 3f;
+    private static final float FOREGROUND_SCALE = 0.58f;
+    private static final float LOCKSCREEN_STROKE_DP = 2.6f;
     private static final float AOD_STROKE_DP = 2f;
     private static final float AOD_DASH_DP = 4f;
     private static final float AOD_DASH_GAP_DP = 4.5f;
@@ -127,10 +127,10 @@ final class PixelFingerprintDrawable extends Drawable {
     }
 
     private void refreshPalette() {
-        int foregroundFallback = targetDark
-                ? Color.rgb(228, 225, 233) : Color.rgb(68, 71, 79);
-        lockscreenForegroundColor = resolveThemeColor(
-                android.R.attr.textColorPrimary, foregroundFallback);
+        // Pixel/AOSP lockscreen UDFPS is a light ridge glyph (not theme textColorPrimary).
+        // Screenshot 23:05: dark-mode textColorPrimary + dark disc looked like a black blob
+        // on colorful wallpaper. Always use near-white on lockscreen; AOD stays pure white.
+        lockscreenForegroundColor = Color.argb(0xEE, 0xFF, 0xFF, 0xFF);
     }
 
     private int resolveThemeColor(int attributeId, int fallback) {

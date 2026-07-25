@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.243] - 2026-07-25
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Pixel lockscreen UDFPS color/style (screenshot 23:05)
+
+### Fixed
+- Lockscreen fingerprint looked like a dark charcoal filled disc on colorful wallpaper (user screenshot 23:05). Pixel/AOSP style is a light ridge glyph without a solid surface disc. Lockscreen foreground forced near-white; background disc opacity forced to 0 on lockscreen/AOD; slightly larger ridge scale. **Pending user visual check.**
+
+### Deferred
+- SMALL↔LARGE size morph still imperfect (carried from 0.1.242).
+
 ## [0.1.242] - 2026-07-25
 ### Meta
 - **Model:** Grok (xAI)

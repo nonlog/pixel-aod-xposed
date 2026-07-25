@@ -50,7 +50,9 @@ final class PixelFingerprintBackgroundDrawable extends Drawable {
         targetAodStyle = aodStyle;
         targetDark = dark;
         refreshPalette();
-        float targetOpacity = aodStyle ? 0f : 1f;
+        // Pixel lockscreen UDFPS has no solid filled disc under the ridge icon (COUI/Pixel
+        // reference). Keep background fully transparent on both lockscreen and AOD.
+        float targetOpacity = 0f;
         if (animator != null) {
             animator.cancel();
             animator = null;
@@ -71,13 +73,8 @@ final class PixelFingerprintBackgroundDrawable extends Drawable {
     }
 
     private void refreshPalette() {
-        int fallback = targetDark ? Color.rgb(31, 31, 31) : Color.rgb(255, 251, 254);
-        int resolved = resolveThemeColor(resolveColorSurfaceAttribute(), fallback);
-        float luminance = Color.luminance(resolved);
-        if ((targetDark && luminance > 0.36f) || (!targetDark && luminance < 0.64f)) {
-            resolved = fallback;
-        }
-        surfaceColor = PixelFingerprintIconPolicy.opaqueColor(resolved);
+        // Unused for fill (opacity forced 0); keep a neutral light fallback if re-enabled.
+        surfaceColor = Color.argb(0x28, 0xFF, 0xFF, 0xFF);
     }
 
     private static int resolveColorSurfaceAttribute() {
