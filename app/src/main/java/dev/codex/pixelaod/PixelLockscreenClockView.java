@@ -114,6 +114,7 @@ final class PixelLockscreenClockView extends FrameLayout {
     private boolean clockPluginManaged;
     private boolean compactClock;
     private ValueAnimator clockWeightAnimator;
+    private String activeClockWeightTransitionSource = "";
     private int currentClockWeight = CLOCK_LOCKSCREEN_WEIGHT;
     private boolean clockWeightTransitionPending;
     private boolean showingClockPluginAodNotificationIcons;
@@ -463,6 +464,10 @@ final class PixelLockscreenClockView extends FrameLayout {
                 + PixelAodClockView.currentAodTraceId() + " source=" + source);
     }
 
+    /**
+     * Start LS→AOD weight morph on the visible lockscreen surface (icons + weight).
+     * AOD layer continues from the live intermediate weight — never re-park at full LS weight.
+     */
     void beginClockPluginAodWeightTransition(String source) {
         if (!clockPluginManaged) {
             return;
@@ -509,21 +514,34 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     private void runWeightTransition(int fromWeight, int toWeight, String source) {
         if (clockWeightTransitionPending && clockWeightAnimator != null) {
-            PixelAodLog.log("kept persistent ClockPlugin lockscreen weight handoff source="
-                    + source + " currentWeight=" + currentClockWeight
-                    + " reason=already-running"
-                    + " trace=" + PixelAodClockView.currentAodTraceId());
-            return;
+            boolean replacingAodToLockscreenRestore = source != null
+                    && source.contains("#ls-to-aod")
+                    && activeClockWeightTransitionSource.contains("#aod-to-ls");
+            if (replacingAodToLockscreenRestore) {
+                PixelAodLog.log("replaced persistent ClockPlugin lockscreen weight restore source="
+                        + source + " previousSource=" + activeClockWeightTransitionSource
+                        + " currentWeight=" + currentClockWeight
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
+                clockWeightAnimator.cancel();
+            } else {
+                PixelAodLog.log("kept persistent ClockPlugin lockscreen weight handoff source="
+                        + source + " currentWeight=" + currentClockWeight
+                        + " reason=already-running"
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
+                return;
+            }
         }
         if (clockWeightAnimator != null) {
             clockWeightAnimator.cancel();
             clockWeightAnimator = null;
         }
         clockWeightTransitionPending = true;
+        activeClockWeightTransitionSource = source != null ? source : "";
         lastClockTransitionStartedAt = android.os.SystemClock.uptimeMillis();
         if (fromWeight == toWeight) {
             setClockWeight(toWeight);
             clockWeightTransitionPending = false;
+            activeClockWeightTransitionSource = "";
             lastClockTransitionStartedAt = 0L;
             PixelAodLog.log("skipped persistent ClockPlugin lockscreen weight handoff source="
                     + source + " reason=equal-weight weight=" + toWeight
@@ -546,6 +564,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             public void onAnimationCancel(android.animation.Animator animation) {
                 cancelled[0] = true;
                 clockWeightTransitionPending = false;
+                activeClockWeightTransitionSource = "";
                 lastClockTransitionStartedAt = 0L;
                 clockWeightAnimator = null;
                 // If aod-to-ls is interrupted while the user is still on lockscreen, finish at
@@ -574,6 +593,7 @@ final class PixelLockscreenClockView extends FrameLayout {
                 }
                 setClockWeight(toWeight);
                 clockWeightTransitionPending = false;
+                activeClockWeightTransitionSource = "";
                 lastClockTransitionStartedAt = 0L;
                 clockWeightAnimator = null;
                 PixelAodLog.log("finished persistent ClockPlugin lockscreen weight handoff source="

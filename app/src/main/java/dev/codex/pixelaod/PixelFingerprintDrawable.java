@@ -17,12 +17,14 @@ import android.util.TypedValue;
 import android.view.animation.PathInterpolator;
 
 final class PixelFingerprintDrawable extends Drawable {
+    // AOSP path viewport 72; ridge scale/stroke tuned for OOS optical carrier readability
+    // (0.58 is the user-preferred size; pure AOSP/COUI FOREGROUND_SCALE is 0.5).
     private static final float VIEWPORT_SIZE = 72f;
     private static final float FOREGROUND_SCALE = 0.58f;
-    private static final float LOCKSCREEN_STROKE_DP = 2.6f;
-    private static final float AOD_STROKE_DP = 2f;
-    private static final float AOD_DASH_DP = 4f;
-    private static final float AOD_DASH_GAP_DP = 4.5f;
+    private static final float LOCKSCREEN_STROKE = 2.6f;
+    private static final float AOD_STROKE = 2f;
+    private static final float AOD_DASH = 4f;
+    private static final float AOD_DASH_GAP = 4.5f;
     private static final float INTRINSIC_SIZE_DP = 80f;
     private static final long TRANSITION_DURATION_MS = 420L;
     private static final PathInterpolator TRANSITION_INTERPOLATOR =
@@ -188,10 +190,11 @@ final class PixelFingerprintDrawable extends Drawable {
         pathMatrix.postTranslate(centerX - sourceCenter, centerY - sourceCenter);
         drawPath.reset();
         sourcePath.transform(pathMatrix, drawPath);
-        lockscreenStrokeWidth = LOCKSCREEN_STROKE_DP * scale;
-        aodStrokeWidth = AOD_STROKE_DP * scale;
+        // Stroke widths scale with path (same as AOSP ShapeDrawable + COUI).
+        lockscreenStrokeWidth = LOCKSCREEN_STROKE * scale;
+        aodStrokeWidth = AOD_STROKE * scale;
         dashedPaint.setPathEffect(new DashPathEffect(
-                new float[] { AOD_DASH_DP * scale, AOD_DASH_GAP_DP * scale }, 0f));
+                new float[] { AOD_DASH * scale, AOD_DASH_GAP * scale }, 0f));
     }
 
     @Override

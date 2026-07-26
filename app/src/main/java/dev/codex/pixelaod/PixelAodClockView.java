@@ -2684,15 +2684,12 @@ public final class PixelAodClockView extends FrameLayout {
         }
         setScaleX(1f);
         setScaleY(1f);
-        applyClockMode(compact);
-        rebuildNotificationIcons(source + "#ClockPlugin");
-        updateMediaLine(source + "#ClockPlugin");
+
+        // Park weight BEFORE applyClockMode / icon rebuild so the first painted frame uses
+        // LS weight (340), not residual AOD weight (160) from the previous session.
         boolean weightRunning = clockWeightAnimator != null && clockWeightAnimator.isRunning();
         int aodTargetWeight = aodClockWeight(getContext());
         int startWeight = normalizeClockWeight(handoffStartWeight);
-        // Settle latch is the bounce guard (finished 160 then prepared 340). Do NOT treat
-        // "current near AOD weight" alone as settled — after presentLockscreen the AOD layer
-        // still holds 160 and must be allowed to re-park at ~340 for the next morph.
         if (weightRunning) {
             PixelAodLog.log("kept running AOD weight transition on re-present source=" + source
                     + " currentWeight=" + currentClockWeight
@@ -2716,6 +2713,10 @@ public final class PixelAodClockView extends FrameLayout {
         } else {
             applyStableAodClockWeight(source + "#ClockPlugin");
         }
+
+        applyClockMode(compact);
+        rebuildNotificationIcons(source + "#ClockPlugin");
+        updateMediaLine(source + "#ClockPlugin");
         // Avoid exposing the TextView before its weighted Google Sans Typeface is ready.
         setVisibility(View.VISIBLE);
         applyBurnInTranslation();
@@ -2725,12 +2726,15 @@ public final class PixelAodClockView extends FrameLayout {
                 mediaRow.setAlpha(0f);
             }
         } else if (sizeChanged && wasVisible && !weightRunning
+                && !deferLockscreenWeightTransition
                 && fromClock != null && fromClock[4] > 1f) {
+            // Size content morph only when not doing LS→AOD weight handoff (that path uses
+            // startCompactToLargeEntryMorph after weight morph is visible).
             startAodTextContentMorph(fromClock, source + "#aod-size-morph");
             if (mediaRow != null) {
                 mediaRow.setAlpha(MEDIA_ALPHA);
             }
-        } else if (mediaRow != null) {
+        } else if (mediaRow != null && !(morphFromCompact && !compact)) {
             mediaRow.setAlpha(MEDIA_ALPHA);
         }
         requestAodFrameRefresh(source + "#ClockPlugin");
@@ -3080,9 +3084,10 @@ public final class PixelAodClockView extends FrameLayout {
         }
         applyMaterialColors();
         updateTime();
+        // Icon rebuild calls applyClockMode; safe during weight morph (uses currentClockWeight).
+        // Never call applyStable / prepare weight here.
         rebuildNotificationIcons(source + "#ClockPlugin");
         updateMediaLine(source + "#ClockPlugin");
-        // Never reset weight here — media retries / reveal must not cancel LS→AOD morph.
         requestAodFrameRefresh(source + "#ClockPlugin");
     }
 
@@ -3091,6 +3096,8 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         if (!visible) {
+            // Leaving AOD surface (unlock / hide). Cancel morph; settle cleared so the next
+            // LS→AOD entry always re-parks and animates.
             if (clockWeightAnimator != null) {
                 clockWeightAnimator.cancel();
                 clockWeightAnimator = null;
@@ -6184,6 +6191,10 @@ public final class PixelAodClockView extends FrameLayout {
 
     int clockPluginWeight() {
         return currentClockWeight;
+    }
+
+    boolean isCompactClockMode() {
+        return compactClock;
     }
 
     String clockPluginDiagnosticState() {

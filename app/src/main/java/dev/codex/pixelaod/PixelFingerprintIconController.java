@@ -2,6 +2,7 @@ package dev.codex.pixelaod;
 
 import android.content.Context;
 import android.content.res.Configuration;
+import android.graphics.drawable.Animatable;
 import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.os.Looper;
@@ -155,6 +156,9 @@ final class PixelFingerprintIconController {
             return;
         }
 
+        trackPressedIcon(pressedIcon);
+        updatePressedVisual(pressedIcon, source + "#pressed-passive");
+
         boolean onDozeState = readBooleanField(uiMech, "onDozeState");
         boolean onDreamingStart = readBooleanField(uiMech, "onDreamingStart");
         boolean screenTurnedOff = readBooleanField(uiMech, "screenTurnedOff");
@@ -163,13 +167,13 @@ final class PixelFingerprintIconController {
                 interactive, onDozeState, onDreamingStart, screenTurnedOff);
         boolean dark = isDarkMode(resolvedContext);
 
-        trackPressedIcon(pressedIcon);
-        updatePressedVisual(pressedIcon, source + "#pressed-passive");
         if (PixelFingerprintIconPolicy.shouldReplaceCarrier(true)) {
             applyPixelDrawable(resolvedContext, uiMech, iconView, source, animate,
                     aodStyle, dark, onDozeState, onDreamingStart, screenTurnedOff, true);
         }
-        if (scheduleReclaim && PixelFingerprintIconPolicy.shouldReplaceCarrier(true)) {
+        if (scheduleReclaim && PixelFingerprintIconPolicy.shouldReplaceCarrier(true)
+                && !isPixelOwnedDrawable(iconView.getDrawable())
+                && !isVendorTemporaryAnimation(iconView.getDrawable())) {
             scheduleVendorReclaim(resolvedContext, uiMech, iconView, source);
         }
         logCarrierState("after-refresh", iconView, pressedIcon, source);
@@ -182,17 +186,20 @@ final class PixelFingerprintIconController {
         Drawable current = iconView.getDrawable();
         Drawable currentBackground = iconView.getBackground();
         String drawableClass = current != null ? current.getClass().getName() : null;
+        boolean alreadyCarrier = current instanceof PixelFingerprintAnimCarrier;
+        boolean vendorTempAnim = isVendorTemporaryAnimation(current) || alreadyCarrier;
+        boolean alreadyPixel = current instanceof PixelFingerprintDrawable;
+        boolean created;
         PixelFingerprintDrawable pixelDrawable;
-        PixelFingerprintBackgroundDrawable pixelBackground;
-        boolean created = false;
         synchronized (PIXEL_DRAWABLES) {
             pixelDrawable = PIXEL_DRAWABLES.get(iconView);
-            if (pixelDrawable == null) {
+            created = pixelDrawable == null;
+            if (created) {
                 pixelDrawable = new PixelFingerprintDrawable(context, aodStyle, dark);
                 PIXEL_DRAWABLES.put(iconView, pixelDrawable);
-                created = true;
             }
         }
+        PixelFingerprintBackgroundDrawable pixelBackground;
         synchronized (PIXEL_BACKGROUNDS) {
             pixelBackground = PIXEL_BACKGROUNDS.get(iconView);
             if (pixelBackground == null) {
@@ -204,25 +211,87 @@ final class PixelFingerprintIconController {
             TRACKED_VIEWS.put(iconView, Boolean.TRUE);
             VIEW_OWNERS.put(iconView, new WeakReference<>(uiMech));
         }
-        normalizeIconView(iconView, currentBackground);
+
+        // OOS black-frame / tap temporary show uses OplusAnimationDrawable for optical/AOD
+        // lifecycle. Wrap it in PixelFingerprintAnimCarrier (no per-frame Xposed draw hook).
+        if (vendorTempAnim) {
+            sanitizeTintAndBackground(iconView, currentBackground);
+            pixelDrawable.transitionTo(aodStyle, dark, false);
+            if (pixelDrawable.getAlpha() != 255) {
+                pixelDrawable.setAlpha(255);
+            }
+            if (pixelBackground != null) {
+                pixelBackground.transitionTo(aodStyle, dark, false);
+            }
+            ensurePixelBackgroundLayer(iconView, pixelBackground);
+            Drawable vendor = alreadyCarrier
+                    ? ((PixelFingerprintAnimCarrier) current).getVendor()
+                    : current;
+            if (!(current instanceof PixelFingerprintAnimCarrier)
+                    || ((PixelFingerprintAnimCarrier) current).getVendor() != vendor
+                    || ((PixelFingerprintAnimCarrier) current).getPixel() != pixelDrawable) {
+                if (current != null && !(current instanceof PixelFingerprintAnimCarrier)
+                        && !(current instanceof PixelFingerprintDrawable)) {
+                    synchronized (ORIGINAL_DRAWABLES) {
+                        ORIGINAL_DRAWABLES.put(iconView, current);
+                    }
+                }
+                PixelFingerprintAnimCarrier carrier =
+                        new PixelFingerprintAnimCarrier(vendor, pixelDrawable);
+                setImageDrawableInternal(iconView, carrier);
+                // Keep vendor anim ticking so OOS optical/AOD lifecycle still advances.
+                if (vendor instanceof Animatable) {
+                    try {
+                        Animatable animatable = (Animatable) vendor;
+                        if (!animatable.isRunning()) {
+                            animatable.start();
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+            logStateIfChanged(iconView, "pixel-anim-carrier-"
+                            + (aodStyle ? "aod" : "lockscreen"), source,
+                    "vendorAnim=" + drawableClass
+                            + " viewAlpha=" + iconView.getAlpha()
+                            + " visibility=" + visibilityName(iconView.getVisibility())
+                            + " fields={doze=" + onDozeState
+                            + ",dreaming=" + onDreamingStart
+                            + ",screenOff=" + screenTurnedOff + "}");
+            return;
+        }
+
+        // Static stock / non-anim vendor glyph: swap to Pixel (no system look).
+        if (!alreadyPixel) {
+            normalizeIconViewForReclaim(iconView, currentBackground);
+        } else {
+            sanitizeTintAndBackground(iconView, currentBackground);
+        }
         View backgroundLayer = ensurePixelBackgroundLayer(iconView, pixelBackground);
         if (current != pixelDrawable) {
-            if (current != null && !(current instanceof PixelFingerprintDrawable)) {
+            if (current != null && !(current instanceof PixelFingerprintDrawable)
+                    && !(current instanceof PixelFingerprintAnimCarrier)) {
                 synchronized (ORIGINAL_DRAWABLES) {
                     ORIGINAL_DRAWABLES.put(iconView, current);
                 }
             }
             setImageDrawableInternal(iconView, pixelDrawable);
         }
-        pixelDrawable.transitionTo(aodStyle, dark, animate && !created);
+        boolean styleAnimate = animate && !alreadyPixel && !created;
+        pixelDrawable.transitionTo(aodStyle, dark, styleAnimate);
+        if (pixelDrawable.getAlpha() != 255) {
+            pixelDrawable.setAlpha(255);
+        }
         if (backgroundLayer != null) {
-            pixelBackground.transitionTo(aodStyle, dark, animate && !created);
+            pixelBackground.transitionTo(aodStyle, dark, styleAnimate);
         }
         logStateIfChanged(iconView, "pixel-" + (aodStyle ? "aod" : "lockscreen"), source,
-                "animate=" + (animate && !created)
+                "animate=" + styleAnimate
                         + " dark=" + dark
                         + " interactive=" + isInteractive(context)
                         + " primary=" + primary
+                        + " alreadyPixel=" + alreadyPixel
+                        + " viewAlpha=" + iconView.getAlpha()
                         + " reclaimedCompeting="
                         + PixelFingerprintIconPolicy.isCompetingDrawableClass(drawableClass)
                         + " fields={doze=" + onDozeState
@@ -252,10 +321,20 @@ final class PixelFingerprintIconController {
         cancelPendingReclaim(iconView);
         Drawable current = iconView.getDrawable();
         Drawable currentBackground = iconView.getBackground();
-        if (current instanceof PixelFingerprintDrawable) {
+        if (current instanceof PixelFingerprintDrawable
+                || current instanceof PixelFingerprintAnimCarrier) {
             Drawable original;
             synchronized (ORIGINAL_DRAWABLES) {
                 original = ORIGINAL_DRAWABLES.get(iconView);
+            }
+            if (current instanceof PixelFingerprintAnimCarrier) {
+                Drawable vendor = ((PixelFingerprintAnimCarrier) current).getVendor();
+                if (vendor instanceof Animatable) {
+                    try {
+                        ((Animatable) vendor).stop();
+                    } catch (Throwable ignored) {
+                    }
+                }
             }
             setImageDrawableInternal(iconView, original);
             logStateIfChanged(iconView, "vendor-restored", source,
@@ -286,30 +365,58 @@ final class PixelFingerprintIconController {
         }
     }
 
-    private static void normalizeIconView(ImageView iconView, Drawable currentBackground) {
+    /**
+     * Sanitize when swapping off a stock/vendor drawable. Intentionally does NOT:
+     * - set View alpha / setBrightnessAlpha (causes permanent lockscreen HBM "highlight")
+     * - animate().cancel() / clearAnimation() (kills OOS black-frame / tap temp-show fades)
+     */
+    private static void normalizeIconViewForReclaim(ImageView iconView,
+            Drawable currentBackground) {
         beginInternalMutation();
         try {
-            if (currentBackground != null) {
-                if (!(currentBackground instanceof PixelFingerprintBackgroundDrawable)) {
-                    synchronized (ORIGINAL_BACKGROUNDS) {
-                        if (!ORIGINAL_BACKGROUNDS.containsKey(iconView)) {
-                            ORIGINAL_BACKGROUNDS.put(iconView, currentBackground);
-                        }
-                    }
-                }
-                iconView.setBackground(null);
+            // Only un-collapse if OOS left the carrier at ~0 scale (would make Pixel invisible).
+            if (iconView.getScaleX() < 0.05f) {
+                iconView.setScaleX(1f);
             }
-            if (iconView.getImageTintList() != null) {
-                iconView.setImageTintList(null);
+            if (iconView.getScaleY() < 0.05f) {
+                iconView.setScaleY(1f);
             }
-            if (iconView.getColorFilter() != null) {
-                iconView.clearColorFilter();
-            }
-            if (iconView.getScaleType() != ImageView.ScaleType.CENTER) {
-                iconView.setScaleType(ImageView.ScaleType.CENTER);
-            }
+            sanitizeTintAndBackgroundLocked(iconView, currentBackground);
         } finally {
             endInternalMutation();
+        }
+    }
+
+    private static void sanitizeTintAndBackground(ImageView iconView,
+            Drawable currentBackground) {
+        beginInternalMutation();
+        try {
+            sanitizeTintAndBackgroundLocked(iconView, currentBackground);
+        } finally {
+            endInternalMutation();
+        }
+    }
+
+    private static void sanitizeTintAndBackgroundLocked(ImageView iconView,
+            Drawable currentBackground) {
+        if (currentBackground != null) {
+            if (!(currentBackground instanceof PixelFingerprintBackgroundDrawable)) {
+                synchronized (ORIGINAL_BACKGROUNDS) {
+                    if (!ORIGINAL_BACKGROUNDS.containsKey(iconView)) {
+                        ORIGINAL_BACKGROUNDS.put(iconView, currentBackground);
+                    }
+                }
+            }
+            iconView.setBackground(null);
+        }
+        if (iconView.getImageTintList() != null) {
+            iconView.setImageTintList(null);
+        }
+        if (iconView.getColorFilter() != null) {
+            iconView.clearColorFilter();
+        }
+        if (iconView.getScaleType() != ImageView.ScaleType.CENTER) {
+            iconView.setScaleType(ImageView.ScaleType.CENTER);
         }
     }
 
@@ -665,30 +772,29 @@ final class PixelFingerprintIconController {
                         + method.getName(), t);
             }
         }
-        installPressedViewAlphaHook();
-        PixelAodLog.log("installed fingerprint ImageView mutation hooks count=" + hooked);
-    }
-
-    private static void installPressedViewAlphaHook() {
-        try {
-            Method setAlpha = View.class.getDeclaredMethod("setAlpha", float.class);
-            ModernHookBridge.hookAfter(setAlpha, param -> {
-                if (INTERNAL_MUTATION_DEPTH.get() > 0
-                        || !(param.thisObject instanceof ImageView)) {
-                    return;
-                }
-                ImageView view = (ImageView) param.thisObject;
-                if (isTrackedPressed(view)) {
-                    updatePressedVisual(view, "View#setAlpha");
-                }
-            });
-            PixelAodLog.log("installed fingerprint pressed View#setAlpha hook");
-        } catch (Throwable t) {
-            PixelAodLog.log("failed to install fingerprint pressed View#setAlpha hook", t);
-        }
+        // Do NOT hook View.setAlpha globally — every SystemUI alpha animation paid Xposed
+        // overhead (unlock/screen-off jank). Pressed layer is driven by onFingerprintTouch +
+        // vendor mutation hooks on OnScreenFingerprintPressedIcon only.
+        PixelAodLog.log("installed fingerprint ImageView mutation hooks count=" + hooked
+                + " globalViewSetAlphaHook=false");
     }
 
     private static void scheduleTrackedRefresh(ImageView iconView, String source) {
+        Drawable current = iconView.getDrawable();
+        // Vendor temp anim or our anim carrier: restyle without stripping optical lifecycle.
+        if (isVendorTemporaryAnimation(current)
+                || current instanceof PixelFingerprintAnimCarrier) {
+            runOnViewHandler(iconView,
+                    () -> reclaimTrackedViewImmediate(iconView, source + "#vendor-anim"));
+            return;
+        }
+        // Static stock glyph: reclaim to Pixel immediately (same frame).
+        if (!(current instanceof PixelFingerprintDrawable)) {
+            runOnViewHandler(iconView,
+                    () -> reclaimTrackedViewImmediate(iconView, source + "#immediate"));
+            return;
+        }
+        // Already Pixel: only re-evaluate aod/lockscreen style. Do not touch View alpha.
         Runnable previous;
         Runnable[] holder = new Runnable[1];
         Runnable refresh = () -> {
@@ -697,7 +803,7 @@ final class PixelFingerprintIconController {
                     PENDING_REFRESHES.remove(iconView);
                 }
             }
-            refreshTrackedView(null, iconView, source);
+            refreshTrackedViewStyleOnly(iconView, source);
         };
         holder[0] = refresh;
         synchronized (PENDING_REFRESHES) {
@@ -707,6 +813,88 @@ final class PixelFingerprintIconController {
             iconView.removeCallbacks(previous);
         }
         runOnViewHandler(iconView, refresh);
+    }
+
+    /**
+     * Update dashed/solid style only when ImageView already hosts Pixel. Vendor anim hosts
+     * go through full apply (attach hook + style) instead.
+     */
+    private static void refreshTrackedViewStyleOnly(ImageView iconView, String source) {
+        if (iconView == null || !isTracked(iconView)) {
+            return;
+        }
+        Drawable current = iconView.getDrawable();
+        if (isVendorTemporaryAnimation(current)
+                || current instanceof PixelFingerprintAnimCarrier
+                || !(current instanceof PixelFingerprintDrawable)) {
+            // Anim carrier / stock: full apply path (wrap or swap). Pure Pixel uses style-only.
+            if (!(current instanceof PixelFingerprintDrawable)) {
+                reclaimTrackedViewImmediate(iconView, source + "#style-only-reclaim");
+                return;
+            }
+        }
+        WeakReference<Object> owner;
+        synchronized (TRACKED_VIEWS) {
+            owner = VIEW_OWNERS.get(iconView);
+        }
+        Object uiMech = owner != null ? owner.get() : lastUiMech.get();
+        if (uiMech == null) {
+            return;
+        }
+        Context context = iconView.getContext();
+        if (context == null || !PixelAodSettings.getBoolean(
+                context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false)) {
+            return;
+        }
+        boolean onDozeState = readBooleanField(uiMech, "onDozeState");
+        boolean onDreamingStart = readBooleanField(uiMech, "onDreamingStart");
+        boolean screenTurnedOff = readBooleanField(uiMech, "screenTurnedOff");
+        boolean interactive = isInteractive(context);
+        boolean aodStyle = PixelFingerprintIconPolicy.useAodStyle(
+                interactive, onDozeState, onDreamingStart, screenTurnedOff);
+        boolean dark = isDarkMode(context);
+        PixelFingerprintDrawable pixelDrawable;
+        if (current instanceof PixelFingerprintDrawable) {
+            pixelDrawable = (PixelFingerprintDrawable) current;
+        } else {
+            return;
+        }
+        pixelDrawable.transitionTo(aodStyle, dark, false);
+        PixelFingerprintBackgroundDrawable pixelBackground;
+        synchronized (PIXEL_BACKGROUNDS) {
+            pixelBackground = PIXEL_BACKGROUNDS.get(iconView);
+        }
+        if (pixelBackground != null) {
+            pixelBackground.transitionTo(aodStyle, dark, false);
+        }
+        logStateIfChanged(iconView, "pixel-" + (aodStyle ? "aod" : "lockscreen"),
+                source + "#style-only",
+                "viewAlpha=" + iconView.getAlpha()
+                        + " visibility=" + visibilityName(iconView.getVisibility()));
+    }
+
+    /**
+     * Apply Pixel policy immediately on the view thread (no PENDING_REQUESTS debounce).
+     * For vendor temp anim: attach draw hook. For static stock: swap to Pixel drawable.
+     */
+    private static void reclaimTrackedViewImmediate(ImageView iconView, String source) {
+        if (iconView == null || !isTracked(iconView)) {
+            return;
+        }
+        Context context = iconView.getContext();
+        if (context == null || !PixelAodSettings.getBoolean(
+                context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false)) {
+            return;
+        }
+        WeakReference<Object> owner;
+        synchronized (TRACKED_VIEWS) {
+            owner = VIEW_OWNERS.get(iconView);
+        }
+        Object uiMech = owner != null ? owner.get() : lastUiMech.get();
+        if (uiMech == null) {
+            return;
+        }
+        refreshOnViewThread(context, uiMech, source, false, true);
     }
 
     static void onFingerprintTouch(Object uiMech, Object[] args, String source) {
@@ -792,10 +980,19 @@ final class PixelFingerprintIconController {
             updatePressedVisual(view, source + "#pressed-mutation");
             return;
         }
-        if (isTracked(view)) {
-            logSingleCarrierState("vendor-mutation#" + source, view);
-            scheduleTrackedRefresh(view, source);
+        if (!isTracked(view)) {
+            return;
         }
+        logSingleCarrierState("vendor-mutation#" + source, view);
+        // Brightness-only updates must not re-enter applyPixelDrawable (that used to force
+        // highlight alpha). If drawable is already Pixel, ignore; OOS owns alpha.
+        if (source.contains("setBrightnessAlpha") || source.contains("setMaxBrightnessToAlpha")) {
+            if (!(view.getDrawable() instanceof PixelFingerprintDrawable)) {
+                scheduleTrackedRefresh(view, source);
+            }
+            return;
+        }
+        scheduleTrackedRefresh(view, source);
     }
 
     private static boolean contains(String[] values, String candidate) {
@@ -830,9 +1027,9 @@ final class PixelFingerprintIconController {
                     PENDING_RECLAIMS.remove(iconView);
                 }
             }
-            if (!(iconView.getDrawable() instanceof PixelFingerprintDrawable)) {
+            if (!isPixelOwnedDrawable(iconView.getDrawable())) {
                 logSingleCarrierState("vendor-reclaim", iconView);
-                requestVisualState(context, uiMech, source + "#vendor-reclaim", false);
+                refreshOnViewThread(context, uiMech, source + "#vendor-reclaim", false, false);
             }
         };
         reclaimRunnableHolder[0] = reclaim;
@@ -844,12 +1041,31 @@ final class PixelFingerprintIconController {
         }
         iconView.postDelayed(reclaim, VENDOR_RECLAIM_DELAY_MS);
         iconView.postDelayed(() -> {
-            if (!(iconView.getDrawable() instanceof PixelFingerprintDrawable)) {
+            if (!isPixelOwnedDrawable(iconView.getDrawable())) {
                 logSingleCarrierState("vendor-reclaim-second-pass", iconView);
-                requestVisualState(context, uiMech,
-                        source + "#vendor-reclaim-second-pass", false);
+                refreshOnViewThread(context, uiMech,
+                        source + "#vendor-reclaim-second-pass", false, false);
             }
         }, VENDOR_RECLAIM_SECOND_PASS_DELAY_MS);
+    }
+
+    /** Pixel static ridge or anim carrier wrapping vendor temp-show. */
+    private static boolean isPixelOwnedDrawable(Drawable drawable) {
+        return drawable instanceof PixelFingerprintDrawable
+                || drawable instanceof PixelFingerprintAnimCarrier;
+    }
+
+    /** True for raw OOS temporary-show animations (not our carrier wrapper). */
+    private static boolean isVendorTemporaryAnimation(Drawable drawable) {
+        if (drawable == null
+                || drawable instanceof PixelFingerprintDrawable
+                || drawable instanceof PixelFingerprintAnimCarrier) {
+            return false;
+        }
+        String name = drawable.getClass().getName();
+        return name.contains("AnimationDrawable")
+                || name.contains("AnimatedImageDrawable")
+                || name.contains("AnimatedVectorDrawable");
     }
 
     private static void cancelPendingReclaim(ImageView iconView) {
@@ -1036,13 +1252,16 @@ final class PixelFingerprintIconController {
 
     private static void logStateIfChanged(ImageView view, String state,
             String source, String detail) {
+        if (!PixelAodLog.isDebugEnabled()) {
+            return;
+        }
         synchronized (LAST_LOGGED_STATES) {
             if (state.equals(LAST_LOGGED_STATES.get(view))) {
                 return;
             }
             LAST_LOGGED_STATES.put(view, state);
         }
-        PixelAodLog.i("Pixel fingerprint icon state=" + state
+        PixelAodLog.log("Pixel fingerprint icon state=" + state
                 + " source=" + source + " " + detail);
     }
 }

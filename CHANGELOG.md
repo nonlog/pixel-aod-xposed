@@ -1,5 +1,133 @@
 # Changelog
 
+## [0.1.254] - 2026-07-26
+### Meta
+- **Model:** Codex
+- **Scope:** Synchronize Claude's local AOD/UDFPS work and repair the LS-to-AOD weight-handoff race.
+
+### Fixed
+- **Success (user confirmed):** An entering `ls-to-aod` request can now replace a still-running `aod-to-ls` restore on the lockscreen layer. The weight morph starts while the lockscreen clock is still visible and hands off at its live intermediate weight, instead of being dropped and restarted only on the AOD layer after the reveal delay.
+- Retain the bundled weighted `Typeface.Builder` path and prevent automatic size morph from taking over an in-progress LS-to-AOD weight handoff.
+
+### Deferred / Failed
+- **Failed:** 0.1.253's `setFontVariationSettings()` experiment did not solve the timing race and still left the visible morph on the AOD layer. It has been removed in favor of the previously working weighted-typeface path.
+- The synchronized Pixel fingerprint animation carrier and OOS temporary-show handling are included but were not revalidated during this handoff test.
+- SMALL/LARGE clock size morph remains intentionally deferred during a weight handoff.
+
+## [0.1.253] - 2026-07-26
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Make LS→AOD weight morph actually visible (wght axis + no size morph steal)
+
+### Fixed
+- User still saw AOD freeze at 340 then only scale: (1) weight updates now drive bundled variable font via `setFontVariationSettings` instead of swapping Typeface.Builder each step (invisible/thrashy on OOS); (2) skip compact→large **size** morph when weight handoff runs so scale no longer steals the transition. **Pending user visual check.**
+
+### Deferred
+- SMALL↔LARGE size morph still imperfect (explicitly deferred during weight handoff).
+
+## [0.1.252] - 2026-07-26
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Weight morph must run on-screen (not off-screen during grace)
+
+### Fixed
+- Start weight morph when AOD shown. **Failed** for user (still 340 then scale) → 0.1.253.
+
+### Deferred
+- SMALL↔LARGE size morph still imperfect.
+
+## [0.1.251] - 2026-07-26
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** LS→AOD weight morph reliability + unlock→AOD twitch
+
+### Fixed
+- Dual early-aod morph races. **Partial** — settle/skip improved but morph still ran off-screen → 0.1.252.
+
+### Deferred
+- SMALL↔LARGE size morph still imperfect.
+
+## [0.1.250] - 2026-07-26
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Unlock / screen-off jank after weight morph always runs
+
+### Fixed
+- Unlock/screen-off jank: weight quantize/prewarm, AnimCarrier, no global setAlpha. **Partial** — smoother but weight skip/twitch remained → 0.1.251.
+
+### Deferred
+- SMALL↔LARGE size morph still imperfect.
+
+## [0.1.249] - 2026-07-26
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** LS→AOD weight morph probabilistic skip (340 hold then snap 160)
+
+### Fixed
+- Intermittent missing LS→AOD weight animation (340 hold then snap). **Success (user: weight OK)** but introduced unlock/screen-off jank → 0.1.250.
+
+### Deferred
+- SMALL↔LARGE size morph still imperfect.
+
+## [0.1.248] - 2026-07-26
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Pixel ridge over OOS temp-show animation (black-frame / tap)
+
+### Fixed
+- Black-frame / tap temp-show: keep `OplusAnimationDrawable` carrier, draw-hook Pixel ridge. **Success (user: fingerprint OK).**
+
+### Deferred
+- SMALL↔LARGE size morph still imperfect.
+
+## [0.1.247] - 2026-07-26
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Fix lockscreen HBM highlight + restore Pixel temp-show after 0.1.246 over-normalize
+
+### Fixed
+- Lockscreen fingerprint stuck fully highlighted: removed `normalizeLockscreenIconAlpha` / `setBrightnessAlpha(1)` / forced View alpha. OOS owns brightness alpha again. **Success (user: no longer highlighted).**
+- Black-frame / tap: stopped canceling View animations. **Failed** — temp-show still missing when static Pixel replaced vendor anim (doze optical path). Superseded by 0.1.248.
+
+### Deferred
+- SMALL↔LARGE size morph still imperfect.
+
+## [0.1.246] - 2026-07-26
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Pixel fingerprint only — no stock OOS glyph flash / temp-show frames
+
+### Fixed
+- Stock fingerprint flash on screen on/off and temp-show frames: always reclaim to Pixel. **Partial Success** — no stock glyph (user confirmed), but over-normalize caused permanent highlight + lost temp-show → fixed in 0.1.247.
+
+### Deferred
+- SMALL↔LARGE size morph still imperfect.
+- Temporary show no longer plays stock frame fade-out; fade is whatever OOS does to View alpha after Pixel reclaim.
+
+## [0.1.245] - 2026-07-26
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Pixel fingerprint size restore + temporary re-show after black frame / tap
+
+### Fixed
+- Fingerprint ridge size felt too small after 0.1.244 AOSP metrics: restore user-preferred `FOREGROUND_SCALE` **0.58** and lockscreen stroke **2.6×pathScale** (AOD stroke/dash unchanged). **Success (user: size OK).**
+- Temporary FOD re-show after black-frame / tap restored by preserving `OplusAnimationDrawable`. **Partial Success** — visibility OK, but pulse was stock OOS style → replaced by 0.1.246 Pixel reclaim.
+
+### Deferred
+- SMALL↔LARGE size morph still imperfect.
+- (Superseded by 0.1.246) Temporary re-show used native OOS animation frames.
+
+## [0.1.244] - 2026-07-25
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Align UDFPS ridge metrics with AOSP/Pixel defaults
+
+### Fixed
+- Fingerprint icon geometry closer to AOSP `config_udfpsIcon` / COUI defaults: `FOREGROUND_SCALE` 0.58→**0.5**, lockscreen stroke **3×pathScale** (was 2.6dp×scale), AOD stroke 2 and dash 4/4.5 unchanged. Path data already matched AOSP. **User: a bit small → reverted size in 0.1.245.**
+
+### Deferred
+- SMALL↔LARGE size morph still imperfect.
+
 ## [0.1.243] - 2026-07-25
 ### Meta
 - **Model:** Grok (xAI)
