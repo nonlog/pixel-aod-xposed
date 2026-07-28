@@ -130,7 +130,8 @@ final class PixelAodVisualStyle {
         static final int CHARGE_BOLT_WIDTH_DP = 9;
         static final int CHARGE_BOLT_HEIGHT_DP = 13;
         static final int CLOCK_WEIGHT = 280;
-        static final int INFO_WEIGHT = 500;
+        /** Date/info line; 400 too thin on device, try 450 between Regular and Medium. */
+        static final int INFO_WEIGHT = 450;
         static final int WEATHER_ICON_SIZE_DP = 15;
         static final int WEATHER_ICON_PADDING_DP = 6;
         static final int BURN_IN_OFFSET_X_DP = 8;
@@ -142,7 +143,8 @@ final class PixelAodVisualStyle {
 
     static final class Lockscreen {
         static final int CLOCK_WEIGHT = 520;
-        static final int INFO_WEIGHT = 500;
+        /** Date/info line; 400 too thin on device, try 450 between Regular and Medium. */
+        static final int INFO_WEIGHT = 450;
 
         private Lockscreen() {
         }

@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.1.260] - 2026-07-28
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Date/info line weight 400 → 450
+
+### Fixed
+- User: 400 too thin on device. `INFO_WEIGHT` now **450** (between Regular and Medium). Clock digits unchanged. **Pending user visual check.**
+
+### Deferred
+- SMALL/LARGE clock size morph still imperfect during weight handoff.
+
+## [0.1.259] - 2026-07-28
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Date/info line weight 500 → 400 (Keyguard.Secondary Regular)
+
+### Fixed
+- `INFO_WEIGHT=500` → **400**. **Failed** (user: too thin) → 0.1.260.
+
+### Deferred
+- SMALL/LARGE clock size morph still imperfect during weight handoff.
+
 ## [0.1.258] - 2026-07-28
 ### Meta
 - **Model:** Grok (xAI)
