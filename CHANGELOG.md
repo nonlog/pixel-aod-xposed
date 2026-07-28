@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.1.258] - 2026-07-28
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Fix LS→AOD instant weight using log-proven gate failure
+
+### Fixed
+- **Logs aod-2f-3df142c (0.1.257 failed):** After `aod-to-ls` finished at weight 301, `early-aod-direct-non-ls` ran with `lockscreenToAodWeight=false screenOffFromLs=false screenOffAgeMs=-1` and `applied stable 151` — no morph. Root: morph gate only trusted recent marks / noteScreenOff latch, but preparingAod ran before noteScreenOff and without fresh marks. Now arm a **lockscreen session stamp** on interactive presentLockscreen, markInteractive, and aod-to-ls end; clear on unlock hide. `shouldAnimate` = session stamp || LS screen-off latch || recent marks; still **false** when noteScreenOff latched non-LS (keeps unlock→app direct path). **Pending user visual check.**
+
+### Deferred
+- SMALL/LARGE clock size morph still imperfect during weight handoff.
+
+## [0.1.257] - 2026-07-27
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Restore LS→AOD weight morph without reintroducing non-LS morph
+
+### Fixed
+- Surface-hide stamp wipe + noteScreenOff latch. **Failed** — logs still showed early-aod-direct-non-ls on real LS→AOD → 0.1.258.
+
+### Deferred
+- SMALL/LARGE clock size morph still imperfect during weight handoff.
+
+## [0.1.256] - 2026-07-27
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Block early-aod-weight morph on non-lockscreen doze (real root cause)
+
+### Fixed
+- **Root cause (logs aod-c-6723d):** 0.1.255 only skipped morph in `presentAod`, but non-lockscreen screen-off still kept `hostScene=LOCKSCREEN_SMALL` and ran `early-aod-weight` → lockscreen-layer `ls-to-aod` 340→151 during the black reveal delay. Now: (1) `preparingAod` without recent interactive LS jumps straight to stable AOD; (2) non-interactive KEYGUARD present without recent LS skips lockscreen paint; (3) `beginClockPluginAodWeightTransition` refuses when not recent interactive LS. **Pending user visual check.**
+
+### Deferred
+- SMALL/LARGE clock size morph still imperfect during weight handoff.
+
+## [0.1.255] - 2026-07-27
+### Meta
+- **Model:** Grok (xAI)
+- **Scope:** Skip LS→AOD weight morph on non-lockscreen screen-off
+
+### Fixed
+- Unlock → launcher/app → screen-off was parking AOD at lockscreen weight (≈340) then playing the weight scale animation after the black reveal delay. Non-lockscreen entry now applies stable AOD weight immediately (no morph). **Failed** for user — morph still ran via `early-aod-weight` on LOCKSCREEN_SMALL → 0.1.256.
+
+### Deferred
+- SMALL/LARGE clock size morph still imperfect during weight handoff.
+
 ## [0.1.254] - 2026-07-26
 ### Meta
 - **Model:** Codex

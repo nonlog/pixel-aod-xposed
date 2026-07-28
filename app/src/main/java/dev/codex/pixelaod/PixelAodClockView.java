@@ -223,6 +223,19 @@ public final class PixelAodClockView extends FrameLayout {
     private static long lastScreenOffAt;
     private static long lastAodActivatedAt;
     private static long nonLockscreenAodRevealBlockedUntilAt;
+    /**
+     * Latched at {@link #noteScreenOff}: true when this AOD session started from the
+     * interactive lockscreen. Survives surface-hide clearing timing races so LS→AOD weight
+     * morph is not dropped; cleared on screen-on / AOD exit.
+     */
+    private static boolean lastScreenOffFromInteractiveLockscreen;
+    /**
+     * Host showed lockscreen for a real interactive/keyguard session (not KEYGUARD flash
+     * after unlock). Logs aod-2f-3df142c: aod-to-ls finished then early-aod ran with
+     * screenOffAgeMs=-1 / lockscreenToAodWeight=false because marks + noteScreenOff were
+     * not ready yet — this stamp keeps LS→AOD morph armed.
+     */
+    private static long lockscreenSessionForAodWeightAt;
     private static final PanelHandoffGate PANEL_HANDOFF_GATE =
             new PanelHandoffGate(PANEL_HANDOFF_PRESENTATION_HOLD_MS);
     private static Runnable panelHandoffCompletionRunnable;
@@ -1217,6 +1230,9 @@ public final class PixelAodClockView extends FrameLayout {
             lastScreenOffAt = 0L;
             lastAodActivatedAt = 0L;
             nonLockscreenAodRevealBlockedUntilAt = 0L;
+            lastScreenOffFromInteractiveLockscreen = false;
+            // Keep lockscreenSessionForAodWeightAt across brief AOD hide only when waking to
+            // lockscreen; unlock path clears it explicitly via clearLockscreenSessionForAodWeight.
             clearBriefAodTriggerLocked();
         }
         startAodTrace(source);
@@ -1264,6 +1280,7 @@ public final class PixelAodClockView extends FrameLayout {
                 : now + NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS;
         synchronized (PixelAodClockView.class) {
             lastScreenOffAt = now;
+            lastScreenOffFromInteractiveLockscreen = fromLockscreenSurface;
             nonLockscreenAodRevealBlockedUntilAt = revealBlockedUntil;
             if (!fromLockscreenSurface) {
                 lastAodOverlayVisibleAt = 0L;
@@ -1292,6 +1309,7 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             if (lastScreenOffAt <= 0L) {
                 lastScreenOffAt = now;
+                lastScreenOffFromInteractiveLockscreen = fromLockscreenSurface;
                 nonLockscreenAodRevealBlockedUntilAt = revealBlockedUntil;
                 if (!fromLockscreenSurface) {
                     lastAodOverlayVisibleAt = 0L;
@@ -1311,6 +1329,79 @@ public final class PixelAodClockView extends FrameLayout {
                     + " state={" + describeAodState(appContext) + "}");
             logAodPhaseIfChanged(appContext, source + "#noteScreenOffIfUnset");
         }
+    }
+
+    /** Whether this AOD session's screen-off was from the interactive lockscreen. */
+    static boolean wasScreenOffFromInteractiveLockscreen() {
+        synchronized (PixelAodClockView.class) {
+            return lastScreenOffFromInteractiveLockscreen && lastScreenOffAt > 0L;
+        }
+    }
+
+    /**
+     * Mark that the user is in a real lockscreen clock session (interactive keyguard or
+     * finished aod-to-ls restore). Arms LS→AOD weight morph even before noteScreenOff.
+     */
+    static void noteLockscreenSessionForAodWeight(String source) {
+        long now = android.os.SystemClock.uptimeMillis();
+        boolean log;
+        synchronized (PixelAodClockView.class) {
+            log = lockscreenSessionForAodWeightAt <= 0L
+                    || now - lockscreenSessionForAodWeightAt > 700L;
+            lockscreenSessionForAodWeightAt = now;
+        }
+        if (log) {
+            PixelAodLog.log("noted lockscreen session for AOD weight source=" + source
+                    + " trace=" + currentAodTraceId());
+        }
+    }
+
+    /** Clear on unlock / leave keyguard so non-LS screen-off does not morph. */
+    static void clearLockscreenSessionForAodWeight(String source) {
+        boolean had;
+        synchronized (PixelAodClockView.class) {
+            had = lockscreenSessionForAodWeightAt > 0L;
+            lockscreenSessionForAodWeightAt = 0L;
+        }
+        if (had) {
+            PixelAodLog.log("cleared lockscreen session for AOD weight source=" + source
+                    + " trace=" + currentAodTraceId());
+        }
+    }
+
+    /**
+     * LS→AOD weight morph / early-aod-weight gate.
+     * <ul>
+     *   <li>False when noteScreenOff already latched a non-lockscreen origin (unlock→app).</li>
+     *   <li>True for recent interactive LS marks, LS screen-off latch, or an armed
+     *       lockscreen session (aod-to-ls / interactive presentLockscreen).</li>
+     * </ul>
+     */
+    static boolean shouldAnimateLockscreenToAodWeight() {
+        long now = android.os.SystemClock.uptimeMillis();
+        synchronized (PixelAodClockView.class) {
+            // Positive non-LS evidence from noteScreenOff wins (keeps 0.1.256 fix).
+            if (lastScreenOffAt > 0L && !lastScreenOffFromInteractiveLockscreen) {
+                long offAge = now - lastScreenOffAt;
+                if (offAge >= 0L && offAge <= 5_000L) {
+                    return false;
+                }
+            }
+            if (lastScreenOffFromInteractiveLockscreen && lastScreenOffAt > 0L) {
+                long offAge = now - lastScreenOffAt;
+                if (offAge >= 0L && offAge <= 5_000L) {
+                    return true;
+                }
+            }
+            if (lockscreenSessionForAodWeightAt > 0L) {
+                long sessionAge = now - lockscreenSessionForAodWeightAt;
+                // Cover quick re-sleep after aod-to-ls (logs: ~640ms) and longer LS stare.
+                if (sessionAge >= 0L && sessionAge <= 30_000L) {
+                    return true;
+                }
+            }
+        }
+        return PixelLockscreenClockView.wasRecentlyInteractiveLockscreenVisibleForAodEntry();
     }
 
     static BurnInOffset currentBurnInOffset() {

@@ -133,6 +133,36 @@ final class PixelClockPluginHostView extends FrameLayout {
                             + " trace=" + PixelAodClockView.currentAodTraceId());
                     return;
                 }
+                // Logs aod-c-6723d: unlock→app screen-off still sat on LOCKSCREEN_SMALL and ran
+                // early-aod-weight (340→151 on the LS layer) during the black reveal delay.
+                // Only morph for interactive-lockscreen origin (recent stamp || screen-off latch).
+                boolean lockscreenToAodWeight = PixelAodClockView
+                        .shouldAnimateLockscreenToAodWeight();
+                if (!lockscreenToAodWeight) {
+                    if (preparingAodWeight) {
+                        preparingAodWeight = false;
+                        lockscreenLayer.cancelClockPluginWeightTransitionKeepCurrent(
+                                source + "#cancel-early-aod-non-ls");
+                    }
+                    ClockPluginSceneMachine.Scene earlyAod = PixelAodClockView
+                            .hasCompactClockNotificationContent()
+                            ? ClockPluginSceneMachine.Scene.AOD_SMALL
+                            : ClockPluginSceneMachine.Scene.AOD_LARGE;
+                    armHandoffDiagnostics(source + "#early-aod-direct-non-ls");
+                    // enteringAod=false + non-LS origin → presentAod applies stable AOD weight.
+                    presentAod(earlyAod, false, source + "#early-aod-direct-non-ls");
+                    scene = earlyAod;
+                    preparingAodWeight = false;
+                    PixelAodLog.log("early AOD direct non-lockscreen source=" + source
+                            + " hostSceneWas=LOCKSCREEN"
+                            + " aodScene=" + earlyAod
+                            + " lockscreenToAodWeight=false"
+                            + " screenOffFromLs="
+                            + PixelAodClockView.wasScreenOffFromInteractiveLockscreen()
+                            + " trace=" + PixelAodClockView.currentAodTraceId());
+                    notifyAfterPresentationFrame();
+                    return;
+                }
                 // Media-only / empty: stage AOD LARGE immediately (no LS weight morph).
                 if (!PixelAodClockView.hasCompactClockNotificationContent()) {
                     armHandoffDiagnostics(source + "#early-aod-large");
@@ -170,6 +200,28 @@ final class PixelClockPluginHostView extends FrameLayout {
                         + " requested=" + target
                         + " trace=" + PixelAodClockView.currentAodTraceId());
                 aodLayer.refreshClockPluginAodContent(source + "#hold-aod-vs-lockscreen");
+                notifyAfterPresentationFrame();
+                return;
+            }
+            // Non-lockscreen screen-off can publish KEYGUARD while dozing; painting LS at 340
+            // then early-aod-weight is what the user sees as "340 then scale". Skip to AOD.
+            // LS→AOD keeps the screen-off latch / recent stamp so morph still runs.
+            if (!interactive
+                    && !PixelAodClockView.shouldAnimateLockscreenToAodWeight()) {
+                ClockPluginSceneMachine.Scene aodFallback = PixelAodClockView
+                        .hasCompactClockNotificationContent()
+                        ? ClockPluginSceneMachine.Scene.AOD_SMALL
+                        : ClockPluginSceneMachine.Scene.AOD_LARGE;
+                PixelAodLog.log("skipped lockscreen present for non-lockscreen doze source="
+                        + source
+                        + " requested=" + target
+                        + " aodFallback=" + aodFallback
+                        + " hostScene=" + scene
+                        + " screenOffFromLs="
+                        + PixelAodClockView.wasScreenOffFromInteractiveLockscreen()
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
+                presentAod(aodFallback, false, source + "#non-ls-doze-skip-lockscreen");
+                scene = aodFallback;
                 notifyAfterPresentationFrame();
                 return;
             }
@@ -212,6 +264,13 @@ final class PixelClockPluginHostView extends FrameLayout {
         setVisibility(View.INVISIBLE);
         preparingAodWeight = false;
         scene = ClockPluginSceneMachine.Scene.HIDDEN;
+        // Unlock / leave keyguard: drop LS→AOD morph arm so app screen-off stays direct.
+        Context ctx = getContext();
+        if (ctx != null
+                && PixelAodClockView.isDeviceInteractive(ctx)
+                && !PixelLockscreenClockView.isSystemKeyguardLocked(ctx)) {
+            PixelAodClockView.clearLockscreenSessionForAodWeight(source + "#host-hide-unlock");
+        }
         PixelAodLog.log("hid persistent ClockPlugin host source=" + source
                 + " trace=" + PixelAodClockView.currentAodTraceId());
     }
@@ -220,6 +279,11 @@ final class PixelClockPluginHostView extends FrameLayout {
         cancelAodEntry();
         preparingAodWeight = false;
         setVisibility(View.VISIBLE);
+        Context ctx = getContext();
+        if (ctx != null && PixelAodClockView.isDeviceInteractive(ctx)) {
+            // Real interactive lockscreen presentation — arm LS→AOD weight morph.
+            PixelAodClockView.noteLockscreenSessionForAodWeight(source + "#present-lockscreen");
+        }
         // Capture AOD weight before hiding the layer so we can reverse-morph weight.
         boolean fromAodScene = scene.isAod() && aodLayer.getVisibility() == View.VISIBLE;
         int lsWeight = PixelAodClockView.lockscreenClockWeight(getContext());
@@ -276,18 +340,25 @@ final class PixelClockPluginHostView extends FrameLayout {
     private void presentAod(ClockPluginSceneMachine.Scene target, boolean enteringAod,
             String source, boolean fromLockscreenSmall) {
         setVisibility(View.VISIBLE);
-        boolean fromLockscreen = scene.isLockscreen()
+        boolean hostOnLockscreen = scene.isLockscreen()
                 && lockscreenLayer.getVisibility() == View.VISIBLE;
+        // Interactive-lockscreen origin only (recent stamp || noteScreenOff latch).
+        // Unlock → launcher/app → screen-off latches false → stable AOD weight, no morph.
+        boolean lockscreenToAodWeight = PixelAodClockView.shouldAnimateLockscreenToAodWeight();
+        boolean fromLockscreen = hostOnLockscreen && lockscreenToAodWeight;
         boolean crossfadeFromLockscreen = enteringAod && fromLockscreen;
         if (crossfadeFromLockscreen && !preparingAodWeight) {
             armHandoffDiagnostics(source + "#aod-scene");
         }
         int handoffWeight = lockscreenLayer.clockPluginWeight();
+        // Capture before clear: early-aod-weight may already be mid-morph on the LS layer.
+        boolean wasPreparingAodWeight = preparingAodWeight;
         preparingAodWeight = false;
         boolean aodCompact = target == ClockPluginSceneMachine.Scene.AOD_SMALL;
         // Media-only / empty must never stay on lockscreen SMALL after screen-off.
         boolean forceLargeAodSurface = !aodCompact
-                && (crossfadeFromLockscreen || fromLockscreen || fromLockscreenSmall);
+                && (crossfadeFromLockscreen || fromLockscreen
+                || (fromLockscreenSmall && lockscreenToAodWeight));
 
         aodLayer.animate().cancel();
         aodLayer.animate().setListener(null);
@@ -296,23 +367,32 @@ final class PixelClockPluginHostView extends FrameLayout {
         boolean morphFromCompact = forceLargeAodSurface && fromLockscreenSmall;
         int configuredLsWeight = PixelAodClockView.lockscreenClockWeight(getContext());
         int aodTargetWeight = PixelAodClockView.aodClockWeight(getContext());
-        // Single owner of LS→AOD weight morph: AOD layer. Park at live LS weight (usually
-        // configured LS; mid aod-to-ls restore uses the intermediate).
-        int weightStart = handoffWeight > 0 ? handoffWeight : configuredLsWeight;
-        if (weightStart <= 0) {
-            weightStart = configuredLsWeight;
-        }
-        boolean fromLockscreenEntry = fromLockscreen || fromLockscreenSmall || crossfadeFromLockscreen;
+        // Weight morph only for interactive-lockscreen origin. Host may briefly sit on
+        // KEYGUARD/LOCKSCREEN during non-LS doze entry; that must not re-arm 340→AOD.
+        boolean fromLockscreenEntry = lockscreenToAodWeight
+                && (hostOnLockscreen || fromLockscreenSmall || wasPreparingAodWeight
+                || crossfadeFromLockscreen
+                || (enteringAod && scene.isLockscreen()));
         boolean weightBusy = aodLayer.isClockPluginWeightTransitionRunning();
-        // Always clear settle when entering from lockscreen so a previous AOD session cannot
-        // skip the morph (probabilistic "340 then snap 160").
+        int weightStart;
+        boolean needWeightMorph;
         if (fromLockscreenEntry) {
+            // Single owner of LS→AOD weight morph: AOD layer. Park at live LS weight.
+            weightStart = handoffWeight > 0 ? handoffWeight : configuredLsWeight;
+            if (weightStart <= 0) {
+                weightStart = configuredLsWeight;
+            }
+            int lsLive = lockscreenLayer.clockPluginWeight();
+            if (lsLive > 0) {
+                weightStart = lsLive;
+            }
             aodLayer.clearAodWeightHandoffSettled(source + "#from-lockscreen-entry");
+            needWeightMorph = Math.abs(weightStart - aodTargetWeight) > 8;
+        } else {
+            // Non-lockscreen screen-off: stable AOD weight only — never park at LS 340.
+            weightStart = aodTargetWeight;
+            needWeightMorph = false;
         }
-        boolean alreadySettled = aodLayer.isAodWeightHandoffSettled();
-        boolean needWeightMorph = fromLockscreenEntry
-                && !alreadySettled
-                && Math.abs(weightStart - aodTargetWeight) > 8;
         PixelAodLog.log("presentAod weightStart source=" + source
                 + " weightStart=" + weightStart
                 + " configuredLs=" + configuredLsWeight
@@ -321,19 +401,22 @@ final class PixelClockPluginHostView extends FrameLayout {
                 + " weightBusy=" + weightBusy
                 + " handoffWeight=" + handoffWeight
                 + " fromLockscreenEntry=" + fromLockscreenEntry
+                + " lockscreenToAodWeight=" + lockscreenToAodWeight
+                + " screenOffFromLs="
+                + PixelAodClockView.wasScreenOffFromInteractiveLockscreen()
+                + " hostOnLockscreen=" + hostOnLockscreen
+                + " hostScene=" + scene
                 + " trace=" + PixelAodClockView.currentAodTraceId());
-        // Transfer live LS weight (may already be mid early-aod morph). Never re-park at
-        // configured 340 if LS has already moved toward AOD weight.
-        int lsLive = lockscreenLayer.clockPluginWeight();
-        if (lsLive > 0) {
-            weightStart = lsLive;
-        }
         lockscreenLayer.cancelClockPluginWeightTransitionKeepCurrent(
                 source + "#transfer-weight-to-aod");
-        needWeightMorph = fromLockscreenEntry
-                && Math.abs(weightStart - aodTargetWeight) > 8;
-        aodLayer.presentClockPluginAod(aodCompact, /*deferWeight*/ true, weightStart,
-                source + "#ClockPlugin-host", false);
+        if (fromLockscreenEntry) {
+            aodLayer.presentClockPluginAod(aodCompact, /*deferWeight*/ true, weightStart,
+                    source + "#ClockPlugin-host", false);
+        } else {
+            // deferWeight=false → applyStableAodClockWeight (target AOD weight, settled).
+            aodLayer.presentClockPluginAod(aodCompact, /*deferWeight*/ false, aodTargetWeight,
+                    source + "#ClockPlugin-host-direct-aod", false);
+        }
         aodLayer.refreshClockPluginAodContent(source + "#ClockPlugin-host-media");
         boolean aodMediaReady = aodLayer.hasVisibleMediaLine();
 
@@ -383,8 +466,13 @@ final class PixelClockPluginHostView extends FrameLayout {
             lockscreenLayer.setClockPluginLayerVisible(false);
             aodLayer.setAlpha(1f);
             aodLayer.setClockPluginLayerVisible(true);
-            startAodWeightMorphIfNeeded(needWeightMorph, weightStart,
-                    source + "#aod-direct-weight");
+            if (needWeightMorph) {
+                startAodWeightMorphIfNeeded(true, weightStart,
+                        source + "#aod-direct-weight");
+            } else if (!fromLockscreenEntry) {
+                // Ensure settled AOD weight even if present re-entered with a residual park.
+                aodLayer.applyClockPluginStableAodWeight(source + "#non-lockscreen-direct");
+            }
             scheduleAodMediaRetries(generation, source + "#aod-direct");
             return;
         }

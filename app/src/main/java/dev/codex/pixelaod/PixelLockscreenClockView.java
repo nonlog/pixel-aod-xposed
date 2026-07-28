@@ -478,6 +478,18 @@ final class PixelLockscreenClockView extends FrameLayout {
                     + " trace=" + PixelAodClockView.currentAodTraceId());
             return;
         }
+        // Defense in depth: non-lockscreen doze must never start 340→AOD on the LS layer
+        // (logs: early-aod-weight finished during non-ls reveal while hostScene=LOCKSCREEN_SMALL).
+        // Use screen-off latch || recent stamp — surface hide must not kill LS→AOD morph.
+        if (!PixelAodClockView.shouldAnimateLockscreenToAodWeight()) {
+            PixelAodLog.log("skipped persistent ClockPlugin lockscreen weight handoff source="
+                    + source + " reason=not-lockscreen-to-aod-weight"
+                    + " recent={" + describeRecentInteractiveLockscreenForAodEntry() + "}"
+                    + " screenOffFromLs="
+                    + PixelAodClockView.wasScreenOffFromInteractiveLockscreen()
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
+            return;
+        }
         showingClockPluginAodNotificationIcons = true;
         rebuildNotificationIcons(currentNotifications(), source + "#aod-handoff");
         runWeightTransition(currentClockWeight,
@@ -596,6 +608,11 @@ final class PixelLockscreenClockView extends FrameLayout {
                 activeClockWeightTransitionSource = "";
                 lastClockTransitionStartedAt = 0L;
                 clockWeightAnimator = null;
+                // aod-to-ls finished on lockscreen: arm LS→AOD weight morph for the next
+                // screen-off even if markInteractive / noteScreenOff lag (logs aod-2f-3df142c).
+                if (restoreToLockscreen) {
+                    PixelAodClockView.noteLockscreenSessionForAodWeight(source + "#aod-to-ls-end");
+                }
                 PixelAodLog.log("finished persistent ClockPlugin lockscreen weight handoff source="
                         + source + " toWeight=" + toWeight
                         + " trace=" + PixelAodClockView.currentAodTraceId());
@@ -912,17 +929,33 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     static void setLockscreenSurfaceVisible(boolean visible, String source) {
         boolean changed;
+        boolean clearedRecentInteractive = false;
         synchronized (PixelLockscreenClockView.class) {
             changed = lockscreenSurfaceVisible != visible;
             lockscreenSurfaceVisible = visible;
             if (!visible) {
-                interactiveLockscreenVisibleSince = 0L;
-                recentInteractiveLockscreenVisibleAt = 0L;
+                // Do NOT clear recent-interactive stamps on every surface hide.
+                // Screen-off also reports surfaceVisible=false (sometimes while still
+                // briefly interactive), and wiping the stamps made LS→AOD think it was a
+                // non-lockscreen entry (instant weight, no morph).
+                // Only clear on unlock: interactive + keyguard no longer locked.
+                boolean unlockedInteractive = appContext != null
+                        && PixelAodClockView.isDeviceInteractive(appContext)
+                        && !isSystemKeyguardLockedRaw(appContext);
+                if (unlockedInteractive) {
+                    interactiveLockscreenVisibleSince = 0L;
+                    recentInteractiveLockscreenVisibleAt = 0L;
+                    clearedRecentInteractive = true;
+                }
             }
+        }
+        if (clearedRecentInteractive) {
+            PixelAodClockView.clearLockscreenSessionForAodWeight(source + "#surface-unlock");
         }
         if (changed) {
             PixelAodLog.log("Pixel lockscreen surface visible=" + visible
-                    + " source=" + source);
+                    + " source=" + source
+                    + " clearedRecentInteractive=" + clearedRecentInteractive);
             refreshAll(source);
         }
     }
@@ -1004,6 +1037,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             }
             recentInteractiveLockscreenVisibleAt = now;
         }
+        PixelAodClockView.noteLockscreenSessionForAodWeight(source + "#mark-interactive");
         if (started) {
             PixelAodLog.log("marked interactive Pixel lockscreen surface source=" + source
                     + " trace=" + PixelAodClockView.currentAodTraceId());
