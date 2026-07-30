@@ -30,11 +30,11 @@ final class PixelAodRenderModel {
     }
 
     static PixelAodRenderModel forAod(Context context, boolean compactClock,
-            PixelAodClockView.WeatherSnapshot weather, String atAGlanceExtra,
-            String batteryText, boolean batteryCharging) {
+            PixelAodClockView.WeatherSnapshot weather, String batteryText,
+            boolean batteryCharging) {
         Calendar calendar = Calendar.getInstance();
         return new PixelAodRenderModel(calendar, formatClockText(context, calendar, compactClock),
-                formatAtAGlanceLine(calendar, weather, atAGlanceExtra),
+                formatDateWithWeather(calendar, weather),
                 weather, batteryText, batteryCharging);
     }
 
@@ -55,16 +55,6 @@ final class PixelAodRenderModel {
             return date + " \u00b7 " + weather.temperatureText;
         }
         return date;
-    }
-
-    private static String formatAtAGlanceLine(Calendar calendar,
-            PixelAodClockView.WeatherSnapshot weather, String extra) {
-        String date = formatDateWithWeather(calendar, weather);
-        String normalizedExtra = normalizeAtAGlanceExtra(extra);
-        if (TextUtils.isEmpty(normalizedExtra)) {
-            return date;
-        }
-        return date + " \u00b7 " + normalizedExtra;
     }
 
     private static String formatClockText(Context context, Calendar calendar, boolean compactClock) {

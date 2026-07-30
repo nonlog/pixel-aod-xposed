@@ -95,6 +95,24 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int LARGE_INFO_TEXT_DP = PixelAodVisualStyle.LARGE_INFO_TEXT_DP;
     private static final int LARGE_NOTIFICATION_LINE_TOP_DP =
             PixelAodVisualStyle.NOTIFICATION_LINE_TOP_DP;
+    private static final int CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP =
+            PixelAodVisualStyle.CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP;
+    private static final int CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP =
+            PixelAodVisualStyle.CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP;
+    private static final int COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP =
+            PixelAodVisualStyle.COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP;
+    private static final int COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP =
+            PixelAodVisualStyle.COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP;
+    private static final int COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP =
+            PixelAodVisualStyle.COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP;
+    private static final int CALENDAR_ICON_SPACING_DP =
+            PixelAodVisualStyle.CALENDAR_ICON_SPACING_DP;
+    private static final int CALENDAR_APPLICATION_ICON_LEADING_OFFSET_DP =
+            PixelAodVisualStyle.CALENDAR_APPLICATION_ICON_LEADING_OFFSET_DP;
+    private static final int NOTIFICATION_ROW_LEADING_OFFSET_DP =
+            PixelAodVisualStyle.NOTIFICATION_ROW_LEADING_OFFSET_DP;
+    private static final int CALENDAR_APPLICATION_ICON_SIZE_DP = 22;
+    private static final float CALENDAR_APPLICATION_MONOCHROME_SCALE = 1.25f;
     private static final int LARGE_MEDIA_TOP_DP = PixelAodVisualStyle.Aod.LARGE_MEDIA_TOP_DP;
     private static final int LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP =
             PixelAodVisualStyle.Aod.LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP;
@@ -176,6 +194,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static boolean cachedClockTypefaceFromBundledFont;
     private static Typeface cachedInfoTypeface;
     private static final Map<Integer, Typeface> cachedClockTypefaceByWeight = new HashMap<>();
+    private static final Object FONT_CACHE_LOCK = new Object();
     private static String modulePath;
     private static Context appContext;
     private static boolean aodActive;
@@ -244,6 +263,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static String lastRankingSignature = "";
     private static String lastMediaCandidatesSignature = "";
     private static String atAGlanceExtra = "";
+    private static String calendarAtAGlanceExtra = "";
     private static WeatherSnapshot breezyWeather = WeatherSnapshot.empty();
     private static boolean breezyWeatherReceiverRegistered;
     private static long cachedScheduleCheckedAt;
@@ -304,6 +324,9 @@ public final class PixelAodClockView extends FrameLayout {
     };
     private final TextView clockView;
     private final TextView dateView;
+    private final LinearLayout calendarRow;
+    private final ImageView calendarIconView;
+    private final TextView calendarView;
     private final TextView mediaView;
     private final LinearLayout batteryRow;
     private final TextView batteryView;
@@ -314,6 +337,8 @@ public final class PixelAodClockView extends FrameLayout {
     private final ImageView mediaIconView;
     private android.animation.ValueAnimator clockWeightAnimator;
     private int currentClockWeight;
+    private String appliedCalendarIconPackage;
+    private boolean usingCalendarApplicationIcon;
     private String currentMediaNotificationKey;
     private String lastMediaLineText = "";
     private String lastMediaLineKey = "";
@@ -415,6 +440,40 @@ public final class PixelAodClockView extends FrameLayout {
         dateParams.topMargin = dp(LARGE_INFO_TOP_DP);
         addView(dateView, dateParams);
 
+        calendarRow = new LinearLayout(context);
+        calendarRow.setOrientation(LinearLayout.HORIZONTAL);
+        calendarRow.setGravity(Gravity.CENTER_VERTICAL);
+        calendarRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        calendarRow.setAlpha(INFO_ALPHA);
+        calendarRow.setVisibility(View.GONE);
+        FrameLayout.LayoutParams calendarParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.START);
+        calendarParams.leftMargin = dp(INFO_EDGE_DP);
+        calendarParams.rightMargin = dp(INFO_EDGE_DP);
+        calendarParams.topMargin = dp(LARGE_INFO_TOP_DP
+                + CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP);
+        addView(calendarRow, calendarParams);
+
+        calendarIconView = new ImageView(context);
+        calendarIconView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        calendarIconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        // This View belongs to SystemUI, so use a framework resource rather than a module R id.
+        calendarIconView.setImageResource(android.R.drawable.ic_menu_my_calendar);
+        calendarIconView.setColorFilter(resolveMaterialInfoColor(context), PorterDuff.Mode.SRC_IN);
+        calendarRow.addView(calendarIconView, new LinearLayout.LayoutParams(
+                dp(LARGE_INFO_TEXT_DP), dp(LARGE_INFO_TEXT_DP)));
+
+        calendarView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT,
+                LARGE_INFO_TEXT_DP, Gravity.START);
+        calendarView.setAlpha(1f);
+        calendarView.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams calendarTextParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        calendarTextParams.leftMargin = dp(CALENDAR_ICON_SPACING_DP);
+        calendarRow.addView(calendarView, calendarTextParams);
+
         notificationIconRow = new LinearLayout(context);
         notificationIconRow.setOrientation(LinearLayout.HORIZONTAL);
         notificationIconRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -427,6 +486,7 @@ public final class PixelAodClockView extends FrameLayout {
         notificationParams.leftMargin = dp(INFO_EDGE_DP);
         notificationParams.topMargin = dp(LARGE_NOTIFICATION_LINE_TOP_DP);
         addView(notificationIconRow, notificationParams);
+        notificationIconRow.setTranslationX(-dp(NOTIFICATION_ROW_LEADING_OFFSET_DP));
 
         mediaRow = new LinearLayout(context);
         mediaRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1205,6 +1265,7 @@ public final class PixelAodClockView extends FrameLayout {
         mainHandler().post(() -> {
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
+                    view.refreshCalendarIconFromSettings();
                     view.updateAodVisibility(source);
                     view.requestAodFrameRefresh(source);
                 }
@@ -2633,6 +2694,28 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
         });
+    }
+
+    static void setCalendarAtAGlanceExtra(String extra, String source) {
+        String normalized = PixelAodRenderModel.normalizeAtAGlanceExtra(extra);
+        boolean changed;
+        synchronized (PixelAodClockView.class) {
+            changed = !TextUtils.equals(calendarAtAGlanceExtra, normalized);
+            calendarAtAGlanceExtra = normalized;
+        }
+        if (!changed) {
+            return;
+        }
+        PixelAodLog.log("updated Pixel AOD calendar At a Glance extra=" + normalized
+                + " source=" + source
+                + " trace=" + currentAodTraceId()
+                + " state={" + describeAodState(appContext) + "}");
+        for (PixelAodClockView view : INSTANCES) {
+            if (view != null) {
+                view.updateTime();
+                view.requestAodFrameRefresh("calendar-at-a-glance");
+            }
+        }
     }
 
     @Override
@@ -4721,6 +4804,22 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static Drawable loadApplicationMonochromeIcon(Context context, String packageName) {
+        return loadApplicationMonochromeIcon(context, packageName, true);
+    }
+
+    private static Drawable loadCalendarApplicationMonochromeIcon(Context context,
+            String packageName) {
+        // Calendar adaptive layers often occupy a small central region by design. That is valid
+        // for the At a Glance row but is rejected for media notification icon normalization.
+        Drawable monochrome = loadApplicationMonochromeIcon(context, packageName, false);
+        if (monochrome == null) {
+            return null;
+        }
+        return monochrome;
+    }
+
+    private static Drawable loadApplicationMonochromeIcon(Context context, String packageName,
+            boolean validateNotificationSilhouette) {
         if (TextUtils.isEmpty(packageName) || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             return null;
         }
@@ -4738,7 +4837,8 @@ public final class PixelAodClockView extends FrameLayout {
             Drawable result = monochrome.mutate();
             result.setTint(resolveMaterialInfoColor(context));
             result.setTintMode(PorterDuff.Mode.SRC_IN);
-            if (looksLikeFilledMonochromeMask(result) || looksLikeTinyForeground(result)) {
+            if (validateNotificationSilhouette
+                    && (looksLikeFilledMonochromeMask(result) || looksLikeTinyForeground(result))) {
                 logRejectedMediaIcon(packageName,
                         looksLikeFilledMonochromeMask(result) ? "filled-mask" : "tiny-foreground");
                 return null;
@@ -5644,11 +5744,42 @@ public final class PixelAodClockView extends FrameLayout {
         int infoColor = resolveMaterialInfoColor(getContext());
         clockView.setTextColor(clockColor);
         dateView.setTextColor(infoColor);
+        calendarView.setTextColor(infoColor);
+        applyCalendarIcon(infoColor);
         syncNotificationOverflowStyle(notificationOverflowView, dateView, notificationIconRow);
         mediaView.setTextColor(infoColor);
         batteryView.setTextColor(infoColor);
         chargeBoltView.setTint(infoColor);
         applyWeatherIcon(dateView, currentFreshWeather(getContext()), infoColor);
+    }
+
+    private void refreshCalendarIconFromSettings() {
+        applyCalendarIcon(resolveMaterialInfoColor(getContext()));
+    }
+
+    private void applyCalendarIcon(int infoColor) {
+        String selectedPackage = PixelAodSettings.getString(getContext(),
+                PixelAodSettings.KEY_CALENDAR_ICON_PACKAGE, "");
+        if (!TextUtils.equals(appliedCalendarIconPackage, selectedPackage)) {
+            appliedCalendarIconPackage = selectedPackage;
+            Drawable applicationIcon = TextUtils.isEmpty(selectedPackage)
+                    ? null : loadCalendarApplicationMonochromeIcon(getContext(), selectedPackage);
+            usingCalendarApplicationIcon = applicationIcon != null;
+            if (usingCalendarApplicationIcon) {
+                calendarIconView.clearColorFilter();
+                calendarIconView.setImageDrawable(applicationIcon);
+                PixelAodLog.log("applied selected calendar application monochrome icon package="
+                        + selectedPackage + " trace=" + currentAodTraceId());
+            } else {
+                calendarIconView.setImageResource(android.R.drawable.ic_menu_my_calendar);
+                PixelAodLog.log("using framework monochrome calendar icon selectedPackage="
+                        + (TextUtils.isEmpty(selectedPackage) ? "none" : selectedPackage)
+                        + " trace=" + currentAodTraceId());
+            }
+            updateCalendarRowStyle(compactClock ? COMPACT_INFO_TEXT_DP : LARGE_INFO_TEXT_DP);
+        }
+        // Apply the current AOD information color to either the app monochrome layer or fallback.
+        calendarIconView.setColorFilter(infoColor, PorterDuff.Mode.SRC_IN);
     }
 
     static int resolveMaterialClockColor(Context context) {
@@ -5998,16 +6129,32 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void updateTime() {
+        CalendarAtAGlanceClient.maybeRefresh(getContext(), "updateTime");
         WeatherSnapshot weather = currentFreshWeather(getContext());
         BatteryStatus batteryStatus = readBatteryStatus();
         PixelAodRenderModel model = PixelAodRenderModel.forAod(getContext(), compactClock,
-                weather, currentAtAGlanceExtra(), batteryStatus.percentText,
-                batteryStatus.charging);
+                weather, batteryStatus.percentText, batteryStatus.charging);
         CharSequence previousClockText = clockView.getText();
         applySharedClockText(clockView, getContext(), model.clockText, compactClock);
         int infoColor = resolveMaterialInfoColor(getContext());
         dateView.setText(model.dateText);
         applyWeatherIcon(dateView, model.weather, infoColor);
+        String calendarText = currentCalendarAtAGlanceExtra();
+        boolean calendarVisible = !TextUtils.isEmpty(calendarText);
+        boolean calendarVisibilityChanged = (calendarRow.getVisibility() == View.VISIBLE)
+                != calendarVisible;
+        calendarView.setText(calendarText);
+        calendarRow.setVisibility(calendarVisible ? View.VISIBLE : View.GONE);
+        if (calendarVisibilityChanged) {
+            updateInfoStackLayout();
+            FrameLayout.LayoutParams notificationParams =
+                    (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
+            PixelAodLog.log("updated Calendar At a Glance row visibility visible="
+                    + calendarVisible
+                    + " notificationTopPx=" + notificationParams.topMargin
+                    + " compact=" + compactClock
+                    + " trace=" + currentAodTraceId());
+        }
         batteryView.setText(model.batteryText);
         chargeBoltView.setVisibility(model.batteryCharging ? View.VISIBLE : View.GONE);
         batteryRow.setVisibility(TextUtils.isEmpty(model.batteryText) ? View.GONE : View.VISIBLE);
@@ -6029,6 +6176,9 @@ public final class PixelAodClockView extends FrameLayout {
             postInvalidateOnAnimation();
             invalidateView(clockView);
             invalidateView(dateView);
+            invalidateView(calendarRow);
+            invalidateView(calendarIconView);
+            invalidateView(calendarView);
             invalidateView(mediaRow);
             invalidateView(mediaIconView);
             invalidateView(mediaView);
@@ -6146,6 +6296,7 @@ public final class PixelAodClockView extends FrameLayout {
             clockParams.leftMargin = dp(INFO_EDGE_DP - COMPACT_CLOCK_VISUAL_START_OFFSET_DP);
             clockParams.topMargin = dp(SMALL_CLOCK_TOP_DP);
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, COMPACT_INFO_TEXT_DP);
+            updateCalendarRowStyle(COMPACT_INFO_TEXT_DP);
         } else {
             applySharedClockTextStyle(clockView, getContext(), currentClockWeight,
                     scaledClockTextDp(getContext(), LARGE_CLOCK_TEXT_DP), false);
@@ -6154,6 +6305,7 @@ public final class PixelAodClockView extends FrameLayout {
             clockParams.leftMargin = 0;
             clockParams.topMargin = dp(LARGE_CLOCK_TOP_DP);
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, LARGE_INFO_TEXT_DP);
+            updateCalendarRowStyle(LARGE_INFO_TEXT_DP);
         }
         clockView.setLayoutParams(clockParams);
         syncNotificationOverflowStyle(notificationOverflowView, dateView, notificationIconRow);
@@ -6314,26 +6466,74 @@ public final class PixelAodClockView extends FrameLayout {
 
     private void updateInfoStackLayout() {
         FrameLayout.LayoutParams dateParams = (FrameLayout.LayoutParams) dateView.getLayoutParams();
+        FrameLayout.LayoutParams calendarParams =
+                (FrameLayout.LayoutParams) calendarRow.getLayoutParams();
         FrameLayout.LayoutParams notificationParams = (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
         FrameLayout.LayoutParams mediaParams = (FrameLayout.LayoutParams) mediaRow.getLayoutParams();
+        int infoTop;
+        int dateTopPx;
+        int calendarTopPx;
+        int notificationTopPx;
         if (compactClock) {
-            dateParams.topMargin = dp(SMALL_INFO_TOP_DP);
-            notificationParams.topMargin = dp(SMALL_NOTIFICATION_LINE_TOP_DP);
+            infoTop = SMALL_INFO_TOP_DP;
             mediaParams.topMargin = dp(SMALL_MEDIA_TOP_DP);
+
+            dateTopPx = dp(infoTop);
+            calendarTopPx = dp(infoTop + COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP);
+            if (calendarRow.getVisibility() == View.VISIBLE) {
+                notificationTopPx = dp(infoTop + COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP);
+            } else {
+                notificationTopPx = dp(infoTop
+                        + COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP);
+            }
         } else {
-            dateParams.topMargin = dp(LARGE_INFO_TOP_DP);
-            notificationParams.topMargin = dp(LARGE_NOTIFICATION_LINE_TOP_DP);
+            infoTop = LARGE_INFO_TOP_DP;
             mediaParams.topMargin = dp(notificationIconRow.getVisibility() == View.VISIBLE
                     ? LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP : LARGE_MEDIA_TOP_DP);
+
+            dateTopPx = dp(infoTop);
+            calendarTopPx = dp(infoTop + CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP);
+            notificationTopPx = dp(LARGE_NOTIFICATION_LINE_TOP_DP);
+            if (calendarRow.getVisibility() == View.VISIBLE) {
+                notificationTopPx = dp(infoTop + CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP);
+            }
         }
+        dateParams.topMargin = dateTopPx;
+        calendarParams.topMargin = calendarTopPx;
+        notificationParams.topMargin = notificationTopPx;
         dateView.setLayoutParams(dateParams);
+        calendarRow.setLayoutParams(calendarParams);
         notificationIconRow.setLayoutParams(notificationParams);
         mediaRow.setLayoutParams(mediaParams);
     }
 
-    private static String currentAtAGlanceExtra() {
+    private void updateCalendarRowStyle(int textSizeDp) {
+        calendarView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, textSizeDp);
+        int iconSizeDp = usingCalendarApplicationIcon
+                ? Math.max(textSizeDp, CALENDAR_APPLICATION_ICON_SIZE_DP) : textSizeDp;
+        LinearLayout.LayoutParams iconParams =
+                (LinearLayout.LayoutParams) calendarIconView.getLayoutParams();
+        iconParams.width = dp(iconSizeDp);
+        iconParams.height = dp(iconSizeDp);
+        calendarIconView.setLayoutParams(iconParams);
+        float iconScale = usingCalendarApplicationIcon
+                ? CALENDAR_APPLICATION_MONOCHROME_SCALE : 1f;
+        calendarIconView.setScaleX(iconScale);
+        calendarIconView.setScaleY(iconScale);
+        calendarIconView.setTranslationX(0f);
+
+        int leadingOffset = usingCalendarApplicationIcon
+                ? dp(CALENDAR_APPLICATION_ICON_LEADING_OFFSET_DP) : 0;
+        FrameLayout.LayoutParams rowParams =
+                (FrameLayout.LayoutParams) calendarRow.getLayoutParams();
+        rowParams.leftMargin = dp(INFO_EDGE_DP) - leadingOffset;
+        rowParams.rightMargin = dp(INFO_EDGE_DP) + leadingOffset;
+        calendarRow.setLayoutParams(rowParams);
+    }
+
+    private static String currentCalendarAtAGlanceExtra() {
         synchronized (PixelAodClockView.class) {
-            return atAGlanceExtra;
+            return calendarAtAGlanceExtra;
         }
     }
 
@@ -6692,9 +6892,6 @@ public final class PixelAodClockView extends FrameLayout {
             return fallbackGoogleSansFlexFontFile(context);
         }
         File fontFile = new File(context.getCacheDir(), googleSansFlexCacheFileName(apkPath));
-        if (isUsableFontFile(fontFile)) {
-            return fontFile;
-        }
         if (ensureExtractedAsset(apkPath, GOOGLE_SANS_FLEX_VARIABLE_ASSET, fontFile)) {
             return fontFile;
         }
@@ -6781,41 +6978,65 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static boolean ensureExtractedAsset(String apkPath, String entryName, File outFile) {
-        ZipFile zipFile = null;
-        try {
-            zipFile = new ZipFile(apkPath);
-            ZipEntry entry = zipFile.getEntry(entryName);
-            if (entry == null || entry.getSize() <= 0) {
-                return false;
-            }
-            if (outFile.isFile() && outFile.length() == entry.getSize()) {
-                return true;
-            }
-            File parent = outFile.getParentFile();
-            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
-                return false;
-            }
-            InputStream input = null;
-            FileOutputStream output = null;
+        synchronized (FONT_CACHE_LOCK) {
+            ZipFile zipFile = null;
+            File temporaryFile = null;
+            boolean published = false;
             try {
-                input = zipFile.getInputStream(entry);
-                output = new FileOutputStream(outFile, false);
-                byte[] buffer = new byte[8192];
-                int read;
-                while ((read = input.read(buffer)) != -1) {
-                    output.write(buffer, 0, read);
+                zipFile = new ZipFile(apkPath);
+                ZipEntry entry = zipFile.getEntry(entryName);
+                if (entry == null || entry.getSize() <= 0) {
+                    return false;
                 }
+                if (outFile.isFile() && outFile.length() == entry.getSize()) {
+                    return true;
+                }
+                File parent = outFile.getParentFile();
+                if (parent == null) {
+                    return false;
+                }
+                if (!parent.isDirectory() && !parent.mkdirs()) {
+                    return false;
+                }
+                temporaryFile = new File(parent, outFile.getName() + ".tmp");
+                if (temporaryFile.isFile() && !temporaryFile.delete()) {
+                    return false;
+                }
+                InputStream input = null;
+                FileOutputStream output = null;
+                try {
+                    input = zipFile.getInputStream(entry);
+                    output = new FileOutputStream(temporaryFile, false);
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    while ((read = input.read(buffer)) != -1) {
+                        output.write(buffer, 0, read);
+                    }
+                } finally {
+                    closeQuietly(input);
+                    closeQuietly(output);
+                }
+                if (temporaryFile.length() != entry.getSize()) {
+                    return false;
+                }
+                if (outFile.isFile() && !outFile.delete()) {
+                    return false;
+                }
+                if (!temporaryFile.renameTo(outFile)) {
+                    return false;
+                }
+                published = true;
                 return true;
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to extract bundled Google Sans Flex apkPath=" + apkPath
+                        + " entry=" + entryName, t);
+                return false;
             } finally {
-                closeQuietly(input);
-                closeQuietly(output);
+                if (!published && temporaryFile != null && temporaryFile.isFile()) {
+                    temporaryFile.delete();
+                }
+                closeQuietly(zipFile);
             }
-        } catch (Throwable t) {
-            PixelAodLog.log("failed to extract bundled Google Sans Flex apkPath=" + apkPath
-                    + " entry=" + entryName, t);
-            return false;
-        } finally {
-            closeQuietly(zipFile);
         }
     }
 

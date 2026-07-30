@@ -5,6 +5,12 @@
     <string name="desc_module_enabled">After disabling, restart SystemUI to stop module hooks</string>
     <string name="title_weather">Weather</string>
     <string name="desc_weather">Breezy Weather / Gadgetbridge</string>
+    <string name="title_calendar_events">Calendar Events</string>
+    <string name="desc_calendar_events">Show the next event within 24 hours</string>
+    <string name="title_calendar_icon_app">Calendar App Icon</string>
+    <string name="default_calendar_icon_app">Default (Monochrome Calendar)</string>
+    <string name="calendar_all_day">All day</string>
+    <string name="calendar_permission_denied">Calendar access was not granted</string>
     <string name="title_weather_icon_pack">Weather Icon Pack</string>
     <string name="default_weather_icon_pack">Default (Built-in)</string>
     <string name="title_notification_icons">Notification Icons</string>

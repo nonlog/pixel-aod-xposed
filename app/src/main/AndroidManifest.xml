@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="org.breezyweather.READ_PROVIDER" />
     <queries>
         <intent>
@@ -11,6 +12,10 @@
         </intent>
         <intent>
             <action android:name="com.dvtonder.chronus.ICON_PACK_THEME" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
 
@@ -54,6 +59,10 @@
             android:name=".PixelAodSettingsProvider"
             android:authorities="dev.codex.pixelaod.settings"
             android:directBootAware="true"
+            android:exported="true" />
+        <provider
+            android:name=".CalendarAtAGlanceProvider"
+            android:authorities="dev.codex.pixelaod.calendar"
             android:exported="true" />
     </application>
 </manifest>

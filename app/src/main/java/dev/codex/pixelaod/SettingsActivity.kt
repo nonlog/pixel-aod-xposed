@@ -1,8 +1,10 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package dev.codex.pixelaod
 
-import android.content.Context
 import android.content.ContentValues
+import android.content.Context
+import android.Manifest
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
@@ -12,6 +14,7 @@ import android.widget.Toast
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,11 +28,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
@@ -81,8 +86,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
 import java.util.Locale
 
 class SettingsActivity : ComponentActivity() {
@@ -307,6 +315,12 @@ private fun SettingsContent(
     val weather = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_WEATHER, true))
     }
+    val calendarEvents = remember {
+        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_CALENDAR_EVENTS, false))
+    }
+    val calendarIconPackage = remember {
+        mutableStateOf(prefs.schemaString(PixelAodSettings.KEY_CALENDAR_ICON_PACKAGE, ""))
+    }
     val lockscreenPolicy = remember {
         mutableStateOf(
             prefs.schemaBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true)
@@ -359,6 +373,20 @@ private fun SettingsContent(
             prefs.schemaFloat(PixelAodSettings.KEY_AOD_WEIGHT, PixelAodSettings.DEFAULT_AOD_WEIGHT)
         )
     }
+    val calendarPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            calendarEvents.value = true
+            updateModuleBooleanSetting(context, PixelAodSettings.KEY_CALENDAR_EVENTS, true)
+        } else {
+            Toast.makeText(
+                context,
+                context.getString(R.string.calendar_permission_denied),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
     val lockscreenWeight = remember {
         mutableFloatStateOf(
             prefs.schemaFloat(
@@ -370,6 +398,7 @@ private fun SettingsContent(
 
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showIconPackDialog by remember { mutableStateOf(false) }
+    var showCalendarIconAppDialog by remember { mutableStateOf(false) }
     var showDisplayModeDialog by remember { mutableStateOf(false) }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(22.dp)) {
@@ -497,6 +526,48 @@ private fun SettingsContent(
                     }
                 }
                 CouiToggleRow(
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_calendar_events),
+                    subtitle = stringResource(R.string.desc_calendar_events),
+                    checked = calendarEvents.value,
+                    showDivider = true
+                ) { enabled ->
+                    if (!enabled) {
+                        calendarEvents.value = false
+                        updateModuleBooleanSetting(
+                            context,
+                            PixelAodSettings.KEY_CALENDAR_EVENTS,
+                            false
+                        )
+                    } else if (context.checkSelfPermission(Manifest.permission.READ_CALENDAR)
+                        == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        calendarEvents.value = true
+                        updateModuleBooleanSetting(
+                            context,
+                            PixelAodSettings.KEY_CALENDAR_EVENTS,
+                            true
+                        )
+                    } else {
+                        calendarPermissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+                    }
+                }
+                if (calendarEvents.value) {
+                    val calendarIconOptions = remember { getCalendarIconAppOptions(context) }
+                    val currentCalendarIconLabel = calendarIconOptions
+                        .find { it.first == calendarIconPackage.value }
+                        ?.second
+                        ?: calendarIconPackage.value
+                    CouiChoiceRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_calendar_icon_app),
+                        valueText = currentCalendarIconLabel,
+                        showDivider = true
+                    ) {
+                        showCalendarIconAppDialog = true
+                    }
+                }
+                CouiToggleRow(
                     icon = Icons.Outlined.Policy,
                     title = stringResource(R.string.title_lockscreen_policy),
                     subtitle = stringResource(R.string.desc_lockscreen_policy),
@@ -551,6 +622,26 @@ private fun SettingsContent(
                 if (selected != weatherIconPack.value) {
                     weatherIconPack.value = selected
                     prefs.edit().putString(PixelAodSettings.KEY_WEATHER_ICON_PACK, selected).apply()
+                }
+            }
+        )
+    }
+
+    if (showCalendarIconAppDialog) {
+        val calendarIconOptions = remember { getCalendarIconAppOptions(context) }
+        CalendarIconAppDialog(
+            current = calendarIconPackage.value,
+            options = calendarIconOptions,
+            onDismiss = { showCalendarIconAppDialog = false },
+            onSelected = { selected ->
+                showCalendarIconAppDialog = false
+                if (selected != calendarIconPackage.value) {
+                    calendarIconPackage.value = selected
+                    updateModuleStringSetting(
+                        context,
+                        PixelAodSettings.KEY_CALENDAR_ICON_PACKAGE,
+                        selected
+                    )
                 }
             }
         )
@@ -771,6 +862,82 @@ private fun getAvailableIconPacks(context: Context): List<Pair<String, String>> 
     return packs
 }
 
+private fun getCalendarIconAppOptions(context: Context): List<Pair<String, String>> {
+    val options = mutableListOf("" to context.getString(R.string.default_calendar_icon_app))
+    val pm = context.packageManager
+    // Android has no calendar-app registry. Calendar editors advertise this event MIME type.
+    val calendarEventIntent = Intent(Intent.ACTION_INSERT)
+        .setType("vnd.android.cursor.item/event")
+    val packages = linkedMapOf<String, String>()
+    for (resolveInfo in pm.queryIntentActivities(calendarEventIntent, PackageManager.MATCH_DEFAULT_ONLY)) {
+        // OPlus's missing-calendar recovery activity deliberately ranks below valid handlers.
+        if (resolveInfo.priority < 0) {
+            continue
+        }
+        val packageName = resolveInfo.activityInfo?.packageName ?: continue
+        try {
+            val applicationInfo = pm.getApplicationInfo(packageName, 0)
+            val label = pm.getApplicationLabel(applicationInfo).toString()
+            if (!packages.containsKey(packageName)) {
+                packages[packageName] = label
+            }
+        } catch (_: Exception) {
+        }
+    }
+    packages.toList()
+        .sortedBy { it.second.lowercase(Locale.getDefault()) }
+        .forEach { options.add(it.first to it.second) }
+    return options
+}
+
+@Composable
+private fun CalendarIconAppDialog(
+    current: String,
+    options: List<Pair<String, String>>,
+    onDismiss: () -> Unit,
+    onSelected: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.title_calendar_icon_app)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                options.forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectable(
+                                selected = value == current,
+                                onClick = { onSelected(value) }
+                            )
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = value == current,
+                            onClick = { onSelected(value) },
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(label, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        }
+    )
+}
+
 @Composable
 private fun IconPackDialog(
     current: String,
@@ -948,6 +1115,10 @@ private fun CouiChoiceRow(
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 valueText,
+                modifier = Modifier.widthIn(max = 160.dp),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.End,
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.primary
             )

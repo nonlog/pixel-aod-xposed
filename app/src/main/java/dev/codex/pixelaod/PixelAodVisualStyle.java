@@ -35,6 +35,14 @@ final class PixelAodVisualStyle {
     static final int LARGE_INFO_TOP_DP = 100;
     static final int SMALL_INFO_TOP_DP = 150;
     static final int NOTIFICATION_LINE_TOP_DP = 198;
+    static final int CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP = 22;
+    static final int CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP = 50;
+    static final int COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP = 34;
+    static final int COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP = 73;
+    static final int COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP = 38;
+    static final int CALENDAR_ICON_SPACING_DP = 2;
+    static final int CALENDAR_APPLICATION_ICON_LEADING_OFFSET_DP = 6;
+    static final int NOTIFICATION_ROW_LEADING_OFFSET_DP = 2;
     static final int LARGE_INFO_TEXT_DP = 16;
     static final int COMPACT_INFO_TEXT_DP = 14;
 
@@ -72,6 +80,9 @@ final class PixelAodVisualStyle {
                 + ",largeInfoTop=" + LARGE_INFO_TOP_DP
                 + ",smallInfoTop=" + SMALL_INFO_TOP_DP
                 + ",notificationTop=" + NOTIFICATION_LINE_TOP_DP
+                + ",calendarDateToEvent=" + CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP
+                + ",calendarDateToNotification="
+                + CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP
                 + ",largeInfoText=" + LARGE_INFO_TEXT_DP
                 + ",compactInfoText=" + COMPACT_INFO_TEXT_DP
                 + ",lineSpacing=" + CLOCK_LINE_SPACING

@@ -16,6 +16,8 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_AOD_DISPLAY_MODE = "module_aod_display_mode";
     public static final String KEY_WEATHER = "weather";
     public static final String KEY_WEATHER_ICON_PACK = "weather_icon_pack";
+    public static final String KEY_CALENDAR_EVENTS = "calendar_events";
+    public static final String KEY_CALENDAR_ICON_PACKAGE = "calendar_icon_package";
     public static final String KEY_NOTIFICATION_ICONS = "notification_icons";
     public static final String KEY_PIXEL_FINGERPRINT_ICON = "pixel_fingerprint_icon";
     public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY = "lockscreen_notification_policy";
@@ -48,6 +50,9 @@ public final class PixelAodSettingsSchema {
             stringSpec(KEY_AOD_DISPLAY_MODE, AOD_DISPLAY_MODE_CONTINUOUS, false);
     public static final SettingSpec WEATHER = booleanSpec(KEY_WEATHER, true, false);
     public static final SettingSpec WEATHER_ICON_PACK = stringSpec(KEY_WEATHER_ICON_PACK, "", false);
+    public static final SettingSpec CALENDAR_EVENTS = booleanSpec(KEY_CALENDAR_EVENTS, false, false);
+    public static final SettingSpec CALENDAR_ICON_PACKAGE =
+            stringSpec(KEY_CALENDAR_ICON_PACKAGE, "", false);
     public static final SettingSpec NOTIFICATION_ICONS =
             alwaysEnabledBooleanSpec(KEY_NOTIFICATION_ICONS);
     public static final SettingSpec PIXEL_FINGERPRINT_ICON =

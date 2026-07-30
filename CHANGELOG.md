@@ -1,5 +1,148 @@
 # Changelog
 
+## [0.1.269] - 2026-07-30
+### Meta
+- **Model:** Codex
+- **Scope:** Calendar At a Glance vertical rhythm correction
+
+### Fixed
+- Replace the incorrect line-height-derived compact layout with screenshot-calibrated coordinates.
+- Align the visual whitespace of Clock-to-Date, Date-to-Notifications, Date-to-Event, and Event-to-Notifications.
+
+### Success
+- Device screenshots identified the prior `0.1.268` discrepancy: `93px` Clock-to-Date versus `32px` Date-to-Notifications.
+- User visually confirmed the corrected no-event AOD layout.
+
+### Deferred
+- User visual validation of the event-present four-row layout remains required.
+
+## [0.1.268] - 2026-07-30
+### Meta
+- **Model:** Codex
+- **Scope:** Calendar At a Glance vertical rhythm
+
+### Fixed
+- Make the compact AOD notification-icon gap equal the existing small-clock-to-date gap.
+- Use that same measured gap for Date/Weather, Calendar Event, and Notification Icons while an event is visible.
+
+### Success
+- Source layout now accounts for the selected calendar icon's rendered scale when placing the following notification row.
+
+### Deferred
+- User visual validation is required for both the no-event and calendar-event layouts.
+
+## [0.1.267] - 2026-07-30
+### Meta
+- **Model:** Codex
+- **Scope:** Calendar At a Glance notification layout
+
+### Fixed
+- Restore the original date/weather-to-notification icon spacing whenever no calendar event row is visible.
+- Keep the tighter calendar-present layout only while an event is displayed.
+
+### Success
+- Source layout restores the pre-calendar notification top position for both clock modes.
+
+### Deferred
+- User validation of the live event-expiry transition remains pending.
+
+## [0.1.266] - 2026-07-30
+### Meta
+- **Model:** Codex
+- **Scope:** Calendar expiry notification layout
+
+### Fixed
+- Collapse the notification icon row into the vacated calendar-event line as soon as the event row hides, instead of leaving the previous date-to-notification gap.
+- Log the calendar visibility transition together with the applied notification-row top position for device-side diagnosis.
+
+### Success
+- `:app:testDebugUnitTest` and `:app:assembleDebug` passed.
+- Debug APK `0.1.266` was overlay-installed and SystemUI restarted; agent screenshot verified that the notification row now sits directly below Date/Weather when no calendar event is visible.
+
+### Deferred
+- User validation of the live event-expiry transition remains pending.
+
+## [0.1.265] - 2026-07-30
+### Meta
+- **Model:** Codex
+- **Scope:** Calendar At a Glance freshness
+
+### Fixed
+- Observe calendar and calendar-list changes in the module app process, then notify the SystemUI calendar client immediately.
+- Return the visible event's next boundary from the provider and schedule one exact refresh for its start time; all-day events refresh at the next local midnight.
+- Coalesce concurrent calendar changes and keep only one pending boundary refresh, without adding a repeating background timer.
+
+### Success
+- `:app:testDebugUnitTest` and `:app:assembleDebug` passed.
+- Debug APK `0.1.265` was overlay-installed, SystemUI restarted, and an AOD screenshot confirmed that the calendar event row, icon, and notification row still render normally.
+- Persistent LSPosed logs confirmed one boundary task scheduled for the active `20:30 Test` event, with a 545-second delay to its exact start.
+
+### Deferred
+- Full Smartspace targets, event click actions, multiple-card ranking, and ongoing-event presentation remain intentionally out of scope.
+- User verification of editing or deleting a calendar event while AOD is visible remains pending; it should refresh without waiting for the next minute tick.
+
+## [0.1.264] - 2026-07-30
+### Meta
+- **Model:** Codex
+- **Scope:** Calendar / notification optical grid
+
+### Fixed
+- Tune Calendar leading compensation from 8dp to 6dp, move the notification row 2dp left, and move the event row 3dp down using screenshot pixel measurements.
+
+### Success
+- Agent screenshot verified that 0.1.263 no longer clipped the calendar icon.
+
+### Deferred
+- Final user visual validation of the shared leading edge and equal Date-to-Event / Event-to-Notification spacing remains pending.
+
+## [0.1.263] - 2026-07-30
+### Meta
+- **Model:** Codex
+- **Scope:** Calendar event-row optical leading edge
+
+### Fixed
+- Move the entire selected-calendar event row left by its adaptive-icon safe-zone compensation instead of translating the child icon outside the host bounds.
+- Remove the notification-row translation so Date/Weather, Calendar, and Notifications retain one shared layout baseline.
+
+### Success
+- Agent screenshot verified that the 0.1.262 child-translation path was clipped by the host boundary; this revision replaces that path.
+
+### Deferred
+- Final device visual validation of the unclipped icon and row alignment remains pending.
+
+## [0.1.262] - 2026-07-30
+### Meta
+- **Model:** Codex
+- **Scope:** Calendar event-row visual alignment
+
+### Fixed
+- Allow the selected calendar application's monochrome icon to extend beyond its row bounds, preventing its leading edge from being clipped after optical alignment with Date/Weather.
+- Split date-to-event and date-to-notification offsets so the three AOD information rows can be adjusted independently.
+
+### Success
+- Agent screenshot reproduced the clipped calendar icon and confirmed the parent-clipping root cause before this fix.
+
+### Deferred
+- Final device visual validation of leading-edge alignment and equal row spacing remains pending.
+
+## [0.1.261] - 2026-07-30
+### Meta
+- **Model:** Codex
+- **Scope:** Local calendar At a Glance
+
+### Added
+- Add an opt-in Calendar Events toggle that requests `READ_CALENDAR` only when enabled.
+- Show the next timed event within 24 hours as `start time + title`; show one all-day event only on its day.
+- Query Calendar in the module app process and return only the filtered display text to SystemUI, avoiding Calendar permission in the hook process and avoiding main-thread queries.
+- Render Calendar as an independent At a Glance event row below Date/Weather, with consistent event-to-notification spacing; the weather icon remains attached to the Date/Weather line.
+- Add an opt-in Calendar App Icon selector: all event rows can use the selected app's original Launcher icon, with a monochrome calendar fallback when no app is selected or available.
+
+### Success
+- Build and device validation pending.
+
+### Deferred
+- Multiple-event rotation, locations, notes, attendees, and network-backed At a Glance cards remain intentionally out of scope.
+
 ## [0.1.260] - 2026-07-28
 ### Meta
 - **Model:** Grok (xAI)
