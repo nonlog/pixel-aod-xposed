@@ -5,6 +5,9 @@
     <string name="desc_module_enabled">关闭后重启 SystemUI，模块 Hook 不再生效</string>
     <string name="title_weather">天气信息</string>
     <string name="desc_weather">Breezy Weather / Gadgetbridge</string>
+    <string name="title_weather_alerts">恶劣天气提醒</string>
+    <string name="desc_weather_alerts">显示 Breezy Weather 的当前有效预警</string>
+    <string name="weather_alert_permission_denied">未授权 Breezy Weather 数据读取，无法显示天气提醒</string>
     <string name="title_calendar_events">日历事件</string>
     <string name="desc_calendar_events">显示未来 24 小时内最近的一条日程</string>
     <string name="title_calendar_icon_app">日历应用图标</string>

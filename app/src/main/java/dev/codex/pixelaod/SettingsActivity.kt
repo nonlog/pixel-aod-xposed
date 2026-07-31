@@ -93,6 +93,10 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import java.util.Locale
 
+private const val BREEZY_READ_PROVIDER_PERMISSION = "org.breezyweather.READ_PROVIDER"
+private const val REQUEST_BREEZY_WEATHER_RELAY =
+    "dev.codex.pixelaod.REQUEST_BREEZY_WEATHER_RELAY"
+
 class SettingsActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(applyLanguage(newBase))
@@ -159,6 +163,12 @@ private fun updateModuleBooleanSetting(context: Context, key: String, value: Boo
     PixelAodSettings.getSharedPreferences(context).edit().putBoolean(key, value).apply()
     PixelAodSettings.refresh(context)
     context.contentResolver.notifyChange(PixelAodSettingsProvider.URI, null)
+}
+
+private fun requestBreezyWeatherRefresh(context: Context) {
+    context.sendBroadcast(
+        Intent(REQUEST_BREEZY_WEATHER_RELAY).setPackage(context.packageName)
+    )
 }
 
 private fun updateModuleStringSetting(context: Context, key: String, value: String) {
@@ -315,6 +325,9 @@ private fun SettingsContent(
     val weather = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_WEATHER, true))
     }
+    val weatherAlerts = remember {
+        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_WEATHER_ALERTS, false))
+    }
     val calendarEvents = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_CALENDAR_EVENTS, false))
     }
@@ -383,6 +396,21 @@ private fun SettingsContent(
             Toast.makeText(
                 context,
                 context.getString(R.string.calendar_permission_denied),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+    val breezyWeatherPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            weatherAlerts.value = true
+            updateModuleBooleanSetting(context, PixelAodSettings.KEY_WEATHER_ALERTS, true)
+            requestBreezyWeatherRefresh(context)
+        } else {
+            Toast.makeText(
+                context,
+                context.getString(R.string.weather_alert_permission_denied),
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -523,6 +551,35 @@ private fun SettingsContent(
                         showDivider = true
                     ) {
                         showIconPackDialog = true
+                    }
+                    CouiToggleRow(
+                        icon = Icons.Outlined.Cloud,
+                        title = stringResource(R.string.title_weather_alerts),
+                        subtitle = stringResource(R.string.desc_weather_alerts),
+                        checked = weatherAlerts.value,
+                        showDivider = true
+                    ) { enabled ->
+                        if (!enabled) {
+                            weatherAlerts.value = false
+                            updateModuleBooleanSetting(
+                                context,
+                                PixelAodSettings.KEY_WEATHER_ALERTS,
+                                false
+                            )
+                            requestBreezyWeatherRefresh(context)
+                        } else if (context.checkSelfPermission(BREEZY_READ_PROVIDER_PERMISSION)
+                            == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            weatherAlerts.value = true
+                            updateModuleBooleanSetting(
+                                context,
+                                PixelAodSettings.KEY_WEATHER_ALERTS,
+                                true
+                            )
+                            requestBreezyWeatherRefresh(context)
+                        } else {
+                            breezyWeatherPermissionLauncher.launch(BREEZY_READ_PROVIDER_PERMISSION)
+                        }
                     }
                 }
                 CouiToggleRow(

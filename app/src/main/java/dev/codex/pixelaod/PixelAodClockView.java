@@ -99,10 +99,18 @@ public final class PixelAodClockView extends FrameLayout {
             PixelAodVisualStyle.CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP;
     private static final int CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP =
             PixelAodVisualStyle.CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP;
+    private static final int CALENDAR_DATE_TO_SECOND_EVENT_TOP_OFFSET_DP =
+            PixelAodVisualStyle.CALENDAR_DATE_TO_SECOND_EVENT_TOP_OFFSET_DP;
+    private static final int CALENDAR_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP =
+            PixelAodVisualStyle.CALENDAR_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP;
     private static final int COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP =
             PixelAodVisualStyle.COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP;
     private static final int COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP =
             PixelAodVisualStyle.COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP;
+    private static final int COMPACT_DATE_TO_SECOND_EVENT_TOP_OFFSET_DP =
+            PixelAodVisualStyle.COMPACT_DATE_TO_SECOND_EVENT_TOP_OFFSET_DP;
+    private static final int COMPACT_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP =
+            PixelAodVisualStyle.COMPACT_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP;
     private static final int COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP =
             PixelAodVisualStyle.COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP;
     private static final int CALENDAR_ICON_SPACING_DP =
@@ -111,6 +119,7 @@ public final class PixelAodClockView extends FrameLayout {
             PixelAodVisualStyle.CALENDAR_APPLICATION_ICON_LEADING_OFFSET_DP;
     private static final int NOTIFICATION_ROW_LEADING_OFFSET_DP =
             PixelAodVisualStyle.NOTIFICATION_ROW_LEADING_OFFSET_DP;
+    private static final int LARGE_INFO_ROW_GAP_DP = PixelAodVisualStyle.LARGE_INFO_ROW_GAP_DP;
     private static final int CALENDAR_APPLICATION_ICON_SIZE_DP = 22;
     private static final float CALENDAR_APPLICATION_MONOCHROME_SCALE = 1.25f;
     private static final int LARGE_MEDIA_TOP_DP = PixelAodVisualStyle.Aod.LARGE_MEDIA_TOP_DP;
@@ -143,7 +152,6 @@ public final class PixelAodClockView extends FrameLayout {
     private static final float INFO_LETTER_SPACING = PixelAodVisualStyle.INFO_LETTER_SPACING;
     private static final float AOD_CLOCK_ALPHA = PixelAodVisualStyle.AOD_CLOCK_ALPHA;
     private static final float INFO_ALPHA = PixelAodVisualStyle.INFO_ALPHA;
-    private static final float MEDIA_ALPHA = PixelAodVisualStyle.MEDIA_ALPHA;
     private static final int CLOCK_AOD_WEIGHT = PixelAodVisualStyle.Aod.CLOCK_WEIGHT;
     private static final int INFO_AOD_WEIGHT = PixelAodVisualStyle.Aod.INFO_WEIGHT;
     private static final int WEATHER_ICON_SIZE_DP = PixelAodVisualStyle.Aod.WEATHER_ICON_SIZE_DP;
@@ -265,6 +273,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static String atAGlanceExtra = "";
     private static String calendarAtAGlanceExtra = "";
     private static WeatherSnapshot breezyWeather = WeatherSnapshot.empty();
+    private static BreezyWeatherAlert breezyWeatherAlert = BreezyWeatherAlert.empty();
     private static boolean breezyWeatherReceiverRegistered;
     private static long cachedScheduleCheckedAt;
     private static boolean cachedScheduleResult = true;
@@ -324,6 +333,9 @@ public final class PixelAodClockView extends FrameLayout {
     };
     private final TextView clockView;
     private final TextView dateView;
+    private final LinearLayout weatherAlertRow;
+    private final ImageView weatherAlertIconView;
+    private final TextView weatherAlertView;
     private final LinearLayout calendarRow;
     private final ImageView calendarIconView;
     private final TextView calendarView;
@@ -343,6 +355,7 @@ public final class PixelAodClockView extends FrameLayout {
     private String lastMediaLineText = "";
     private String lastMediaLineKey = "";
     private String lastMediaIconSignature = "";
+    private String lastMediaIconRecoverySignature = "";
     private String lastNotificationIconSignature = "";
     private final List<MediaController> mediaControllers = new ArrayList<>();
     private final Map<MediaController, MediaController.Callback> mediaCallbacks = new HashMap<>();
@@ -440,6 +453,39 @@ public final class PixelAodClockView extends FrameLayout {
         dateParams.topMargin = dp(LARGE_INFO_TOP_DP);
         addView(dateView, dateParams);
 
+        weatherAlertRow = new LinearLayout(context);
+        weatherAlertRow.setOrientation(LinearLayout.HORIZONTAL);
+        weatherAlertRow.setGravity(Gravity.CENTER_VERTICAL);
+        weatherAlertRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        weatherAlertRow.setAlpha(INFO_ALPHA);
+        weatherAlertRow.setVisibility(View.GONE);
+        FrameLayout.LayoutParams weatherAlertParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.START);
+        weatherAlertParams.leftMargin = dp(INFO_EDGE_DP);
+        weatherAlertParams.rightMargin = dp(INFO_EDGE_DP);
+        weatherAlertParams.topMargin = dp(LARGE_INFO_TOP_DP
+                + CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP);
+        addView(weatherAlertRow, weatherAlertParams);
+
+        weatherAlertIconView = new ImageView(context);
+        weatherAlertIconView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        weatherAlertIconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        weatherAlertIconView.setImageResource(android.R.drawable.ic_dialog_alert);
+        weatherAlertIconView.setColorFilter(resolveMaterialInfoColor(context), PorterDuff.Mode.SRC_IN);
+        weatherAlertRow.addView(weatherAlertIconView, new LinearLayout.LayoutParams(
+                dp(LARGE_INFO_TEXT_DP), dp(LARGE_INFO_TEXT_DP)));
+
+        weatherAlertView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT,
+                LARGE_INFO_TEXT_DP, Gravity.START);
+        weatherAlertView.setAlpha(1f);
+        weatherAlertView.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams weatherAlertTextParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        weatherAlertTextParams.leftMargin = dp(CALENDAR_ICON_SPACING_DP);
+        weatherAlertRow.addView(weatherAlertView, weatherAlertTextParams);
+
         calendarRow = new LinearLayout(context);
         calendarRow.setOrientation(LinearLayout.HORIZONTAL);
         calendarRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -493,18 +539,18 @@ public final class PixelAodClockView extends FrameLayout {
         mediaRow.setGravity(Gravity.CENTER_VERTICAL);
         mediaRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         mediaRow.setVisibility(View.GONE);
-        mediaRow.setAlpha(MEDIA_ALPHA);
+        mediaRow.setTranslationX(-dp(NOTIFICATION_ROW_LEADING_OFFSET_DP));
 
         mediaIconView = new ImageView(context);
         mediaIconView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         mediaIconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        mediaIconView.setAlpha(INFO_ALPHA);
         LinearLayout.LayoutParams mediaGlyphParams = new LinearLayout.LayoutParams(
                 dp(MEDIA_ICON_SIZE_DP), dp(MEDIA_ICON_SIZE_DP));
         mediaRow.addView(mediaIconView, mediaGlyphParams);
 
         mediaView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, MEDIA_TEXT_DP,
                 Gravity.START);
-        mediaView.setAlpha(MEDIA_ALPHA);
         mediaView.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams mediaTextParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
@@ -2386,20 +2432,41 @@ public final class PixelAodClockView extends FrameLayout {
         }
         try {
             WeatherSnapshot snapshot = parseBreezyWeatherIntent(intent);
-            if (snapshot == null || !snapshot.hasDisplayableWeather()) {
+            boolean alertsSynced = intent.getBooleanExtra(
+                    BreezyWeatherRelayReceiver.EXTRA_ALERTS_SYNCED, false);
+            BreezyWeatherAlert alert = alertsSynced
+                    ? BreezyWeatherAlert.fromRelayJson(
+                    intent.getStringExtra(BreezyWeatherRelayReceiver.EXTRA_ALERT_JSON))
+                    : null;
+            if ((snapshot == null || !snapshot.hasDisplayableWeather()) && !alertsSynced) {
                 if (ACTION_BREEZY_UPDATE_NOTIFIER.equals(intent.getAction())) {
                     logBreezyWeather("received Breezy update notifier without weather payload");
                 }
                 return;
             }
-            boolean changed;
+            boolean weatherChanged = false;
+            boolean alertChanged = false;
             synchronized (PixelAodClockView.class) {
-                changed = !breezyWeather.sameDisplay(snapshot);
-                breezyWeather = snapshot;
+                if (snapshot != null && snapshot.hasDisplayableWeather()) {
+                    weatherChanged = !breezyWeather.sameDisplay(snapshot);
+                    breezyWeather = snapshot;
+                }
+                if (alertsSynced) {
+                    alertChanged = !breezyWeatherAlert.sameDisplay(alert);
+                    breezyWeatherAlert = alert;
+                }
             }
-            if (changed) {
+            if (weatherChanged) {
                 logBreezyWeather("updated Breezy weather from " + source
                         + " text=" + snapshot.logText());
+            }
+            if (alertChanged) {
+                PixelAodLog.log("updated Breezy weather alert from " + source
+                        + " active=" + alert.isActive(System.currentTimeMillis())
+                        + " severity=" + alert.severity);
+            }
+            if (!weatherChanged && !alertChanged) {
+                return;
             }
             mainHandler().post(() -> {
                 for (PixelAodClockView view : INSTANCES) {
@@ -2906,10 +2973,10 @@ public final class PixelAodClockView extends FrameLayout {
             // startCompactToLargeEntryMorph after weight morph is visible).
             startAodTextContentMorph(fromClock, source + "#aod-size-morph");
             if (mediaRow != null) {
-                mediaRow.setAlpha(MEDIA_ALPHA);
+                mediaRow.setAlpha(1f);
             }
         } else if (mediaRow != null && !(morphFromCompact && !compact)) {
-            mediaRow.setAlpha(MEDIA_ALPHA);
+            mediaRow.setAlpha(1f);
         }
         requestAodFrameRefresh(source + "#ClockPlugin");
     }
@@ -3073,7 +3140,7 @@ public final class PixelAodClockView extends FrameLayout {
             mediaRow.setAlpha(0f);
             mediaRow.animate().cancel();
             mediaRow.animate()
-                    .alpha(MEDIA_ALPHA)
+                    .alpha(1f)
                     .setDuration(durationMs)
                     .setInterpolator(interpolator)
                     .start();
@@ -3135,7 +3202,7 @@ public final class PixelAodClockView extends FrameLayout {
                         clockView.setTranslationX(0f);
                         clockView.setTranslationY(0f);
                         if (mediaRow != null && mediaRow.getVisibility() == View.VISIBLE) {
-                            mediaRow.setAlpha(MEDIA_ALPHA);
+                            mediaRow.setAlpha(1f);
                         }
                         PixelAodLog.log("finished compact→large AOD entry morph source=" + source
                                 + " mediaVisible=" + hasVisibleMediaLine()
@@ -4168,6 +4235,7 @@ public final class PixelAodClockView extends FrameLayout {
         if (TextUtils.equals(lastMediaLineText, mediaText)
                 && TextUtils.equals(lastMediaLineKey, mediaKey)
                 && TextUtils.equals(lastMediaIconSignature, iconSignature)) {
+            recoverMissingMediaIcon(controller, mediaNotification, iconSignature, source);
             // Content is unchanged, but the row may have been hidden by a prior
             // pause/stop. Re-assert visibility so resuming the same track shows again.
             if (!TextUtils.isEmpty(mediaText) && mediaRow.getVisibility() != View.VISIBLE) {
@@ -4194,6 +4262,7 @@ public final class PixelAodClockView extends FrameLayout {
         }
         currentMediaNotificationKey = mediaNotification != null ? mediaNotification.getKey() : null;
         updateMediaIcon(controller, mediaNotification);
+        lastMediaIconRecoverySignature = "";
         mediaView.setText(mediaText);
         mediaRow.setVisibility(View.VISIBLE);
         rebuildNotificationIcons(source);
@@ -4211,6 +4280,24 @@ public final class PixelAodClockView extends FrameLayout {
             params.leftMargin = leftMargin;
             mediaView.setLayoutParams(params);
         }
+    }
+
+    private void recoverMissingMediaIcon(MediaController controller,
+            StatusBarNotification notification, String iconSignature, String source) {
+        boolean iconMissing = mediaIconView.getVisibility() != View.VISIBLE
+                || mediaIconView.getDrawable() == null;
+        if (!MediaIconRecoveryPolicy.shouldRetry(iconMissing, notification != null,
+                lastMediaIconRecoverySignature, iconSignature)) {
+            return;
+        }
+        lastMediaIconRecoverySignature = iconSignature;
+        updateMediaIcon(controller, notification);
+        PixelAodLog.log("recovered missing AOD media icon source=" + source
+                + " pkg=" + controller.getPackageName()
+                + " notificationKey=" + notification.getKey()
+                + " restored=" + (mediaIconView.getVisibility() == View.VISIBLE
+                && mediaIconView.getDrawable() != null)
+                + " trace=" + currentAodTraceId());
     }
 
     private void clearMediaLine(String source) {
@@ -4231,6 +4318,7 @@ public final class PixelAodClockView extends FrameLayout {
         lastMediaLineText = "";
         lastMediaLineKey = "";
         lastMediaIconSignature = "";
+        lastMediaIconRecoverySignature = "";
         mediaView.setText("");
         mediaIconView.setImageDrawable(null);
         mediaRow.setVisibility(View.GONE);
@@ -4875,6 +4963,17 @@ public final class PixelAodClockView extends FrameLayout {
                         + " reason=no-notification"
                         + " trace=" + currentAodTraceId());
                 return null;
+            }
+            if (SystemNotificationIconPolicy.usesBundledSystemUpdateIcon(sbn.getPackageName())) {
+                Drawable systemUpdateIcon = loadTintedPackageDrawable(context,
+                        resolveMaterialInfoColor(context), MODULE_PACKAGE, "ic_aosp_system_update");
+                if (systemUpdateIcon != null) {
+                    logNotificationIconChoice(sbn.getPackageName(), "aosp-system-update-glyph");
+                    return systemUpdateIcon;
+                }
+                PixelAodLog.log("AOD OTA notification icon fallback pkg=" + sbn.getPackageName()
+                        + " reason=bundled-system-update-resource-unavailable"
+                        + " trace=" + currentAodTraceId());
             }
             Icon icon = notification.getSmallIcon();
             if (icon == null) {
@@ -6109,6 +6208,18 @@ public final class PixelAodClockView extends FrameLayout {
         return snapshot;
     }
 
+    private static BreezyWeatherAlert currentFreshWeatherAlert(Context context) {
+        if (!PixelAodSettings.getBoolean(context, PixelAodSettings.KEY_WEATHER, true)
+                || !PixelAodSettings.getBoolean(context,
+                PixelAodSettings.KEY_WEATHER_ALERTS, false)) {
+            return BreezyWeatherAlert.empty();
+        }
+        synchronized (PixelAodClockView.class) {
+            return breezyWeatherAlert.isActive(System.currentTimeMillis())
+                    ? breezyWeatherAlert : BreezyWeatherAlert.empty();
+        }
+    }
+
     private static void maybeRequestCachedBreezyWeather() {
         Context context = appContext;
         if (context == null) {
@@ -6139,18 +6250,30 @@ public final class PixelAodClockView extends FrameLayout {
         int infoColor = resolveMaterialInfoColor(getContext());
         dateView.setText(model.dateText);
         applyWeatherIcon(dateView, model.weather, infoColor);
+        weatherAlertIconView.setColorFilter(infoColor, PorterDuff.Mode.SRC_IN);
+        BreezyWeatherAlert weatherAlert = currentFreshWeatherAlert(getContext());
+        boolean weatherAlertVisible = weatherAlert != BreezyWeatherAlert.empty();
+        boolean weatherAlertVisibilityChanged = (weatherAlertRow.getVisibility() == View.VISIBLE)
+                != weatherAlertVisible;
+        boolean weatherAlertContentChanged = !TextUtils.equals(weatherAlertView.getText(),
+                weatherAlert.headline);
+        weatherAlertView.setText(weatherAlert.headline);
+        weatherAlertRow.setVisibility(weatherAlertVisible ? View.VISIBLE : View.GONE);
         String calendarText = currentCalendarAtAGlanceExtra();
         boolean calendarVisible = !TextUtils.isEmpty(calendarText);
         boolean calendarVisibilityChanged = (calendarRow.getVisibility() == View.VISIBLE)
                 != calendarVisible;
+        boolean calendarContentChanged = !TextUtils.equals(calendarView.getText(), calendarText);
         calendarView.setText(calendarText);
         calendarRow.setVisibility(calendarVisible ? View.VISIBLE : View.GONE);
-        if (calendarVisibilityChanged) {
+        if (weatherAlertVisibilityChanged || weatherAlertContentChanged
+                || calendarVisibilityChanged || calendarContentChanged) {
             updateInfoStackLayout();
             FrameLayout.LayoutParams notificationParams =
                     (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
-            PixelAodLog.log("updated Calendar At a Glance row visibility visible="
-                    + calendarVisible
+            PixelAodLog.log("updated At a Glance row visibility alert="
+                    + weatherAlertVisible
+                    + " calendar=" + calendarVisible
                     + " notificationTopPx=" + notificationParams.topMargin
                     + " compact=" + compactClock
                     + " trace=" + currentAodTraceId());
@@ -6176,6 +6299,9 @@ public final class PixelAodClockView extends FrameLayout {
             postInvalidateOnAnimation();
             invalidateView(clockView);
             invalidateView(dateView);
+            invalidateView(weatherAlertRow);
+            invalidateView(weatherAlertIconView);
+            invalidateView(weatherAlertView);
             invalidateView(calendarRow);
             invalidateView(calendarIconView);
             invalidateView(calendarView);
@@ -6296,6 +6422,7 @@ public final class PixelAodClockView extends FrameLayout {
             clockParams.leftMargin = dp(INFO_EDGE_DP - COMPACT_CLOCK_VISUAL_START_OFFSET_DP);
             clockParams.topMargin = dp(SMALL_CLOCK_TOP_DP);
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, COMPACT_INFO_TEXT_DP);
+            updateWeatherAlertRowStyle(COMPACT_INFO_TEXT_DP);
             updateCalendarRowStyle(COMPACT_INFO_TEXT_DP);
         } else {
             applySharedClockTextStyle(clockView, getContext(), currentClockWeight,
@@ -6305,6 +6432,7 @@ public final class PixelAodClockView extends FrameLayout {
             clockParams.leftMargin = 0;
             clockParams.topMargin = dp(LARGE_CLOCK_TOP_DP);
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, LARGE_INFO_TEXT_DP);
+            updateWeatherAlertRowStyle(LARGE_INFO_TEXT_DP);
             updateCalendarRowStyle(LARGE_INFO_TEXT_DP);
         }
         clockView.setLayoutParams(clockParams);
@@ -6466,42 +6594,92 @@ public final class PixelAodClockView extends FrameLayout {
 
     private void updateInfoStackLayout() {
         FrameLayout.LayoutParams dateParams = (FrameLayout.LayoutParams) dateView.getLayoutParams();
+        FrameLayout.LayoutParams weatherAlertParams =
+                (FrameLayout.LayoutParams) weatherAlertRow.getLayoutParams();
         FrameLayout.LayoutParams calendarParams =
                 (FrameLayout.LayoutParams) calendarRow.getLayoutParams();
         FrameLayout.LayoutParams notificationParams = (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
         FrameLayout.LayoutParams mediaParams = (FrameLayout.LayoutParams) mediaRow.getLayoutParams();
         int infoTop;
         int dateTopPx;
+        int weatherAlertTopPx;
         int calendarTopPx;
         int notificationTopPx;
+        boolean weatherAlertVisible = weatherAlertRow.getVisibility() == View.VISIBLE;
+        boolean calendarVisible = calendarRow.getVisibility() == View.VISIBLE;
+        int mediaTopPx;
         if (compactClock) {
             infoTop = SMALL_INFO_TOP_DP;
-            mediaParams.topMargin = dp(SMALL_MEDIA_TOP_DP);
 
             dateTopPx = dp(infoTop);
-            calendarTopPx = dp(infoTop + COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP);
-            if (calendarRow.getVisibility() == View.VISIBLE) {
+            weatherAlertTopPx = dp(infoTop + COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP);
+            calendarTopPx = dp(infoTop + (weatherAlertVisible
+                    ? COMPACT_DATE_TO_SECOND_EVENT_TOP_OFFSET_DP
+                    : COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP));
+            if (weatherAlertVisible && calendarVisible) {
+                notificationTopPx = dp(infoTop
+                        + COMPACT_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP);
+            } else if (weatherAlertVisible || calendarVisible) {
                 notificationTopPx = dp(infoTop + COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP);
             } else {
                 notificationTopPx = dp(infoTop
                         + COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP);
             }
+            mediaTopPx = AodInfoStackLayout.mediaTopAfterNotification(
+                    dateTopPx, weatherAlertTopPx, calendarTopPx, notificationTopPx,
+                    weatherAlertVisible, calendarVisible);
         } else {
             infoTop = LARGE_INFO_TOP_DP;
-            mediaParams.topMargin = dp(notificationIconRow.getVisibility() == View.VISIBLE
+            boolean notificationVisible = notificationIconRow.getVisibility() == View.VISIBLE;
+            int defaultMediaTopPx = dp(notificationVisible
                     ? LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP : LARGE_MEDIA_TOP_DP);
 
             dateTopPx = dp(infoTop);
-            calendarTopPx = dp(infoTop + CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP);
+            weatherAlertTopPx = dp(infoTop + CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP);
+            calendarTopPx = dp(infoTop + (weatherAlertVisible
+                    ? CALENDAR_DATE_TO_SECOND_EVENT_TOP_OFFSET_DP
+                    : CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP));
             notificationTopPx = dp(LARGE_NOTIFICATION_LINE_TOP_DP);
-            if (calendarRow.getVisibility() == View.VISIBLE) {
+            if (weatherAlertVisible && calendarVisible) {
+                notificationTopPx = dp(infoTop
+                        + CALENDAR_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP);
+            } else if (weatherAlertVisible || calendarVisible) {
                 notificationTopPx = dp(infoTop + CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP);
+            }
+            int lastInfoBottomPx = AodInfoStackLayout.rowBottom(dateTopPx, dateView.getHeight(),
+                    dp(LARGE_INFO_TEXT_DP));
+            if (weatherAlertVisible) {
+                lastInfoBottomPx = Math.max(lastInfoBottomPx,
+                        AodInfoStackLayout.rowBottom(weatherAlertTopPx,
+                                weatherAlertRow.getHeight(), dp(LARGE_INFO_TEXT_DP)));
+            }
+            if (calendarVisible) {
+                int calendarFallbackHeightPx = dp(usingCalendarApplicationIcon
+                        ? CALENDAR_APPLICATION_ICON_SIZE_DP : LARGE_INFO_TEXT_DP);
+                lastInfoBottomPx = Math.max(lastInfoBottomPx,
+                        AodInfoStackLayout.rowBottom(calendarTopPx, calendarRow.getHeight(),
+                                calendarFallbackHeightPx));
+            }
+            int gapPx = dp(LARGE_INFO_ROW_GAP_DP);
+            if (notificationVisible) {
+                notificationTopPx = AodInfoStackLayout.topAfterVisibleRow(
+                        notificationTopPx, lastInfoBottomPx, gapPx);
+                int notificationBottomPx = AodInfoStackLayout.rowBottom(notificationTopPx,
+                        notificationIconRow.getHeight(), dp(NOTIFICATION_ICON_SIZE_DP));
+                mediaTopPx = AodInfoStackLayout.topAfterVisibleRow(
+                        defaultMediaTopPx, notificationBottomPx, gapPx);
+            } else {
+                mediaTopPx = AodInfoStackLayout.topAfterVisibleRow(
+                        defaultMediaTopPx, lastInfoBottomPx, gapPx);
             }
         }
         dateParams.topMargin = dateTopPx;
+        weatherAlertParams.topMargin = weatherAlertTopPx;
         calendarParams.topMargin = calendarTopPx;
         notificationParams.topMargin = notificationTopPx;
+        mediaParams.topMargin = mediaTopPx;
         dateView.setLayoutParams(dateParams);
+        weatherAlertRow.setLayoutParams(weatherAlertParams);
         calendarRow.setLayoutParams(calendarParams);
         notificationIconRow.setLayoutParams(notificationParams);
         mediaRow.setLayoutParams(mediaParams);
@@ -6529,6 +6707,15 @@ public final class PixelAodClockView extends FrameLayout {
         rowParams.leftMargin = dp(INFO_EDGE_DP) - leadingOffset;
         rowParams.rightMargin = dp(INFO_EDGE_DP) + leadingOffset;
         calendarRow.setLayoutParams(rowParams);
+    }
+
+    private void updateWeatherAlertRowStyle(int textSizeDp) {
+        weatherAlertView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, textSizeDp);
+        LinearLayout.LayoutParams iconParams =
+                (LinearLayout.LayoutParams) weatherAlertIconView.getLayoutParams();
+        iconParams.width = dp(textSizeDp);
+        iconParams.height = dp(textSizeDp);
+        weatherAlertIconView.setLayoutParams(iconParams);
     }
 
     private static String currentCalendarAtAGlanceExtra() {

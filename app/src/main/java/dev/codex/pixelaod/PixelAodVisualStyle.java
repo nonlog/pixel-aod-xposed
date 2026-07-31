@@ -24,7 +24,6 @@ final class PixelAodVisualStyle {
     static final float AOD_CLOCK_ALPHA = 0.96f;
     static final float LOCKSCREEN_CLOCK_ALPHA = 0.98f;
     static final float INFO_ALPHA = 0.94f;
-    static final float MEDIA_ALPHA = 0.82f;
 
     static final int LARGE_CLOCK_TEXT_DP = 150;
     static final int LARGE_CLOCK_TOP_DP = 184;
@@ -37,12 +36,17 @@ final class PixelAodVisualStyle {
     static final int NOTIFICATION_LINE_TOP_DP = 198;
     static final int CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP = 22;
     static final int CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP = 50;
+    static final int CALENDAR_DATE_TO_SECOND_EVENT_TOP_OFFSET_DP = 50;
+    static final int CALENDAR_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP = 78;
     static final int COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP = 34;
     static final int COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP = 73;
+    static final int COMPACT_DATE_TO_SECOND_EVENT_TOP_OFFSET_DP = 73;
+    static final int COMPACT_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP = 112;
     static final int COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP = 38;
     static final int CALENDAR_ICON_SPACING_DP = 2;
     static final int CALENDAR_APPLICATION_ICON_LEADING_OFFSET_DP = 6;
     static final int NOTIFICATION_ROW_LEADING_OFFSET_DP = 2;
+    static final int LARGE_INFO_ROW_GAP_DP = 6;
     static final int LARGE_INFO_TEXT_DP = 16;
     static final int COMPACT_INFO_TEXT_DP = 14;
 
@@ -92,7 +96,6 @@ final class PixelAodVisualStyle {
                 + ",aodClockAlpha=" + AOD_CLOCK_ALPHA
                 + ",lockscreenClockAlpha=" + LOCKSCREEN_CLOCK_ALPHA
                 + ",infoAlpha=" + INFO_ALPHA
-                + ",mediaAlpha=" + MEDIA_ALPHA
                 + ",runtimeClockWeight=" + runtimeClockWeight
                 + ",infoWeight=" + infoWeight;
     }

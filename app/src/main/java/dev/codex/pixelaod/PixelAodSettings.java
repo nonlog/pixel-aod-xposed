@@ -15,6 +15,7 @@ public final class PixelAodSettings {
     public static final String KEY_LOCKSCREEN_CLOCK = PixelAodSettingsSchema.KEY_LOCKSCREEN_CLOCK;
     public static final String KEY_AOD_DISPLAY_MODE = PixelAodSettingsSchema.KEY_AOD_DISPLAY_MODE;
     public static final String KEY_WEATHER = PixelAodSettingsSchema.KEY_WEATHER;
+    public static final String KEY_WEATHER_ALERTS = PixelAodSettingsSchema.KEY_WEATHER_ALERTS;
     public static final String KEY_WEATHER_ICON_PACK = PixelAodSettingsSchema.KEY_WEATHER_ICON_PACK;
     public static final String KEY_CALENDAR_EVENTS = PixelAodSettingsSchema.KEY_CALENDAR_EVENTS;
     public static final String KEY_CALENDAR_ICON_PACKAGE =

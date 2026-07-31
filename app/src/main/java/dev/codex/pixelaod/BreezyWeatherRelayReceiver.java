@@ -22,6 +22,8 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
     static final String EXTRA_RECEIVED_AT = "dev.codex.pixelaod.extra.RECEIVED_AT";
     static final String EXTRA_SUNRISE = "dev.codex.pixelaod.extra.SUNRISE";
     static final String EXTRA_SUNSET = "dev.codex.pixelaod.extra.SUNSET";
+    static final String EXTRA_ALERT_JSON = "dev.codex.pixelaod.extra.WEATHER_ALERT_JSON";
+    static final String EXTRA_ALERTS_SYNCED = "dev.codex.pixelaod.extra.WEATHER_ALERTS_SYNCED";
     private static final String PREFS = "pixel_aod_weather";
     private static final String KEY_RECEIVED_AT = "received_at";
     private static final String KEY_WEATHER_JSON = "weather_json";
@@ -37,6 +39,7 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
     private static final String KEY_CONDITION_CODE = "condition_code";
     private static final String KEY_SUNRISE = "sunrise_millis";
     private static final String KEY_SUNSET = "sunset_millis";
+    private static final String KEY_ALERT_JSON = "alert_json";
     private static final String TAG = "PixelAodBreezyRelay";
 
     @Override
@@ -49,7 +52,13 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
                 replayCachedWeather(context);
                 return;
             }
-            persistWeatherExtras(context, intent);
+            if (hasWeatherPayload(intent)) {
+                persistWeatherExtras(context, intent);
+            }
+            BreezyWeatherAlert.QueryResult alertResult = queryWeatherAlerts(context);
+            if (alertResult.queried) {
+                persistWeatherAlert(context, alertResult.alert);
+            }
             Intent relay = new Intent(ACTION_RELAY)
                     .setPackage("com.android.systemui")
                     .setFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
@@ -57,6 +66,7 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
             if (extras != null) {
                 relay.putExtras(extras);
             }
+            appendWeatherAlert(relay, alertResult);
             // Re-extract sunrise/sunset from persisted JSON so the clock view
             // gets authoritative day/night boundaries.
             long[] sunTimes = readSunTimesFromPrefs(context);
@@ -78,8 +88,12 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
 
     private static void replayCachedWeather(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        BreezyWeatherAlert.QueryResult alertResult = queryWeatherAlerts(context);
+        if (alertResult.queried) {
+            persistWeatherAlert(context, alertResult.alert);
+        }
         long receivedAt = prefs.getLong(KEY_RECEIVED_AT, 0L);
-        if (receivedAt <= 0L) {
+        if (receivedAt <= 0L && !alertResult.queried) {
             Log.i(TAG, "no cached Breezy weather to replay");
             return;
         }
@@ -106,7 +120,9 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
         if (prefs.contains(KEY_SUNSET)) {
             relay.putExtra(EXTRA_SUNSET, prefs.getLong(KEY_SUNSET, 0L));
         }
-        relay.putExtra(EXTRA_RECEIVED_AT, receivedAt);
+        appendWeatherAlert(relay, alertResult);
+        relay.putExtra(EXTRA_RECEIVED_AT,
+                receivedAt > 0L ? receivedAt : System.currentTimeMillis());
         context.sendBroadcast(relay);
         Log.i(TAG, "replayed cached Breezy weather receivedAt=" + receivedAt);
     }
@@ -144,6 +160,40 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
             }
         }
         editor.apply();
+    }
+
+    private static boolean hasWeatherPayload(Intent intent) {
+        return intent != null && (intent.hasExtra("WeatherJson")
+                || intent.hasExtra("WeatherGz")
+                || intent.hasExtra("currentCondition")
+                || intent.hasExtra("condition")
+                || intent.hasExtra("weatherText")
+                || intent.hasExtra("currentTemp")
+                || intent.hasExtra("temperature")
+                || intent.hasExtra("temp"));
+    }
+
+    private static BreezyWeatherAlert.QueryResult queryWeatherAlerts(Context context) {
+        if (!PixelAodSettings.getBoolean(context, PixelAodSettings.KEY_WEATHER, true)
+                || !PixelAodSettings.getBoolean(context,
+                PixelAodSettings.KEY_WEATHER_ALERTS, false)) {
+            return BreezyWeatherAlert.QueryResult.queried(BreezyWeatherAlert.empty());
+        }
+        return BreezyWeatherAlertProvider.queryCurrent(context, System.currentTimeMillis());
+    }
+
+    private static void persistWeatherAlert(Context context, BreezyWeatherAlert alert) {
+        SharedPreferences.Editor editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
+        putString(editor, KEY_ALERT_JSON, alert != null ? alert.toRelayJson() : null);
+        editor.apply();
+    }
+
+    private static void appendWeatherAlert(Intent relay, BreezyWeatherAlert.QueryResult result) {
+        if (relay == null || result == null || !result.queried) {
+            return;
+        }
+        relay.putExtra(EXTRA_ALERTS_SYNCED, true);
+        putStringIfPresent(relay, EXTRA_ALERT_JSON, result.alert.toRelayJson());
     }
 
     private static long[] extractSunTimes(Intent intent, String json, byte[] weatherGz) {

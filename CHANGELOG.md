@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.1.270] - 2026-07-30
+### Meta
+- **Model:** Codex
+- **Scope:** Breezy Weather temporary severe-weather At a Glance row
+
+### Changed
+- Add an opt-in `Severe Weather Alerts` setting that requests Breezy Weather's `READ_PROVIDER` permission.
+- Query Breezy's current-location provider for active alerts, retain only the highest-severity active alert, and relay its minimal headline/timing snapshot to System UI.
+- Render the alert as a monochrome one-line At a Glance row between Date/Weather and the next calendar event; remove it automatically when it expires or is disabled.
+- Derive compact media-row placement from the final notification position so Date, notification icons, media text, calendar events, and alert rows keep a continuous vertical rhythm.
+- Recover a missing media `smallIcon` once for its current notification key without reopening the adaptive launcher-icon fallback.
+- Align the media row with the notification-icon optical grid and remove its duplicate alpha layers so media text renders with the same visible weight as Date/Weather.
+
+### Success
+- Confirmed the installed Breezy Weather 6.2.1 provider exposes alert data through `withAlerts=true`; the existing Gadgetbridge payload does not include alert fields.
+- User-confirmed the large-clock calendar/event/media stack no longer overlaps or jumps back during refreshes; notification, media, and At a Glance rows now retain a consistent vertical rhythm.
+- Added unit coverage for AOD information-stack placement, Breezy alert selection, bounded missing-media-icon recovery, and the OPlus OTA icon policy.
+- Map `com.oplus.ota` notifications to the bundled AOSP system-update glyph instead of rendering the OEM adaptive-icon white block.
+
+### Deferred
+- Device visual validation requires a live Breezy Weather alert. No artificial alert will be left enabled after installation.
+- Pixel does not publicly document exact alert-card placement or TTL; this is a conservative Pixel-like module policy, not a claim of pixel-exact private behaviour.
+- The OPlus OTA mapping will be visually rechecked when the next system-update notification arrives.
+
 ## [0.1.269] - 2026-07-30
 ### Meta
 - **Model:** Codex
