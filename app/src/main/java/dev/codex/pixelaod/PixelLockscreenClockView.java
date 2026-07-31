@@ -56,6 +56,8 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static final int COMPACT_INFO_TEXT_DP = PixelAodVisualStyle.COMPACT_INFO_TEXT_DP;
     private static final int SMALL_NOTIFICATION_TOP_DP =
             PixelAodVisualStyle.NOTIFICATION_LINE_TOP_DP;
+    private static final int NOTIFICATION_ROW_LEADING_OFFSET_DP =
+            PixelAodVisualStyle.NOTIFICATION_ROW_LEADING_OFFSET_DP;
     private static final int NOTIFICATION_ICON_SIZE_DP =
             PixelAodVisualStyle.Aod.NOTIFICATION_ICON_SIZE_DP;
     private static final int NOTIFICATION_ICON_SPACING_DP =
@@ -456,6 +458,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         applyMaterialColors();
         updateTime();
         if (showingClockPluginAodNotificationIcons) {
+            applyNotificationRowPosition();
             rebuildNotificationIcons(currentNotifications(), source + "#aod-handoff");
         } else {
             rebuildNotificationIcons(Collections.emptyList(), source + "#lockscreen");
@@ -491,6 +494,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             return;
         }
         showingClockPluginAodNotificationIcons = true;
+        applyNotificationRowPosition();
         rebuildNotificationIcons(currentNotifications(), source + "#aod-handoff");
         runWeightTransition(currentClockWeight,
                 PixelAodClockView.aodClockWeight(getContext()), source + "#ls-to-aod");
@@ -1408,7 +1412,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, COMPACT_INFO_TEXT_DP);
             dateView.setVisibility(View.VISIBLE);
             dateParams.topMargin = dp(SMALL_INFO_TOP_DP);
-            notificationParams.topMargin = dp(SMALL_NOTIFICATION_TOP_DP);
+            notificationParams.topMargin = notificationRowTopPx();
         } else {
             PixelAodClockView.applySharedClockTextStyle(clockView, getContext(), currentClockWeight,
                     PixelAodClockView.scaledClockTextDp(getContext(), LARGE_CLOCK_TEXT_DP), false);
@@ -1419,7 +1423,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, LARGE_INFO_TEXT_DP);
             dateView.setVisibility(View.VISIBLE);
             dateParams.topMargin = dp(LARGE_INFO_TOP_DP);
-            notificationParams.topMargin = dp(SMALL_NOTIFICATION_TOP_DP);
+            notificationParams.topMargin = notificationRowTopPx();
         }
         clockView.setLayoutParams(clockParams);
         dateView.setLayoutParams(dateParams);
@@ -1531,6 +1535,7 @@ final class PixelLockscreenClockView extends FrameLayout {
                 + " overflow=" + displayPlan.overflowCount()
                 + " skippedMedia=" + skippedMedia
                 + " loadFailures=" + loadFailures
+                + " iconOrder=" + TextUtils.join(",", loadedIconKeys)
                 + " compact=" + compactClock
                 + " weight=" + currentClockWeight
                 + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
@@ -1538,7 +1543,30 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     private void clearClockPluginAodNotificationIcons(String source) {
         showingClockPluginAodNotificationIcons = false;
+        applyNotificationRowPosition();
         rebuildNotificationIcons(Collections.emptyList(), source);
+    }
+
+    private int notificationRowTopPx() {
+        return showingClockPluginAodNotificationIcons
+                ? PixelAodClockView.aodNotificationTopPxForHandoff(getContext(), compactClock)
+                : dp(SMALL_NOTIFICATION_TOP_DP);
+    }
+
+    private void applyNotificationRowPosition() {
+        FrameLayout.LayoutParams params =
+                (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
+        params.topMargin = notificationRowTopPx();
+        notificationIconRow.setLayoutParams(params);
+        float translationX = showingClockPluginAodNotificationIcons
+                ? -dp(NOTIFICATION_ROW_LEADING_OFFSET_DP) : 0f;
+        notificationIconRow.setTranslationX(translationX);
+        PixelAodLog.log("aligned lockscreen notification handoff row"
+                + " handoff=" + showingClockPluginAodNotificationIcons
+                + " compact=" + compactClock
+                + " topPx=" + params.topMargin
+                + " translationX=" + translationX
+                + " trace=" + PixelAodClockView.currentAodTraceId());
     }
 
     private boolean isNotificationForActiveMedia(StatusBarNotification sbn) {

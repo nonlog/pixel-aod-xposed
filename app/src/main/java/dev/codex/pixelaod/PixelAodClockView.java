@@ -697,6 +697,41 @@ public final class PixelAodClockView extends FrameLayout {
         return LARGE_NOTIFICATION_LINE_TOP_DP;
     }
 
+    /**
+     * Returns the information-stack notification position used by the persistent AOD layer.
+     * The lockscreen layer uses this only while it temporarily paints AOD handoff icons, so
+     * the two layers do not crossfade at different vertical coordinates.
+     */
+    static int aodNotificationTopPxForHandoff(Context context, boolean compact) {
+        Context resolvedContext = context != null ? context : appContext;
+        if (resolvedContext == null) {
+            return 0;
+        }
+        boolean weatherAlertVisible = currentFreshWeatherAlert(resolvedContext)
+                != BreezyWeatherAlert.empty();
+        boolean calendarVisible = !TextUtils.isEmpty(currentCalendarAtAGlanceExtra());
+        int topDp;
+        if (compact) {
+            int infoTop = SMALL_INFO_TOP_DP;
+            if (weatherAlertVisible && calendarVisible) {
+                topDp = infoTop + COMPACT_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP;
+            } else if (weatherAlertVisible || calendarVisible) {
+                topDp = infoTop + COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP;
+            } else {
+                topDp = infoTop + COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP;
+            }
+        } else {
+            int infoTop = LARGE_INFO_TOP_DP;
+            topDp = LARGE_NOTIFICATION_LINE_TOP_DP;
+            if (weatherAlertVisible && calendarVisible) {
+                topDp = infoTop + CALENDAR_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP;
+            } else if (weatherAlertVisible || calendarVisible) {
+                topDp = infoTop + CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP;
+            }
+        }
+        return dp(resolvedContext, topDp);
+    }
+
     static void setActiveNotifications(StatusBarNotification[] notifications) {
         setActiveNotifications(notifications, "setActiveNotifications");
     }
@@ -4635,6 +4670,7 @@ public final class PixelAodClockView extends FrameLayout {
                 + " overflow=" + displayPlan.overflowCount()
                 + " skippedMedia=" + skippedMedia
                 + " loadFailures=" + loadFailures
+                + " iconOrder=" + TextUtils.join(",", loadedIconKeys)
                 + " packages=" + AodNotificationPipeline.describePackages(notifications)
                 + " state={" + describeAodState(getContext()) + "}");
     }
@@ -6683,6 +6719,16 @@ public final class PixelAodClockView extends FrameLayout {
         calendarRow.setLayoutParams(calendarParams);
         notificationIconRow.setLayoutParams(notificationParams);
         mediaRow.setLayoutParams(mediaParams);
+        PixelAodLog.log("committed AOD info stack layout"
+                + " compact=" + compactClock
+                + " weatherAlert=" + weatherAlertVisible
+                + " calendar=" + calendarVisible
+                + " notificationVisible="
+                + (notificationIconRow.getVisibility() == View.VISIBLE)
+                + " notificationTopPx=" + notificationParams.topMargin
+                + " mediaTopPx=" + mediaParams.topMargin
+                + " notificationAlpha=" + notificationIconRow.getAlpha()
+                + " trace=" + currentAodTraceId());
     }
 
     private void updateCalendarRowStyle(int textSizeDp) {

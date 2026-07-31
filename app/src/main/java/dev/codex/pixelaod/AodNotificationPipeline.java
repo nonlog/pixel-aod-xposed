@@ -546,19 +546,23 @@ final class AodNotificationPipeline {
         if (notifications == null || notifications.length == 0) {
             return "";
         }
-        ArrayList<String> entries = new ArrayList<>();
+        // The icon row is rendered in snapshot order. Keeping this signature ordered makes
+        // an order-only change refresh both the AOD layer and the lockscreen handoff together.
+        StringBuilder builder = new StringBuilder();
         for (StatusBarNotification sbn : notifications) {
             if (sbn == null) {
                 continue;
             }
             Notification notification = sbn.getNotification();
-            entries.add(sbn.getKey()
-                    + '@' + sbn.getPostTime()
-                    + ':' + (notification != null ? notification.visibility : 0)
-                    + ':' + (notification != null ? notification.flags : 0));
+            if (builder.length() > 0) {
+                builder.append('|');
+            }
+            builder.append(sbn.getKey())
+                    .append('@').append(sbn.getPostTime())
+                    .append(':').append(notification != null ? notification.visibility : 0)
+                    .append(':').append(notification != null ? notification.flags : 0);
         }
-        Collections.sort(entries);
-        return TextUtils.join("|", entries);
+        return builder.toString();
     }
 
     static String mediaCandidatesSignature(Iterable<StatusBarNotification> notifications) {

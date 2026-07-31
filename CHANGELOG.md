@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.1.276] - 2026-07-31
+### Meta
+- **Model:** Codex
+- **Scope:** Align notification row horizontal handoff offset
+
+### Fixed
+- Apply the AOD notification row's `-2dp` leading offset to the lockscreen handoff row only.
+- Reset the offset when returning to the normal lockscreen row.
+- Log the handoff row `translationX` for future diagnosis.
+
+### Success
+- Code and unit tests passed; the change is limited to notification row horizontal alignment.
+
+### Deferred
+- Device visual confirmation of the remaining screen-off icon movement is pending user testing.
+
+## [0.1.275] - 2026-07-31
+### Meta
+- **Model:** Codex
+- **Scope:** Keep AOD and lockscreen notification icon order consistent during handoff
+
+### Fixed
+- Make notification snapshot signatures preserve input order, so order-only changes rebuild both layers together.
+- Add final emitted icon-order diagnostics to AOD and lockscreen handoff rebuild logs.
+
+### Success
+- Static review identified the mismatch: the previous sorted signature let AOD keep the old order while the lockscreen handoff rendered the new order.
+- The change is limited to notification snapshot invalidation and diagnostics; Doze, black-frame, clock weight, media, and fingerprint paths were not changed.
+
+### Deferred
+- Device visual confirmation of repeated screen-off transitions remains pending user testing.
+
+## [0.1.274] - 2026-07-31
+### Meta
+- **Model:** Codex
+- **Scope:** Align notification icons during lockscreen-to-AOD handoff
+
+### Fixed
+- Use the AOD information-stack notification coordinate while the lockscreen layer temporarily renders AOD handoff icons.
+- Remove the ineffective notification-row alpha/initial-visibility workaround from `0.1.273`.
+
+### Success
+- LSPosed logs confirmed the previous mismatch: lockscreen `198dp` versus compact AOD `188dp`.
+- Doze, black-frame, clock weight, media, and fingerprint paths were not changed.
+
+### Deferred
+- Final visual confirmation of repeated screen-off transitions remains pending.
+
+## [0.1.273] - 2026-07-31
+### Meta
+- **Model:** Codex
+- **Scope:** Prevent AOD notification icons from visibly jumping during layout handoff
+
+### Fixed
+- Keep the AOD notification row hidden until its first complete icon and information-stack layout pass.
+- Suppress only the notification row while committing a new AOD stack position, so an old `topMargin` is not drawn before the final position.
+- Add diagnostic logging for the committed notification and media row positions.
+
+### Success
+- `:app:testDebugUnitTest` passed with 24 actionable tasks.
+- Doze, lockscreen/AOD handoff, black-frame, weight animation, media policy, and fingerprint code paths were not changed.
+
+### Deferred
+- Device visual confirmation of the screen-off notification-position jump is pending user testing.
+
 ## [0.1.272] - 2026-07-31
 ### Meta
 - **Model:** Codex
