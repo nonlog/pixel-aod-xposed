@@ -202,25 +202,13 @@ private fun android.content.SharedPreferences.schemaFloat(key: String, fallback:
     return getFloat(key, PixelAodSettings.defaultFloat(key, fallback))
 }
 
-/** COUI-like soft page wash from wallpaper-driven scheme (not a fixed teal). */
-private fun couiPageBackground(scheme: androidx.compose.material3.ColorScheme, dark: Boolean): Color {
-    return if (dark) {
-        scheme.surfaceContainerLowest
-    } else {
-        // Slight cool wash using surface + primary tint so accent still comes from wallpaper.
-        val base = scheme.surface
-        val accent = scheme.primaryContainer
-        Color(
-            red = base.red * 0.82f + accent.red * 0.18f,
-            green = base.green * 0.82f + accent.green * 0.18f,
-            blue = base.blue * 0.82f + accent.blue * 0.18f,
-            alpha = 1f
-        )
-    }
+/** Use the same unmodified Material 3 system surfaces as COUI. */
+private fun couiPageBackground(scheme: androidx.compose.material3.ColorScheme): Color {
+    return scheme.background
 }
 
-private fun couiCardColor(scheme: androidx.compose.material3.ColorScheme, dark: Boolean): Color {
-    return if (dark) scheme.surfaceContainerHigh else scheme.surface
+private fun couiCardColor(scheme: androidx.compose.material3.ColorScheme): Color {
+    return scheme.surfaceContainerLow
 }
 
 @Composable
@@ -234,8 +222,8 @@ private fun PixelAodSettingsScreen(onLanguageChanged: () -> Unit) {
         dark -> darkColorScheme()
         else -> lightColorScheme()
     }
-    val pageBg = couiPageBackground(colors, dark)
-    val cardBg = couiCardColor(colors, dark)
+    val pageBg = couiPageBackground(colors)
+    val cardBg = couiCardColor(colors)
 
     MaterialTheme(colorScheme = colors) {
         Box(
@@ -272,13 +260,13 @@ private fun PixelAodSettingsScreen(onLanguageChanged: () -> Unit) {
                         .padding(horizontal = 20.dp)
                         .padding(bottom = 28.dp)
                 ) {
-                    // Large expressive page title (COUI Expressive).
+                    // Keep the page title compact so the main switch and first settings group stay visible.
                     Text(
                         text = stringResource(R.string.app_name),
                         style = MaterialTheme.typography.displaySmall.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 36.sp,
-                            lineHeight = 42.sp
+                            fontSize = 30.sp,
+                            lineHeight = 36.sp
                         ),
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 6.dp)
@@ -287,7 +275,7 @@ private fun PixelAodSettingsScreen(onLanguageChanged: () -> Unit) {
                         text = stringResource(R.string.module_description),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 22.dp)
+                        modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 16.dp)
                     )
 
                     SettingsContent(
@@ -429,26 +417,54 @@ private fun SettingsContent(
     var showCalendarIconAppDialog by remember { mutableStateOf(false) }
     var showDisplayModeDialog by remember { mutableStateOf(false) }
 
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(22.dp)) {
-        CouiSection(stringResource(R.string.section_appearance)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        CouiMainToggleCard(
+            cardColor = cardColor,
+            checked = moduleEnabled.value
+        ) {
+            moduleEnabled.value = it
+            updateModuleBooleanSetting(context, PixelAodSettings.KEY_MODULE_ENABLED, it)
+        }
+
+        CouiSection(stringResource(R.string.section_aod_behavior)) {
             CouiGroupCard(cardColor) {
-                CouiToggleRow(
-                    icon = Icons.Outlined.Bolt,
-                    title = stringResource(R.string.title_module_enabled),
-                    subtitle = stringResource(R.string.desc_module_enabled),
-                    checked = moduleEnabled.value,
-                    showDivider = true
-                ) {
-                    moduleEnabled.value = it
-                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_MODULE_ENABLED, it)
-                }
                 CouiChoiceRow(
-                    icon = Icons.Outlined.Language,
-                    title = stringResource(R.string.title_language),
-                    valueText = languageLabel(language.value),
-                    showDivider = false
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_aod_behavior),
+                    valueText = aodDisplayModeLabel(aodDisplayMode.value),
+                    showDivider = aodDisplayMode.value == PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS
                 ) {
-                    showLanguageDialog = true
+                    showDisplayModeDialog = true
+                }
+                if (aodDisplayMode.value == PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS) {
+                    CouiToggleRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_continuous_schedule),
+                        subtitle = stringResource(R.string.desc_continuous_schedule),
+                        checked = aodScheduleEnabled.value,
+                        showDivider = aodScheduleEnabled.value
+                    ) {
+                        aodScheduleEnabled.value = it
+                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, it)
+                    }
+                    if (aodScheduleEnabled.value) {
+                        CouiChoiceRow(
+                            icon = Icons.Outlined.Schedule,
+                            title = stringResource(R.string.title_schedule_start_time),
+                            valueText = aodScheduleStartTime.value,
+                            showDivider = true
+                        ) {
+                            showClockDialPicker(true, aodScheduleStartTime.value)
+                        }
+                        CouiChoiceRow(
+                            icon = Icons.Outlined.Schedule,
+                            title = stringResource(R.string.title_schedule_end_time),
+                            valueText = aodScheduleEndTime.value,
+                            showDivider = false
+                        ) {
+                            showClockDialPicker(false, aodScheduleEndTime.value)
+                        }
+                    }
                 }
             }
         }
@@ -490,46 +506,8 @@ private fun SettingsContent(
             }
         }
 
-        CouiSection(stringResource(R.string.section_behavior)) {
+        CouiSection(stringResource(R.string.section_at_a_glance)) {
             CouiGroupCard(cardColor) {
-                CouiChoiceRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_aod_behavior),
-                    valueText = aodDisplayModeLabel(aodDisplayMode.value),
-                    showDivider = true
-                ) {
-                    showDisplayModeDialog = true
-                }
-                if (aodDisplayMode.value == PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS) {
-                    CouiToggleRow(
-                        icon = Icons.Outlined.Schedule,
-                        title = stringResource(R.string.title_continuous_schedule),
-                        subtitle = stringResource(R.string.desc_continuous_schedule),
-                        checked = aodScheduleEnabled.value,
-                        showDivider = true
-                    ) {
-                        aodScheduleEnabled.value = it
-                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, it)
-                    }
-                    if (aodScheduleEnabled.value) {
-                        CouiChoiceRow(
-                            icon = Icons.Outlined.Schedule,
-                            title = stringResource(R.string.title_schedule_start_time),
-                            valueText = aodScheduleStartTime.value,
-                            showDivider = true
-                        ) {
-                            showClockDialPicker(true, aodScheduleStartTime.value)
-                        }
-                        CouiChoiceRow(
-                            icon = Icons.Outlined.Schedule,
-                            title = stringResource(R.string.title_schedule_end_time),
-                            valueText = aodScheduleEndTime.value,
-                            showDivider = true
-                        ) {
-                            showClockDialPicker(false, aodScheduleEndTime.value)
-                        }
-                    }
-                }
                 CouiToggleRow(
                     icon = Icons.Outlined.Cloud,
                     title = stringResource(R.string.title_weather),
@@ -587,7 +565,7 @@ private fun SettingsContent(
                     title = stringResource(R.string.title_calendar_events),
                     subtitle = stringResource(R.string.desc_calendar_events),
                     checked = calendarEvents.value,
-                    showDivider = true
+                    showDivider = calendarEvents.value
                 ) { enabled ->
                     if (!enabled) {
                         calendarEvents.value = false
@@ -619,11 +597,16 @@ private fun SettingsContent(
                         icon = Icons.Outlined.Schedule,
                         title = stringResource(R.string.title_calendar_icon_app),
                         valueText = currentCalendarIconLabel,
-                        showDivider = true
+                        showDivider = false
                     ) {
                         showCalendarIconAppDialog = true
                     }
                 }
+            }
+        }
+
+        CouiSection(stringResource(R.string.section_lockscreen)) {
+            CouiGroupCard(cardColor) {
                 CouiToggleRow(
                     icon = Icons.Outlined.Policy,
                     title = stringResource(R.string.title_lockscreen_policy),
@@ -637,17 +620,25 @@ private fun SettingsContent(
             }
         }
 
-        CouiSection(stringResource(R.string.section_advanced)) {
+        CouiSection(stringResource(R.string.section_system)) {
             CouiGroupCard(cardColor) {
                 CouiToggleRow(
                     icon = Icons.Outlined.BugReport,
                     title = stringResource(R.string.title_debug_logging),
                     subtitle = stringResource(R.string.desc_debug_logging),
                     checked = debugLogging.value,
-                    showDivider = false
+                    showDivider = true
                 ) {
                     debugLogging.value = it
                     updateModuleBooleanSetting(context, PixelAodSettings.KEY_DEBUG_LOGGING, it)
+                }
+                CouiChoiceRow(
+                    icon = Icons.Outlined.Language,
+                    title = stringResource(R.string.title_language),
+                    valueText = languageLabel(language.value),
+                    showDivider = false
+                ) {
+                    showLanguageDialog = true
                 }
             }
         }
@@ -1069,6 +1060,73 @@ private fun CouiGroupCard(cardColor: Color, content: @Composable ColumnScope.() 
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(content = content)
+    }
+}
+
+@Composable
+private fun CouiMainToggleCard(
+    cardColor: Color,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(26.dp),
+        color = cardColor,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onCheckedChange(!checked) }
+                .padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Bolt,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.title_module_enabled),
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = stringResource(R.string.desc_module_enabled),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(
+                checked = checked,
+                onCheckedChange = null,
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                    checkedBorderColor = Color.Transparent,
+                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                    uncheckedBorderColor = Color.Transparent
+                )
+            )
+        }
     }
 }
 

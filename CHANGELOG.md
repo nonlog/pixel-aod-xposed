@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.1.272] - 2026-07-31
+### Meta
+- **Model:** Codex
+- **Scope:** Match COUI system dynamic color surfaces
+
+### Fixed
+- Remove the custom light-mode background blend that introduced an extra cyan tint.
+- Use the unmodified Material 3 system `background` and `surfaceContainerLow` colors for the page and cards, matching COUI's dynamic color source.
+
+### Success
+- Settings UI remains behavior-only unchanged; no AOD, Doze, lockscreen, or fingerprint code was modified.
+
+### Deferred
+- Device visual comparison with COUI remains pending after installation.
+
+## [0.1.271] - 2026-07-31
+### Meta
+- **Model:** Codex
+- **Scope:** COUI-like module settings UI hierarchy
+
+### Changed
+- Move the module master switch into a dedicated, prominent card below the page header.
+- Split settings into AOD Behavior, Clock Style, At a Glance, Lockscreen, and System & Diagnostics groups.
+- Move schedule controls under AOD Behavior, calendar/weather controls under At a Glance, and language/debug controls under System & Diagnostics.
+- Reduce the oversized page title so the primary control and first settings group remain visible sooner.
+- Keep all existing preference keys, permissions, dialogs, and AOD runtime behavior unchanged.
+
+### Success
+- Settings UI source and localized section labels updated without changing AOD/Doze/lockscreen code paths.
+
+### Deferred
+- Device visual validation of the new settings page is pending user confirmation.
+
 ## [0.1.270] - 2026-07-30
 ### Meta
 - **Model:** Codex

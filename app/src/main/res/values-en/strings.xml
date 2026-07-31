@@ -41,6 +41,10 @@
     <string name="section_appearance">Appearance</string>
     <string name="section_clock">Clock Style</string>
     <string name="section_behavior">Behavior</string>
+    <string name="section_aod_behavior">AOD Behavior</string>
+    <string name="section_at_a_glance">At a Glance</string>
+    <string name="section_lockscreen">Lockscreen</string>
+    <string name="section_system">System &amp; Diagnostics</string>
     <string name="section_advanced">Advanced</string>
     <string name="title_language">Language</string>
     <string name="language_system">Follow system</string>
