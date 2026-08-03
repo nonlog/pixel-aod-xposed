@@ -8,7 +8,7 @@ import android.util.DisplayMetrics;
 import java.util.Locale;
 
 final class PixelAodVisualStyle {
-    private static final String PROFILE_REVISION = "6.4";
+    private static final String PROFILE_REVISION = "6.5";
 
     static final int CLOCK_COLOR_RED = 232;
     static final int CLOCK_COLOR_GREEN = 234;
@@ -31,6 +31,16 @@ final class PixelAodVisualStyle {
     static final int SMALL_CLOCK_TOP_DP = 74;
     static final int EDGE_DP = 34;
     static final int COMPACT_CLOCK_VISUAL_START_OFFSET_DP = 7;
+    static final float COUI_COMPACT_CLOCK_CENTER_X_FRACTION = 0.25f;
+    static final int COUI_COMPACT_CLOCK_CENTER_X_OFFSET_DP = 10;
+    static final float COUI_COMPACT_CLOCK_TOP_FRACTION = 0.105f;
+    static final int COUI_COMPACT_CLOCK_TOP_OFFSET_DP = 25;
+    static final float COUI_COMPACT_INFO_CENTER_X_FRACTION = 0.75f;
+    static final int COUI_COMPACT_INFO_CENTER_X_OFFSET_DP = -34;
+    static final float COUI_COMPACT_INFO_TOP_FRACTION = 0.118f;
+    static final int COUI_COMPACT_INFO_TOP_OFFSET_DP = 33;
+    static final int COUI_COMPACT_MEDIA_EDGE_DP = 32;
+    static final float COUI_COMPACT_MEDIA_TOP_FRACTION = 0.255f;
     static final int LARGE_INFO_TOP_DP = 100;
     static final int SMALL_INFO_TOP_DP = 150;
     static final int NOTIFICATION_LINE_TOP_DP = 198;
@@ -81,6 +91,11 @@ final class PixelAodVisualStyle {
                 + ",smallTop=" + SMALL_CLOCK_TOP_DP
                 + ",edge=" + EDGE_DP
                 + ",compactOffset=" + COMPACT_CLOCK_VISUAL_START_OFFSET_DP
+                + ",couiCompactClock=" + COUI_COMPACT_CLOCK_CENTER_X_FRACTION
+                + "/" + COUI_COMPACT_CLOCK_TOP_FRACTION
+                + ",couiCompactInfo=" + COUI_COMPACT_INFO_CENTER_X_FRACTION
+                + "/" + COUI_COMPACT_INFO_TOP_FRACTION
+                + ",couiCompactMedia=" + COUI_COMPACT_MEDIA_TOP_FRACTION
                 + ",largeInfoTop=" + LARGE_INFO_TOP_DP
                 + ",smallInfoTop=" + SMALL_INFO_TOP_DP
                 + ",notificationTop=" + NOTIFICATION_LINE_TOP_DP

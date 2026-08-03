@@ -251,6 +251,15 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     @Override
+    protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight);
+        updateCompactClockAndDateAnchors();
+        if (showingClockPluginAodNotificationIcons) {
+            applyNotificationRowPosition();
+        }
+    }
+
+    @Override
     protected void onDetachedFromWindow() {
         resetTransitionState();
         stop();
@@ -731,8 +740,13 @@ final class PixelLockscreenClockView extends FrameLayout {
             snap.height = textPx * 1.15f;
             snap.pivotX = snap.width / 2f;
             snap.pivotY = snap.height / 2f;
-            snap.centerX = dp(EDGE_DP - COMPACT_CLOCK_VISUAL_START_OFFSET_DP) + snap.pivotX;
-            snap.centerY = dp(SMALL_CLOCK_TOP_DP) + snap.pivotY;
+            float parentH = getHeight() > 0
+                    ? getHeight()
+                    : getResources().getDisplayMetrics().heightPixels;
+            snap.centerX = CouiCompactLayout.clockCenterX(Math.round(parentW),
+                    getResources().getDisplayMetrics().density);
+            snap.centerY = CouiCompactLayout.clockTop(Math.round(parentH),
+                    getResources().getDisplayMetrics().density) + snap.pivotY;
             snap.textSize = textPx;
         } else {
             float textPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP,
@@ -1393,6 +1407,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         dateView.setText(model.dateText);
         PixelAodClockView.applyWeatherIcon(dateView,
                 model.weather, resolveMaterialInfoColor(getContext()));
+        updateCompactClockAndDateAnchors();
     }
 
     private void applyClockMode(boolean compact) {
@@ -1407,11 +1422,13 @@ final class PixelLockscreenClockView extends FrameLayout {
                     PixelAodClockView.scaledClockTextDp(getContext(), SMALL_CLOCK_TEXT_DP), true);
             clockParams.width = ViewGroup.LayoutParams.WRAP_CONTENT;
             clockParams.gravity = Gravity.TOP | Gravity.START;
-            clockParams.leftMargin = dp(EDGE_DP - COMPACT_CLOCK_VISUAL_START_OFFSET_DP);
-            clockParams.topMargin = dp(SMALL_CLOCK_TOP_DP);
+            CouiCompactLayout.Anchors anchors = compactAnchors();
+            clockParams.leftMargin = anchors.clockLeftPx;
+            clockParams.topMargin = anchors.clockTopPx;
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, COMPACT_INFO_TEXT_DP);
             dateView.setVisibility(View.VISIBLE);
-            dateParams.topMargin = dp(SMALL_INFO_TOP_DP);
+            dateParams.leftMargin = anchors.infoLeftPx;
+            dateParams.topMargin = anchors.infoTopPx;
             notificationParams.topMargin = notificationRowTopPx();
         } else {
             PixelAodClockView.applySharedClockTextStyle(clockView, getContext(), currentClockWeight,
@@ -1422,6 +1439,7 @@ final class PixelLockscreenClockView extends FrameLayout {
             clockParams.topMargin = dp(LARGE_CLOCK_TOP_DP);
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, LARGE_INFO_TEXT_DP);
             dateView.setVisibility(View.VISIBLE);
+            dateParams.leftMargin = dp(EDGE_DP);
             dateParams.topMargin = dp(LARGE_INFO_TOP_DP);
             notificationParams.topMargin = notificationRowTopPx();
         }
@@ -1446,6 +1464,36 @@ final class PixelLockscreenClockView extends FrameLayout {
                     + " typeface=builder"
                     + " trace=" + PixelAodClockView.currentAodTraceId());
         }
+    }
+
+    private void updateCompactClockAndDateAnchors() {
+        if (!compactClock || clockView == null || dateView == null) {
+            return;
+        }
+        FrameLayout.LayoutParams clockParams = (FrameLayout.LayoutParams) clockView.getLayoutParams();
+        CouiCompactLayout.Anchors anchors = compactAnchors();
+        int clockLeft = anchors.clockLeftPx;
+        int clockTop = anchors.clockTopPx;
+        if (clockParams.leftMargin != clockLeft || clockParams.topMargin != clockTop) {
+            clockParams.leftMargin = clockLeft;
+            clockParams.topMargin = clockTop;
+            clockView.setLayoutParams(clockParams);
+        }
+        FrameLayout.LayoutParams dateParams = (FrameLayout.LayoutParams) dateView.getLayoutParams();
+        int dateLeft = anchors.infoLeftPx;
+        int dateTop = anchors.infoTopPx;
+        if (dateParams.leftMargin != dateLeft || dateParams.topMargin != dateTop) {
+            dateParams.leftMargin = dateLeft;
+            dateParams.topMargin = dateTop;
+            dateView.setLayoutParams(dateParams);
+        }
+    }
+
+    private CouiCompactLayout.Anchors compactAnchors() {
+        return CouiCompactLayout.anchors(getWidth(), getHeight(),
+                PixelAodClockView.estimatedTextContentWidthPx(clockView),
+                PixelAodClockView.estimatedTextContentWidthPx(dateView),
+                getResources().getDisplayMetrics().density);
     }
 
     private void rebuildNotificationIcons(List<StatusBarNotification> notifications) {
@@ -1549,7 +1597,8 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     private int notificationRowTopPx() {
         return showingClockPluginAodNotificationIcons
-                ? PixelAodClockView.aodNotificationTopPxForHandoff(getContext(), compactClock)
+                ? PixelAodClockView.aodNotificationTopPxForHandoff(getContext(), compactClock,
+                getHeight())
                 : dp(SMALL_NOTIFICATION_TOP_DP);
     }
 

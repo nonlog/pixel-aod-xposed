@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.279] - 2026-08-03
+### Changed
+- Align the compact clock scene with the measured COUI Expressive anchors on OnePlus 12:
+  clock centre at `25%` width plus `10dp`, date/weather centre at `75%` width minus `34dp`,
+  and media at `32dp` from the leading edge and `25.5%` of the display height.
+- Use the same compact clock and date geometry in the lockscreen layer, and calculate the
+  handoff notification coordinate from the same date anchor, preserving the OOS 16.0.9
+  lockscreen-to-AOD alignment fix.
+- Keep media fixed at the COUI target; when media is visible, place notification icons below it
+  and move an overlapping Calendar row below the media line.
+
+### Verification
+- Added deterministic OnePlus 12 canvas coverage for the COUI compact anchors.
+- `:app:testDebugUnitTest` and `:app:assembleDebug` passed before the version bump.
+
 ## [0.1.278] - 2026-08-03
 ### Fixed
 - On OOS 16.0.9 and later 16.0.x builds, leave ClockPlugin burn-in translation to SystemUI.
