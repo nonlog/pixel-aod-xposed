@@ -6386,6 +6386,12 @@ public final class PixelAodClockView extends FrameLayout {
             rememberBurnInTranslation(0f, 0f);
             return;
         }
+        if (OosAodHandoffProfile.usesSystemManagedBurnIn(android.os.Build.DISPLAY)) {
+            setTranslationX(0f);
+            setTranslationY(0f);
+            rememberBurnInTranslation(0f, 0f);
+            return;
+        }
         if (isWithinBurnInSettleWindow(now)) {
             setTranslationX(0f);
             setTranslationY(0f);
@@ -7307,8 +7313,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static String sharedClockFontVariationSettings(int weight) {
-        return "'opsz' 144, 'wght' " + normalizeClockWeight(weight)
-                + ", 'GRAD' 0, 'ROND' 0, 'wdth' 100";
+        return ClockTypefaceResolutionPolicy.sharedClockVariationSettings(weight);
     }
 
     private static int normalizeClockWeight(int weight) {

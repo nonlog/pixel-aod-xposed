@@ -23,4 +23,10 @@ final class ClockTypefaceResolutionPolicy {
             boolean handoffBoundary) {
         return handoffBoundary || currentWeight != requestedWeight;
     }
+
+    static String sharedClockVariationSettings(int weight) {
+        int normalizedWeight = Math.max(100, Math.min(500, weight));
+        return "'opsz' 144, 'wght' " + normalizedWeight
+                + ", 'GRAD' 0, 'ROND' 100, 'wdth' 100";
+    }
 }

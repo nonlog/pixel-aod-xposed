@@ -346,7 +346,12 @@ final class PixelClockPluginHostView extends FrameLayout {
         // Unlock → launcher/app → screen-off latches false → stable AOD weight, no morph.
         boolean lockscreenToAodWeight = PixelAodClockView.shouldAnimateLockscreenToAodWeight();
         boolean fromLockscreen = hostOnLockscreen && lockscreenToAodWeight;
-        boolean crossfadeFromLockscreen = enteringAod && fromLockscreen;
+        // OOS 16.0.9 moves the ClockPlugin root as Doze commits. Blending the independent
+        // lockscreen and AOD layouts therefore exposes a clock/date coordinate jump. Prepare
+        // and show the AOD layer directly; the existing AOD weight animator remains intact.
+        boolean crossfadeFromLockscreen = enteringAod && fromLockscreen
+                && !OosAodHandoffProfile.usesStableSingleLayerAodHandoff(
+                        android.os.Build.DISPLAY);
         if (crossfadeFromLockscreen && !preparingAodWeight) {
             armHandoffDiagnostics(source + "#aod-scene");
         }

@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.1.278] - 2026-08-03
+### Fixed
+- On OOS 16.0.9 and later 16.0.x builds, leave ClockPlugin burn-in translation to SystemUI.
+  The module's AOD layer now remains at the same coordinates as its lockscreen layer, avoiding
+  the stale `(+x,+y)` module offset that caused visible jumps in both directions.
+- Keep the OOS 16.0.9 direct single-layer AOD handoff and the rounded Google Sans Flex axis.
+
+### Verification
+- Added coverage for the OOS-specific burn-in ownership policy.
+- Device logs on CPH2573_16.0.9.400 identified the old AOD offset as `(+4,+14 px)` while the
+  lockscreen layer remained at `(0,0)`.
+
+## [0.1.277] - 2026-08-03
+### Meta
+- **Model:** Codex
+- **Scope:** OOS 16.0.9 lockscreen-to-AOD coordinate handoff and Google Sans Flex rounding
+
+### Fixed
+- On OOS 16.0.9 and later 16.0.x builds, commit the prepared AOD layer directly instead of
+  crossfading independent lockscreen and AOD coordinate systems. The AOD weight transition is
+  retained, while the clock and date no longer visibly travel between the two layouts.
+- Match COUI Expressive's Google Sans Flex rounded terminal axis with `'ROND' 100`.
+
+### Verification
+- Added regression coverage for the OOS 16.0.9 build profile and the rounded font variation.
+- `:app:testDebugUnitTest` and `:app:assembleDebug` passed.
+- Device visual confirmation remains required because this ROM rejects ADB screen recording.
+
 ## [0.1.276] - 2026-07-31
 ### Meta
 - **Model:** Codex
