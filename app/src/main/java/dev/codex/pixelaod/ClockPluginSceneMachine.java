@@ -69,6 +69,22 @@ final class ClockPluginSceneMachine {
 
     private Scene committedScene = Scene.HIDDEN;
 
+    /**
+     * Commits the final AOD scene before OPlus publishes its delayed ClockPlugin AOD uiState.
+     * This is used only for a non-lockscreen screen-off whose module policy already allows the
+     * continuous AOD; the later vendor render then resolves to the same committed scene.
+     */
+    Decision prepareAod(boolean compactAod) {
+        Scene requested = compactAod ? Scene.AOD_SMALL : Scene.AOD_LARGE;
+        Scene previous = committedScene;
+        committedScene = requested;
+        boolean changed = previous != requested;
+        return new Decision(requested, previous, changed,
+                changed && previous.isLockscreen(),
+                false,
+                false);
+    }
+
     Decision resolve(Integer uiState, Integer clockSizeState, boolean uiStateAnimating,
             boolean moduleAodAllowed, boolean preserveAodWhileLifecycleSettles,
             boolean compactAod, boolean interactive, boolean keyguardShowing) {

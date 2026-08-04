@@ -1,24 +1,15 @@
 package dev.codex.pixelaod;
 
 final class PassiveFodShowGate {
-    private static final long AOD_ENTRY_GRACE_MILLIS = 4_000L;
-    private static final long PROXIMITY_FAR_CAUSE_WINDOW_MILLIS = 1_500L;
-    private static final long EXPLICIT_WAKE_ALLOW_WINDOW_MILLIS = 1_500L;
-
     private PassiveFodShowGate() {
     }
 
     static boolean shouldSuppress(long traceAgeMillis, long proximityFarAgeMillis,
             long explicitWakeAgeMillis) {
-        if (traceAgeMillis < AOD_ENTRY_GRACE_MILLIS) {
-            return false;
-        }
-        if (proximityFarAgeMillis < 0L
-                || proximityFarAgeMillis > PROXIMITY_FAR_CAUSE_WINDOW_MILLIS) {
-            return false;
-        }
-        return explicitWakeAgeMillis < 0L
-                || explicitWakeAgeMillis > EXPLICIT_WAKE_ALLOW_WINDOW_MILLIS;
+        // On OOS 16.0.9 a proximity-near -> proximity-far transition reuses this callback
+        // to restore the optical FOD session. Suppressing it leaves authentication active
+        // but removes both the FOD icon and the optical sensing path.
+        return false;
     }
 
     static boolean isFodShowInvocation(String methodName, Object[] args) {

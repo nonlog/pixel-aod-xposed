@@ -1,5 +1,185 @@
 # Changelog
 
+## [0.1.289] - 2026-08-04
+### Meta
+- **Model:** Codex
+- **Scope:** Deduplicate the COUI-style native ClockPlugin draw interceptor
+
+### Fixed
+- Install `MyCustomizedFrameLayout#dispatchDraw` suppression once per actual container class and
+  class loader. Reflection returns distinct `Method` objects on repeated lookup, so method-object
+  identity cannot safely guard this per-frame hook.
+
+### Success
+- The 0.1.288 startup trace proved the intended OPlus targets are correct: both `ClockTimeView`
+  and `DateMessageView` resolve to `MyCustomizedFrameLayout` parents and receive bindings.
+- `:app:testDebugUnitTest` and `:app:assembleDebug` pass with class-level hook deduplication.
+
+### Deferred/Failed
+- Device runtime must show one hook installation and both visual bindings after the 0.1.289
+  SystemUI restart. User visual confirmation of stock-AOD suppression and `+x` remains pending.
+
+## [0.1.288] - 2026-08-04
+### Meta
+- **Model:** Codex
+- **Scope:** COUI-style native ClockPlugin draw suppression and notification overflow styling
+
+### Fixed
+- Match COUI's persistent-host replacement at the actual drawing boundary: bind OPlus time/date
+  visual containers obtained from `ClockPlugin#getView(1/11)` and intercept
+  `MyCustomizedFrameLayout#dispatchDraw` while the Pixel host owns the scene. Vendor alpha or
+  visibility resets can no longer expose a native clock frame between lifecycle callbacks.
+- Keep the draw interceptor policy-aware. It releases native rendering when the Pixel scene is
+  hidden and removes bindings when the ClockPlugin host is unloaded.
+- Let the AOD notification row and `+x` overflow text measure their real font height instead of
+  clipping the text into the former 14 dp icon-height box.
+- Use the exact same resolved AOD accent for notification icons and `+x`; date/weather remain
+  neutral white as requested.
+- Extend the lock-to-AOD analyzer to pair screen-off pre-presentation events and require runtime
+  evidence that native draw suppression was both installed and bound.
+
+### Success
+- The 17:20-17:23 failure trace proves Pixel pre-presentation was already fast (13/13 events at
+  1-10 ms) while the new draw-suppression invariant was absent (`hooks=0`, `bindings=0`).
+- `:app:testDebugUnitTest` passes after the host-controller and overflow-layout changes.
+
+### Deferred/Failed
+- **Failed intermediate build:** device startup logs showed the draw hook being installed more
+  than once because the first guard used reflection `Method` identity. This was caught before
+  handoff and corrected in 0.1.289 to avoid per-frame interceptor overhead.
+- Device visual confirmation is pending after installation. Build/tests and hook-binding logs do
+  not by themselves prove that the stock-AOD flash or subjective lock delay is fixed.
+- The existing remembered-`AodRootLayout` suppression remains only as a fallback; the persistent
+  ClockPlugin draw interceptor is now the primary replacement path.
+
+## [0.1.287] - 2026-08-04
+### Meta
+- **Model:** Codex
+- **Scope:** OOS 16.0.9 desktop/application screen-off stock-AOD flash and delayed Pixel AOD presentation
+
+### Fixed
+- At `WakefulnessLifecycle#dispatchStartedGoingToSleep`, immediately suppress the remembered
+  native AOD host for a non-lockscreen screen-off, before Dream can expose the stock clock.
+- Pre-present the final compact/large Pixel AOD scene from the persistent ClockPlugin host at the
+  same screen-off boundary. The module no longer waits for OPlus to publish its delayed
+  `ClockPlugin uiState=AOD`; that later callback resolves to the already committed scene.
+- Keep the existing interactive-lockscreen handoff unchanged, including its clock-weight
+  transition and OOS 16.0.9 stable single-layer behavior.
+
+### Success
+- The user-reproduced 17:02-17:03 logs produced 9/9 analyzer failures before this change:
+  average `startToAnimInDream -> presentAod` latency was 601 ms and P95 was 682 ms. This is the
+  red baseline for the exact desktop double-tap-lock symptom.
+- Scene-machine regression tests cover both a hidden desktop host and OPlus' stale lockscreen
+  scene, and confirm that the later vendor AOD callback does not re-commit the scene.
+
+### Deferred/Failed
+- **Failed:** user testing at 17:20-17:23 still showed the stock AOD from desktop screen-off.
+  Pixel pre-presentation completed in 1-10 ms, but the module had no reliable binding to the
+  native ClockPlugin drawing container; remembered `AodRootLayout` instances were absent or empty.
+- Notification/provider refresh volume remains a separately measured performance concern; it is
+  intentionally not changed in this version so the pre-presentation behavior can be isolated.
+
+## [0.1.286] - 2026-08-04
+### Meta
+- **Model:** Codex
+- **Scope:** OOS 16.0.9 non-lockscreen AOD handoff latency and stock-AOD flash
+
+### Fixed
+- Match COUI's early screen-off origin tracking by hooking
+  `WakefulnessLifecycle#dispatchStartedGoingToSleep`. Each sleep now starts a fresh AOD trace
+  before Dream begins instead of reusing stale `screenOffAgeMs` and trace state.
+- Remove the module's additional 810 ms non-lockscreen reveal block on OOS 16.0.9. Older OOS
+  builds retain the existing delay; 16.0.9 enters the stable AOD presentation immediately and
+  does not run the lockscreen weight morph for a desktop/application-origin sleep.
+- Gate repeated OPlus `ClockPlugin#render()` callbacks by the final visible scene rather than
+  transient vendor lifecycle fields. Explicit notification, weather, media, and policy refreshes
+  remain forced.
+- Add a reusable LSPosed log analyzer for `startToAnimInDream -> presentAod` latency and render
+  volume.
+
+### Success
+- Existing 16:29-16:30 logs fail the new 150 ms analyzer on all 9 matched transitions
+  (average 583 ms, P95 718 ms), proving that it detects the reported delay.
+- Debug logging A/B measured 2138 ms disabled versus 2159 ms enabled from native Dream start to
+  OOS AOD visibility; logging is noisy but is not the primary delay source.
+- COUI reference logs measured about 2048 ms on the same native boundary, so this build does not
+  alter panel, Doze OFF, or `requestScreenState` timing.
+- Targeted presentation-gate and OOS handoff-profile unit tests pass.
+
+### Deferred/Failed
+- **Failed:** user testing at 17:02-17:03 still showed the stock AOD and obvious delay on repeated
+  desktop double-tap locks. All 9 measured transitions failed the 150 ms analyzer threshold with
+  601 ms average and 682 ms P95 latency. The render gate reduced work in the critical interval,
+  but the persistent host still waited for OPlus' delayed `uiState=AOD` callback.
+
+## [0.1.285] - 2026-08-04
+### Meta
+- **Model:** Codex
+- **Scope:** OOS 16.0.9 persistent ClockPlugin host lock-entry performance
+
+### Fixed
+- Stop an unchanged OPlus `ClockPlugin#render()` callback from re-presenting the entire
+  replacement hierarchy. Actual scene, lifecycle, lock state, and AOD-entry changes still force
+  an immediate presentation.
+- Consequently, the AOD media-retry series is armed only for a real AOD entry instead of each
+  redundant vendor render callback.
+
+### Success
+- The 15:53:57-15:54:07 persistent LSPosed trace recorded 361 `ClockPlugin#render` callbacks,
+  212 information-stack layouts, and 90% janky SystemUI frames after a counter reset; this
+  identifies the repeated unchanged presentation path targeted here.
+- Added unit coverage for unchanged, changed, and forced ClockPlugin presentations.
+
+### Deferred/Failed
+- **Failed:** user testing at 16:29-16:30 found the same visual delay. The gate included changing
+  OOS transient lifecycle fields, so 71 gate hits still allowed 858 renders and 542 information
+  stack layouts in the captured window.
+
+## [0.1.284] - 2026-08-04
+### Meta
+- **Model:** Codex
+- **Scope:** OOS 16.0.9 app-to-AOD stock-visual suppression and lock-entry performance
+
+### Fixed
+- Break the `ClockPlugin#render` refresh feedback loop: replacement content now uses one
+  coalesced local redraw rather than repeatedly relaying `requestLayout()` and full-root
+  invalidations back into OOS `performAodUpdate()`.
+- OOS 16.0.9 does not dispatch `ACTION_SCREEN_OFF` to SystemUI during the affected path.
+  Start the existing `0/160/620ms` stock-AOD suppression passes from native AOD-host readiness
+  and `onDreamingStarted`, after the current AOD trace exists.
+
+### Success
+- Persistent LSPosed logs at 15:23 and 15:27 show no `SCREEN_OFF` module event and show
+  249-301 explicit frame refreshes per short session, identifying both corrected paths.
+- Added unit coverage for coalescing nested AOD frame-refresh requests.
+
+### Deferred/Failed
+- Device visual/performance confirmation is pending; do not treat build success as proof that
+  the system AOD no longer flashes.
+
+## [0.1.283] - 2026-08-04
+### Meta
+- **Model:** Codex
+- **Scope:** OOS 16.0.9 proximity-return UDFPS recovery and FOD auto-hide regression
+
+### Fixed
+- Allow OOS's `showUdfpsOverlay()` callback after a proximity-near to proximity-far transition.
+  This restores direct AOD fingerprint unlock instead of leaving authentication active with the
+  optical FOD session hidden.
+- Restore the native FOD-only timeout path so the fingerprint icon automatically hides again
+  after its normal OOS timeout.
+
+### Success
+- LSPosed logs at 14:27 captured the former module suppression and confirmed the exact
+  proximity-return callback that must be allowed.
+- `:app:testDebugUnitTest` and `:app:assembleDebug` passed for this corrected build.
+
+### Deferred/Failed
+- The 0.1.281/0.1.282 attempt to preserve FOD during the native timeout caused the icon to
+  remain visible indefinitely; that change has been removed.
+- Final device visual verification remains pending after this corrected build is installed.
+
 ## [0.1.279] - 2026-08-03
 ### Changed
 - Align the compact clock scene with the measured COUI Expressive anchors on OnePlus 12:

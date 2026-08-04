@@ -1,6 +1,7 @@
 package dev.codex.pixelaod;
 
 import android.content.Context;
+import android.graphics.Canvas;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -32,6 +33,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class ClockPluginHostController {
     private static final String CLOCK_PLUGIN_CLASS = "com.oplus.keyguard.plugin.ClockPlugin";
     private static final String BIG_CLOCK_LOGICAL_PACKAGE = "com.oplus.keyguard.clock.big";
+    private static final String NATIVE_VISUAL_CONTAINER_CLASS =
+            "com.oplus.keyguard.clock.big.widget.MyCustomizedFrameLayout";
     private static final String HOST_TAG = "dev.codex.pixelaod.CLOCK_PLUGIN_HOST";
     private static final int VIEW_CLOCK_TIME = 1;
     private static final int VIEW_DATE_MESSAGE = 11;
@@ -41,7 +44,11 @@ final class ClockPluginHostController {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
     private static final Set<Method> HOOKED_METHODS =
             Collections.newSetFromMap(new IdentityHashMap<>());
+    private static final Set<Class<?>> NATIVE_DRAW_HOOKED_CLASSES =
+            Collections.newSetFromMap(new IdentityHashMap<>());
     private static final Map<ViewGroup, HostRecord> HOSTS =
+            Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<View, WeakReference<HostRecord>> NATIVE_DRAW_BINDINGS =
             Collections.synchronizedMap(new WeakHashMap<>());
     private static final Set<Object> ROOT_UNAVAILABLE_LOGGED =
             Collections.newSetFromMap(new WeakHashMap<>());
@@ -99,6 +106,46 @@ final class ClockPluginHostController {
                     attachAndSync(plugin, source + "#ClockPlugin");
                 }
             }
+        });
+    }
+
+    /**
+     * Presents the final AOD scene at the screen-off boundary instead of waiting roughly 600 ms
+     * for OPlus ClockPlugin#render to publish uiState=AOD.
+     */
+    static void prepareNonLockscreenAodEntry(String source) {
+        runOnMain(() -> {
+            List<HostRecord> records;
+            synchronized (HOSTS) {
+                records = new ArrayList<>(HOSTS.values());
+            }
+            int prepared = 0;
+            boolean compactAod = PixelAodClockView.hasCompactClockNotificationContent();
+            for (HostRecord record : records) {
+                if (record == null || record.host.getParent() != record.root) {
+                    continue;
+                }
+                Context context = record.root.getContext();
+                if (context == null || !PixelAodClockView.isContinuousAodPolicyAllowingDisplay(
+                        context, source + "#ClockPlugin-pre-present")) {
+                    continue;
+                }
+                ClockPluginSceneMachine.Decision decision =
+                        record.machine.prepareAod(compactAod);
+                record.suppressNativeDraw = true;
+                StockAodVisibilityController.restoreHiddenAncestorChain(
+                        record.host, source + "#ClockPlugin-pre-present");
+                record.host.present(decision, source + "#ClockPlugin-pre-present");
+                if (record.validated) {
+                    suppressNativeVisuals(record);
+                }
+                prepared++;
+            }
+            PixelAodLog.log("prepared persistent ClockPlugin AOD before vendor uiState source="
+                    + source
+                    + " compact=" + compactAod
+                    + " prepared=" + prepared
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
         });
     }
 
@@ -372,6 +419,7 @@ final class ClockPluginHostController {
                 + " displayInAod=" + displayInAodState;
 
         if (decision.scene == ClockPluginSceneMachine.Scene.HIDDEN) {
+            record.suppressNativeDraw = false;
             record.host.hide(source + "#hidden");
             restoreNativeVisuals(record);
             logSync(record, source, renderState.describe() + lifecycleDetail
@@ -389,6 +437,20 @@ final class ClockPluginHostController {
         if (!record.validated) {
             record.host.setFirstPresentationFrameCallback(
                     () -> validateHostAfterFirstFrame(record, plugin, source));
+        }
+        record.suppressNativeDraw = true;
+        boolean vendorRender = "ClockPlugin#render".equals(source);
+        boolean forcePresentation = !vendorRender
+                || !record.validated
+                || decision.changed
+                || decision.enteringAod
+                || record.host.scene() != decision.scene
+                || record.host.getVisibility() != View.VISIBLE;
+        if (!record.presentationGate.shouldPresent(decision, forcePresentation)) {
+            logSync(record, source, renderState.describe() + lifecycleDetail
+                    + " policy=" + policyReason
+                    + " presentation=stable-scene-skip", decision);
+            return;
         }
         record.host.present(decision, source);
         if (record.validated) {
@@ -485,10 +547,12 @@ final class ClockPluginHostController {
     }
 
     private static void rememberNativeVisuals(Object plugin, HostRecord record) {
+        installNativeDrawSuppression(record.root.getClass().getClassLoader());
         for (int viewId : new int[]{VIEW_CLOCK_TIME, VIEW_DATE_MESSAGE}) {
             Object candidate = callOptional(plugin, "getView", viewId);
             if (candidate instanceof View) {
                 View view = (View) candidate;
+                bindNativeDrawContainer(view, viewId, record);
                 if (touchesPersistentHost(record, view)) {
                     PixelAodLog.log("skipped unsafe ClockPlugin native alpha candidate id="
                             + viewId + " view=" + describeNativeVisual(view));
@@ -496,6 +560,79 @@ final class ClockPluginHostController {
                 }
                 record.rememberNativeVisual(view);
             }
+        }
+    }
+
+    /**
+     * COUI suppresses the OPlus time/date visual container at dispatchDraw(), so a vendor alpha
+     * reset cannot expose one stock frame before the replacement host is refreshed.
+     */
+    private static void installNativeDrawSuppression(ClassLoader classLoader) {
+        if (classLoader == null) {
+            return;
+        }
+        Class<?> containerClass = null;
+        try {
+            containerClass = ModernHookBridge.findClass(NATIVE_VISUAL_CONTAINER_CLASS, classLoader);
+            synchronized (NATIVE_DRAW_HOOKED_CLASSES) {
+                if (!NATIVE_DRAW_HOOKED_CLASSES.add(containerClass)) {
+                    return;
+                }
+            }
+            Method dispatchDraw = ModernHookBridge.findMethod(
+                    containerClass, "dispatchDraw", Canvas.class);
+            ModernHookBridge.hookBefore(dispatchDraw, param -> {
+                if (!(param.thisObject instanceof View)) {
+                    return;
+                }
+                View container = (View) param.thisObject;
+                WeakReference<HostRecord> reference;
+                synchronized (NATIVE_DRAW_BINDINGS) {
+                    reference = NATIVE_DRAW_BINDINGS.get(container);
+                }
+                HostRecord record = reference != null ? reference.get() : null;
+                if (record == null) {
+                    if (reference != null) {
+                        synchronized (NATIVE_DRAW_BINDINGS) {
+                            NATIVE_DRAW_BINDINGS.remove(container);
+                        }
+                    }
+                    return;
+                }
+                if (record.suppressNativeDraw && record.host.isAttachedToWindow()) {
+                    param.setResult(null);
+                }
+            });
+            PixelAodLog.log("ClockPlugin native draw suppression hook installed class="
+                    + containerClass.getName());
+        } catch (Throwable t) {
+            if (containerClass != null) {
+                synchronized (NATIVE_DRAW_HOOKED_CLASSES) {
+                    NATIVE_DRAW_HOOKED_CLASSES.remove(containerClass);
+                }
+            }
+            PixelAodLog.log("ClockPlugin native draw suppression hook unavailable class="
+                    + NATIVE_VISUAL_CONTAINER_CLASS, t);
+        }
+    }
+
+    private static void bindNativeDrawContainer(View nativeView, int viewId, HostRecord record) {
+        ViewParent parent = nativeView != null ? nativeView.getParent() : null;
+        if (!(parent instanceof View) || record == null) {
+            return;
+        }
+        View container = (View) parent;
+        WeakReference<HostRecord> previous;
+        synchronized (NATIVE_DRAW_BINDINGS) {
+            previous = NATIVE_DRAW_BINDINGS.put(container, new WeakReference<>(record));
+        }
+        record.nativeDrawContainers.add(container);
+        if (previous == null || previous.get() != record) {
+            PixelAodLog.log("bound persistent ClockPlugin native draw suppression viewId="
+                    + viewId
+                    + " container=" + container.getClass().getName()
+                    + " native=" + nativeView.getClass().getName()
+                    + " root=" + record.root.getClass().getName());
         }
     }
 
@@ -580,6 +717,16 @@ final class ClockPluginHostController {
                         continue;
                     }
                     restoreNativeVisuals(record);
+                    record.suppressNativeDraw = false;
+                    synchronized (NATIVE_DRAW_BINDINGS) {
+                        for (View container : record.nativeDrawContainers) {
+                            WeakReference<HostRecord> reference =
+                                    NATIVE_DRAW_BINDINGS.get(container);
+                            if (reference != null && reference.get() == record) {
+                                NATIVE_DRAW_BINDINGS.remove(container);
+                            }
+                        }
+                    }
                     if (record.host.getParent() == entry.getKey()) {
                         entry.getKey().removeView(record.host);
                     }
@@ -729,9 +876,13 @@ final class ClockPluginHostController {
         final ViewGroup root;
         final PixelClockPluginHostView host;
         final ClockPluginSceneMachine machine = new ClockPluginSceneMachine();
+        final ClockPluginPresentationGate presentationGate = new ClockPluginPresentationGate();
         final Map<View, Float> nativeVisualAlphas = new WeakHashMap<>();
+        final Set<View> nativeDrawContainers =
+                Collections.newSetFromMap(new WeakHashMap<>());
         WeakReference<Object> plugin;
         boolean validated;
+        boolean suppressNativeDraw;
         String lastSyncFingerprint = "";
         String lastValidationFailure = "";
 

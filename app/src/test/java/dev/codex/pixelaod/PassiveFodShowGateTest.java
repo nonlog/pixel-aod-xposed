@@ -7,8 +7,8 @@ import static org.junit.Assert.assertTrue;
 
 public final class PassiveFodShowGateTest {
     @Test
-    public void suppressesSteadyAodShowFromRecentProximityFar() {
-        assertTrue(PassiveFodShowGate.shouldSuppress(
+    public void allowsSteadyAodShowFromRecentProximityFar() {
+        assertFalse(PassiveFodShowGate.shouldSuppress(
                 15_000L, 20L, -1L));
     }
 
@@ -31,8 +31,8 @@ public final class PassiveFodShowGateTest {
     }
 
     @Test
-    public void suppressesDelayedShowInsidePassiveProximitySession() {
-        assertTrue(PassiveFodShowGate.shouldSuppress(
+    public void allowsDelayedShowInsidePassiveProximitySession() {
+        assertFalse(PassiveFodShowGate.shouldSuppress(
                 15_000L, 1_000L, -1L));
     }
 

@@ -45,4 +45,12 @@ public final class ClockTypefaceResolutionPolicyTest {
         assertTrue(OosAodHandoffProfile.usesSystemManagedBurnIn(
                 "CPH2573_16.0.9.400(EX01)"));
     }
+
+    @Test
+    public void oos1609DoesNotDelayNonLockscreenAodReplacement() {
+        assertEquals(810L, OosAodHandoffProfile.nonLockscreenRevealDelayMillis(
+                "CPH2573_16.0.5.400(EX01)"));
+        assertEquals(0L, OosAodHandoffProfile.nonLockscreenRevealDelayMillis(
+                "CPH2573_16.0.9.400(EX01)"));
+    }
 }

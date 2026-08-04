@@ -183,8 +183,6 @@ public final class PixelAodClockView extends FrameLayout {
     private static final boolean ENABLE_AOD_SHADE_TREE_GUARD = false;
     private static final long AOD_ENTRY_GRACE_MILLIS = 1800L;
     private static final long AOD_ENTRY_DELAY_MILLIS = 650L;
-    private static final long NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS =
-            AOD_ENTRY_DELAY_MILLIS + 160L;
     private static final long PANEL_HANDOFF_PRESENTATION_HOLD_MS = 520L;
     private static final long BURN_IN_SETTLE_MILLIS = 8000L;
     private static final long AOD_FORCE_DOZE_RECENT_OVERLAY_MILLIS = 15_000L;
@@ -358,6 +356,7 @@ public final class PixelAodClockView extends FrameLayout {
     private final LinearLayout mediaRow;
     private final LinearLayout mediaSubtitleRow;
     private final ImageView mediaIconView;
+    private final AodFrameRefreshGate aodFrameRefreshGate = new AodFrameRefreshGate();
     private android.animation.ValueAnimator clockWeightAnimator;
     private int currentClockWeight;
     private int currentInfoWeight = -1;
@@ -395,9 +394,10 @@ public final class PixelAodClockView extends FrameLayout {
                         PixelLockscreenClockView.wasRecentlyInteractiveLockscreenVisibleForAodEntry();
                 noteScreenOff("screen-off", fromLockscreen);
                 scheduleAodVisibilityUpdate("screen-off", 160L);
-                if (!fromLockscreen) {
+                long revealDelayMillis = nonLockscreenRevealDelayMillis();
+                if (!fromLockscreen && revealDelayMillis > 0L) {
                     scheduleAodVisibilityUpdate("screen-off-non-lockscreen-reveal",
-                            NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS + 40L);
+                            revealDelayMillis + 40L);
                 }
             }
             updateAodVisibility("screen-state");
@@ -552,7 +552,7 @@ public final class PixelAodClockView extends FrameLayout {
         notificationIconRow.setAlpha(INFO_ALPHA);
         FrameLayout.LayoutParams notificationParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                dp(NOTIFICATION_ICON_SIZE_DP),
+                ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP | Gravity.START);
         notificationParams.leftMargin = dp(INFO_EDGE_DP);
         notificationParams.topMargin = dp(LARGE_NOTIFICATION_LINE_TOP_DP);
@@ -956,6 +956,7 @@ public final class PixelAodClockView extends FrameLayout {
         long now = android.os.SystemClock.uptimeMillis();
         boolean fromInteractiveLockscreen =
                 PixelLockscreenClockView.wasRecentlyInteractiveLockscreenVisibleForAodEntry();
+        long nonLockscreenRevealDelayMillis = nonLockscreenRevealDelayMillis();
         synchronized (PixelAodClockView.class) {
             if (requestedActive && !continuousAodPolicyAllows) {
                 active = false;
@@ -971,10 +972,14 @@ public final class PixelAodClockView extends FrameLayout {
                                 || !isAllowedAodEntryAge(now, lastScreenOffAt)) {
                             lastScreenOffAt = now;
                         }
-                        revealBlockedUntil = now + NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS;
-                        nonLockscreenAodRevealBlockedUntilAt = revealBlockedUntil;
-                        lastAodOverlayVisibleAt = 0L;
-                        delayedNonLockscreenReveal = true;
+                        if (nonLockscreenRevealDelayMillis > 0L) {
+                            revealBlockedUntil = now + nonLockscreenRevealDelayMillis;
+                            nonLockscreenAodRevealBlockedUntilAt = revealBlockedUntil;
+                            lastAodOverlayVisibleAt = 0L;
+                            delayedNonLockscreenReveal = true;
+                        } else {
+                            nonLockscreenAodRevealBlockedUntilAt = 0L;
+                        }
                     } else {
                         nonLockscreenAodRevealBlockedUntilAt = 0L;
                     }
@@ -1468,14 +1473,15 @@ public final class PixelAodClockView extends FrameLayout {
 
     static void noteScreenOff(String source, boolean fromLockscreenSurface) {
         long now = android.os.SystemClock.uptimeMillis();
+        long revealDelayMillis = nonLockscreenRevealDelayMillis();
         long revealBlockedUntil = fromLockscreenSurface
                 ? 0L
-                : now + NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS;
+                : now + revealDelayMillis;
         synchronized (PixelAodClockView.class) {
             lastScreenOffAt = now;
             lastScreenOffFromInteractiveLockscreen = fromLockscreenSurface;
             nonLockscreenAodRevealBlockedUntilAt = revealBlockedUntil;
-            if (!fromLockscreenSurface) {
+            if (!fromLockscreenSurface && revealDelayMillis > 0L) {
                 lastAodOverlayVisibleAt = 0L;
             }
         }
@@ -1496,15 +1502,16 @@ public final class PixelAodClockView extends FrameLayout {
         boolean fromLockscreenSurface =
                 PixelLockscreenClockView.wasRecentlyInteractiveLockscreenVisibleForAodEntry();
         long now = android.os.SystemClock.uptimeMillis();
+        long revealDelayMillis = nonLockscreenRevealDelayMillis();
         long revealBlockedUntil = fromLockscreenSurface
                 ? 0L
-                : now + NON_LOCKSCREEN_AOD_REVEAL_DELAY_MS;
+                : now + revealDelayMillis;
         synchronized (PixelAodClockView.class) {
             if (lastScreenOffAt <= 0L) {
                 lastScreenOffAt = now;
                 lastScreenOffFromInteractiveLockscreen = fromLockscreenSurface;
                 nonLockscreenAodRevealBlockedUntilAt = revealBlockedUntil;
-                if (!fromLockscreenSurface) {
+                if (!fromLockscreenSurface && revealDelayMillis > 0L) {
                     lastAodOverlayVisibleAt = 0L;
                 }
                 noted = true;
@@ -2894,6 +2901,10 @@ public final class PixelAodClockView extends FrameLayout {
         } else {
             refreshPresentation();
         }
+    }
+
+    private static long nonLockscreenRevealDelayMillis() {
+        return OosAodHandoffProfile.nonLockscreenRevealDelayMillis(android.os.Build.DISPLAY);
     }
 
     @Override
@@ -4806,7 +4817,7 @@ public final class PixelAodClockView extends FrameLayout {
         overflowView.setText("+" + overflowCount);
         overflowView.setAlpha(1f);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(context, NOTIFICATION_ICON_SIZE_DP));
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         if (hasVisibleIcons) {
             params.leftMargin = dp(context, NOTIFICATION_ICON_SPACING_DP + 1);
         }
@@ -4820,7 +4831,9 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         overflowView.getPaint().set(styleSource.getPaint());
-        overflowView.setTextColor(styleSource.getTextColors());
+        // Notification glyphs use this same resolved accent. Do not inherit the neutral date
+        // color, otherwise only the overflow count turns white after a mode/weight refresh.
+        overflowView.setTextColor(resolveMaterialInfoColor(overflowView.getContext()));
         overflowView.setTextSize(TypedValue.COMPLEX_UNIT_PX, styleSource.getTextSize());
         overflowView.setTypeface(styleSource.getTypeface());
         overflowView.setIncludeFontPadding(styleSource.getIncludeFontPadding());
@@ -6561,36 +6574,32 @@ public final class PixelAodClockView extends FrameLayout {
 
     private void requestAodFrameRefresh(String source) {
         try {
-            requestLayout();
-            invalidate();
-            postInvalidateOnAnimation();
-            invalidateView(clockView);
-            invalidateView(dateView);
-            invalidateView(weatherView);
-            invalidateView(weatherAlertRow);
-            invalidateView(weatherAlertIconView);
-            invalidateView(weatherAlertView);
-            invalidateView(calendarRow);
-            invalidateView(calendarIconView);
-            invalidateView(calendarView);
-            invalidateView(mediaRow);
-            invalidateView(mediaIconView);
-            invalidateView(mediaView);
-            invalidateView(notificationIconRow);
-            invalidateView(batteryRow);
-            View root = getRootView();
-            if (root != null && root != this) {
-                root.invalidate();
-                root.postInvalidateOnAnimation();
+            long requestedAt = android.os.SystemClock.uptimeMillis();
+            if (!aodFrameRefreshGate.request(requestedAt)) {
+                return;
             }
-            PixelAodLog.log("requested AOD frame refresh trace=" + currentAodTraceId()
-                    + " source=" + source
-                    + " visibility=" + getVisibility()
-                    + " shown=" + isShown()
-                    + " parent=" + (getParent() != null ? getParent().getClass().getName() : "null")
-                    + " root=" + (root != null ? root.getClass().getName() : "null")
-                    + " clock=" + String.valueOf(clockView.getText()).replace('\n', '/')
-                    + " state={" + describeAodState(getContext()) + "}");
+            // ClockPlugin#render is already inside OOS's AOD draw path.  Calling requestLayout()
+            // on the host and every child here re-enters performAodUpdate(), which calls render
+            // again and produces a self-sustaining refresh loop.  Content setters have already
+            // requested their own layouts; one coalesced local invalidation is sufficient.
+            postOnAnimation(() -> {
+                aodFrameRefreshGate.markFrameDispatched(
+                        android.os.SystemClock.uptimeMillis());
+                if (!isAttachedToWindow()) {
+                    return;
+                }
+                invalidate();
+                postInvalidateOnAnimation();
+                PixelAodLog.log("requested coalesced AOD frame refresh trace="
+                        + currentAodTraceId()
+                        + " source=" + source
+                        + " visibility=" + getVisibility()
+                        + " shown=" + isShown()
+                        + " parent=" + (getParent() != null
+                        ? getParent().getClass().getName() : "null")
+                        + " clock=" + String.valueOf(clockView.getText()).replace('\n', '/')
+                        + " state={" + describeAodState(getContext()) + "}");
+            });
         } catch (Throwable t) {
             PixelAodLog.log("failed to request AOD frame refresh source=" + source, t);
         }

@@ -117,6 +117,8 @@ final class PixelAodHook {
             "com.oplus.systemui.keyguard.view.CustomOplusKeyguardStyleClock";
     private static final String KEYGUARD_CLOCK_VIEW_ROOT =
             "com.oplus.keyguard.clock.big.ui.view.ClockViewRoot";
+    private static final String WAKEFULNESS_LIFECYCLE =
+            "com.android.systemui.keyguard.WakefulnessLifecycle";
     private static final String KEYGUARD_NOTIFICATION_VISIBILITY_PROVIDER_IMPL =
             "com.android.systemui.statusbar.notification.interruption.KeyguardNotificationVisibilityProviderImpl";
     private static final String NOTIF_FILTER =
@@ -261,6 +263,7 @@ final class PixelAodHook {
             PixelAodClockView.ensureBreezyWeatherReceiver(appContext);
         }
         ClockPluginHostController.install(appContext, classLoader);
+        hookWakefulnessScreenOffOrigin(classLoader);
         hookClockLayout(appContext, classLoader);
         hookNativeAodRefreshCallbacks(classLoader);
         hookNotificationView(classLoader);
@@ -1364,6 +1367,8 @@ final class PixelAodHook {
             ModernHookBridge.hookAfter(recordClass, "onDreamingStarted", param -> MAIN.post(() -> {
                 refreshNotificationsFromLastListener("AodRecord#onDreamingStarted");
                 PixelAodClockView.setAodActive(true, "AodRecord#onDreamingStarted");
+                reassertStockAodSuppressionAfterScreenOff(
+                        "AodRecord#onDreamingStarted#after-active");
                 PixelAodClockView.tickAllInstances();
             }), boolean.class);
             ModernHookBridge.hookBefore(recordClass, "onDreamingStopped",
@@ -2174,6 +2179,46 @@ final class PixelAodHook {
                 && isNativeAodTimeoutHideSource(source);
     }
 
+    private static void hookWakefulnessScreenOffOrigin(ClassLoader classLoader) {
+        try {
+            Class<?> lifecycleClass = ModernHookBridge.findClass(
+                    WAKEFULNESS_LIFECYCLE, classLoader);
+            int hooks = 0;
+            for (Method method : lifecycleClass.getDeclaredMethods()) {
+                if (!"dispatchStartedGoingToSleep".equals(method.getName())) {
+                    continue;
+                }
+                ModernHookBridge.hookBefore(method, param -> {
+                    Context context = systemUiContext;
+                    boolean fromLockscreen = false;
+                    if (context != null) {
+                        try {
+                            android.app.KeyguardManager keyguardManager =
+                                    context.getSystemService(android.app.KeyguardManager.class);
+                            fromLockscreen = keyguardManager != null
+                                    && keyguardManager.isKeyguardLocked();
+                        } catch (Throwable ignored) {
+                            fromLockscreen = PixelLockscreenClockView
+                                    .wasRecentlyInteractiveLockscreenVisibleForAodEntry();
+                        }
+                    }
+                    PixelAodClockView.noteScreenOff(
+                            "WakefulnessLifecycle#dispatchStartedGoingToSleep",
+                            fromLockscreen);
+                    if (!fromLockscreen) {
+                        String source = "WakefulnessLifecycle#dispatchStartedGoingToSleep";
+                        suppressKnownStockAodBeforeDream(source);
+                        ClockPluginHostController.prepareNonLockscreenAodEntry(source);
+                    }
+                });
+                hooks++;
+            }
+            PixelAodLog.log("installed Wakefulness screen-off origin hooks=" + hooks);
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook Wakefulness screen-off origin", t);
+        }
+    }
+
     private static boolean dispatchFodOnlyNativeTimeoutHide(Context context, String source) {
         String trace = PixelAodClockView.peekAodTraceId();
         Object uiMech = lastOnScreenFingerprintUiMech.get();
@@ -2975,6 +3020,12 @@ final class PixelAodHook {
                         + " state={" + PixelAodClockView.describeAodState(context) + "}");
                 return;
             }
+            if (screenOff) {
+                // OOS 16.0.9 does not deliver ACTION_SCREEN_OFF to SystemUI on this path.
+                // Schedule the same three suppression passes from the confirmed native AOD
+                // host only after it has established the current AOD trace.
+                reassertStockAodSuppressionAfterScreenOff(source + "#host-ready");
+            }
             if (screenOff || customizeNow) {
                 refreshNotificationsFromLastListener(source);
                 hideStockClockViews(host);
@@ -3121,6 +3172,28 @@ final class PixelAodHook {
                 + " expectedTrace=" + expectedTrace
                 + " delaysMs=" + java.util.Arrays.toString(
                 SCREEN_OFF_STOCK_SUPPRESSION_REASSERT_DELAYS_MILLIS));
+    }
+
+    private static void suppressKnownStockAodBeforeDream(String source) {
+        runAtFrontOfMain(() -> {
+            ViewGroup stockHost = lastStockHost.get();
+            Context context = stockHost != null ? stockHost.getContext() : systemUiContext;
+            if (stockHost == null || context == null
+                    || !PixelAodClockView.isContinuousAodPolicyAllowingDisplay(
+                    context, source + "#pre-dream-stock-suppression")) {
+                PixelAodLog.log("skipped pre-dream stock AOD suppression source=" + source
+                        + " stockHost=" + hostSummary(stockHost)
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
+                return;
+            }
+            hideStockClockViews(stockHost);
+            hideStockKeyguardClockViews(highestParentGroup(stockHost));
+            adjustPluginStatusViews(context, stockHost);
+            PixelAodLog.log("suppressed known stock AOD before Dream source=" + source
+                    + " stockHost=" + hostSummary(stockHost)
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+        });
     }
 
     static void refreshKnownAodHostVisibility(String source) {

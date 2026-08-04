@@ -8,6 +8,39 @@ import static org.junit.Assert.assertTrue;
 
 public final class ClockPluginSceneMachineTest {
     @Test
+    public void preparesCompactAodBeforeVendorUiStateArrives() {
+        ClockPluginSceneMachine machine = new ClockPluginSceneMachine();
+
+        ClockPluginSceneMachine.Decision prepared = machine.prepareAod(true);
+        ClockPluginSceneMachine.Decision vendorAod = machine.resolve(
+                ClockPluginSceneMachine.UI_STATE_AOD,
+                ClockPluginSceneMachine.CLOCK_SIZE_SMALL,
+                false, true, false, true, false, true);
+
+        assertEquals(ClockPluginSceneMachine.Scene.AOD_SMALL, prepared.scene);
+        assertTrue(prepared.changed);
+        assertFalse(prepared.enteringAod);
+        assertEquals(ClockPluginSceneMachine.Scene.AOD_SMALL, vendorAod.scene);
+        assertFalse(vendorAod.changed);
+    }
+
+    @Test
+    public void preparesLargeAodFromStaleDesktopLockscreenScene() {
+        ClockPluginSceneMachine machine = new ClockPluginSceneMachine();
+        ClockPluginSceneMachine.Decision staleLockscreen = machine.resolve(
+                ClockPluginSceneMachine.UI_STATE_UNLOCKED,
+                ClockPluginSceneMachine.CLOCK_SIZE_SMALL,
+                true, true, false, false, true, false);
+
+        ClockPluginSceneMachine.Decision prepared = machine.prepareAod(false);
+
+        assertEquals(ClockPluginSceneMachine.Scene.LOCKSCREEN_SMALL, staleLockscreen.scene);
+        assertEquals(ClockPluginSceneMachine.Scene.AOD_LARGE, prepared.scene);
+        assertTrue(prepared.changed);
+        assertTrue(prepared.enteringAod);
+    }
+
+    @Test
     public void preservesLockscreenAcrossTransientUnlockedStateBeforeAod() {
         ClockPluginSceneMachine machine = new ClockPluginSceneMachine();
 
