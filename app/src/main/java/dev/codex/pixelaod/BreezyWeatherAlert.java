@@ -10,18 +10,27 @@ import java.util.zip.GZIPInputStream;
 
 /** A minimal, privacy-preserving projection of Breezy Weather's active alert. */
 final class BreezyWeatherAlert {
+    static final long DISPLAY_TIMEOUT_MILLIS = 10L * 60L * 1000L;
     private static final BreezyWeatherAlert EMPTY = new BreezyWeatherAlert("", 0L, 0L, 0);
 
     final String headline;
     final long startMillis;
     final long endMillis;
     final int severity;
+    /** First time this module observed this exact alert; prevents refreshes from extending it. */
+    final long observedAtMillis;
 
     private BreezyWeatherAlert(String headline, long startMillis, long endMillis, int severity) {
+        this(headline, startMillis, endMillis, severity, 0L);
+    }
+
+    private BreezyWeatherAlert(String headline, long startMillis, long endMillis, int severity,
+            long observedAtMillis) {
         this.headline = headline != null ? headline.trim() : "";
         this.startMillis = startMillis;
         this.endMillis = endMillis;
         this.severity = severity;
+        this.observedAtMillis = Math.max(0L, observedAtMillis);
     }
 
     static BreezyWeatherAlert empty() {
@@ -33,7 +42,11 @@ final class BreezyWeatherAlert {
             return EMPTY;
         }
         try {
-            return fromAlertObject(new JSONObject(json));
+            BreezyWeatherAlert alert = fromAlertObject(new JSONObject(json));
+            // Older cache records did not have observedAtMillis. A real provider start time is
+            // a safe lower bound, so legacy stale warnings cannot reappear indefinitely.
+            return alert.observedAtMillis <= 0L && alert.startMillis > 0L
+                    ? alert.withObservedAt(alert.startMillis) : alert;
         } catch (Throwable ignored) {
             return EMPTY;
         }
@@ -61,6 +74,17 @@ final class BreezyWeatherAlert {
     }
 
     boolean isActive(long nowMillis) {
+        return isSourceActive(nowMillis)
+                && (observedAtMillis <= 0L
+                || (nowMillis >= observedAtMillis
+                && nowMillis - observedAtMillis < DISPLAY_TIMEOUT_MILLIS));
+    }
+
+    long displayExpiresAtMillis() {
+        return observedAtMillis > 0L ? observedAtMillis + DISPLAY_TIMEOUT_MILLIS : 0L;
+    }
+
+    private boolean isSourceActive(long nowMillis) {
         return !headline.isEmpty()
                 && (startMillis <= 0L || startMillis <= nowMillis)
                 && (endMillis <= 0L || endMillis > nowMillis);
@@ -79,12 +103,33 @@ final class BreezyWeatherAlert {
         return new BreezyWeatherAlert(headline, startMillis, endMillis, severity);
     }
 
+    /**
+     * Gives an active provider result its one display window. Refreshing the identical result
+     * deliberately keeps the stored observation time instead of extending its AOD lifetime.
+     */
+    static BreezyWeatherAlert observeForDisplay(BreezyWeatherAlert candidate,
+            BreezyWeatherAlert stored, long nowMillis) {
+        if (candidate == null || !candidate.isSourceActive(nowMillis)) {
+            return EMPTY;
+        }
+        // Do not make an alert that began long ago look newly raised after this upgrade.
+        if (candidate.startMillis > 0L
+                && nowMillis - candidate.startMillis >= DISPLAY_TIMEOUT_MILLIS) {
+            return EMPTY;
+        }
+        if (stored != null && stored != EMPTY && candidate.sameDisplay(stored)
+                && stored.observedAtMillis > 0L) {
+            return candidate.withObservedAt(stored.observedAtMillis);
+        }
+        return candidate.withObservedAt(nowMillis);
+    }
+
     static BreezyWeatherAlert selectActive(long nowMillis, BreezyWeatherAlert current,
             BreezyWeatherAlert candidate) {
-        if (current == null || !current.isActive(nowMillis)) {
+        if (current == null || !current.isSourceActive(nowMillis)) {
             current = EMPTY;
         }
-        if (candidate == null || !candidate.isActive(nowMillis)) {
+        if (candidate == null || !candidate.isSourceActive(nowMillis)) {
             return current;
         }
         if (current == EMPTY || candidate.severity > current.severity
@@ -105,6 +150,7 @@ final class BreezyWeatherAlert {
             result.put("startMillis", startMillis);
             result.put("endMillis", endMillis);
             result.put("severity", severity);
+            result.put("observedAtMillis", observedAtMillis);
             return result.toString();
         } catch (Throwable ignored) {
             return "";
@@ -138,7 +184,16 @@ final class BreezyWeatherAlert {
         return new BreezyWeatherAlert(headline,
                 firstEpochMillis(alert, "startMillis", "startDate", "start"),
                 firstEpochMillis(alert, "endMillis", "endDate", "end"),
-                severityRank(alert.opt("severity")));
+                severityRank(alert.opt("severity")),
+                firstEpochMillis(alert, "observedAtMillis"));
+    }
+
+    private BreezyWeatherAlert withObservedAt(long observedAtMillis) {
+        if (this == EMPTY || headline.isEmpty()) {
+            return EMPTY;
+        }
+        return new BreezyWeatherAlert(headline, startMillis, endMillis, severity,
+                observedAtMillis);
     }
 
     private static long firstEpochMillis(JSONObject object, String... keys) {

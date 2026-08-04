@@ -14,16 +14,19 @@ final class PixelAodRenderModel {
     final Calendar calendar;
     final String clockText;
     final String dateText;
+    final String weatherText;
     final PixelAodClockView.WeatherSnapshot weather;
     final String batteryText;
     final boolean batteryCharging;
 
     private PixelAodRenderModel(Calendar calendar, String clockText, String dateText,
+            String weatherText,
             PixelAodClockView.WeatherSnapshot weather, String batteryText,
             boolean batteryCharging) {
         this.calendar = calendar;
         this.clockText = clockText;
         this.dateText = dateText;
+        this.weatherText = weatherText != null ? weatherText : "";
         this.weather = weather != null ? weather : PixelAodClockView.WeatherSnapshot.empty();
         this.batteryText = batteryText != null ? batteryText : "";
         this.batteryCharging = batteryCharging;
@@ -34,7 +37,7 @@ final class PixelAodRenderModel {
             boolean batteryCharging) {
         Calendar calendar = Calendar.getInstance();
         return new PixelAodRenderModel(calendar, formatClockText(context, calendar, compactClock),
-                formatDateWithWeather(calendar, weather),
+                formatDate(calendar), formatWeatherText(weather != null ? weather.temperatureText : ""),
                 weather, batteryText, batteryCharging);
     }
 
@@ -42,15 +45,24 @@ final class PixelAodRenderModel {
             PixelAodClockView.WeatherSnapshot weather) {
         Calendar calendar = Calendar.getInstance();
         return new PixelAodRenderModel(calendar, formatClockText(context, calendar, compactClock),
-                formatDateWithWeather(calendar, weather), weather, "", false);
+                formatDate(calendar), formatWeatherText(weather != null ? weather.temperatureText : ""),
+                weather, "", false);
+    }
+
+    static String formatDate(Calendar calendar) {
+        Locale locale = Locale.getDefault();
+        String pattern = locale.getLanguage().equals(Locale.CHINESE.getLanguage())
+                ? "M\u6708d\u65e5 EEEE" : "EEE, MMM d";
+        return new SimpleDateFormat(pattern, locale).format(calendar.getTime());
+    }
+
+    static String formatWeatherText(String temperatureText) {
+        return temperatureText != null ? temperatureText : "";
     }
 
     static String formatDateWithWeather(Calendar calendar,
             PixelAodClockView.WeatherSnapshot weather) {
-        Locale locale = Locale.getDefault();
-        String pattern = locale.getLanguage().equals(Locale.CHINESE.getLanguage())
-                ? "M\u6708d\u65e5 EEEE" : "EEE, MMM d";
-        String date = new SimpleDateFormat(pattern, locale).format(calendar.getTime());
+        String date = formatDate(calendar);
         if (weather != null && !TextUtils.isEmpty(weather.temperatureText)) {
             return date + " \u00b7 " + weather.temperatureText;
         }
