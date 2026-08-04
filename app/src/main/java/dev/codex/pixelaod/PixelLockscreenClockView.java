@@ -115,10 +115,9 @@ final class PixelLockscreenClockView extends FrameLayout {
     private boolean clockPluginManaged;
     private boolean compactClock;
     private ValueAnimator clockWeightAnimator;
-    private ValueAnimator infoWeightAnimator;
     private String activeClockWeightTransitionSource = "";
     private int currentClockWeight = CLOCK_LOCKSCREEN_WEIGHT;
-    private int currentInfoWeight = INFO_LOCKSCREEN_WEIGHT;
+    private int currentInfoWeight = -1;
     private boolean clockWeightTransitionPending;
     private boolean showingClockPluginAodNotificationIcons;
     private String lastClockPluginNotificationIconSignature = "";
@@ -199,7 +198,7 @@ final class PixelLockscreenClockView extends FrameLayout {
 
         int lockscreenWeight = PixelAodClockView.lockscreenClockWeight(context);
         currentClockWeight = lockscreenWeight;
-        Typeface infoTypeface = PixelAodClockView.sharedInfoTypeface(context, INFO_LOCKSCREEN_WEIGHT);
+        Typeface infoTypeface = PixelAodClockView.sharedInfoTypeface(context, lockscreenWeight);
 
         clockView = new TextView(context);
         clockView.setTextColor(resolveMaterialClockColor(context));
@@ -219,7 +218,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         addView(clockView, clockParams);
 
         dateView = PixelAodClockView.makeInfoLine(context, infoTypeface,
-                INFO_LOCKSCREEN_WEIGHT, LARGE_INFO_TEXT_DP, Gravity.START);
+                lockscreenWeight, LARGE_INFO_TEXT_DP, Gravity.START);
         FrameLayout.LayoutParams dateParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -229,7 +228,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         addView(dateView, dateParams);
 
         weatherView = PixelAodClockView.makeInfoLine(context, infoTypeface,
-                INFO_LOCKSCREEN_WEIGHT, LARGE_INFO_TEXT_DP, Gravity.START);
+                lockscreenWeight, LARGE_INFO_TEXT_DP, Gravity.START);
         weatherView.setEllipsize(TextUtils.TruncateAt.END);
         weatherView.setVisibility(View.GONE);
         FrameLayout.LayoutParams weatherParams = new FrameLayout.LayoutParams(
@@ -253,6 +252,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         notificationParams.topMargin = dp(SMALL_NOTIFICATION_TOP_DP);
         addView(notificationIconRow, notificationParams);
 
+        setInfoWeight(lockscreenWeight);
         updatePresentation("init");
     }
 
@@ -525,7 +525,6 @@ final class PixelLockscreenClockView extends FrameLayout {
         showingClockPluginAodNotificationIcons = true;
         applyNotificationRowPosition();
         rebuildNotificationIcons(currentNotifications(), source + "#aod-handoff");
-        beginInfoWeightTransition(PixelAodVisualStyle.Aod.INFO_WEIGHT);
         runWeightTransition(currentClockWeight,
                 PixelAodClockView.aodClockWeight(getContext()), source + "#ls-to-aod");
     }
@@ -555,7 +554,6 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     private void beginLockscreenWeightRestoreTransition(int fromWeight, int toWeight,
             String source) {
-        beginInfoWeightTransition(INFO_LOCKSCREEN_WEIGHT);
         runWeightTransition(fromWeight, toWeight, source + "#aod-to-ls");
     }
 
@@ -891,8 +889,6 @@ final class PixelLockscreenClockView extends FrameLayout {
         return "{compact=" + compactClock
                 + ",weight=" + currentClockWeight
                 + ",infoWeight=" + currentInfoWeight
-                + ",infoWeightAnimating=" + (infoWeightAnimator != null
-                && infoWeightAnimator.isRunning())
                 + ",transitionPending=" + clockWeightTransitionPending
                 + ",layer=" + PixelAodClockView.describeViewForHandoff(this)
                 + ",clock=" + PixelAodClockView.describeClockTextView(clockView)
@@ -1729,7 +1725,6 @@ final class PixelLockscreenClockView extends FrameLayout {
         setTranslationX(0f);
         setTranslationY(0f);
         clockWeightAnimator = ValueAnimator.ofFloat(0f, 1f);
-        beginInfoWeightTransition(INFO_LOCKSCREEN_WEIGHT);
         clockWeightAnimator.setDuration(PixelAodVisualStyle.COUI_WEIGHT_MORPH_MILLIS);
         clockWeightAnimator.setInterpolator(SIZE_MORPH_INTERPOLATOR);
         final boolean[] cancelled = {false};
@@ -1794,10 +1789,6 @@ final class PixelLockscreenClockView extends FrameLayout {
             clockWeightAnimator.cancel();
             clockWeightAnimator = null;
         }
-        if (infoWeightAnimator != null) {
-            infoWeightAnimator.cancel();
-            infoWeightAnimator = null;
-        }
         clockWeightTransitionPending = false;
         lastClockTransitionStartedAt = 0L;
         setTranslationX(0f);
@@ -1812,6 +1803,7 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     private void setClockWeight(int weight, boolean handoffBoundary) {
+        setInfoWeight(weight);
         if (!ClockTypefaceResolutionPolicy.shouldApplyTypeface(
                 currentClockWeight, weight, handoffBoundary)) {
             return;
@@ -1826,48 +1818,15 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     private void setInfoWeight(int weight) {
-        if (currentInfoWeight == weight) {
+        int synchronizedWeight = AodInfoWeightHandoff.synchronizedInfoWeight(weight,
+                PixelAodClockView.aodClockWeight(getContext()),
+                PixelAodClockView.lockscreenClockWeight(getContext()));
+        if (currentInfoWeight == synchronizedWeight) {
             return;
         }
-        currentInfoWeight = weight;
-        PixelAodClockView.applySharedFontVariation(dateView, weight);
-        PixelAodClockView.applySharedFontVariation(weatherView, weight);
-    }
-
-    private void beginInfoWeightTransition(int targetWeight) {
-        if (infoWeightAnimator != null) {
-            infoWeightAnimator.cancel();
-            infoWeightAnimator = null;
-        }
-        int fromWeight = currentInfoWeight;
-        if (Math.abs(fromWeight - targetWeight) <= 1) {
-            setInfoWeight(targetWeight);
-            return;
-        }
-        infoWeightAnimator = ValueAnimator.ofFloat(0f, 1f);
-        infoWeightAnimator.setDuration(PixelAodVisualStyle.COUI_WEIGHT_MORPH_MILLIS);
-        infoWeightAnimator.setInterpolator(SIZE_MORPH_INTERPOLATOR);
-        infoWeightAnimator.addUpdateListener(animation -> {
-            float progress = (Float) animation.getAnimatedValue();
-            setInfoWeight(Math.round(fromWeight + ((targetWeight - fromWeight) * progress)));
-        });
-        infoWeightAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(android.animation.Animator animation) {
-                setInfoWeight(targetWeight);
-                if (infoWeightAnimator == animation) {
-                    infoWeightAnimator = null;
-                }
-            }
-
-            @Override
-            public void onAnimationCancel(android.animation.Animator animation) {
-                if (infoWeightAnimator == animation) {
-                    infoWeightAnimator = null;
-                }
-            }
-        });
-        infoWeightAnimator.start();
+        currentInfoWeight = synchronizedWeight;
+        PixelAodClockView.applySharedClockTypeface(dateView, getContext(), synchronizedWeight);
+        PixelAodClockView.applySharedClockTypeface(weatherView, getContext(), synchronizedWeight);
     }
 
     private static int resolveMaterialClockColor(Context context) {

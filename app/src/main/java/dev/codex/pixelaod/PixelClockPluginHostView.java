@@ -357,7 +357,6 @@ final class PixelClockPluginHostView extends FrameLayout {
             armHandoffDiagnostics(source + "#aod-scene");
         }
         int handoffWeight = lockscreenLayer.clockPluginWeight();
-        int handoffInfoWeight = lockscreenLayer.clockPluginInfoWeight();
         // Capture before clear: early-aod-weight may already be mid-morph on the LS layer.
         boolean wasPreparingAodWeight = preparingAodWeight;
         preparingAodWeight = false;
@@ -383,7 +382,6 @@ final class PixelClockPluginHostView extends FrameLayout {
         boolean weightBusy = aodLayer.isClockPluginWeightTransitionRunning();
         int weightStart;
         boolean needWeightMorph;
-        boolean needInfoWeightMorph;
         if (fromLockscreenEntry) {
             // Single owner of LS→AOD weight morph: AOD layer. Park at live LS weight.
             weightStart = handoffWeight > 0 ? handoffWeight : configuredLsWeight;
@@ -396,17 +394,10 @@ final class PixelClockPluginHostView extends FrameLayout {
             }
             aodLayer.clearAodWeightHandoffSettled(source + "#from-lockscreen-entry");
             needWeightMorph = Math.abs(weightStart - aodTargetWeight) > 8;
-            needInfoWeightMorph = AodInfoWeightHandoff.needsAnimation(handoffInfoWeight,
-                    PixelAodVisualStyle.Aod.INFO_WEIGHT);
-            aodLayer.prepareClockPluginAodInfoWeightForHandoff(handoffInfoWeight,
-                    source + "#from-lockscreen-entry");
         } else {
             // Non-lockscreen screen-off: stable AOD weight only — never park at LS 340.
             weightStart = aodTargetWeight;
             needWeightMorph = false;
-            needInfoWeightMorph = false;
-            aodLayer.applyClockPluginStableAodInfoWeight(
-                    source + "#non-lockscreen-entry");
         }
         PixelAodLog.log("presentAod weightStart source=" + source
                 + " weightStart=" + weightStart
@@ -415,9 +406,8 @@ final class PixelClockPluginHostView extends FrameLayout {
                 + " needWeightMorph=" + needWeightMorph
                 + " weightBusy=" + weightBusy
                 + " handoffWeight=" + handoffWeight
-                + " handoffInfoWeight=" + handoffInfoWeight
                 + " fromLockscreenEntry=" + fromLockscreenEntry
-                + " needInfoWeightMorph=" + needInfoWeightMorph
+                + " informationWeightTracksClock=true"
                 + " lockscreenToAodWeight=" + lockscreenToAodWeight
                 + " screenOffFromLs="
                 + PixelAodClockView.wasScreenOffFromInteractiveLockscreen()
@@ -456,10 +446,6 @@ final class PixelClockPluginHostView extends FrameLayout {
             }
             startAodWeightMorphIfNeeded(needWeightMorph, weightStart,
                     source + "#aod-large-weight");
-            if (needInfoWeightMorph) {
-                aodLayer.startClockPluginAodInfoWeightTransition(
-                        source + "#aod-large-information-weight");
-            }
             // Size morph steals the handoff visual — skip while weight morph runs.
             lockscreenLayer.animate().cancel();
             lockscreenLayer.setAlpha(1f);
@@ -505,10 +491,6 @@ final class PixelClockPluginHostView extends FrameLayout {
                 // Ensure settled AOD weight even if present re-entered with a residual park.
                 aodLayer.applyClockPluginStableAodWeight(source + "#non-lockscreen-direct");
             }
-            if (needInfoWeightMorph) {
-                aodLayer.startClockPluginAodInfoWeightTransition(
-                        source + "#aod-direct-information-weight");
-            }
             scheduleAodMediaRetries(generation, source + "#aod-direct");
             return;
         }
@@ -518,7 +500,7 @@ final class PixelClockPluginHostView extends FrameLayout {
         long generation = ++entryGeneration;
         lockscreenLayer.animate().cancel();
         scheduleAodEntryCrossfade(generation, source, aodMediaReady, weightStart,
-                needWeightMorph, needInfoWeightMorph);
+                needWeightMorph);
     }
 
     private void startAodWeightMorphIfNeeded(boolean needWeightMorph, int fromWeight,
@@ -575,8 +557,7 @@ final class PixelClockPluginHostView extends FrameLayout {
      * Never re-park / applyStable here.
      */
     private void scheduleAodEntryCrossfade(long generation, String source,
-            boolean aodMediaReady, int weightStartHint, boolean needWeightMorph,
-            boolean needInfoWeightMorph) {
+            boolean aodMediaReady, int weightStartHint, boolean needWeightMorph) {
         Runnable start = () -> {
             if (generation != entryGeneration || !scene.isAod()) {
                 return;
@@ -596,10 +577,6 @@ final class PixelClockPluginHostView extends FrameLayout {
             // grace while the layer was INVISIBLE / alpha 0 under the lockscreen).
             startAodWeightMorphIfNeeded(needWeightMorph, weightStartHint,
                     source + "#crossfade-weight");
-            if (needInfoWeightMorph) {
-                aodLayer.startClockPluginAodInfoWeightTransition(
-                        source + "#crossfade-information-weight");
-            }
             if (aodLayer.getAlpha() >= 0.99f) {
                 aodLayer.setAlpha(0f);
             }
@@ -624,7 +601,7 @@ final class PixelClockPluginHostView extends FrameLayout {
                     + " weightWaitMs=0"
                     + " aodMediaReady=" + mediaReadyNow
                     + " needWeightMorph=" + needWeightMorph
-                    + " needInfoWeightMorph=" + needInfoWeightMorph
+                    + " informationWeightTracksClock=true"
                     + " weightStartHint=" + weightStartHint
                     + " aodWeightNow=" + aodLayer.clockPluginWeight()
                     + " aodTarget=" + PixelAodClockView.aodClockWeight(getContext())

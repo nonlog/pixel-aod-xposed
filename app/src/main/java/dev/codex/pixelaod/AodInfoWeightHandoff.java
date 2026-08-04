@@ -1,25 +1,26 @@
 package dev.codex.pixelaod;
 
-/** Pure timing model for continuing a live lockscreen information-weight morph on AOD. */
+/**
+ * Maps the clock's live weight progress into a compensated range for the optically smaller
+ * date and weather text.  This has no separate animator: every frame follows the clock.
+ */
 final class AodInfoWeightHandoff {
     private AodInfoWeightHandoff() {
     }
 
-    static boolean needsAnimation(int startWeight, int targetWeight) {
-        return Math.abs(startWeight - targetWeight) > 1;
-    }
-
-    static long remainingDurationMillis(int startWeight, int targetWeight, int originWeight,
-            long fullDurationMillis) {
-        if (!needsAnimation(startWeight, targetWeight) || fullDurationMillis <= 0L) {
-            return 0L;
+    static int synchronizedInfoWeight(int clockWeight, int aodClockWeight,
+            int lockscreenClockWeight) {
+        int lowerClockWeight = Math.min(aodClockWeight, lockscreenClockWeight);
+        int upperClockWeight = Math.max(aodClockWeight, lockscreenClockWeight);
+        int minimumInfoWeight = PixelAodVisualStyle.Aod.DATE_WEATHER_MIN_WEIGHT;
+        int maximumInfoWeight = PixelAodVisualStyle.Aod.DATE_WEATHER_MAX_WEIGHT;
+        if (upperClockWeight <= lowerClockWeight) {
+            return Math.round((minimumInfoWeight + maximumInfoWeight) / 2f);
         }
-        int totalDistance = Math.abs(originWeight - targetWeight);
-        if (totalDistance <= 1) {
-            return fullDurationMillis;
-        }
-        float remainingFraction = Math.min(1f,
-                Math.abs(startWeight - targetWeight) / (float) totalDistance);
-        return Math.max(1L, Math.round(fullDurationMillis * remainingFraction));
+        float progress = (clockWeight - lowerClockWeight)
+                / (float) (upperClockWeight - lowerClockWeight);
+        progress = Math.max(0f, Math.min(1f, progress));
+        return Math.round(minimumInfoWeight
+                + ((maximumInfoWeight - minimumInfoWeight) * progress));
     }
 }

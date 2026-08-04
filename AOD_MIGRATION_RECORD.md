@@ -19,6 +19,10 @@ Expressive module on OxygenOS 16.0.9.
   each character is measured with the 500-weight Google Sans Flex reference
   face, then the animated glyph is centred in that fixed cell.  This preserves
   letter positions while its weight changes.
+- Date and weather map the live clock-weight progress on every animation frame
+  into a compensated 400--500 range.  They use the same Google Sans Flex
+  weighted Typeface as the clock; there is no independent information-weight
+  animator that can drift behind it.
 - The AOD battery text is 16 dp (previously 13 dp), based on the COUI visual
   reference.
 
@@ -30,6 +34,8 @@ Expressive module on OxygenOS 16.0.9.
   date and weather; both the AOD and lockscreen views call it.
 - `FixedAdvanceSpan` supplies the stable layout width and centres the glyph
   drawn at the current variable-font weight.
+- `AodInfoWeightHandoff.synchronizedInfoWeight(...)` maps the full live clock
+  transition into the compensated date/weather range.
 - `ClockGlyphMetrics` owns tracking and fixed-cell calculations.
 - `PixelAodVisualStyle.Aod.BATTERY_TEXT_DP` is the battery size source of
   truth.
@@ -40,18 +46,22 @@ Do not alter Doze timing, the OOS panel handoff, or the black-frame behavior
 in an attempt to suppress the stock AOD.  Those are separate platform-facing
 issues and were explicitly excluded from this visual migration.
 
-## Verified before the next change
+## Verification status
 
 `./gradlew.bat :app:testDebugUnitTest :app:assembleDebug` passed.  The Debug
 APK was overwrite-installed and SystemUI restarted successfully.  The fixed
 date/weather grid and battery-size baseline received visual approval.
 
-## Next requested change
+The synchronized date/weather weight change, including its optical-size
+compensation, still needs device-side visual verification before it is
+committed.
 
-Make the date and weather weight transition follow the same source and timing
-as the clock during lockscreen <-> AOD, while preserving the fixed glyph cells.
-Re-test the transition visually after installation; a successful build alone
-does not prove that the animation is correct on device.
+## Next step
+
+Install the current build and visually test lockscreen <-> AOD.  The date and
+weather should change weight in exactly the same frames as the clock, without
+letter-spacing movement.  A successful build alone does not prove that the
+animation is correct on device.
 
 ## Suggested skills
 

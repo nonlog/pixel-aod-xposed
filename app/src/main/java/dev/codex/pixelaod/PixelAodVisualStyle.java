@@ -187,6 +187,9 @@ final class PixelAodVisualStyle {
         static final int CLOCK_WEIGHT = 280;
         /** Slightly lighter than lockscreen information text, matching the AOD clock weight. */
         static final int INFO_WEIGHT = 450;
+        /** Compensated output range for the optically smaller date and weather text. */
+        static final int DATE_WEATHER_MIN_WEIGHT = 400;
+        static final int DATE_WEATHER_MAX_WEIGHT = 500;
         static final int WEATHER_ICON_SIZE_DP = 15;
         static final int WEATHER_ICON_PADDING_DP = 6;
         static final int BURN_IN_OFFSET_X_DP = 8;

@@ -1,22 +1,25 @@
 package dev.codex.pixelaod;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
 public final class AodInfoWeightHandoffTest {
     @Test
-    public void carriesTheLiveLockscreenWeightIntoAodForTheRemainingMorph() {
-        assertTrue(AodInfoWeightHandoff.needsAnimation(500, 450));
-        assertEquals(550L, AodInfoWeightHandoff.remainingDurationMillis(500, 450, 500, 550L));
-        assertEquals(275L, AodInfoWeightHandoff.remainingDurationMillis(475, 450, 500, 550L));
+    public void mapsTheEntireClockTransitionIntoTheCompensatedInfoRange() {
+        assertEquals(400, AodInfoWeightHandoff.synchronizedInfoWeight(201, 201, 451));
+        assertEquals(450, AodInfoWeightHandoff.synchronizedInfoWeight(326, 201, 451));
+        assertEquals(500, AodInfoWeightHandoff.synchronizedInfoWeight(451, 201, 451));
     }
 
     @Test
-    public void doesNotAnimateOnceTheInformationLineHasReachedAodWeight() {
-        assertFalse(AodInfoWeightHandoff.needsAnimation(450, 450));
-        assertEquals(0L, AodInfoWeightHandoff.remainingDurationMillis(450, 450, 500, 550L));
+    public void clampsTheLiveClockWeightToTheCompensatedRange() {
+        assertEquals(400, AodInfoWeightHandoff.synchronizedInfoWeight(-1_000, 201, 451));
+        assertEquals(500, AodInfoWeightHandoff.synchronizedInfoWeight(900, 201, 451));
+    }
+
+    @Test
+    public void usesTheMiddleOfTheCompensatedRangeWhenClockWeightsAreEqual() {
+        assertEquals(450, AodInfoWeightHandoff.synchronizedInfoWeight(300, 300, 300));
     }
 }

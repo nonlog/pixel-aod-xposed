@@ -359,9 +359,8 @@ public final class PixelAodClockView extends FrameLayout {
     private final LinearLayout mediaSubtitleRow;
     private final ImageView mediaIconView;
     private android.animation.ValueAnimator clockWeightAnimator;
-    private android.animation.ValueAnimator infoWeightAnimator;
     private int currentClockWeight;
-    private int currentInfoWeight = INFO_AOD_WEIGHT;
+    private int currentInfoWeight = -1;
     private String appliedCalendarIconPackage;
     private boolean usingCalendarApplicationIcon;
     private String currentMediaNotificationKey;
@@ -454,9 +453,10 @@ public final class PixelAodClockView extends FrameLayout {
             }
         });
 
+        int initialClockWeight = aodClockWeight(context);
         Typeface infoTypeface = resolveInfoTypeface(context);
 
-        dateView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, LARGE_INFO_TEXT_DP,
+        dateView = makeInfoLine(context, infoTypeface, initialClockWeight, LARGE_INFO_TEXT_DP,
                 Gravity.START);
         FrameLayout.LayoutParams dateParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -466,7 +466,7 @@ public final class PixelAodClockView extends FrameLayout {
         dateParams.topMargin = dp(LARGE_INFO_TOP_DP);
         addView(dateView, dateParams);
 
-        weatherView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, LARGE_INFO_TEXT_DP,
+        weatherView = makeInfoLine(context, infoTypeface, initialClockWeight, LARGE_INFO_TEXT_DP,
                 Gravity.START);
         weatherView.setEllipsize(TextUtils.TruncateAt.END);
         weatherView.setVisibility(View.GONE);
@@ -612,6 +612,7 @@ public final class PixelAodClockView extends FrameLayout {
                 Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         clockParams.topMargin = dp(LARGE_CLOCK_TOP_DP);
         addView(clockView, clockParams);
+        setInfoWeight(initialClockWeight);
 
         batteryRow = new LinearLayout(context);
         batteryRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -3391,83 +3392,6 @@ public final class PixelAodClockView extends FrameLayout {
         return clockWeightAnimator != null && clockWeightAnimator.isRunning();
     }
 
-    void prepareClockPluginAodInfoWeightForHandoff(int handoffStartWeight, String source) {
-        if (!clockPluginManaged) {
-            return;
-        }
-        if (infoWeightAnimator != null) {
-            infoWeightAnimator.cancel();
-            infoWeightAnimator = null;
-        }
-        int fromWeight = normalizeInfoWeight(handoffStartWeight);
-        int previousWeight = currentInfoWeight;
-        setInfoWeight(fromWeight);
-        PixelAodLog.log("prepared ClockPlugin AOD information-weight handoff source=" + source
-                + " fromWeight=" + fromWeight
-                + " previousWeight=" + previousWeight
-                + " targetWeight=" + INFO_AOD_WEIGHT
-                + " trace=" + currentAodTraceId());
-    }
-
-    void startClockPluginAodInfoWeightTransition(String source) {
-        if (!clockPluginManaged || (infoWeightAnimator != null && infoWeightAnimator.isRunning())) {
-            return;
-        }
-        int fromWeight = currentInfoWeight;
-        int targetWeight = INFO_AOD_WEIGHT;
-        if (!AodInfoWeightHandoff.needsAnimation(fromWeight, targetWeight)) {
-            setInfoWeight(targetWeight);
-            return;
-        }
-        long duration = AodInfoWeightHandoff.remainingDurationMillis(fromWeight, targetWeight,
-                PixelAodVisualStyle.Lockscreen.INFO_WEIGHT,
-                PixelAodVisualStyle.COUI_WEIGHT_MORPH_MILLIS);
-        infoWeightAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f);
-        infoWeightAnimator.setDuration(duration);
-        infoWeightAnimator.setInterpolator(
-                new android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f));
-        infoWeightAnimator.addUpdateListener(animation -> {
-            float progress = (Float) animation.getAnimatedValue();
-            setInfoWeight(Math.round(fromWeight + ((targetWeight - fromWeight) * progress)));
-        });
-        infoWeightAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(android.animation.Animator animation) {
-                setInfoWeight(targetWeight);
-                if (infoWeightAnimator == animation) {
-                    infoWeightAnimator = null;
-                }
-            }
-
-            @Override
-            public void onAnimationCancel(android.animation.Animator animation) {
-                if (infoWeightAnimator == animation) {
-                    infoWeightAnimator = null;
-                }
-            }
-        });
-        infoWeightAnimator.start();
-        PixelAodLog.log("started AOD information-weight transition source=" + source
-                + " fromWeight=" + fromWeight
-                + " toWeight=" + targetWeight
-                + " durationMs=" + duration
-                + " trace=" + currentAodTraceId());
-    }
-
-    void applyClockPluginStableAodInfoWeight(String source) {
-        if (!clockPluginManaged) {
-            return;
-        }
-        if (infoWeightAnimator != null) {
-            infoWeightAnimator.cancel();
-            infoWeightAnimator = null;
-        }
-        setInfoWeight(INFO_AOD_WEIGHT);
-        PixelAodLog.log("applied stable AOD information weight source=" + source
-                + " weight=" + INFO_AOD_WEIGHT
-                + " trace=" + currentAodTraceId());
-    }
-
     boolean isAodWeightHandoffSettled() {
         return aodWeightHandoffSettled
                 && Math.abs(currentClockWeight - aodClockWeight(getContext())) <= 12;
@@ -3552,10 +3476,6 @@ public final class PixelAodClockView extends FrameLayout {
             if (clockWeightAnimator != null) {
                 clockWeightAnimator.cancel();
                 clockWeightAnimator = null;
-            }
-            if (infoWeightAnimator != null) {
-                infoWeightAnimator.cancel();
-                infoWeightAnimator = null;
             }
             aodWeightHandoffSettled = false;
         }
@@ -6971,8 +6891,6 @@ public final class PixelAodClockView extends FrameLayout {
         return "{compact=" + compactClock
                 + ",weight=" + currentClockWeight
                 + ",infoWeight=" + currentInfoWeight
-                + ",infoWeightAnimating=" + (infoWeightAnimator != null
-                && infoWeightAnimator.isRunning())
                 + ",layer=" + describeViewForHandoff(this)
                 + ",clock=" + describeClockTextView(clockView)
                 + ',' + describeViewForHandoff(clockView)
@@ -6981,6 +6899,7 @@ public final class PixelAodClockView extends FrameLayout {
 
     private void setClockWeight(int weight, boolean forceTypeface) {
         weight = normalizeClockWeight(weight);
+        setInfoWeight(weight);
         if (!forceTypeface && currentClockWeight == weight) {
             return;
         }
@@ -6995,17 +6914,14 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void setInfoWeight(int weight) {
-        int normalizedWeight = normalizeInfoWeight(weight);
+        int normalizedWeight = AodInfoWeightHandoff.synchronizedInfoWeight(weight,
+                aodClockWeight(getContext()), lockscreenClockWeight(getContext()));
         if (currentInfoWeight == normalizedWeight) {
             return;
         }
         currentInfoWeight = normalizedWeight;
-        applySharedFontVariation(dateView, normalizedWeight);
-        applySharedFontVariation(weatherView, normalizedWeight);
-    }
-
-    private static int normalizeInfoWeight(int weight) {
-        return Math.max(100, Math.min(1000, weight));
+        applySharedClockTypeface(dateView, getContext(), normalizedWeight);
+        applySharedClockTypeface(weatherView, getContext(), normalizedWeight);
     }
 
     private void updateInfoStackLayout() {
