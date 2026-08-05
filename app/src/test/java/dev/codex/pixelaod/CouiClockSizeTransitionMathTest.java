@@ -69,6 +69,24 @@ public final class CouiClockSizeTransitionMathTest {
     }
 
     @Test
+    public void sceneSizeRequestIsRejectedWhenActualSourceAlreadyMatchesTarget() {
+        assertFalse(CouiClockSizeTransitionMath.shouldRunActualSizeTransition(
+                true, false, false));
+        assertFalse(CouiClockSizeTransitionMath.shouldRunActualSizeTransition(
+                true, true, true));
+    }
+
+    @Test
+    public void actualSizeDifferenceStillRunsTheRequestedTransaction() {
+        assertTrue(CouiClockSizeTransitionMath.shouldRunActualSizeTransition(
+                true, false, true));
+        assertTrue(CouiClockSizeTransitionMath.shouldRunActualSizeTransition(
+                true, true, false));
+        assertFalse(CouiClockSizeTransitionMath.shouldRunActualSizeTransition(
+                false, false, true));
+    }
+
+    @Test
     public void sameSurfaceLargeSmallChangesUseTheGlyphTransaction() {
         assertTrue(CouiClockSizeTransitionMath.isSameSurfaceSizeChange(
                 true, true, false, true));
@@ -82,5 +100,13 @@ public final class CouiClockSizeTransitionMathTest {
                 true, false, false, true));
         assertFalse(CouiClockSizeTransitionMath.isSameSurfaceSizeChange(
                 false, true, true, false));
+        assertFalse(CouiClockSizeTransitionMath.isSameSurfaceSizeChange(
+                true, false, false, false));
+    }
+
+    @Test
+    public void stalePresentationMorphCannotReapplyAfterSurfaceReuse() {
+        assertTrue(CouiClockSizeTransitionMath.isPresentationMorphCurrent(7L, 7L));
+        assertFalse(CouiClockSizeTransitionMath.isPresentationMorphCurrent(6L, 7L));
     }
 }

@@ -534,7 +534,8 @@ final class PixelClockPluginHostView extends FrameLayout {
 
     private SizeTransitionRequest prepareSizeTransition(ClockPluginSceneMachine.Scene target,
             String source) {
-        if (!isClockSizeChange(scene, target) || getWidth() <= 0 || getHeight() <= 0) {
+        boolean sceneRequestsSizeChange = isClockSizeChange(scene, target);
+        if (!sceneRequestsSizeChange || getWidth() <= 0 || getHeight() <= 0) {
             return null;
         }
         if (sizeTransitionLayer.hasActiveTransition()) {
@@ -542,8 +543,19 @@ final class PixelClockPluginHostView extends FrameLayout {
         }
         long generation = ++sizeTransitionGeneration;
         CouiClockSizeTransitionLayer.SceneSnapshot snapshot = captureSceneSnapshot(scene);
-        if (snapshot == null || !snapshot.valid()
-                || !sizeTransitionLayer.prepare(snapshot, source + "#glyph-source")) {
+        Boolean targetCompact = compactScene(target);
+        if (snapshot == null || !snapshot.valid() || targetCompact == null) {
+            return null;
+        }
+        if (!CouiClockSizeTransitionMath.shouldRunActualSizeTransition(
+                sceneRequestsSizeChange, snapshot.compact, targetCompact)) {
+            PixelAodLog.log("skipped COUI per-glyph size transaction actual-size no-op source="
+                    + source + " fromCompact=" + snapshot.compact
+                    + " toCompact=" + targetCompact
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
+            return null;
+        }
+        if (!sizeTransitionLayer.prepare(snapshot, source + "#glyph-source")) {
             return null;
         }
         return new SizeTransitionRequest(target, source + "#glyph-target", generation);

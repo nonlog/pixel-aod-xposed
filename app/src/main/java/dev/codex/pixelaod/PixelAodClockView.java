@@ -436,6 +436,7 @@ public final class PixelAodClockView extends FrameLayout {
     private boolean timeReceiverRegistered;
     private boolean clockPluginManaged;
     private boolean clockPluginGlyphTransitionActive;
+    private long clockPluginPresentationGeneration;
 
     public PixelAodClockView(Context context) {
         super(context);
@@ -3039,6 +3040,7 @@ public final class PixelAodClockView extends FrameLayout {
         if (!clockPluginManaged) {
             return;
         }
+        final long presentationGeneration = ++clockPluginPresentationGeneration;
         if (!running) {
             start();
         }
@@ -3058,13 +3060,7 @@ public final class PixelAodClockView extends FrameLayout {
         final float[] fromWeather = sizeChanged && wasVisible && !clockPluginGlyphTransitionActive
                 ? snapshotTextContentMorph(weatherView)
                 : null;
-        if (clockView != null) {
-            clockView.animate().cancel();
-            clockView.setScaleX(1f);
-            clockView.setScaleY(1f);
-            clockView.setTranslationX(0f);
-            clockView.setTranslationY(0f);
-        }
+        resetClockPluginTextMorphState();
         setScaleX(1f);
         setScaleY(1f);
 
@@ -3113,10 +3109,12 @@ public final class PixelAodClockView extends FrameLayout {
                 && fromClock != null && fromClock[4] > 1f) {
             // Size content morph only when not doing LS→AOD weight handoff (that path uses
             // startCompactToLargeEntryMorph after weight morph is visible).
-            startAodTextContentMorph(fromClock, source + "#aod-size-morph");
-            startAodTextContentMorph(dateView, fromDate, source + "#aod-info-date-morph");
+            startAodTextContentMorph(fromClock, source + "#aod-size-morph",
+                    presentationGeneration);
+            startAodTextContentMorph(dateView, fromDate, source + "#aod-info-date-morph",
+                    presentationGeneration);
             startAodTextContentMorph(weatherView, fromWeather,
-                    source + "#aod-info-weather-morph");
+                    source + "#aod-info-weather-morph", presentationGeneration);
             if (mediaRow != null) {
                 mediaRow.setAlpha(1f);
             }
@@ -3182,11 +3180,13 @@ public final class PixelAodClockView extends FrameLayout {
         return out;
     }
 
-    private void startAodTextContentMorph(float[] from, String source) {
-        startAodTextContentMorph(clockView, from, source);
+    private void startAodTextContentMorph(float[] from, String source,
+            long presentationGeneration) {
+        startAodTextContentMorph(clockView, from, source, presentationGeneration);
     }
 
-    private void startAodTextContentMorph(TextView target, float[] from, String source) {
+    private void startAodTextContentMorph(TextView target, float[] from, String source,
+            long presentationGeneration) {
         if (target == null || from == null || from[4] <= 1f) {
             return;
         }
@@ -3194,7 +3194,8 @@ public final class PixelAodClockView extends FrameLayout {
         final float[] fromSnapshot = from.clone();
         android.view.ViewTreeObserver observer = morphTarget.getViewTreeObserver();
         if (!observer.isAlive()) {
-            morphTarget.post(() -> runAodTextContentMorph(morphTarget, fromSnapshot, source));
+            morphTarget.post(() -> runAodTextContentMorph(morphTarget, fromSnapshot, source,
+                    presentationGeneration));
             return;
         }
         observer.addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
@@ -3204,14 +3205,23 @@ public final class PixelAodClockView extends FrameLayout {
                 if (obs.isAlive()) {
                     obs.removeOnPreDrawListener(this);
                 }
-                runAodTextContentMorph(morphTarget, fromSnapshot, source);
+                if (CouiClockSizeTransitionMath.isPresentationMorphCurrent(presentationGeneration,
+                        clockPluginPresentationGeneration)) {
+                    runAodTextContentMorph(morphTarget, fromSnapshot, source,
+                            presentationGeneration);
+                }
                 return true;
             }
         });
         morphTarget.invalidate();
     }
 
-    private void runAodTextContentMorph(TextView target, float[] from, String source) {
+    private void runAodTextContentMorph(TextView target, float[] from, String source,
+            long presentationGeneration) {
+        if (!CouiClockSizeTransitionMath.isPresentationMorphCurrent(presentationGeneration,
+                clockPluginPresentationGeneration)) {
+            return;
+        }
         float[] to = snapshotTextContentMorph(target);
         if (to[4] <= 1f) {
             clearTextMorphTransform(target);
@@ -3240,12 +3250,15 @@ public final class PixelAodClockView extends FrameLayout {
                 .setDuration(550L)
                 .setInterpolator(new android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f))
                 .withEndAction(() -> {
-                    clearTextMorphTransform(target);
-                    PixelAodLog.log("finished AOD size morph source=" + source
-                            + " toCx=" + to[0] + " toCy=" + to[1]
-                            + " toW=" + to[2] + " toH=" + to[3]
-                            + " toTextSize=" + to[4]
-                            + " trace=" + currentAodTraceId());
+                    if (CouiClockSizeTransitionMath.isPresentationMorphCurrent(
+                            presentationGeneration, clockPluginPresentationGeneration)) {
+                        clearTextMorphTransform(target);
+                        PixelAodLog.log("finished AOD size morph source=" + source
+                                + " toCx=" + to[0] + " toCy=" + to[1]
+                                + " toW=" + to[2] + " toH=" + to[3]
+                                + " toTextSize=" + to[4]
+                                + " trace=" + currentAodTraceId());
+                    }
                 })
                 .start();
         PixelAodLog.log("started AOD size morph source=" + source
@@ -3279,6 +3292,7 @@ public final class PixelAodClockView extends FrameLayout {
                 ? durationMs : PixelAodVisualStyle.COUI_WEIGHT_MORPH_MILLIS;
         final android.view.animation.Interpolator morphInterpolator = interpolator != null
                 ? interpolator : CLOCK_PLUGIN_GEOMETRY_HANDOFF_INTERPOLATOR;
+        final long presentationGeneration = clockPluginPresentationGeneration;
         animate().cancel();
         setScaleX(1f);
         setScaleY(1f);
@@ -3289,7 +3303,7 @@ public final class PixelAodClockView extends FrameLayout {
         ViewTreeObserver observer = getViewTreeObserver();
         if (!observer.isAlive()) {
             post(() -> runCompactToLargeEntryMorph(sourceSnapshot, morphMs,
-                    morphInterpolator, source));
+                    morphInterpolator, source, presentationGeneration));
             return;
         }
         observer.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
@@ -3299,7 +3313,11 @@ public final class PixelAodClockView extends FrameLayout {
                 if (current.isAlive()) {
                     current.removeOnPreDrawListener(this);
                 }
-                runCompactToLargeEntryMorph(sourceSnapshot, morphMs, morphInterpolator, source);
+                if (CouiClockSizeTransitionMath.isPresentationMorphCurrent(presentationGeneration,
+                        clockPluginPresentationGeneration)) {
+                    runCompactToLargeEntryMorph(sourceSnapshot, morphMs, morphInterpolator,
+                            source, presentationGeneration);
+                }
                 return true;
             }
         });
@@ -3308,18 +3326,26 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private void runCompactToLargeEntryMorph(AodGeometryHandoff.Snapshot sourceSnapshot,
-            long durationMs, android.view.animation.Interpolator interpolator, String source) {
+            long durationMs, android.view.animation.Interpolator interpolator, String source,
+            long presentationGeneration) {
+        if (!CouiClockSizeTransitionMath.isPresentationMorphCurrent(presentationGeneration,
+                clockPluginPresentationGeneration)) {
+            return;
+        }
         float compactClockTextPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP,
                 scaledClockTextDp(getContext(), SMALL_CLOCK_TEXT_DP),
                 getResources().getDisplayMetrics());
         float compactInfoTextPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP,
                 COMPACT_INFO_TEXT_DP, getResources().getDisplayMetrics());
         boolean clock = animateTextFromScreenPoint(clockView, sourceSnapshot.clock,
-                compactClockTextPx, durationMs, interpolator, source + "#clock");
+                compactClockTextPx, durationMs, interpolator, source + "#clock",
+                presentationGeneration);
         boolean date = animateTextFromScreenPoint(dateView, sourceSnapshot.date,
-                compactInfoTextPx, durationMs, interpolator, source + "#date");
+                compactInfoTextPx, durationMs, interpolator, source + "#date",
+                presentationGeneration);
         boolean weather = animateTextFromScreenPoint(weatherView, sourceSnapshot.weather,
-                compactInfoTextPx, durationMs, interpolator, source + "#weather");
+                compactInfoTextPx, durationMs, interpolator, source + "#weather",
+                presentationGeneration);
         boolean media = mediaRow != null && mediaRow.getVisibility() == View.VISIBLE;
         if (media) {
             mediaRow.animate().cancel();
@@ -3340,7 +3366,8 @@ public final class PixelAodClockView extends FrameLayout {
 
     private boolean animateTextFromScreenPoint(TextView target,
             AodGeometryHandoff.Point sourceCenter, float sourceTextPx, long durationMs,
-            android.view.animation.Interpolator interpolator, String source) {
+            android.view.animation.Interpolator interpolator, String source,
+            long presentationGeneration) {
         if (target == null || target.getVisibility() != View.VISIBLE
                 || target.getWidth() <= 0 || target.getHeight() <= 0
                 || sourceCenter == null || !sourceCenter.valid) {
@@ -3372,7 +3399,12 @@ public final class PixelAodClockView extends FrameLayout {
                 .translationY(0f)
                 .setDuration(durationMs)
                 .setInterpolator(interpolator)
-                .withEndAction(() -> clearTextMorphTransform(target))
+                .withEndAction(() -> {
+                    if (CouiClockSizeTransitionMath.isPresentationMorphCurrent(
+                            presentationGeneration, clockPluginPresentationGeneration)) {
+                        clearTextMorphTransform(target);
+                    }
+                })
                 .start();
         PixelAodLog.log("started compact→large AOD text morph source=" + source
                 + " startScale=" + scale
@@ -3391,6 +3423,12 @@ public final class PixelAodClockView extends FrameLayout {
         view.setScaleY(1f);
         view.setTranslationX(0f);
         view.setTranslationY(0f);
+    }
+
+    private void resetClockPluginTextMorphState() {
+        clearTextMorphTransform(clockView);
+        clearTextMorphTransform(dateView);
+        clearTextMorphTransform(weatherView);
     }
 
     void startClockPluginAodWeightTransition(String source) {
@@ -3508,6 +3546,7 @@ public final class PixelAodClockView extends FrameLayout {
             return;
         }
         if (!visible) {
+            ++clockPluginPresentationGeneration;
             // Leaving AOD surface (unlock / hide). Cancel morph; settle cleared so the next
             // LS→AOD entry always re-parks and animates.
             if (clockWeightAnimator != null) {
@@ -3515,6 +3554,7 @@ public final class PixelAodClockView extends FrameLayout {
                 clockWeightAnimator = null;
             }
             aodWeightHandoffSettled = false;
+            resetClockPluginTextMorphState();
         }
         setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
         if (!visible) {

@@ -112,6 +112,16 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         }
         final SceneSnapshot from = sourceSnapshot;
         final SceneSnapshot to = target;
+        if (!CouiClockSizeTransitionMath.shouldRunActualSizeTransition(
+                true, from.compact, to.compact)) {
+            PixelAodLog.log("skipped COUI per-glyph size transaction actual-size no-op source="
+                    + (sourceTag != null ? sourceTag : transitionSource)
+                    + " fromCompact=" + from.compact
+                    + " toCompact=" + to.compact
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
+            cancelAndRestore("actual-size-no-op");
+            return false;
+        }
         transitionSource = sourceTag != null ? sourceTag : transitionSource;
         rememberAndHide(to.clockContent);
         rememberAndHide(to.dateContent);

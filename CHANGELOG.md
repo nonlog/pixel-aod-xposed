@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.1.293] - 2026-08-05
+### Meta
+- **Model:** Codex / Luna
+- **Scope:** False COUI large/compact transaction during unlock → launcher/app → screen-off AOD entry
+
+### Fixed
+- Reject a COUI per-glyph transaction when the captured rendered source already has the
+  intended target compact state, preventing the observed false → false animation and its
+  late weather/upper-clock-row displacement.
+- Keep a defensive actual-source/actual-target equality check at transaction start while
+  preserving real same-surface large ↔ compact animation and lockscreen ↔ AOD weight behavior.
+
+### Success
+- Persistent LSPosed evidence identified the false → false transaction as the cause;
+- `CouiClockSizeTransitionMathTest` covers the scene-requested/actual-size mismatch and
+  actual large ↔ compact transitions.
+- `.\gradlew.bat :app:testDebugUnitTest --rerun-tasks` passed, and
+  `.\gradlew.bat :app:assembleDebug` passed with `app-debug.apk` produced.
+- **Device validation Success:** repeated unlock → launcher/app → screen-off entries now
+  present the weather row and upper large-clock row directly at their final target positions;
+  lockscreen ↔ AOD and genuine large ↔ compact transitions remain normal.
+
+### Deferred/Failed
+- The 0.1.292 visual-fix generation/reset patch was device-tested and Failed to remove this
+  defect; it remains defense-in-depth, not the root-cause fix.
+
+## [0.1.292] - 2026-08-05
+### Meta
+- **Model:** Codex / Luna
+- **Scope:** Repeated large-clock AOD entry geometry after unlock/home → screen-off
+
+### Fixed
+- Invalidate stale AOD text morph callbacks when the persistent AOD surface is hidden or
+  presented again, and reset the clock, date, and weather transforms before the new geometry is
+  drawn.
+- Preserve lockscreen↔AOD weight behavior and keep the COUI per-glyph transaction restricted to
+  same-surface large↔compact changes; cross-surface handoffs retain their existing path.
+
+### Success
+- Full 872-frame video evidence identified the reproducible split at frames 803–805
+  (`8.613989`–`8.630767` s) and the snap back at frame 806 (`8.638456` s); the stable baseline
+  is frame 92 (`0.778656` s).
+- Focused and full Debug unit tests pass, and the Debug APK build passes with synchronized
+  package/version and Vector metadata.
+
+### Deferred/Failed
+- Device visual verification is Deferred until the user tests the built APK; the recording is
+  pre-fix evidence and does not prove post-fix runtime behavior.
+
 ## [0.1.291] - 2026-08-05
 ### Meta
 - **Model:** Codex / Luna

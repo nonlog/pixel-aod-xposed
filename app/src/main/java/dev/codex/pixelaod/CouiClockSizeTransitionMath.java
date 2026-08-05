@@ -12,9 +12,19 @@ final class CouiClockSizeTransitionMath {
         return fromCompact != toCompact;
     }
 
+    static boolean shouldRunActualSizeTransition(boolean sceneRequestsSizeChange,
+            boolean actualFromCompact, boolean actualToCompact) {
+        return sceneRequestsSizeChange && isSizeChange(actualFromCompact, actualToCompact);
+    }
+
     static boolean isSameSurfaceSizeChange(boolean fromLockscreen, boolean toLockscreen,
             boolean fromCompact, boolean toCompact) {
         return fromLockscreen == toLockscreen && isSizeChange(fromCompact, toCompact);
+    }
+
+    static boolean isPresentationMorphCurrent(long scheduledGeneration,
+            long currentGeneration) {
+        return scheduledGeneration == currentGeneration;
     }
 
     static Frame frame(Element from, Element to, float progress) {
