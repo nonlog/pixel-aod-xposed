@@ -39,9 +39,11 @@ final class PixelClockPluginHostView extends FrameLayout {
 
     private final PixelLockscreenClockView lockscreenLayer;
     private final PixelAodClockView aodLayer;
+    private final CouiClockSizeTransitionLayer sizeTransitionLayer;
     private ClockPluginSceneMachine.Scene scene = ClockPluginSceneMachine.Scene.HIDDEN;
     private Runnable finishAodEntryRunnable;
     private long entryGeneration;
+    private long sizeTransitionGeneration;
     private Runnable firstPresentationFrameCallback;
     private boolean preparingAodWeight;
     private int handoffDiagnosticFramesRemaining;
@@ -65,9 +67,13 @@ final class PixelClockPluginHostView extends FrameLayout {
         aodLayer.setClockPluginManaged(true, "ClockPlugin-host-create");
         aodLayer.setVisibility(View.INVISIBLE);
 
+        sizeTransitionLayer = new CouiClockSizeTransitionLayer(context);
+
         addView(lockscreenLayer, new FrameLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         addView(aodLayer, new FrameLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        addView(sizeTransitionLayer, new FrameLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
     }
 
@@ -90,6 +96,7 @@ final class PixelClockPluginHostView extends FrameLayout {
     @Override
     protected void onDetachedFromWindow() {
         cancelAodEntry();
+        cancelSizeTransition("host-detached");
         handoffDiagnosticFramesRemaining = 0;
         super.onDetachedFromWindow();
     }
@@ -112,6 +119,10 @@ final class PixelClockPluginHostView extends FrameLayout {
         if (target == ClockPluginSceneMachine.Scene.HIDDEN) {
             hide(source);
             return;
+        }
+
+        if (decision.changed && !isClockSizeChange(scene, target)) {
+            cancelSizeTransition("scene-change-without-size-morph");
         }
 
         if (!decision.changed && scene == target) {
@@ -256,6 +267,7 @@ final class PixelClockPluginHostView extends FrameLayout {
 
     void hide(String source) {
         cancelAodEntry();
+        cancelSizeTransition("host-hide");
         lockscreenLayer.animate().cancel();
         aodLayer.animate().cancel();
         lockscreenLayer.setAlpha(1f);
@@ -277,6 +289,7 @@ final class PixelClockPluginHostView extends FrameLayout {
     }
 
     private void presentLockscreen(ClockPluginSceneMachine.Scene target, String source) {
+        SizeTransitionRequest sizeTransition = prepareSizeTransition(target, source);
         cancelAodEntry();
         preparingAodWeight = false;
         setVisibility(View.VISIBLE);
@@ -325,12 +338,18 @@ final class PixelClockPluginHostView extends FrameLayout {
         aodLayer.setClockPluginLayerVisible(false);
         lockscreenLayer.animate().cancel();
         lockscreenLayer.setAlpha(1f);
-        lockscreenLayer.presentClockPluginLockscreen(
-                target == ClockPluginSceneMachine.Scene.LOCKSCREEN_SMALL,
-                source + "#ClockPlugin-host",
-                fromWeight,
-                animateFromAod);
+        lockscreenLayer.setClockPluginGlyphTransitionActive(sizeTransition != null);
+        try {
+            lockscreenLayer.presentClockPluginLockscreen(
+                    target == ClockPluginSceneMachine.Scene.LOCKSCREEN_SMALL,
+                    source + "#ClockPlugin-host",
+                    fromWeight,
+                    animateFromAod);
+        } finally {
+            lockscreenLayer.setClockPluginGlyphTransitionActive(false);
+        }
         lockscreenLayer.setClockPluginLayerVisible(true);
+        startSizeTransitionAfterLayout(sizeTransition);
     }
 
     private void presentAod(ClockPluginSceneMachine.Scene target, boolean enteringAod,
@@ -341,6 +360,7 @@ final class PixelClockPluginHostView extends FrameLayout {
     private void presentAod(ClockPluginSceneMachine.Scene target, boolean enteringAod,
             String source, boolean fromLockscreenSmall) {
         setVisibility(View.VISIBLE);
+        SizeTransitionRequest sizeTransition = prepareSizeTransition(target, source);
         boolean hostOnLockscreen = scene.isLockscreen()
                 && lockscreenLayer.getVisibility() == View.VISIBLE;
         // Interactive-lockscreen origin only (recent stamp || noteScreenOff latch).
@@ -421,13 +441,19 @@ final class PixelClockPluginHostView extends FrameLayout {
                 : AodGeometryHandoff.Snapshot.EMPTY;
         lockscreenLayer.cancelClockPluginWeightTransitionKeepCurrent(
                 source + "#transfer-weight-to-aod");
-        if (fromLockscreenEntry) {
-            aodLayer.presentClockPluginAod(aodCompact, /*deferWeight*/ true, weightStart,
-                    source + "#ClockPlugin-host", morphFromCompact);
-        } else {
-            // deferWeight=false → applyStableAodClockWeight (target AOD weight, settled).
-            aodLayer.presentClockPluginAod(aodCompact, /*deferWeight*/ false, aodTargetWeight,
-                    source + "#ClockPlugin-host-direct-aod", false);
+        boolean fallbackWholeViewMorph = morphFromCompact && sizeTransition == null;
+        aodLayer.setClockPluginGlyphTransitionActive(sizeTransition != null);
+        try {
+            if (fromLockscreenEntry) {
+                aodLayer.presentClockPluginAod(aodCompact, /*deferWeight*/ true, weightStart,
+                        source + "#ClockPlugin-host", fallbackWholeViewMorph);
+            } else {
+                // deferWeight=false → applyStableAodClockWeight (target AOD weight, settled).
+                aodLayer.presentClockPluginAod(aodCompact, /*deferWeight*/ false, aodTargetWeight,
+                        source + "#ClockPlugin-host-direct-aod", false);
+            }
+        } finally {
+            aodLayer.setClockPluginGlyphTransitionActive(false);
         }
         aodLayer.refreshClockPluginAodContent(source + "#ClockPlugin-host-media");
         boolean aodMediaReady = aodLayer.hasVisibleMediaLine();
@@ -438,8 +464,8 @@ final class PixelClockPluginHostView extends FrameLayout {
             // Fully visible AOD + weight morph immediately (no alpha-0 hide of morph).
             aodLayer.setAlpha(1f);
             aodLayer.setClockPluginLayerVisible(true);
-            if (morphFromCompact) {
-                // Preserve the explicit compact-to-large clock switch only.
+            if (fallbackWholeViewMorph) {
+                // Fallback only when glyph geometry could not be captured.
                 aodLayer.startCompactToLargeEntryMorph(compactMorphGeometry,
                         SIZE_MORPH_MILLIS, SIZE_MORPH_INTERPOLATOR,
                         source + "#coui-compact-to-large");
@@ -458,6 +484,7 @@ final class PixelClockPluginHostView extends FrameLayout {
                     + " aodMediaReady=" + aodLayer.hasVisibleMediaLine()
                     + " generation=" + generation
                     + " trace=" + PixelAodClockView.currentAodTraceId());
+            startSizeTransitionAfterLayout(sizeTransition);
             return;
         }
 
@@ -492,6 +519,7 @@ final class PixelClockPluginHostView extends FrameLayout {
                 aodLayer.applyClockPluginStableAodWeight(source + "#non-lockscreen-direct");
             }
             scheduleAodMediaRetries(generation, source + "#aod-direct");
+            startSizeTransitionAfterLayout(sizeTransition);
             return;
         }
 
@@ -501,6 +529,147 @@ final class PixelClockPluginHostView extends FrameLayout {
         lockscreenLayer.animate().cancel();
         scheduleAodEntryCrossfade(generation, source, aodMediaReady, weightStart,
                 needWeightMorph);
+        startSizeTransitionAfterLayout(sizeTransition);
+    }
+
+    private SizeTransitionRequest prepareSizeTransition(ClockPluginSceneMachine.Scene target,
+            String source) {
+        if (!isClockSizeChange(scene, target) || getWidth() <= 0 || getHeight() <= 0) {
+            return null;
+        }
+        if (sizeTransitionLayer.hasActiveTransition()) {
+            cancelSizeTransition("superseded-size-transition");
+        }
+        long generation = ++sizeTransitionGeneration;
+        CouiClockSizeTransitionLayer.SceneSnapshot snapshot = captureSceneSnapshot(scene);
+        if (snapshot == null || !snapshot.valid()
+                || !sizeTransitionLayer.prepare(snapshot, source + "#glyph-source")) {
+            return null;
+        }
+        return new SizeTransitionRequest(target, source + "#glyph-target", generation);
+    }
+
+    private void startSizeTransitionAfterLayout(SizeTransitionRequest request) {
+        if (request == null) {
+            return;
+        }
+        Runnable start = () -> {
+            if (request.generation != sizeTransitionGeneration) {
+                return;
+            }
+            if (scene != request.target) {
+                cancelSizeTransition("stale-target-scene");
+                return;
+            }
+            CouiClockSizeTransitionLayer.SceneSnapshot targetSnapshot =
+                    captureSceneSnapshot(request.target);
+            if (targetSnapshot == null || !targetSnapshot.valid()) {
+                cancelSizeTransition("target-geometry-unavailable");
+                return;
+            }
+            CouiClockSizeTransitionLayer.WeightProvider weightProvider =
+                    weightProviderFor(request.target);
+            sizeTransitionLayer.start(targetSnapshot, weightProvider, SIZE_MORPH_MILLIS,
+                    SIZE_MORPH_INTERPOLATOR, request.source);
+        };
+        ViewTreeObserver observer = getViewTreeObserver();
+        if (!observer.isAlive()) {
+            postOnAnimation(start);
+            return;
+        }
+        observer.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                ViewTreeObserver current = getViewTreeObserver();
+                if (current.isAlive()) {
+                    current.removeOnPreDrawListener(this);
+                }
+                start.run();
+                return true;
+            }
+        });
+        requestLayout();
+        invalidate();
+    }
+
+    private void cancelSizeTransition(String reason) {
+        sizeTransitionGeneration++;
+        sizeTransitionLayer.cancelAndRestore(reason);
+    }
+
+    private CouiClockSizeTransitionLayer.SceneSnapshot captureSceneSnapshot(
+            ClockPluginSceneMachine.Scene sourceScene) {
+        if (sourceScene != null && sourceScene.isLockscreen()) {
+            return lockscreenLayer.captureClockPluginSizeTransition(sizeTransitionLayer, this);
+        }
+        if (sourceScene != null && sourceScene.isAod()) {
+            return aodLayer.captureClockPluginSizeTransition(sizeTransitionLayer, this);
+        }
+        return CouiClockSizeTransitionLayer.SceneSnapshot.EMPTY;
+    }
+
+    private CouiClockSizeTransitionLayer.WeightProvider weightProviderFor(
+            ClockPluginSceneMachine.Scene target) {
+        if (target != null && target.isAod()) {
+            return new CouiClockSizeTransitionLayer.WeightProvider() {
+                @Override
+                public int clockWeight() {
+                    return aodLayer.clockPluginWeight();
+                }
+
+                @Override
+                public int infoWeight() {
+                    return aodLayer.clockPluginInfoWeight();
+                }
+            };
+        }
+        return new CouiClockSizeTransitionLayer.WeightProvider() {
+            @Override
+            public int clockWeight() {
+                return lockscreenLayer.clockPluginWeight();
+            }
+
+            @Override
+            public int infoWeight() {
+                return lockscreenLayer.clockPluginInfoWeight();
+            }
+        };
+    }
+
+    private static boolean isClockSizeChange(ClockPluginSceneMachine.Scene from,
+            ClockPluginSceneMachine.Scene to) {
+        Boolean fromCompact = compactScene(from);
+        Boolean toCompact = compactScene(to);
+        // A lockscreen/AOD handoff changes coordinate and layer ownership; let the existing
+        // handoff render that change instead of overlaying a glyph transaction across it.
+        return fromCompact != null && toCompact != null
+                && CouiClockSizeTransitionMath.isSameSurfaceSizeChange(
+                from.isLockscreen(), to.isLockscreen(), fromCompact, toCompact);
+    }
+
+    private static Boolean compactScene(ClockPluginSceneMachine.Scene value) {
+        if (value == ClockPluginSceneMachine.Scene.LOCKSCREEN_SMALL
+                || value == ClockPluginSceneMachine.Scene.AOD_SMALL) {
+            return Boolean.TRUE;
+        }
+        if (value == ClockPluginSceneMachine.Scene.LOCKSCREEN_LARGE
+                || value == ClockPluginSceneMachine.Scene.AOD_LARGE) {
+            return Boolean.FALSE;
+        }
+        return null;
+    }
+
+    private static final class SizeTransitionRequest {
+        final ClockPluginSceneMachine.Scene target;
+        final String source;
+        final long generation;
+
+        SizeTransitionRequest(ClockPluginSceneMachine.Scene target, String source,
+                long generation) {
+            this.target = target;
+            this.source = source;
+            this.generation = generation;
+        }
     }
 
     private void startAodWeightMorphIfNeeded(boolean needWeightMorph, int fromWeight,

@@ -155,6 +155,9 @@ final class PixelFingerprintIconController {
             restoreTrackedPressedIcons(source + "#pressed-disabled");
             return;
         }
+        if (!PixelAodClockView.shouldRefreshFingerprintIcon(resolvedContext, source)) {
+            return;
+        }
 
         trackPressedIcon(pressedIcon);
         updatePressedVisual(pressedIcon, source + "#pressed-passive");
@@ -844,6 +847,9 @@ final class PixelFingerprintIconController {
         Context context = iconView.getContext();
         if (context == null || !PixelAodSettings.getBoolean(
                 context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false)) {
+            return;
+        }
+        if (!PixelAodClockView.shouldRefreshFingerprintIcon(context, source)) {
             return;
         }
         boolean onDozeState = readBooleanField(uiMech, "onDozeState");

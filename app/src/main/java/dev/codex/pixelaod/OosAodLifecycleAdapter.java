@@ -67,6 +67,20 @@ final class OosAodLifecycleAdapter {
         return PowerPolicyRule.NORMAL_ALLOW.toDecision(levelPercent, thresholdPercent);
     }
 
+    static boolean isPowerPolicyDenial(String reason) {
+        return "power-save-mode".equals(reason) || "low-battery".equals(reason);
+    }
+
+    static boolean shouldReassertAodAfterPolicy(boolean interactive,
+            boolean modulePolicyAllowsDisplay, boolean shouldApplyModuleAod,
+            boolean shouldKeepNativeDozeAlive, String modulePolicyReason) {
+        return !interactive
+                && modulePolicyAllowsDisplay
+                && shouldApplyModuleAod
+                && shouldKeepNativeDozeAlive
+                && !isPowerPolicyDenial(modulePolicyReason);
+    }
+
     static void recordPowerPolicyDecision(PowerPolicyDecision decision, String source,
             boolean powerSaveMode, String batteryDescription, String trace,
             String stateDescription) {
@@ -697,8 +711,7 @@ final class OosAodLifecycleAdapter {
             if (modulePolicy == null) {
                 return false;
             }
-            return "power-save-mode".equals(modulePolicy.reason)
-                    || "low-battery".equals(modulePolicy.reason)
+            return isPowerPolicyDenial(modulePolicy.reason)
                     || "module-disabled".equals(modulePolicy.reason)
                     || "no-context".equals(modulePolicy.reason);
         }

@@ -78,4 +78,77 @@ public final class PixelFingerprintIconPolicyTest {
                 "android.graphics.drawable.AnimatedVectorDrawable"));
         assertTrue(PixelFingerprintIconPolicy.shouldUsePixelIcon(true, couiDrawable));
     }
+
+    @Test
+    public void powerPolicyDenialDoesNotRearmCarrierWhileScreenIsNonInteractive() {
+        OosAodLifecycleAdapter.PowerPolicyDecision automaticLowBattery =
+                OosAodLifecycleAdapter.evaluatePowerPolicy(
+                        false, true, true, false, 12, 15);
+        OosAodLifecycleAdapter.PowerPolicyDecision manualPowerSaver =
+                OosAodLifecycleAdapter.evaluatePowerPolicy(
+                        true, true, false, false, 98, 15);
+
+        assertFalse(automaticLowBattery.allowsDisplay);
+        assertFalse(manualPowerSaver.allowsDisplay);
+        assertTrue(OosAodLifecycleAdapter.isPowerPolicyDenial(
+                automaticLowBattery.reason));
+        assertTrue(OosAodLifecycleAdapter.isPowerPolicyDenial(
+                manualPowerSaver.reason));
+        assertFalse(PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
+                false, automaticLowBattery.allowsDisplay, true));
+        assertFalse(PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
+                false, manualPowerSaver.allowsDisplay, true));
+    }
+
+    @Test
+    public void allowedRecentAodOverlayStillRefreshesForProximityRecovery() {
+        OosAodLifecycleAdapter.PowerPolicyDecision allowed =
+                OosAodLifecycleAdapter.evaluatePowerPolicy(
+                        false, true, false, false, 80, 15);
+
+        assertTrue(allowed.allowsDisplay);
+        assertFalse(OosAodLifecycleAdapter.isPowerPolicyDenial(allowed.reason));
+        assertTrue(PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
+                false, allowed.allowsDisplay, false));
+        assertFalse(PassiveFodShowGate.shouldSuppress(15_000L, 20L, -1L));
+    }
+
+    @Test
+    public void interactiveLockscreenIsNotBlockedByAodPowerPolicyGate() {
+        assertTrue(PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
+                true, false, true));
+    }
+
+    @Test
+    public void deniedNonInteractivePolicyLeavesNativeHideCallbackAllowed() {
+        OosAodLifecycleAdapter.AodPolicyDecision decision =
+                OosAodLifecycleAdapter.evaluatePolicy(
+                        "AodRecord#onEnergySavingNotifyHide", "trace", null,
+                        new OosAodLifecycleAdapter.ModulePolicy(
+                                false, true, false, false, "power-save-mode",
+                                "continuous", true, false),
+                        false, false);
+
+        assertFalse(decision.modulePolicyAllowsDisplay);
+        assertFalse(decision.shouldKeepNativeDozeAlive);
+        assertTrue(decision.shouldAllowNativeHideCallbacks);
+        assertFalse(PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
+                false, decision.modulePolicyAllowsDisplay,
+                OosAodLifecycleAdapter.isPowerPolicyDenial(decision.modulePolicyReason)));
+        assertFalse(OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
+                false, decision.modulePolicyAllowsDisplay, decision.shouldApplyModuleAod,
+                decision.shouldKeepNativeDozeAlive, decision.modulePolicyReason));
+    }
+
+    @Test
+    public void allowedAodCanReassertOnlyWhileNativeDozeIsKept() {
+        assertTrue(OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
+                false, true, true, true, "power-policy-allowed"));
+        assertFalse(OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
+                false, true, true, false, "power-policy-allowed"));
+        assertFalse(OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
+                true, true, true, true, "power-policy-allowed"));
+        assertFalse(OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
+                false, false, false, false, "low-battery"));
+    }
 }

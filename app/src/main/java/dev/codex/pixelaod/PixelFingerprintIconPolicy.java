@@ -52,4 +52,12 @@ final class PixelFingerprintIconPolicy {
     static boolean shouldUsePixelIcon(boolean enabled, String currentDrawableClass) {
         return enabled;
     }
+
+    static boolean shouldRefreshAfterAodPolicy(boolean interactive,
+            boolean modulePolicyAllowsDisplay, boolean powerPolicyDenied) {
+        // While the screen is non-interactive, a power-policy denial hands steady carrier
+        // visibility back to the vendor hide lifecycle. Do not reapply our carrier from a
+        // delayed FOD callback, but keep interactive and normally allowed AOD refreshes.
+        return interactive || modulePolicyAllowsDisplay || !powerPolicyDenied;
+    }
 }

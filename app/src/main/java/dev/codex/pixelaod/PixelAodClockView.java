@@ -435,6 +435,7 @@ public final class PixelAodClockView extends FrameLayout {
     private boolean notificationSettingsObserverRegistered;
     private boolean timeReceiverRegistered;
     private boolean clockPluginManaged;
+    private boolean clockPluginGlyphTransitionActive;
 
     public PixelAodClockView(Context context) {
         super(context);
@@ -1665,6 +1666,31 @@ public final class PixelAodClockView extends FrameLayout {
 
     static boolean isModuleAodPolicyAllowingDisplay(Context context, String source) {
         return evaluateAodPolicy(context, source).modulePolicyAllowsDisplay;
+    }
+
+    static boolean shouldRefreshFingerprintIcon(Context context, String source) {
+        if (context == null) {
+            return true;
+        }
+        boolean interactive = isDeviceInteractive(context);
+        if (interactive) {
+            return true;
+        }
+        OosAodLifecycleAdapter.AodPolicyDecision decision =
+                evaluateAodPolicy(context, source + "#fingerprint-refresh");
+        boolean powerPolicyDenied = OosAodLifecycleAdapter.isPowerPolicyDenial(
+                decision.modulePolicyReason);
+        boolean shouldRefresh = PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
+                interactive, decision.modulePolicyAllowsDisplay, powerPolicyDenied);
+        if (!shouldRefresh) {
+            PixelAodLog.log("Pixel fingerprint icon refresh skipped"
+                    + " source=" + source
+                    + " reason=power-policy-denied-native-hide"
+                    + " modulePolicyReason=" + decision.modulePolicyReason
+                    + " trace=" + decision.trace
+                    + " state={" + describeAodState(context) + "}");
+        }
+        return shouldRefresh;
     }
 
     static boolean isContinuousAodPolicyAllowingDisplay(Context context, String source) {
@@ -3023,13 +3049,13 @@ public final class PixelAodClockView extends FrameLayout {
         boolean wasVisible = getVisibility() == View.VISIBLE && getAlpha() > 0.01f;
         boolean sizeChanged = compact != compactClock;
         // Glyph content + textSize before mode switch (MATCH_PARENT box is wrong for morph).
-        final float[] fromClock = sizeChanged && wasVisible
+        final float[] fromClock = sizeChanged && wasVisible && !clockPluginGlyphTransitionActive
                 ? snapshotTextContentMorph(clockView)
                 : null;
-        final float[] fromDate = sizeChanged && wasVisible
+        final float[] fromDate = sizeChanged && wasVisible && !clockPluginGlyphTransitionActive
                 ? snapshotTextContentMorph(dateView)
                 : null;
-        final float[] fromWeather = sizeChanged && wasVisible
+        final float[] fromWeather = sizeChanged && wasVisible && !clockPluginGlyphTransitionActive
                 ? snapshotTextContentMorph(weatherView)
                 : null;
         if (clockView != null) {
@@ -6853,6 +6879,16 @@ public final class PixelAodClockView extends FrameLayout {
         return currentClockWeight;
     }
 
+    CouiClockSizeTransitionLayer.SceneSnapshot captureClockPluginSizeTransition(
+            CouiClockSizeTransitionLayer transitionLayer, ViewGroup coordinateRoot) {
+        return transitionLayer.capture(coordinateRoot, clockView, dateView, weatherView,
+                currentClockWeight, currentInfoWeight);
+    }
+
+    void setClockPluginGlyphTransitionActive(boolean active) {
+        clockPluginGlyphTransitionActive = active;
+    }
+
     /** Ensures an alert row disappears at its ten-minute deadline even without another weather push. */
     private static void scheduleWeatherAlertExpiryRefresh(BreezyWeatherAlert alert, String source) {
         final long expiresAtMillis = alert != null ? alert.displayExpiresAtMillis() : 0L;
@@ -7314,6 +7350,21 @@ public final class PixelAodClockView extends FrameLayout {
         }
         // Clock text uses fixed-advance spans so variable-font weight frames cannot reflow.
         textView.setLetterSpacing(0f);
+    }
+
+    static float fixedClockGlyphReferenceAdvancePx(TextView textView, char glyph) {
+        if (textView == null) {
+            return 0f;
+        }
+        Paint referencePaint = new Paint(textView.getPaint());
+        Typeface referenceTypeface = resolveClockTypeface(textView.getContext(),
+                lockscreenClockWeight(textView.getContext()));
+        if (referenceTypeface != null) {
+            referencePaint.setTypeface(referenceTypeface);
+        }
+        referencePaint.setTextScaleX(1f);
+        referencePaint.setLetterSpacing(0f);
+        return referencePaint.measureText(String.valueOf(glyph));
     }
 
     static void applySharedClockText(TextView textView, Context context, CharSequence text,

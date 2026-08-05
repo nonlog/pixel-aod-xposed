@@ -2294,21 +2294,55 @@ final class PixelAodHook {
     }
 
     private static void reassertPixelAodAfterEnergySavingHide(Context context, String source) {
-        Context checkContext = context != null ? context : systemUiContext;
-        PixelAodClockView.markRecentAodOverlayVisible(source + "#suppressed-hide");
+        final Context checkContext = context != null ? context : systemUiContext;
         MAIN.post(() -> {
-            PixelAodClockView.setAodActive(true, source + "#suppressed-hide");
+            String passSource = source + "#suppressed-hide";
+            if (!shouldContinueEnergySavingReassert(checkContext, passSource)) {
+                return;
+            }
+            PixelAodClockView.markRecentAodOverlayVisible(passSource);
+            PixelAodClockView.setAodActive(true, passSource);
             PixelAodClockView.tickAllInstances();
-            refreshKnownAodHostVisibility(source + "#suppressed-hide");
+            refreshKnownAodHostVisibility(passSource);
         });
         MAIN.postDelayed(() -> {
+            String passSource = source + "#suppressed-hide-delayed";
+            if (!shouldContinueEnergySavingReassert(checkContext, passSource)) {
+                return;
+            }
             PixelAodClockView.tickAllInstances();
-            refreshKnownAodHostVisibility(source + "#suppressed-hide-delayed");
+            refreshKnownAodHostVisibility(passSource);
             PixelAodLog.log("reasserted Pixel AOD after OPlus energy-saving hide source="
                     + source
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
         }, AOD_ENERGY_HIDE_REASSERT_DELAY_MILLIS);
+    }
+
+    private static boolean shouldContinueEnergySavingReassert(Context context, String source) {
+        if (context == null) {
+            PixelAodLog.log("skipped Pixel AOD energy-saving reassert source=" + source
+                    + " reason=no-context trace=" + PixelAodClockView.currentAodTraceId());
+            return false;
+        }
+        boolean interactive = PixelAodClockView.isDeviceInteractive(context);
+        OosAodLifecycleAdapter.AodPolicyDecision decision =
+                PixelAodClockView.evaluateAodPolicy(context, source + "#policy-recheck");
+        boolean shouldReassert = OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
+                interactive, decision.modulePolicyAllowsDisplay,
+                decision.shouldApplyModuleAod, decision.shouldKeepNativeDozeAlive,
+                decision.modulePolicyReason);
+        if (!shouldReassert) {
+            PixelAodLog.log("skipped Pixel AOD energy-saving reassert source=" + source
+                    + " reason=policy-recheck"
+                    + " modulePolicyReason=" + decision.modulePolicyReason
+                    + " shouldApplyModuleAod=" + decision.shouldApplyModuleAod
+                    + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
+                    + " interactive=" + interactive
+                    + " trace=" + PixelAodClockView.currentAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+        }
+        return shouldReassert;
     }
 
     private static void maybeReassertPixelAodAfterNativeTimeoutHide(

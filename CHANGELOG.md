@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.1.291] - 2026-08-05
+### Meta
+- **Model:** Codex / Luna
+- **Scope:** OPlus power-policy and vendor FOD hide lifecycle
+
+### Fixed
+- Prevent non-interactive automatic low-battery or power-saver denial from reclaiming or
+  refreshing the Pixel fingerprint carrier after OOS/native FOD hide callbacks.
+- Recheck queued energy-saving AOD reassert passes at execution time so a policy transition
+  cannot re-arm the AOD overlay after the native hide lifecycle has been allowed to run.
+- Preserve allowed-AOD recent-overlay refreshes needed for proximity-far recovery, touch handling,
+  native timeout ownership, and manual power-saver hide behavior.
+
+### Success
+- Focused and full Debug unit-test evidence passed for power denial, manual saver, native hide,
+  allowed recent-overlay/proximity recovery, and queued reassert policy decisions.
+- Debug APK build evidence passed with synchronized version metadata and Vector module metadata.
+
+### Deferred/Failed
+- Automatic low-battery device reproduction is Deferred because the connected device remains above
+  the 20% threshold; device-runtime confirmation is also Deferred because this APK was not installed.
+
+## [0.1.290] - 2026-08-04
+### Meta
+- **Model:** Codex / Luna
+- **Scope:** COUI-style large/compact clock glyph transition
+
+### Fixed
+- Replace the whole-TextView large/compact scale with a temporary per-glyph transaction in the
+  persistent ClockPlugin host. The four digits now move and scale toward their own target cells
+  instead of growing or shrinking as one rectangular text block.
+- Match COUI's 550 ms `PathInterpolator(0.2, 0, 0, 1)` motion and colon timing: the colon fades
+  out at the start of compact-to-large and waits until 52% before entering large-to-compact.
+- Move date and weather in the same transaction and read the live lockscreen/AOD clock and
+  information weights while the glyph overlay is active.
+- Scope the 550 ms glyph transaction to same-surface large↔compact changes. The prior
+  compactness-only predicate incorrectly started it across `LOCKSCREEN_*↔AOD_*` handoffs, while
+  the background and layer ownership were already changing.
+- Preserve the existing lockscreen/AOD handoff and whole-view fallback behavior for cross-surface
+  transitions; only the misplaced COUI overlay is suppressed there.
+
+### Success
+- Frame analysis ties the split to current frame 381 at `3.333978s` (still present at frame 389,
+  `3.400267s`) while the COUI target remains a single composition at frames 385/389
+  (`3.303s`/`3.336s`).
+- Pure transition tests cover independent glyph targets, both colon timelines, same-surface
+  large/compact changes, and cross-surface rejection; the focused debug unit-test task passes.
+
+### Deferred/Failed
+- Device visual confirmation is pending after installation. Build and unit-test success do not
+  prove that OOS composition and screen fading make the transition visually identical to COUI.
+- This animation revision remains uncommitted until the user approves the installed build.
+
 ## [0.1.289] - 2026-08-04
 ### Meta
 - **Model:** Codex

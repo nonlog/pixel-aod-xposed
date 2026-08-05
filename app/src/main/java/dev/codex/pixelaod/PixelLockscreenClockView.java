@@ -113,6 +113,7 @@ final class PixelLockscreenClockView extends FrameLayout {
     };
     private boolean started;
     private boolean clockPluginManaged;
+    private boolean clockPluginGlyphTransitionActive;
     private boolean compactClock;
     private ValueAnimator clockWeightAnimator;
     private String activeClockWeightTransitionSource = "";
@@ -420,7 +421,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         ViewMorphSnapshot fromClock = null;
         ViewMorphSnapshot fromDate = null;
         ViewMorphSnapshot fromWeather = null;
-        if (sizeChanged && wasVisible) {
+        if (sizeChanged && wasVisible && !clockPluginGlyphTransitionActive) {
             fromClock = snapshotTextContentMorph(clockView);
             if (!fromClock.valid) {
                 fromClock = estimateClockMorphSnapshot(compactClock);
@@ -879,6 +880,16 @@ final class PixelLockscreenClockView extends FrameLayout {
 
     int clockPluginWeight() {
         return currentClockWeight;
+    }
+
+    CouiClockSizeTransitionLayer.SceneSnapshot captureClockPluginSizeTransition(
+            CouiClockSizeTransitionLayer transitionLayer, ViewGroup coordinateRoot) {
+        return transitionLayer.capture(coordinateRoot, clockView, dateView, weatherView,
+                currentClockWeight, currentInfoWeight);
+    }
+
+    void setClockPluginGlyphTransitionActive(boolean active) {
+        clockPluginGlyphTransitionActive = active;
     }
 
     int clockPluginInfoWeight() {
