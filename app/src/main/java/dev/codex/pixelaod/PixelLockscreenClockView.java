@@ -55,6 +55,10 @@ final class PixelLockscreenClockView extends FrameLayout {
     private static final int LARGE_INFO_ROW_GAP_DP = PixelAodVisualStyle.LARGE_INFO_ROW_GAP_DP;
     private static final int SMALL_INFO_TOP_DP = PixelAodVisualStyle.SMALL_INFO_TOP_DP;
     private static final int COMPACT_INFO_TEXT_DP = PixelAodVisualStyle.COMPACT_INFO_TEXT_DP;
+    private static final int COMPACT_AUXILIARY_INFO_TEXT_DP =
+            PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP;
+    private static final int COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP =
+            PixelAodVisualStyle.COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP;
     private static final int SMALL_NOTIFICATION_TOP_DP =
             PixelAodVisualStyle.NOTIFICATION_LINE_TOP_DP;
     private static final int NOTIFICATION_ROW_LEADING_OFFSET_DP =
@@ -99,6 +103,9 @@ final class PixelLockscreenClockView extends FrameLayout {
     private final TextView clockView;
     private final TextView dateView;
     private final TextView weatherView;
+    private final LinearLayout contextualRow;
+    private final ImageView contextualIconView;
+    private final TextView contextualView;
     private final LinearLayout notificationIconRow;
     private TextView notificationOverflowView;
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -240,6 +247,37 @@ final class PixelLockscreenClockView extends FrameLayout {
         weatherParams.topMargin = dp(LARGE_INFO_TOP_DP + LARGE_INFO_TEXT_DP + LARGE_INFO_ROW_GAP_DP);
         addView(weatherView, weatherParams);
 
+        contextualRow = new LinearLayout(context);
+        contextualRow.setOrientation(LinearLayout.HORIZONTAL);
+        contextualRow.setGravity(Gravity.CENTER_VERTICAL);
+        contextualRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        contextualRow.setAlpha(INFO_ALPHA);
+        contextualRow.setVisibility(View.GONE);
+        contextualRow.setMinimumHeight(dp(LARGE_INFO_TEXT_DP));
+        FrameLayout.LayoutParams contextualParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP | Gravity.START);
+        contextualParams.leftMargin = dp(EDGE_DP);
+        contextualParams.rightMargin = dp(EDGE_DP);
+        contextualParams.topMargin = dp(LARGE_INFO_TOP_DP + LARGE_INFO_ROW_GAP_DP);
+        addView(contextualRow, contextualParams);
+
+        contextualIconView = new ImageView(context);
+        contextualIconView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        contextualIconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        contextualRow.addView(contextualIconView, new LinearLayout.LayoutParams(
+                dp(LARGE_INFO_TEXT_DP), dp(LARGE_INFO_TEXT_DP)));
+
+        contextualView = PixelAodClockView.makeInfoLine(context, infoTypeface,
+                lockscreenWeight, LARGE_INFO_TEXT_DP, Gravity.START);
+        contextualView.setEllipsize(TextUtils.TruncateAt.END);
+        contextualView.setMaxLines(1);
+        LinearLayout.LayoutParams contextualTextParams = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        contextualTextParams.leftMargin = dp(PixelAodVisualStyle.CALENDAR_ICON_SPACING_DP);
+        contextualRow.addView(contextualView, contextualTextParams);
+
         notificationIconRow = new LinearLayout(context);
         notificationIconRow.setOrientation(LinearLayout.HORIZONTAL);
         notificationIconRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -267,7 +305,7 @@ final class PixelLockscreenClockView extends FrameLayout {
     @Override
     protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
         super.onSizeChanged(width, height, oldWidth, oldHeight);
-        updateCompactClockAndDateAnchors();
+        updateInfoGroupLayout();
         if (showingClockPluginAodNotificationIcons) {
             applyNotificationRowPosition();
         }
@@ -436,6 +474,9 @@ final class PixelLockscreenClockView extends FrameLayout {
         setScaleX(1f);
         setScaleY(1f);
         setVisibility(View.VISIBLE);
+        if (!wasVisible && !hasPendingAodToLockscreenTransition()) {
+            PixelAodClockView.beginContextualSurfaceEntry(source + "#ClockPlugin-visible");
+        }
         markInteractiveLockscreenSurface(getContext(), source + "#ClockPlugin");
         setExpandedNotificationSuppressed(false);
         int lockscreenWeight = PixelAodClockView.lockscreenClockWeight(getContext());
@@ -885,7 +926,8 @@ final class PixelLockscreenClockView extends FrameLayout {
     CouiClockSizeTransitionLayer.SceneSnapshot captureClockPluginSizeTransition(
             CouiClockSizeTransitionLayer transitionLayer, ViewGroup coordinateRoot) {
         return transitionLayer.capture(coordinateRoot, clockView, dateView, weatherView,
-                currentClockWeight, currentInfoWeight);
+                contextualRow, contextualIconView, contextualView, currentClockWeight,
+                currentInfoWeight);
     }
 
     void setClockPluginGlyphTransitionActive(boolean active) {
@@ -1213,6 +1255,13 @@ final class PixelLockscreenClockView extends FrameLayout {
             setClockWeight(animateWeight ? aodWeight : lockscreenWeight);
         }
         setVisibility(visible ? View.VISIBLE : View.GONE);
+        if (firstVisibleFrame && !hasTransition) {
+            PixelAodClockView.beginContextualSurfaceEntry(source + "#lockscreen-visible");
+        } else if (firstVisibleFrame) {
+            PixelAodLog.log("preserved contextual surface entry for AOD-to-lockscreen handoff"
+                    + " source=" + source + " entry="
+                    + PixelAodClockView.currentContextualSurfaceEntry());
+        }
         if (!visible) {
             clearInteractiveLockscreenVisibleIfNeeded();
             resetTransitionState();
@@ -1410,16 +1459,48 @@ final class PixelLockscreenClockView extends FrameLayout {
         PixelAodClockView.applySharedInfoText(weatherView, getContext(), model.weatherText);
         weatherView.setVisibility(TextUtils.isEmpty(model.weatherText) ? View.GONE : View.VISIBLE);
         PixelAodClockView.applyWeatherLeadingIcon(weatherView,
-                model.weather, Color.WHITE);
-        updateCompactClockAndDateAnchors();
+                model.weather, PixelAodClockView.resolveMaterialClockColor(getContext()));
+        ContextualAtAGlanceSelector.Selection contextual = PixelAodClockView.selectContextualCard(
+                getContext(), getVisibility() == View.VISIBLE && isShown()
+                        && getAlpha() > 0.01f, false, "lockscreen-update");
+        FrameLayout.LayoutParams previousNotificationParams =
+                (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
+        int previousNotificationTopPx = previousNotificationParams.topMargin;
+        boolean contextualChanged = ContextualAtAGlancePresentation.apply(
+                getContext(), contextualRow, contextualIconView, contextualView,
+                contextual.card, PixelAodClockView.resolveMaterialInfoColor(getContext()),
+                PixelAodClockView.resolveMaterialClockColor(getContext()),
+                contextualTextSizeDp(contextual.card),
+                currentInfoWeight > 0 ? currentInfoWeight : INFO_LOCKSCREEN_WEIGHT,
+                "lockscreen-update");
+        FrameLayout.LayoutParams contextualParams =
+                (FrameLayout.LayoutParams) contextualRow.getLayoutParams();
+        boolean calendarApplicationIcon = contextual.card.kind
+                == ContextualAtAGlanceCard.Kind.CALENDAR_EVENT
+                && ContextualAtAGlanceCalendarIcon.usesApplicationIcon(getContext());
+        ContextualAtAGlanceCalendarIcon.applyRowMargins(contextualParams, getContext(), EDGE_DP,
+                calendarApplicationIcon);
+        contextualRow.setLayoutParams(contextualParams);
+        updateInfoGroupLayout();
+        FrameLayout.LayoutParams notificationParams =
+                (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
+        notificationParams.topMargin = notificationRowTopPx();
+        notificationIconRow.setLayoutParams(notificationParams);
+        if (contextualChanged) {
+            ContextualAtAGlancePresentation.animateLowerRows(notificationIconRow, null,
+                    previousNotificationTopPx, notificationParams.topMargin, 0, 0);
+        }
+        ContextualAtAGlanceCalendarIcon.applyGeometry(contextualIconView, getContext(),
+                contextualTextSizeDp(contextual.card),
+                calendarApplicationIcon);
+        updateInfoGroupLayout();
+        applyNotificationRowPosition();
     }
 
     private void applyClockMode(boolean compact) {
         boolean changed = compactClock != compact;
         compactClock = compact;
         FrameLayout.LayoutParams clockParams = (FrameLayout.LayoutParams) clockView.getLayoutParams();
-        FrameLayout.LayoutParams dateParams = (FrameLayout.LayoutParams) dateView.getLayoutParams();
-        FrameLayout.LayoutParams weatherParams = (FrameLayout.LayoutParams) weatherView.getLayoutParams();
         FrameLayout.LayoutParams notificationParams =
                 (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
         if (compact) {
@@ -1432,13 +1513,11 @@ final class PixelLockscreenClockView extends FrameLayout {
             clockParams.topMargin = anchors.clockTopPx;
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, COMPACT_INFO_TEXT_DP);
             weatherView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, COMPACT_INFO_TEXT_DP);
+            int contextualTextSize = contextualTextSizeDp(
+                    ContextualAtAGlancePresentation.current(contextualRow));
+            contextualView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, contextualTextSize);
+            updateContextualSlotIconGeometry(contextualTextSize);
             dateView.setVisibility(View.VISIBLE);
-            dateParams.leftMargin = anchors.infoLeftPx;
-            dateParams.topMargin = anchors.infoTopPx;
-            weatherParams.leftMargin = anchors.infoLeftPx;
-            weatherParams.topMargin = CouiCompactLayout.weatherTop(anchors,
-                    getResources().getDisplayMetrics().density);
-            notificationParams.topMargin = notificationRowTopPx();
         } else {
             PixelAodClockView.applySharedClockTextStyle(clockView, getContext(), currentClockWeight,
                     PixelAodClockView.scaledClockTextDp(getContext(), LARGE_CLOCK_TEXT_DP), false);
@@ -1448,17 +1527,15 @@ final class PixelLockscreenClockView extends FrameLayout {
             clockParams.topMargin = dp(LARGE_CLOCK_TOP_DP);
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, LARGE_INFO_TEXT_DP);
             weatherView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, LARGE_INFO_TEXT_DP);
+            int contextualTextSize = contextualTextSizeDp(
+                    ContextualAtAGlancePresentation.current(contextualRow));
+            contextualView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, contextualTextSize);
+            updateContextualSlotIconGeometry(contextualTextSize);
             dateView.setVisibility(View.VISIBLE);
-            dateParams.leftMargin = dp(EDGE_DP);
-            dateParams.topMargin = dp(LARGE_INFO_TOP_DP);
-            weatherParams.leftMargin = dp(EDGE_DP);
-            weatherParams.topMargin = dp(LARGE_INFO_TOP_DP + LARGE_INFO_TEXT_DP
-                    + LARGE_INFO_ROW_GAP_DP);
-            notificationParams.topMargin = notificationRowTopPx();
         }
         clockView.setLayoutParams(clockParams);
-        dateView.setLayoutParams(dateParams);
-        weatherView.setLayoutParams(weatherParams);
+        updateInfoGroupLayout();
+        notificationParams.topMargin = notificationRowTopPx();
         notificationIconRow.setLayoutParams(notificationParams);
         PixelAodClockView.syncNotificationOverflowStyle(
                 notificationOverflowView, dateView, notificationIconRow);
@@ -1468,7 +1545,8 @@ final class PixelLockscreenClockView extends FrameLayout {
                 + " changed=" + changed
                 + " weight=" + currentClockWeight
                 + " clockTop=" + clockParams.topMargin
-                + " dateTop=" + dateParams.topMargin
+                + " dateTop="
+                + ((FrameLayout.LayoutParams) dateView.getLayoutParams()).topMargin
                 + " notificationTop=" + notificationParams.topMargin
                 + " state={" + PixelAodClockView.describeAodState(getContext(), compactClock, currentClockWeight) + "}");
         if (changed) {
@@ -1501,43 +1579,85 @@ final class PixelLockscreenClockView extends FrameLayout {
         }
     }
 
-    private void updateCompactClockAndDateAnchors() {
-        if (!compactClock || clockView == null || dateView == null || weatherView == null) {
+    private void updateInfoGroupLayout() {
+        if (dateView == null || weatherView == null || contextualRow == null) {
             return;
         }
-        FrameLayout.LayoutParams clockParams = (FrameLayout.LayoutParams) clockView.getLayoutParams();
-        CouiCompactLayout.Anchors anchors = compactAnchors();
-        int clockLeft = anchors.clockLeftPx;
-        int clockTop = anchors.clockTopPx;
-        if (clockParams.leftMargin != clockLeft || clockParams.topMargin != clockTop) {
-            clockParams.leftMargin = clockLeft;
-            clockParams.topMargin = clockTop;
-            clockView.setLayoutParams(clockParams);
+        int gapPx = dp(compactClock ? PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP
+                : LARGE_INFO_ROW_GAP_DP);
+        int infoLeftPx;
+        int dateTopPx;
+        int compactWeatherTopPx = 0;
+        int contextualMinimumTopPx;
+        if (compactClock) {
+            CouiCompactLayout.Anchors anchors = compactAnchors();
+            FrameLayout.LayoutParams clockParams =
+                    (FrameLayout.LayoutParams) clockView.getLayoutParams();
+            if (clockParams.leftMargin != anchors.clockLeftPx
+                    || clockParams.topMargin != anchors.clockTopPx) {
+                clockParams.leftMargin = anchors.clockLeftPx;
+                clockParams.topMargin = anchors.clockTopPx;
+                clockView.setLayoutParams(clockParams);
+            }
+            infoLeftPx = anchors.infoLeftPx;
+            dateTopPx = anchors.infoTopPx;
+            compactWeatherTopPx = CouiCompactLayout.weatherTop(anchors,
+                    getResources().getDisplayMetrics().density);
+            contextualMinimumTopPx = dateTopPx + dp(COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP);
+        } else {
+            infoLeftPx = dp(EDGE_DP);
+            dateTopPx = dp(LARGE_INFO_TOP_DP);
+            contextualMinimumTopPx = dp(LARGE_INFO_TOP_DP
+                    + PixelAodVisualStyle.CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP);
         }
+        ClockInfoGroupLayout.Result layout = ClockInfoGroupLayout.layout(
+                compactClock, infoLeftPx, dateTopPx,
+                infoLineWidthPx(dateView), infoLineHeightPx(dateView,
+                        compactClock ? COMPACT_INFO_TEXT_DP : LARGE_INFO_TEXT_DP),
+                weatherView.getVisibility() == View.VISIBLE, infoLineHeightPx(weatherView,
+                        compactClock ? COMPACT_INFO_TEXT_DP : LARGE_INFO_TEXT_DP),
+                compactWeatherTopPx, gapPx, contextualMinimumTopPx);
         FrameLayout.LayoutParams dateParams = (FrameLayout.LayoutParams) dateView.getLayoutParams();
-        int dateLeft = anchors.infoLeftPx;
-        int dateTop = anchors.infoTopPx;
-        if (dateParams.leftMargin != dateLeft || dateParams.topMargin != dateTop) {
-            dateParams.leftMargin = dateLeft;
-            dateParams.topMargin = dateTop;
+        if (dateParams.leftMargin != layout.dateLeftPx || dateParams.topMargin != layout.dateTopPx) {
+            dateParams.leftMargin = layout.dateLeftPx;
+            dateParams.topMargin = layout.dateTopPx;
             dateView.setLayoutParams(dateParams);
         }
         FrameLayout.LayoutParams weatherParams = (FrameLayout.LayoutParams) weatherView.getLayoutParams();
-        int weatherLeft = anchors.infoLeftPx;
-        int weatherTop = CouiCompactLayout.weatherTop(anchors,
-                getResources().getDisplayMetrics().density);
-        if (weatherParams.leftMargin != weatherLeft || weatherParams.topMargin != weatherTop) {
-            weatherParams.leftMargin = weatherLeft;
-            weatherParams.topMargin = weatherTop;
+        if (weatherParams.leftMargin != layout.weatherLeftPx
+                || weatherParams.topMargin != layout.weatherTopPx) {
+            weatherParams.leftMargin = layout.weatherLeftPx;
+            weatherParams.topMargin = layout.weatherTopPx;
             weatherView.setLayoutParams(weatherParams);
         }
+        FrameLayout.LayoutParams contextualParams =
+                (FrameLayout.LayoutParams) contextualRow.getLayoutParams();
+        if (contextualParams.topMargin != layout.contextualTopPx) {
+            contextualParams.topMargin = layout.contextualTopPx;
+            contextualRow.setLayoutParams(contextualParams);
+        }
+    }
+
+    private static int infoLineWidthPx(TextView view) {
+        return Math.max(1, PixelAodClockView.estimatedTextContentWidthPx(view));
+    }
+
+    private static int infoLineHeightPx(TextView view, int fallbackTextDp) {
+        if (view == null) {
+            return Math.max(1, fallbackTextDp);
+        }
+        android.graphics.Paint.FontMetrics metrics = view.getPaint().getFontMetrics();
+        int paintedHeight = Math.max(1, Math.round(metrics.descent - metrics.ascent));
+        return Math.max(Math.max(1, view.getMeasuredHeight()), paintedHeight
+                + view.getTotalPaddingTop() + view.getTotalPaddingBottom());
     }
 
     private CouiCompactLayout.Anchors compactAnchors() {
         return CouiCompactLayout.anchors(getWidth(), getHeight(),
                 PixelAodClockView.estimatedTextContentWidthPx(clockView),
                 Math.max(PixelAodClockView.estimatedTextContentWidthPx(dateView),
-                        PixelAodClockView.estimatedTextContentWidthPx(weatherView)),
+                        Math.max(PixelAodClockView.estimatedTextContentWidthPx(weatherView),
+                                PixelAodClockView.estimatedTextContentWidthPx(contextualView))),
                 getResources().getDisplayMetrics().density);
     }
 
@@ -1641,10 +1761,43 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     private int notificationRowTopPx() {
-        return showingClockPluginAodNotificationIcons
+        int baseTop = showingClockPluginAodNotificationIcons
                 ? PixelAodClockView.aodNotificationTopPxForHandoff(getContext(), compactClock,
                 getHeight())
                 : dp(SMALL_NOTIFICATION_TOP_DP);
+        if (!ContextualAtAGlancePresentation.current(contextualRow).isVisible()) {
+            return baseTop;
+        }
+        FrameLayout.LayoutParams params =
+                (FrameLayout.LayoutParams) contextualRow.getLayoutParams();
+        int height = contextualRow.getHeight() > 0
+                ? contextualRow.getHeight() : dp(COMPACT_AUXILIARY_INFO_TEXT_DP);
+        return Math.max(baseTop, AodInfoStackLayout.rowBottom(params.topMargin, height,
+                dp(LARGE_INFO_ROW_GAP_DP)));
+    }
+
+    /** Forecast keeps its compact auxiliary geometry in both clock sizes to avoid text reflow. */
+    private int contextualTextSizeDp(ContextualAtAGlanceCard card) {
+        if (card != null && card.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST) {
+            return COMPACT_AUXILIARY_INFO_TEXT_DP;
+        }
+        return compactClock ? COMPACT_AUXILIARY_INFO_TEXT_DP : LARGE_INFO_TEXT_DP;
+    }
+
+    private static boolean hasPendingAodToLockscreenTransition() {
+        synchronized (PixelLockscreenClockView.class) {
+            long age = android.os.SystemClock.uptimeMillis() - pendingAodToLockscreenTransitionAt;
+            return pendingAodToLockscreenTransitionAt > 0L
+                    && age >= 0L && age <= AOD_TRANSITION_ANIMATION_WINDOW_MS;
+        }
+    }
+
+    private void updateContextualSlotIconGeometry(int textSizeDp) {
+        boolean applicationIcon = ContextualAtAGlancePresentation.current(contextualRow).kind
+                == ContextualAtAGlanceCard.Kind.CALENDAR_EVENT
+                && ContextualAtAGlanceCalendarIcon.usesApplicationIcon(getContext());
+        ContextualAtAGlanceCalendarIcon.applyGeometry(contextualIconView, getContext(),
+                textSizeDp, applicationIcon);
     }
 
     private void applyNotificationRowPosition() {
@@ -1693,10 +1846,11 @@ final class PixelLockscreenClockView extends FrameLayout {
     private void applyMaterialColors() {
         int clockColor = PixelAodClockView.resolveMaterialClockColor(getContext());
         clockView.setTextColor(clockColor);
-        dateView.setTextColor(Color.WHITE);
-        weatherView.setTextColor(Color.WHITE);
+        dateView.setTextColor(clockColor);
+        weatherView.setTextColor(clockColor);
+        contextualView.setTextColor(PixelAodClockView.resolveMaterialInfoColor(getContext()));
         PixelAodClockView.applyWeatherLeadingIcon(weatherView,
-                PixelAodClockView.currentFreshWeather(getContext()), Color.WHITE);
+                PixelAodClockView.currentFreshWeather(getContext()), clockColor);
     }
 
     private void beginClockWeightTransition(String source) {
@@ -1823,8 +1977,9 @@ final class PixelLockscreenClockView extends FrameLayout {
         PixelAodClockView.applySharedClockTypeface(clockView, getContext(), weight);
         PixelAodClockView.applySharedClockLetterSpacing(clockView, compactClock);
         if (PixelAodLog.isDebugEnabled()) {
-            PixelAodLog.log("clock paint snapshot layer=lockscreen requestedWeight=" + weight
-                    + " state=" + PixelAodClockView.describeClockTextView(clockView));
+            PixelAodLog.log("clock paint snapshot", () ->
+                    "clock paint snapshot layer=lockscreen requestedWeight=" + weight
+                            + " state=" + PixelAodClockView.describeClockTextView(clockView));
         }
     }
 
@@ -1838,6 +1993,13 @@ final class PixelLockscreenClockView extends FrameLayout {
         currentInfoWeight = synchronizedWeight;
         PixelAodClockView.applySharedClockTypeface(dateView, getContext(), synchronizedWeight);
         PixelAodClockView.applySharedClockTypeface(weatherView, getContext(), synchronizedWeight);
+        PixelAodClockView.applySharedClockTypeface(contextualView, getContext(), synchronizedWeight);
+        // A weight change alters measured text/ink bounds. Keep the date/weather group and the
+        // downstream notification anchor in the same geometry transaction.
+        if (contextualRow != null && notificationIconRow != null) {
+            updateInfoGroupLayout();
+            applyNotificationRowPosition();
+        }
     }
 
     private static int resolveMaterialClockColor(Context context) {

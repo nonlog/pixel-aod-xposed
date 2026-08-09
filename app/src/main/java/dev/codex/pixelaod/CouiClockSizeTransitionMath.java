@@ -38,8 +38,82 @@ final class CouiClockSizeTransitionMath {
                 lerp(from.alpha, to.alpha, bounded));
     }
 
-    static float glyphCenter(float cellStart, float referenceGlyphAdvance) {
-        return cellStart + (Math.max(0f, referenceGlyphAdvance) / 2f);
+    /**
+     * Information rows must change their text metrics directly. Scaling the whole TextView also
+     * scales fixed-size compound drawables (the weather icon), which creates the visible
+     * shrink-then-expand rebound when the real target view takes over.
+     */
+    static InfoFrame informationFrame(Element from, Element to, float progress) {
+        float bounded = clamp01(progress);
+        return new InfoFrame(
+                lerp(from.centerX, to.centerX, bounded),
+                lerp(from.centerY, to.centerY, bounded),
+                lerp(from.textSizePx, to.textSizePx, bounded),
+                lerp(from.alpha, to.alpha, bounded));
+    }
+
+    /**
+     * Keeps a {@code FixedAdvanceSpan} text corridor intact while its visible size changes.
+     * Rebuilding a replacement span at every in-between size rounds every glyph cell separately;
+     * scaling the source corridor about its painted centre keeps the characters continuous.
+     */
+    static float fixedCellTextScale(float sourceTextSizePx, float frameTextSizePx) {
+        return Math.max(1f, frameTextSizePx) / Math.max(1f, sourceTextSizePx);
+    }
+
+    static int interpolatedDimension(int from, int to, float progress) {
+        return Math.round(lerp(from, to, clamp01(progress)));
+    }
+
+    static float interpolatedFloat(float from, float to, float progress) {
+        return lerp(from, to, clamp01(progress));
+    }
+
+    static float paintedBoundsCenter(float paintedStart, float paintedEnd) {
+        return (paintedStart + paintedEnd) / 2f;
+    }
+
+    static float replacementSpanPaintOrigin(float cellStart, float referenceGlyphAdvance,
+            float animatedGlyphAdvance) {
+        return cellStart + ((referenceGlyphAdvance - animatedGlyphAdvance) / 2f);
+    }
+
+    static float paintedGlyphCenter(float cellStart, float referenceGlyphAdvance,
+            float animatedGlyphAdvance, float paintedLeft, float paintedRight) {
+        return replacementSpanPaintOrigin(cellStart, referenceGlyphAdvance,
+                animatedGlyphAdvance) + paintedBoundsCenter(paintedLeft, paintedRight);
+    }
+
+    static float paintedBaselineCenter(float baseline, float paintedTop, float paintedBottom) {
+        return baseline + paintedBoundsCenter(paintedTop, paintedBottom);
+    }
+
+    /**
+     * Mirrors TextView's CENTER_VERTICAL baseline rule. Android only centres a text layout when
+     * the font line is shorter than the available box; a taller line is pinned to the top. Using
+     * an unconditional centred baseline moves the painted glyphs down when a compact overlay box
+     * is shorter than the font metrics.
+     */
+    static float centeredTextBaseline(float boxHeight, float ascent, float descent) {
+        float safeHeight = Math.max(0f, boxHeight);
+        float lineHeight = Math.max(0f, descent - ascent);
+        float verticalOffset = lineHeight < safeHeight
+                ? (float) Math.floor((safeHeight - lineHeight) / 2f)
+                : 0f;
+        return verticalOffset - ascent;
+    }
+
+    /** Returns the painted-content center inside a gravity-centered clone box. */
+    static float visualContentOffset(float boxSize, float contentAdvance,
+            float paintedStart, float paintedEnd) {
+        float centeredContentStart = (Math.max(0f, boxSize)
+                - Math.max(0f, contentAdvance)) / 2f;
+        return centeredContentStart + paintedBoundsCenter(paintedStart, paintedEnd);
+    }
+
+    /** Positions a clone so its painted-content center, rather than its outer box, hits target. */
+    static float positionForVisualCenter(float targetCenter, float visualContentOffset) {
+        return targetCenter - visualContentOffset;
     }
 
     static float colonAlpha(float fromAlpha, float toAlpha, float linearProgress) {
@@ -102,6 +176,21 @@ final class CouiClockSizeTransitionMath {
             this.centerX = centerX;
             this.centerY = centerY;
             this.scaleFromSource = scaleFromSource;
+            this.alpha = alpha;
+        }
+    }
+
+    /** A position-and-metrics frame for date, weather, and contextual information rows. */
+    static final class InfoFrame {
+        final float centerX;
+        final float centerY;
+        final float textSizePx;
+        final float alpha;
+
+        InfoFrame(float centerX, float centerY, float textSizePx, float alpha) {
+            this.centerX = centerX;
+            this.centerY = centerY;
+            this.textSizePx = Math.max(1f, textSizePx);
             this.alpha = alpha;
         }
     }

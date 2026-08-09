@@ -2632,7 +2632,8 @@ final class PixelAodHook {
         boolean testNotification = MODULE_PACKAGE.equals(pkg)
                 && TestNotificationReceiver.TEST_TAG.equals(sbn.getTag());
         if (MODULE_PACKAGE.equals(pkg) && !testNotification) {
-            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+            PixelAodLog.log("blocked lockscreen policy override", () ->
+                    "blocked lockscreen policy override pkg=" + pkg
                     + " key=" + sbn.getKey()
                     + " source=" + source
                     + " reason=module-package-not-test-notification"
@@ -2641,7 +2642,8 @@ final class PixelAodHook {
             return false;
         }
         if ("android".equals(pkg) || "com.android.systemui".equals(pkg)) {
-            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+            PixelAodLog.log("blocked lockscreen policy override", () ->
+                    "blocked lockscreen policy override pkg=" + pkg
                     + " key=" + sbn.getKey()
                     + " source=" + source
                     + " reason=system-package"
@@ -2649,7 +2651,8 @@ final class PixelAodHook {
             return false;
         }
         if (Notification.CATEGORY_TRANSPORT.equals(notification.category)) {
-            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+            PixelAodLog.log("blocked lockscreen policy override", () ->
+                    "blocked lockscreen policy override pkg=" + pkg
                     + " key=" + sbn.getKey()
                     + " source=" + source
                     + " reason=transport-category"
@@ -2657,7 +2660,8 @@ final class PixelAodHook {
             return false;
         }
         if (notification.visibility == Notification.VISIBILITY_SECRET) {
-            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+            PixelAodLog.log("blocked lockscreen policy override", () ->
+                    "blocked lockscreen policy override pkg=" + pkg
                     + " key=" + sbn.getKey()
                     + " source=" + source
                     + " reason=secret-visibility"
@@ -2665,7 +2669,8 @@ final class PixelAodHook {
             return false;
         }
         if (rankingVisibilitySecret(ranking)) {
-            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+            PixelAodLog.log("blocked lockscreen policy override", () ->
+                    "blocked lockscreen policy override pkg=" + pkg
                     + " key=" + sbn.getKey()
                     + " source=" + source
                     + " reason=ranking-secret"
@@ -2675,7 +2680,8 @@ final class PixelAodHook {
         int importance = rankingImportance(ranking);
         if (!testNotification && (importance == 0 || importance > 0 && importance < 3
                 || (notification.flags & AodNotificationPipeline.NOTIFICATION_FLAG_SILENT) != 0)) {
-            PixelAodLog.log("blocked lockscreen policy override pkg=" + pkg
+            PixelAodLog.log("blocked lockscreen policy override", () ->
+                    "blocked lockscreen policy override pkg=" + pkg
                     + " key=" + sbn.getKey()
                     + " source=" + source
                     + " reason=low-importance-or-silent"
@@ -2684,8 +2690,9 @@ final class PixelAodHook {
                     + " trace=" + PixelAodClockView.currentAodTraceId());
             return false;
         }
-        PixelAodLog.log("allowing lockscreen notification through OOS policy pkg="
-                + pkg + " key=" + sbn.getKey() + " importance=" + importance
+        PixelAodLog.log("allowing lockscreen notification through OOS policy", () ->
+                "allowing lockscreen notification through OOS policy pkg="
+                        + pkg + " key=" + sbn.getKey() + " importance=" + importance
                 + " source=" + source
                 + " category=" + notification.category
                 + " visibility=" + notification.visibility

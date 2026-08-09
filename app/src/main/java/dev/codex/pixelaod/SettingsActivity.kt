@@ -316,6 +316,10 @@ private fun SettingsContent(
     val weatherAlerts = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_WEATHER_ALERTS, false))
     }
+    val weatherForecast = remember {
+        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_WEATHER_FORECAST, false))
+    }
+    val pendingBreezyWeatherFeature = remember { mutableStateOf<String?>(null) }
     val calendarEvents = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_CALENDAR_EVENTS, false))
     }
@@ -391,14 +395,28 @@ private fun SettingsContent(
     val breezyWeatherPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) {
+        val requestedFeature = ContextualAtAGlancePermission.normalizeFeatureKey(
+            pendingBreezyWeatherFeature.value
+        )
+        pendingBreezyWeatherFeature.value = null
+        if (granted && requestedFeature == ContextualAtAGlancePermission.WEATHER_ALERTS) {
             weatherAlerts.value = true
             updateModuleBooleanSetting(context, PixelAodSettings.KEY_WEATHER_ALERTS, true)
             requestBreezyWeatherRefresh(context)
-        } else {
+        } else if (granted && requestedFeature == ContextualAtAGlancePermission.WEATHER_FORECAST) {
+            weatherForecast.value = true
+            updateModuleBooleanSetting(context, PixelAodSettings.KEY_WEATHER_FORECAST, true)
+            requestBreezyWeatherRefresh(context)
+        } else if (!granted && requestedFeature.isNotEmpty()) {
             Toast.makeText(
                 context,
-                context.getString(R.string.weather_alert_permission_denied),
+                context.getString(
+                    if (requestedFeature == ContextualAtAGlancePermission.WEATHER_FORECAST) {
+                        R.string.weather_forecast_permission_denied
+                    } else {
+                        R.string.weather_alert_permission_denied
+                    }
+                ),
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -518,6 +536,37 @@ private fun SettingsContent(
                     weather.value = it
                     prefs.edit().putBoolean(PixelAodSettings.KEY_WEATHER, it).apply()
                 }
+                CouiToggleRow(
+                    icon = Icons.Outlined.Cloud,
+                    title = stringResource(R.string.title_weather_forecast),
+                    subtitle = stringResource(R.string.desc_weather_forecast),
+                    checked = weatherForecast.value,
+                    showDivider = true
+                ) {
+                    if (!it) {
+                        weatherForecast.value = false
+                        updateModuleBooleanSetting(
+                            context,
+                            PixelAodSettings.KEY_WEATHER_FORECAST,
+                            false
+                        )
+                        requestBreezyWeatherRefresh(context)
+                    } else if (context.checkSelfPermission(BREEZY_READ_PROVIDER_PERMISSION)
+                        == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        weatherForecast.value = true
+                        updateModuleBooleanSetting(
+                            context,
+                            PixelAodSettings.KEY_WEATHER_FORECAST,
+                            true
+                        )
+                        requestBreezyWeatherRefresh(context)
+                    } else {
+                        pendingBreezyWeatherFeature.value =
+                            ContextualAtAGlancePermission.WEATHER_FORECAST
+                        breezyWeatherPermissionLauncher.launch(BREEZY_READ_PROVIDER_PERMISSION)
+                    }
+                }
                 if (weather.value) {
                     val availablePacks = remember { getAvailableIconPacks(context) }
                     val currentLabel = availablePacks.find { it.first == weatherIconPack.value }?.second
@@ -530,34 +579,36 @@ private fun SettingsContent(
                     ) {
                         showIconPackDialog = true
                     }
-                    CouiToggleRow(
-                        icon = Icons.Outlined.Cloud,
-                        title = stringResource(R.string.title_weather_alerts),
-                        subtitle = stringResource(R.string.desc_weather_alerts),
-                        checked = weatherAlerts.value,
-                        showDivider = true
-                    ) { enabled ->
-                        if (!enabled) {
-                            weatherAlerts.value = false
-                            updateModuleBooleanSetting(
-                                context,
-                                PixelAodSettings.KEY_WEATHER_ALERTS,
-                                false
-                            )
-                            requestBreezyWeatherRefresh(context)
-                        } else if (context.checkSelfPermission(BREEZY_READ_PROVIDER_PERMISSION)
-                            == PackageManager.PERMISSION_GRANTED
-                        ) {
-                            weatherAlerts.value = true
-                            updateModuleBooleanSetting(
-                                context,
-                                PixelAodSettings.KEY_WEATHER_ALERTS,
-                                true
-                            )
-                            requestBreezyWeatherRefresh(context)
-                        } else {
-                            breezyWeatherPermissionLauncher.launch(BREEZY_READ_PROVIDER_PERMISSION)
-                        }
+                }
+                CouiToggleRow(
+                    icon = Icons.Outlined.Cloud,
+                    title = stringResource(R.string.title_weather_alerts),
+                    subtitle = stringResource(R.string.desc_weather_alerts),
+                    checked = weatherAlerts.value,
+                    showDivider = true
+                ) { enabled ->
+                    if (!enabled) {
+                        weatherAlerts.value = false
+                        updateModuleBooleanSetting(
+                            context,
+                            PixelAodSettings.KEY_WEATHER_ALERTS,
+                            false
+                        )
+                        requestBreezyWeatherRefresh(context)
+                    } else if (context.checkSelfPermission(BREEZY_READ_PROVIDER_PERMISSION)
+                        == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        weatherAlerts.value = true
+                        updateModuleBooleanSetting(
+                            context,
+                            PixelAodSettings.KEY_WEATHER_ALERTS,
+                            true
+                        )
+                        requestBreezyWeatherRefresh(context)
+                    } else {
+                        pendingBreezyWeatherFeature.value =
+                            ContextualAtAGlancePermission.WEATHER_ALERTS
+                        breezyWeatherPermissionLauncher.launch(BREEZY_READ_PROVIDER_PERMISSION)
                     }
                 }
                 CouiToggleRow(

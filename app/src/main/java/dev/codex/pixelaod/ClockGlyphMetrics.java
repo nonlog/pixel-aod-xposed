@@ -27,4 +27,17 @@ final class ClockGlyphMetrics {
     static float centerOffset(float referenceGlyphAdvance, float animatedGlyphAdvance) {
         return (referenceGlyphAdvance - animatedGlyphAdvance) / 2f;
     }
+
+    /**
+     * A replacement span stores its reference cell in pixels.  During a size transaction the
+     * Paint changes before the text is re-spanned, so keep that stored cell in the same scale as
+     * the current Paint instead of leaving the glyph to move inside an old-size cell.
+     */
+    static float scaledForTextSize(float valuePx, float referenceTextSizePx,
+            float currentTextSizePx) {
+        if (referenceTextSizePx <= 0f || currentTextSizePx <= 0f) {
+            return valuePx;
+        }
+        return valuePx * (currentTextSizePx / referenceTextSizePx);
+    }
 }

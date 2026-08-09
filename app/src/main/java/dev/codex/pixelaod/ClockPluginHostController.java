@@ -354,21 +354,11 @@ final class ClockPluginHostController {
                         + " trace=" + PixelAodClockView.currentAodTraceId());
             }
         } else {
-            // Lockscreen size: OOS clockSizeState is authoritative for media-card presence.
-            // Logs showed after swipe-away: oosClockSize=1 (LARGE) while mediaActive stayed
-            // true from a paused MediaSession — forcing SMALL was wrong.
-            if (renderState.clockSizeState != null) {
-                effectiveClockSize = renderState.clockSizeState;
-                if (moduleNotifs
-                        && effectiveClockSize != ClockPluginSceneMachine.CLOCK_SIZE_SMALL) {
-                    effectiveClockSize = ClockPluginSceneMachine.CLOCK_SIZE_SMALL;
-                }
-            } else {
-                boolean lockscreenSmall = moduleNotifs || mediaActive;
-                effectiveClockSize = lockscreenSmall
-                        ? ClockPluginSceneMachine.CLOCK_SIZE_SMALL
-                        : ClockPluginSceneMachine.CLOCK_SIZE_LARGE;
-            }
+            // Lockscreen size: OOS clockSizeState is authoritative for the visible card shape.
+            // A notification remains active after its card collapses into the bottom capsule, so
+            // module notification presence is only a fallback while vendor size is unavailable.
+            effectiveClockSize = ClockPluginLockscreenSizePolicy.resolve(
+                    renderState.clockSizeState, moduleNotifs, mediaActive);
             compactAod = false;
             PixelAodLog.log("ClockPlugin lockscreen size source=" + source
                     + " oosClockSize=" + renderState.clockSizeState
@@ -422,8 +412,8 @@ final class ClockPluginHostController {
             record.suppressNativeDraw = false;
             record.host.hide(source + "#hidden");
             restoreNativeVisuals(record);
-            logSync(record, source, renderState.describe() + lifecycleDetail
-                    + " policy=" + policyReason, decision);
+            logSync(record, source, renderState, lifecycleDetail,
+                    " policy=" + policyReason, decision);
             return;
         }
 
@@ -447,9 +437,8 @@ final class ClockPluginHostController {
                 || record.host.scene() != decision.scene
                 || record.host.getVisibility() != View.VISIBLE;
         if (!record.presentationGate.shouldPresent(decision, forcePresentation)) {
-            logSync(record, source, renderState.describe() + lifecycleDetail
-                    + " policy=" + policyReason
-                    + " presentation=stable-scene-skip", decision);
+            logSync(record, source, renderState, lifecycleDetail,
+                    " policy=" + policyReason + " presentation=stable-scene-skip", decision);
             return;
         }
         record.host.present(decision, source);
@@ -457,10 +446,10 @@ final class ClockPluginHostController {
             suppressNativeVisuals(record);
             PixelAodHook.removeLegacyClockOverlays(source + "#ClockPlugin-validated");
         }
-        logSync(record, source, renderState.describe() + lifecycleDetail
-                + " policy=" + policyReason
-                + " preserveAodWhileLifecycleSettles=" + preserveAodWhileLifecycleSettles,
-                decision);
+        logSync(record, source, renderState, lifecycleDetail,
+                " policy=" + policyReason
+                        + " preserveAodWhileLifecycleSettles="
+                        + preserveAodWhileLifecycleSettles, decision);
     }
 
     private static void validateHostAfterFirstFrame(HostRecord record, Object plugin, String source) {
@@ -849,6 +838,9 @@ final class ClockPluginHostController {
 
     private static void logSync(HostRecord record, String source, String detail,
             ClockPluginSceneMachine.Decision decision) {
+        if (!PixelAodLog.isDebugEnabled() || decision == null) {
+            return;
+        }
         String fingerprint = detail + " scene=" + decision.scene
                 + " enteringAod=" + decision.enteringAod
                 + " preparingAod=" + decision.preparingAod
@@ -857,11 +849,23 @@ final class ClockPluginHostController {
             return;
         }
         record.lastSyncFingerprint = fingerprint;
-        PixelAodLog.log("ClockPlugin host sync source=" + source
+        PixelAodLog.log("ClockPlugin host sync", () -> "ClockPlugin host sync source=" + source
                 + " " + fingerprint
                 + " validated=" + record.validated
                 + " root=" + record.root.getClass().getName()
                 + " trace=" + PixelAodClockView.currentAodTraceId());
+    }
+
+    private static void logSync(HostRecord record, String source, RenderState renderState,
+            String lifecycleDetail, String suffix, ClockPluginSceneMachine.Decision decision) {
+        if (!PixelAodLog.isDebugEnabled()) {
+            return;
+        }
+        String rendered = renderState != null
+                ? renderState.describe() : "rendered-params-unavailable";
+        logSync(record, source, rendered
+                + (lifecycleDetail != null ? lifecycleDetail : "")
+                + (suffix != null ? suffix : ""), decision);
     }
 
     private static void runOnMain(Runnable runnable) {

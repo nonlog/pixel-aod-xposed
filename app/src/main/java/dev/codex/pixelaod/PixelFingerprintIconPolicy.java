@@ -53,11 +53,26 @@ final class PixelFingerprintIconPolicy {
         return enabled;
     }
 
+    enum RefreshMode {
+        SKIP,
+        STYLE_EXISTING_NATIVE,
+        REFRESH_CARRIER
+    }
+
+    static RefreshMode refreshMode(boolean interactive, boolean modulePolicyAllowsDisplay,
+            boolean powerPolicyDenied, boolean nativeCarrierVisible) {
+        if (interactive || modulePolicyAllowsDisplay || !powerPolicyDenied) {
+            return RefreshMode.REFRESH_CARRIER;
+        }
+        return nativeCarrierVisible ? RefreshMode.STYLE_EXISTING_NATIVE : RefreshMode.SKIP;
+    }
+
     static boolean shouldRefreshAfterAodPolicy(boolean interactive,
             boolean modulePolicyAllowsDisplay, boolean powerPolicyDenied) {
         // While the screen is non-interactive, a power-policy denial hands steady carrier
         // visibility back to the vendor hide lifecycle. Do not reapply our carrier from a
         // delayed FOD callback, but keep interactive and normally allowed AOD refreshes.
-        return interactive || modulePolicyAllowsDisplay || !powerPolicyDenied;
+        return refreshMode(interactive, modulePolicyAllowsDisplay, powerPolicyDenied, false)
+                == RefreshMode.REFRESH_CARRIER;
     }
 }

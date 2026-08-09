@@ -3,6 +3,7 @@ package dev.codex.pixelaod;
 import android.text.TextUtils;
 
 import java.util.Locale;
+import java.util.function.Supplier;
 
 final class OosAodLifecycleAdapter {
     private OosAodLifecycleAdapter() {
@@ -82,12 +83,15 @@ final class OosAodLifecycleAdapter {
     }
 
     static void recordPowerPolicyDecision(PowerPolicyDecision decision, String source,
-            boolean powerSaveMode, String batteryDescription, String trace,
-            String stateDescription) {
+            boolean powerSaveMode, Supplier<String> batteryDescriptionSupplier, String trace,
+            Supplier<String> stateDescriptionSupplier) {
         PowerPolicyDecision safeDecision = decision != null
                 ? decision
                 : PowerPolicyRule.BATTERY_UNKNOWN_ALLOW.toDecision(-1, -1);
-        PixelAodLog.log("OOS AOD power policy mapping reason=" + safeDecision.reason
+        PixelAodLog.log("OOS AOD power policy mapping", () -> {
+            String batteryDescription = valueFrom(batteryDescriptionSupplier);
+            String stateDescription = valueFrom(stateDescriptionSupplier);
+            return "OOS AOD power policy mapping reason=" + safeDecision.reason
                 + " category=" + safeDecision.categoryLabel
                 + " allowsDisplay=" + safeDecision.allowsDisplay
                 + " futureAction=" + safeDecision.futureAction
@@ -98,7 +102,16 @@ final class OosAodLifecycleAdapter {
                 + " battery={" + (TextUtils.isEmpty(batteryDescription)
                 ? "" : batteryDescription) + "}"
                 + " trace=" + emptyAsNone(trace)
-                + " state={" + stateDescription + "}");
+                + " state={" + stateDescription + "}";
+        });
+    }
+
+    private static String valueFrom(Supplier<String> supplier) {
+        if (supplier == null) {
+            return "";
+        }
+        String value = supplier.get();
+        return value != null ? value : "";
     }
 
     static void recordNotificationPulseObservation(String source, int rawCount,

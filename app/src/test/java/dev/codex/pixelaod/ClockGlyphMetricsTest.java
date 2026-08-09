@@ -48,4 +48,12 @@ public final class ClockGlyphMetricsTest {
         assertEquals(2.4f, ClockGlyphMetrics.infoTrackingPixels(240f, false), 0.001f);
         assertEquals(0f, ClockGlyphMetrics.infoTrackingPixels(240f, true), 0.001f);
     }
+
+    @Test
+    public void replacementSpanCellsScaleWithTheAnimatedTextSize() {
+        assertEquals(42f, ClockGlyphMetrics.scaledForTextSize(28f, 20f, 30f), 0.001f);
+        assertEquals(18.666667f, ClockGlyphMetrics.scaledForTextSize(28f, 30f, 20f),
+                0.001f);
+        assertEquals(28f, ClockGlyphMetrics.scaledForTextSize(28f, 20f, 20f), 0.001f);
+    }
 }

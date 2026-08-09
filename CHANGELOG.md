@@ -1,5 +1,386 @@
 # Changelog
 
+## [0.1.307] - 2026-08-09
+### Meta
+- **Model:** Codex
+- **Scope:** Fix the remaining current-weather hand-off drift and one-frame weather flash,
+  respect OOS notification-capsule clock sizing, and reduce SystemUI work during launcher/app
+  screen-off without changing AOD power or fingerprint policy.
+
+### Fixed
+- Mirror `TextView`'s vertical-offset clamp in the size-transition temperature clone. A compact
+  clone whose font line is taller than its box is now top-pinned instead of incorrectly centred,
+  removing the measured 9–11 px live-view hand-off correction.
+- Configure, exactly measure, and lay out every transition clone before exposing the overlay.
+  This prevents `FrameLayout`'s temporary `MATCH_PARENT` child size from stretching the weather
+  icon across the right side for one frame.
+- Treat OOS `clockSizeState` as authoritative on the lock screen. Active notification state is
+  now only a fallback when OOS has not supplied a size, so a card collapsed into the bottom
+  capsule can return to the large clock.
+- Bound debug-log throughput, build the largest AOD/FOD policy diagnostics only after their log
+  gate admits them, and avoid duplicate Android/Xposed writes when the framework logger is
+  attached. Existing controller-level stable-scene presentation gating remains the recovery
+  owner; no host visibility refresh is skipped by a second policy.
+- Keep late AOD media retries media-only instead of repeatedly refreshing date, weather, and
+  notification surfaces. No-media retries skip UI work but still clear media dedupe signatures,
+  preserving same-session metadata and resume recovery.
+
+### Success
+- The supplied recording is a deterministic red-capable fixture: all 8 clock-size transitions
+  showed an approximately 11 px temperature offset, and 4 transitions contained a one-frame
+  weather icon roughly 22.5 times its normal area. Both defects map directly to the corrected
+  baseline and first-frame measurement paths.
+- LSPosed logs measured 539 module lines / 596.1 KiB in the 2.1-second screen-off window, with
+  453 lines on the SystemUI main thread; the new keyed lazy gate covers the dominant policy,
+  schedule, FOD carrier, notification-filter, and clock-paint categories.
+- The forced full JVM suite passed **167 tests / 34 suites / 0 failures**, including transition
+  math/layer structure, notification-capsule sizing, debug-log gating, ClockPlugin
+  presentation/validation, weather policy, fingerprint policy, and media policies.
+
+### Deferred/Failed
+- **Deferred:** Device-frame proof for zero weather drift/flash and user-perceived launcher/app
+  screen-off latency requires a newly recorded run of this build. Compilation and old-log/video
+  analysis cannot prove the new SystemUI runtime result.
+- **Deferred:** Late MediaSession publication remains device-tested behavior; the unit suite
+  verifies related policies but cannot emulate OOS MediaSession callback timing.
+
+## [0.1.306] - 2026-08-08
+### Meta
+- **Model:** Codex
+- **Scope:** Stabilize the residual current-weather temperature transition and remove the
+  redundant AOD-entry work identified from the connected OnePlus 12 LSPosed logs.
+
+### Fixed
+- Keep the current-weather `FixedAdvanceSpan` corridor at its source size through a size
+  transition, then scale that text-only track around its painted centre. This prevents the
+  `3` / `1` / degree symbol from being re-rounded into different cells on intermediate frames;
+  the weather icon remains on its independent native-size track.
+- Do not submit unchanged date, weather, contextual, notification, or media layout parameters.
+- Do not clear an already-empty media row during late MediaSession polling. Retry only media
+  discovery after AOD entry, rather than repeatedly refreshing the complete clock/info surface.
+
+### Success
+- Added JVM coverage for the stable fixed-cell scale path.
+- LSPosed evidence showed the old path submitting the same AOD info-stack geometry 3–4 times
+  within 6 ms around a clock transition; this build removes those no-op layout commits.
+
+### Deferred/Failed
+- Visual proof for the right-side flash and temperature glyph stability remains Deferred until
+  device verification. Build and unit tests cannot prove a recorded SystemUI animation is clean.
+
+## [0.1.305] - 2026-08-08
+### Meta
+- **Model:** Codex
+- **Scope:** Fix the current-weather temperature-glyph drift introduced while separating the
+  0.1.304 weather icon and text tracks.
+
+### Fixed
+- Keep the source `FixedAdvanceSpan` cells for the current-weather text through the whole
+  COUI-size animation.  The `3`, `1`, and degree symbol can no longer change internal position
+  when the clone is prepared with target-layout cells.
+- Keep the 0.1.304 independent weather-icon track unchanged; date, forecast, and icon geometry
+  are intentionally outside this focused correction.
+
+### Success
+- Added a JVM regression test that rejects target-cell replacement for an unchanged temperature
+  such as `31°` during a size transaction.
+
+### Deferred/Failed
+- Device-frame verification remains Deferred pending user testing.  Unit tests and deployment
+  cannot prove visual stability of the temperature glyphs.
+
+## [0.1.304] - 2026-08-08
+### Meta
+- **Model:** Codex
+- **Scope:** Separate text and weather-icon geometry in the COUI-style clock-size transition,
+  after 0.1.303 fixed icon drift but reintroduced date/current-weather text drift.
+
+### Fixed
+- Render date, current-weather, and contextual forecast text through centred text-only tracks.
+  Their screen positions now derive only from their fixed character corridors, never from a
+  compound drawable or the spare width of a transition box.
+- Render current-weather and contextual forecast icons through independent `ImageView` tracks
+  captured at their real screen centres.  Icon geometry no longer changes the text origin, while
+  the icon continues to interpolate directly to its live target.
+- Set compact date and current-weather text to the requested **16 dp**.  Increase the compact
+  date-to-weather anchor by 3 dp so its original 43 dp vertical envelope remains intact.
+
+### Success
+- Added JVM regression coverage requiring dedicated icon transition tracks rather than a single
+  compound-drawable information clone.
+
+### Deferred/Failed
+- Device-frame verification is Deferred pending user testing.  Build, installation, and unit
+  tests cannot prove that the rendered final-frame hand-off is visually stable.
+
+## [0.1.303] - 2026-08-08
+### Meta
+- **Model:** Codex
+- **Scope:** Fix the final-frame current-weather and Weather Forecast icon hand-off during the
+  COUI-style large/small clock transition; slightly refine compact information typography.
+
+### Fixed
+- Preserve the real host information row's horizontal gravity and text alignment in the
+  transition clone. A widened, centred clone placed the leading weather/forecast icon left of
+  its real row while leaving the text in place, so the icon visibly jumped on restoration.
+- Calculate the clone's painted union from that preserved gravity, so date, current weather, and
+  contextual Weather Forecast land at the same geometry as their live targets.
+- Reduce compact date/current-weather type from 20 dp to 19 dp. Increase the interline anchor by
+  1 dp so the date top, weather bottom, contextual-row anchor, and the small clock alignment stay
+  stable.
+
+### Success
+- The recorded small-to-large transition is red-capable: frame analysis measured the previous
+  weather-icon-only 26 px final-frame hand-off while the adjacent temperature text stayed fixed.
+- Added a JVM regression test for START/CENTER/END information-clone gravity offsets.
+
+### Deferred/Failed
+- Device-frame verification is Deferred pending user testing. JVM tests, a debug build, and
+  installation prove compilation and deployment only; they cannot prove the rendered animation.
+
+## [0.1.302] - 2026-08-07
+### Meta
+- **Model:** Codex
+- **Scope:** Fix residual current-weather and Weather Forecast drift during the COUI-style
+  lock-screen large/small clock transition, and preserve icon-pack artwork.
+
+### Fixed
+- Render the contextual Weather Forecast through the isolated transition clone for the entire
+  transaction, even when both endpoints use its fixed auxiliary text size. This gives its icon,
+  text, and vertical position one geometry owner rather than allowing a later host layout pass
+  to move the live row upward.
+- Keep the current-weather information clone on the same fixed-size-drawable transition path,
+  and retarget its fixed character cells to the receiving layout before animation. The leading
+  icon and weather text therefore land together without a final horizontal rounding correction.
+- Remove module tinting from external current-weather icon packs; their default multicolour
+  artwork is now retained while date/current-weather text keeps the requested emphasis colour.
+
+### Success
+- Added a regression test that rejects the former live-contextual-row fast path even when its
+  source and target text sizes match.
+- Full JVM suite passed: 156 tests, 0 failures; debug APK assembled as `0.1.302` /
+  versionCode `312`.
+
+### Deferred/Failed
+- Device-frame verification of the two clock-size directions is Deferred pending user testing;
+  a unit test, build, installation, and SystemUI restart cannot prove the rendered animation.
+
+## [0.1.301] - 2026-08-07
+### Meta
+- **Model:** Codex
+- **Scope:** Stabilize Weather Forecast and current-weather icon geometry during the COUI-style
+  large/small clock transition, and refine AOD information emphasis.
+
+### Fixed
+- Keep a Weather Forecast's real `ImageView + TextView` row alive when both transition endpoints
+  use the same auxiliary text size; translate its visible centre as one unit rather than replacing
+  it with a synthetic compound drawable.
+- Do not interpolate equal-size current-weather drawable bounds during a text-size transition,
+  preventing a fixed 15 dp icon from changing its internal origin.
+- Add AOD-only forecast weight compensation and apply the clock emphasis colour to date/current
+  weather text and its icon.
+
+### Success
+- Added a JVM regression test covering the stable-geometry guard for native forecast subviews.
+- Full JVM suite passed: 156 tests, 0 failures; debug APK assembled and its package metadata
+  confirms `0.1.301` / versionCode `311`.
+
+### Deferred/Failed
+- Device-frame verification of the forecast row, forecast icon, and current-weather icon is
+  Deferred pending installation and user observation; passing JVM tests and a debug build cannot
+  prove rendered SystemUI animation frames.
+
+## [0.1.300] - 2026-08-06
+### Meta
+- **Model:** Codex
+- **Scope:** Fix span-aware geometry for the COUI-style large/small transition information rows.
+
+### Fixed
+- Scale each fixed date/weather/forecast text cell with the current animated text size, preventing
+  letters from sliding inside a cell and then changing spacing when the real target view takes over.
+- Measure date, current-weather, and forecast text using their active replacement-span advances,
+  instead of raw `Paint.measureText()` widths that ignore the fixed cells.
+- Capture the forecast row from its actual layout-line geometry plus its separate leading icon, so
+  the temporary compound-drawable clone follows the same visible group centre.
+
+### Success
+- Added JVM coverage for fixed cell scaling during text-size animation.
+
+### Deferred/Failed
+- Device-frame verification of date/current-weather/forecast icon continuity is Deferred pending
+  installation and user observation; a successful build cannot prove rendered SystemUI frames.
+
+## [0.1.299] - 2026-08-06
+### Meta
+- **Model:** Codex
+- **Scope:** COUI-style large/small clock transition, weather forecast geometry, and English forecast label.
+
+### Fixed
+- Include the contextual At a Glance row in the same temporary transition surface as the clock,
+  date, and current weather, so it no longer jumps into its target position and overlaps them at
+  the beginning of a large/small clock switch.
+- Animate date/current-weather text by text metrics and drawable bounds at scale `1`; this keeps
+  the fixed-size weather icon from shrinking during the transition and rebounding at the endpoint.
+- Position temporary information clones by their painted text-and-icon centre.
+- Keep Weather Forecast at its compact auxiliary geometry in both clock sizes to prevent the
+  `Tomorrow`/`Tmr` text from reflowing or changing apparent letter spacing mid-transition.
+- Tighten the compact date-to-weather anchor and contextual gap to move the forecast row up from
+  the system notification card; English `Tomorrow` is now the shorter `Tmr`.
+
+### Success
+- Added focused JVM regression coverage for direct information-metric interpolation and
+  fixed-size weather drawable bounds; the complete JVM suite passed (154 tests, 0 failures).
+- Debug APK assembled successfully as `0.1.299` / versionCode `309`.
+
+### Deferred/Failed
+- Device-frame verification of all large-to-small and small-to-large paths is Deferred pending
+  installation and user observation; a successful build cannot prove SystemUI rendering.
+
+## [0.1.298] - 2026-08-06
+### Meta
+- **Model:** Codex
+- **Scope:** COUI large/small clock transition endpoints and shared lockscreen/AOD information-group layout.
+
+### Fixed
+- Position each temporary clock clone from its painted glyph center after its current variable-font
+  weight has been applied; asymmetric digits such as `1` no longer use the oversized clone box as
+  their animation centre.
+- Hold the last transition overlay frame until the real target clock/date/weather views have
+  applied final weight and passed one pre-draw, preventing the endpoint snap of the first digit
+  and weather compound icon.
+- Add `ClockInfoGroupLayout` for both surfaces: in large mode current weather attaches after the
+  date with a 6 dp gap and aligned visual centre; contextual rows begin after the actual group
+  bottom while retaining the COUI minimum anchor. Compact date/weather anchors remain unchanged.
+
+### Success
+- Focused JVM regression tests passed for painted-content centre math, weather-leading content,
+  end-position calculations, and identical lockscreen/AOD information-group results.
+- `0.1.298` / versionCode `308` was cover-installed on `192.168.137.28:5555`; System UI
+  restarted and the persistent LSPosed log confirms the Pixel AOD host is actively rendering.
+
+### Deferred/Failed
+- Device visual verification of continuous large-to-small and small-to-large frames remains
+  Deferred until the built APK is installed and observed on the target phone; JVM and build
+  checks do not establish rendered-frame behavior.
+
+## [0.1.297] - 2026-08-06
+### Meta
+- **Model:** Codex / Luna
+- **Scope:** Restore visible same-surface LARGE ↔ SMALL COUI clock/date/weather transitions.
+
+### Fixed
+- Reverted the 0.1.296 custom `GlyphTextView`/`InfoRowView` overlay path to the last
+  device-visible ordinary `TextView` and compound-drawable clones.
+- Kept only the narrow painted-ink glyph-center correction for the original upper-row trajectory;
+  weather remains one compound `TextView` clone.
+- Added a compiled-renderer structure regression test locking the transition layer to platform
+  `TextView`/compound-drawable clones and excluding the 0.1.296 custom nested renderers.
+
+### Success
+- Focused `CouiClockSizeTransitionMathTest` passed after the correction; reflection verifies the
+  compiled transition layer uses platform `TextView` clone types and has no custom nested renderer.
+- Full `:app:testDebugUnitTest --rerun-tasks` passed: 148 tests, 0 failures, 0 errors, 0 skipped.
+- `:app:assembleDebug --rerun-tasks` passed and produced `app-debug.apk`.
+- APK metadata inspection passed: versionCode 307, version 0.1.297, Vector 101/101,
+  `staticScope=false`, all `META-INF/xposed` entries present, and no packaged
+  `io/github/libxposed` implementation classes.
+
+### Deferred/Failed
+- **Failed:** 0.1.296's custom overlay produced a blank intermediate transaction for approximately
+  the full 550 ms before the persistent target snapped in.
+- Device lockscreen pixel continuity and persistent-alpha restoration remain Deferred; JVM/build
+  proof does not claim actual rendered frames or device runtime behavior.
+
+## [0.1.296] - 2026-08-06
+### Meta
+- **Model:** Codex / Luna
+- **Scope:** Lockscreen-only LARGE ↔ SMALL COUI size-transition geometry.
+
+### Fixed
+- Capture all four clock digits from their actual painted ink bounds, including the two-line
+  large clock, instead of Layout line-box/reference-cell centers.
+- Move the weather leading drawable and text as one explicitly centered visual group during the
+  existing 550 ms transaction.
+- Recenter the cloned information row on its actual painted text/drawable union after layout and
+  immediately before drawing, including the FixedAdvanceSpan weight offset, so source and target
+  endpoints equal their captured visual centers.
+
+### Success
+- Focused `CouiClockSizeTransitionMathTest` passed: 16 tests with exact painted-center,
+  endpoint-union, per-glyph path, ReplacementSpan-offset, and rigid-weather-group regression cases.
+- Full `:app:testDebugUnitTest --rerun-tasks` passed: 149 tests, 0 failures, 0 errors, 0 skipped.
+- `:app:assembleDebug --rerun-tasks` passed and produced `app-debug.apk`.
+- APK metadata inspection passed: versionCode 306, version 0.1.296, Vector 101/101,
+  `staticScope=false`, and no packaged `io/github/libxposed` implementation classes.
+
+### Deferred/Failed
+- Device lockscreen visual verification is Deferred; no runtime behavior is claimed from JVM or
+  build proof alone.
+
+## [0.1.295] - 2026-08-05
+### Meta
+- **Model:** Codex / Luna
+- **Scope:** Low-battery Pixel FOD styling and Breezy At a Glance runtime corrections.
+
+### Fixed
+- Separate fingerprint drawable replacement from native FOD carrier ownership: under an
+  independent low-battery denial, an already-visible OOS carrier can use the configured Pixel
+  visual without scheduling reclaim, showing a hidden carrier, reasserting AOD, or extending the
+  native timeout.
+- Make Weather Alert AOD-only. Lockscreen selection no longer shows the alert, starts its
+  ten-minute window, or consumes the shared AOD repeat-entry marker.
+- Parse Breezy alert validity from epoch seconds, epoch milliseconds, and compatible ISO-8601
+  aliases while preserving an omitted end time instead of inventing one.
+- Parse Breezy's actual provider schema (`refreshTime`, `daily[].day/night`, nested temperature
+  values), use the daytime condition with day/night high-low values, and reject night-only or
+  incomplete forecasts.
+- Replace the filled warning triangle/fallback with a module-owned outlined triangle containing
+  an exclamation mark.
+- Document process-local Android SDK variables for every Gradle invocation in isolated Luna
+  worktrees so they do not first fail due to a missing `local.properties`.
+
+### Success
+- **Device validation Success:** the earlier low-battery permanent fingerprint-icon regression
+  remains fixed; device logs at 13% with `low_power=0` confirm the independent `low-battery`
+  policy and native hide ownership.
+- `.\gradlew.bat :app:testDebugUnitTest --rerun-tasks` passed: 144 tests, 0 failures, 0 errors.
+- `.\gradlew.bat :app:assembleDebug --rerun-tasks` passed and produced the Debug APK.
+- APK metadata inspection passed: versionCode 305, version 0.1.295, min/target API 101,
+  staticScope=false, and no packaged `io/github/libxposed` implementation classes.
+
+### Deferred/Failed
+- The new low-battery Pixel-style native FOD replacement, AOD-only alert presentation, outlined
+  icon, alert validity handling, and forecast card require device runtime/visual verification;
+  these items are Deferred until user testing and are not claimed as runtime Success.
+
+## [0.1.294] - 2026-08-05
+### Meta
+- **Model:** Codex / Luna
+- **Scope:** Final At a Glance weather policy corrections for Breezy permission, relay failure
+  preservation, alert deadlines, forecast icons, and shared contextual-card presentation.
+
+### Changed
+- Add the independent `weather_forecast` setting, Breezy current-position forecast relay data,
+  deterministic alert history/selection, privacy redaction, and durable SystemUI-side state.
+- Share Breezy permission acquisition between Weather Alerts and Weather Forecast without
+  enabling either setting before grant; preserve SystemUI data on failed/malformed relay caches.
+- Schedule alert end/source-freshness boundaries, reject unknown condition-text placeholders, and
+  use the selected calendar icon resolver and geometry on both lockscreen and AOD.
+- Route alert, calendar, and forecast presentation through one fixed one-line lockscreen/AOD slot
+  with the module-owned weather warning resource and policy-boundary refreshes.
+- Preserve the existing current-weather setting and backward-compatible relay/cache extras.
+
+### Success
+- Focused weather/alert/selector Debug JVM tests passed during implementation.
+- `.\gradlew.bat :app:testDebugUnitTest --rerun-tasks` passed: 140 tests, 0 failures, 0 errors.
+- `.\gradlew.bat :app:assembleDebug --rerun-tasks` passed and produced the Debug APK.
+- APK metadata inspection passed: versionCode 304, version 0.1.294, min/target API 101,
+  staticScope=false, and no packaged `io/github/libxposed` implementation classes.
+
+### Deferred/Failed
+- Device installation and runtime visual/policy verification are Deferred until primary/user
+  testing; no device runtime success is claimed.
+
 ## [0.1.293] - 2026-08-05
 ### Meta
 - **Model:** Codex / Luna

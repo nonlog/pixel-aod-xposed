@@ -76,6 +76,7 @@ import java.util.WeakHashMap;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.time.ZoneId;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -161,6 +162,8 @@ public final class PixelAodClockView extends FrameLayout {
     private static final int WEATHER_ICON_SIZE_DP = PixelAodVisualStyle.Aod.WEATHER_ICON_SIZE_DP;
     private static final int WEATHER_ICON_PADDING_DP =
             PixelAodVisualStyle.Aod.WEATHER_ICON_PADDING_DP;
+    private static final int WEATHER_FORECAST_AOD_WEIGHT_COMPENSATION =
+            PixelAodVisualStyle.Aod.WEATHER_FORECAST_WEIGHT_COMPENSATION;
     private static final int BURN_IN_OFFSET_X_DP = PixelAodVisualStyle.Aod.BURN_IN_OFFSET_X_DP;
     private static final int BURN_IN_OFFSET_Y_DP = PixelAodVisualStyle.Aod.BURN_IN_OFFSET_Y_DP;
     private static final int LOW_BATTERY_AOD_SUPPRESS_THRESHOLD_PERCENT = 15;
@@ -278,6 +281,12 @@ public final class PixelAodClockView extends FrameLayout {
     private static String calendarAtAGlanceExtra = "";
     private static WeatherSnapshot breezyWeather = WeatherSnapshot.empty();
     private static BreezyWeatherAlert breezyWeatherAlert = BreezyWeatherAlert.empty();
+    private static BreezyWeatherSnapshot breezyWeatherSnapshot = BreezyWeatherSnapshot.empty();
+    private static ContextualAtAGlanceStateStore contextualStateStore;
+    private static long contextualSurfaceEntrySequence;
+    private static long lastContextualSelectionEntryId;
+    private static Runnable contextualDeadlineRunnable;
+    private static long contextualDeadlineAtMillis;
     private static Runnable weatherAlertExpiryRunnable;
     private static long weatherAlertExpiryAtMillis;
     private static boolean breezyWeatherReceiverRegistered;
@@ -494,12 +503,14 @@ public final class PixelAodClockView extends FrameLayout {
         weatherAlertParams.rightMargin = dp(INFO_EDGE_DP);
         weatherAlertParams.topMargin = dp(LARGE_INFO_TOP_DP
                 + CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP);
-        addView(weatherAlertRow, weatherAlertParams);
+        // The old independent alert row is intentionally not attached. Alerts, calendar, and
+        // forecast now share calendarRow below as one contextual slot.
 
         weatherAlertIconView = new ImageView(context);
         weatherAlertIconView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         weatherAlertIconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        weatherAlertIconView.setImageResource(android.R.drawable.ic_dialog_alert);
+        weatherAlertIconView.setImageDrawable(
+                moduleDrawable(context, R.drawable.ic_weather_alert));
         weatherAlertIconView.setColorFilter(resolveMaterialInfoColor(context), PorterDuff.Mode.SRC_IN);
         weatherAlertRow.addView(weatherAlertIconView, new LinearLayout.LayoutParams(
                 dp(LARGE_INFO_TEXT_DP), dp(LARGE_INFO_TEXT_DP)));
@@ -519,6 +530,7 @@ public final class PixelAodClockView extends FrameLayout {
         calendarRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         calendarRow.setAlpha(INFO_ALPHA);
         calendarRow.setVisibility(View.GONE);
+        calendarRow.setMinimumHeight(dp(LARGE_INFO_TEXT_DP));
         FrameLayout.LayoutParams calendarParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -542,6 +554,7 @@ public final class PixelAodClockView extends FrameLayout {
                 LARGE_INFO_TEXT_DP, Gravity.START);
         calendarView.setAlpha(1f);
         calendarView.setEllipsize(TextUtils.TruncateAt.END);
+        calendarView.setMaxLines(1);
         LinearLayout.LayoutParams calendarTextParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         calendarTextParams.leftMargin = dp(CALENDAR_ICON_SPACING_DP);
@@ -697,6 +710,9 @@ public final class PixelAodClockView extends FrameLayout {
             receiverContext = context;
         }
         synchronized (PixelAodClockView.class) {
+            if (contextualStateStore == null) {
+                contextualStateStore = new ContextualAtAGlanceStateStore(receiverContext);
+            }
             if (breezyWeatherReceiverRegistered) {
                 return;
             }
@@ -721,6 +737,172 @@ public final class PixelAodClockView extends FrameLayout {
         } catch (Throwable t) {
             PixelAodLog.log("failed to register Pixel AOD Breezy weather receiver", t);
         }
+    }
+
+    static long beginContextualSurfaceEntry(String source) {
+        long entry;
+        synchronized (PixelAodClockView.class) {
+            long wallClockId = System.currentTimeMillis();
+            entry = Math.max(++contextualSurfaceEntrySequence, wallClockId);
+            if (entry <= 0L) {
+                contextualSurfaceEntrySequence = 1L;
+                entry = 1L;
+            }
+            contextualSurfaceEntrySequence = entry;
+        }
+        PixelAodLog.log("began contextual surface entry id=" + entry + " source=" + source);
+        return entry;
+    }
+
+    static long currentContextualSurfaceEntry() {
+        synchronized (PixelAodClockView.class) {
+            return contextualSurfaceEntrySequence;
+        }
+    }
+
+    private static boolean noteContextualSurfaceSelection(long surfaceEntryId,
+            boolean surfaceVisible) {
+        if (!surfaceVisible || surfaceEntryId <= 0L) {
+            return false;
+        }
+        synchronized (PixelAodClockView.class) {
+            boolean nextEntry = lastContextualSelectionEntryId != surfaceEntryId;
+            lastContextualSelectionEntryId = surfaceEntryId;
+            return nextEntry;
+        }
+    }
+
+    static ContextualAtAGlanceSelector.Selection selectContextualCard(Context context,
+            boolean surfaceVisible, String source) {
+        return selectContextualCard(context, surfaceVisible, true, source);
+    }
+
+    static ContextualAtAGlanceSelector.Selection selectContextualCard(Context context,
+            boolean surfaceVisible, boolean allowWeatherAlerts, String source) {
+        Context resolved = context != null ? context : appContext;
+        if (resolved == null) {
+            return new ContextualAtAGlanceSelector.Selection(
+                    ContextualAtAGlanceCard.none(), BreezyWeatherAlert.empty(), 0L);
+        }
+        BreezyWeatherSnapshot snapshot;
+        String calendar;
+        synchronized (PixelAodClockView.class) {
+            snapshot = breezyWeatherSnapshot;
+            calendar = calendarAtAGlanceExtra;
+            if (contextualStateStore == null) {
+                contextualStateStore = new ContextualAtAGlanceStateStore(resolved);
+            }
+        }
+        boolean alertsEnabled = PixelAodSettings.getBoolean(resolved,
+                PixelAodSettings.KEY_WEATHER_ALERTS, false);
+        boolean forecastEnabled = PixelAodSettings.getBoolean(resolved,
+                PixelAodSettings.KEY_WEATHER_FORECAST, false);
+        boolean calendarEnabled = PixelAodSettings.getBoolean(resolved,
+                PixelAodSettings.KEY_CALENDAR_EVENTS, false);
+        String genericAlert = moduleString(resolved, R.string.generic_weather_alert,
+                "Weather alert");
+        String tomorrow = moduleString(resolved, R.string.weather_tomorrow, "Tmr");
+        long surfaceEntryId = currentContextualSurfaceEntry();
+        if (surfaceVisible && surfaceEntryId <= 0L) {
+            surfaceEntryId = beginContextualSurfaceEntry(source + "#implicit-visible");
+        }
+        // A lockscreen refresh may share the same geometry/entry with the later AOD handoff,
+        // but it is not an alert presentation. Do not consume the repeat-entry gate until the
+        // AOD-allowed selector actually evaluates the alert.
+        boolean nextSurfaceEntry = allowWeatherAlerts
+                && noteContextualSurfaceSelection(surfaceEntryId, surfaceVisible);
+        ContextualAtAGlanceSelector.Selection selection = ContextualAtAGlanceSelector.select(
+                snapshot, calendar, alertsEnabled, calendarEnabled, forecastEnabled,
+                contextualStateStore, System.currentTimeMillis(), ZoneId.systemDefault(),
+                surfaceEntryId, nextSurfaceEntry, surfaceVisible, allowWeatherAlerts,
+                ContextualAtAGlancePrivacy.isSensitiveContentHidden(resolved), genericAlert,
+                tomorrow);
+        if (surfaceVisible) {
+            scheduleContextualDeadline(selection.nextDeadlineMillis, source);
+        }
+        return selection;
+    }
+
+    static Drawable contextualCardIcon(Context context, ContextualAtAGlanceCard card, int color) {
+        if (card == null || !card.isVisible()) {
+            return null;
+        }
+        if (card.kind == ContextualAtAGlanceCard.Kind.WEATHER_ALERT) {
+            return moduleDrawable(context, R.drawable.ic_weather_alert);
+        }
+        if (card.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST) {
+            if (card.weatherCode == BreezyWeatherForecast.UNKNOWN_WEATHER_CODE) {
+                return null;
+            }
+            // Forecasts always resolve through the selected Breezy/module icon pack using
+            // the tomorrow daytime variant. Never derive an evening/night variant from the
+            // current clock time, and never use a generic forecast placeholder.
+            Drawable selected = getExternalWeatherIconDrawable(context, card.weatherCode,
+                    false, false);
+            if (selected != null) {
+                return selected.mutate();
+            }
+            return new WeatherIconDrawable(card.weatherCode, color);
+        }
+        return resolveCalendarIcon(context, color);
+    }
+
+    static Drawable resolveCalendarIcon(Context context, int color) {
+        if (context == null) {
+            return null;
+        }
+        String selectedPackage = PixelAodSettings.getString(context,
+                PixelAodSettings.KEY_CALENDAR_ICON_PACKAGE, "");
+        Drawable drawable = TextUtils.isEmpty(selectedPackage)
+                ? null : loadCalendarApplicationMonochromeIcon(context, selectedPackage);
+        if (drawable == null) {
+            try {
+                drawable = context.getDrawable(android.R.drawable.ic_menu_my_calendar);
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+        if (drawable != null) {
+            drawable = drawable.mutate();
+            drawable.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+        }
+        return drawable;
+    }
+
+    static boolean hasSelectedCalendarApplicationIcon(Context context) {
+        if (context == null) {
+            return false;
+        }
+        String selectedPackage = PixelAodSettings.getString(context,
+                PixelAodSettings.KEY_CALENDAR_ICON_PACKAGE, "");
+        return !TextUtils.isEmpty(selectedPackage)
+                && loadCalendarApplicationMonochromeIcon(context, selectedPackage) != null;
+    }
+
+    private static Drawable moduleDrawable(Context context, int resourceId) {
+        if (context == null) {
+            return null;
+        }
+        try {
+            Context moduleContext = context.createPackageContext(MODULE_PACKAGE,
+                    Context.CONTEXT_IGNORE_SECURITY);
+            return moduleContext.getDrawable(resourceId);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static String moduleString(Context context, int resourceId, String fallback) {
+        if (context != null) {
+            try {
+                Context moduleContext = context.createPackageContext(MODULE_PACKAGE,
+                        Context.CONTEXT_IGNORE_SECURITY);
+                return moduleContext.getString(resourceId);
+            } catch (Throwable ignored) {
+                // Use the English fallback when SystemUI cannot resolve module resources.
+            }
+        }
+        return fallback;
     }
 
     private static void requestCachedBreezyWeather(Context context) {
@@ -750,17 +932,15 @@ public final class PixelAodClockView extends FrameLayout {
         if (resolvedContext == null) {
             return 0;
         }
-        boolean weatherAlertVisible = currentFreshWeatherAlert(resolvedContext)
-                != BreezyWeatherAlert.empty();
-        boolean calendarVisible = !TextUtils.isEmpty(currentCalendarAtAGlanceExtra());
+        // The lockscreen computes the final AOD coordinate, so reserve an AOD-only alert slot
+        // here to prevent the notification row from jumping when the AOD layer appears.
+        boolean contextualVisible = selectContextualCard(resolvedContext, false, true,
+                "handoff-position").card.isVisible();
         if (compact) {
             int infoTopPx = CouiCompactLayout.infoTop(
                     resolveViewportHeightPx(resolvedContext, viewportHeightPx),
                     resolvedContext.getResources().getDisplayMetrics().density);
-            if (weatherAlertVisible && calendarVisible) {
-                return infoTopPx + dp(resolvedContext,
-                        COMPACT_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP);
-            } else if (weatherAlertVisible || calendarVisible) {
+            if (contextualVisible) {
                 return infoTopPx + dp(resolvedContext,
                         COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP);
             } else {
@@ -770,9 +950,7 @@ public final class PixelAodClockView extends FrameLayout {
         }
         int largeInfoTopDp = LARGE_INFO_TOP_DP;
         int topDp = LARGE_NOTIFICATION_LINE_TOP_DP;
-        if (weatherAlertVisible && calendarVisible) {
-            topDp = largeInfoTopDp + CALENDAR_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP;
-        } else if (weatherAlertVisible || calendarVisible) {
+        if (contextualVisible) {
             topDp = largeInfoTopDp + CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP;
         }
         return dp(resolvedContext, topDp);
@@ -1669,21 +1847,24 @@ public final class PixelAodClockView extends FrameLayout {
         return evaluateAodPolicy(context, source).modulePolicyAllowsDisplay;
     }
 
-    static boolean shouldRefreshFingerprintIcon(Context context, String source) {
+    static PixelFingerprintIconPolicy.RefreshMode fingerprintIconRefreshMode(
+            Context context, String source, boolean nativeCarrierVisible) {
         if (context == null) {
-            return true;
+            return PixelFingerprintIconPolicy.RefreshMode.REFRESH_CARRIER;
         }
         boolean interactive = isDeviceInteractive(context);
         if (interactive) {
-            return true;
+            return PixelFingerprintIconPolicy.RefreshMode.REFRESH_CARRIER;
         }
         OosAodLifecycleAdapter.AodPolicyDecision decision =
                 evaluateAodPolicy(context, source + "#fingerprint-refresh");
         boolean powerPolicyDenied = OosAodLifecycleAdapter.isPowerPolicyDenial(
                 decision.modulePolicyReason);
-        boolean shouldRefresh = PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
-                interactive, decision.modulePolicyAllowsDisplay, powerPolicyDenied);
-        if (!shouldRefresh) {
+        PixelFingerprintIconPolicy.RefreshMode refreshMode =
+                PixelFingerprintIconPolicy.refreshMode(
+                        interactive, decision.modulePolicyAllowsDisplay,
+                        powerPolicyDenied, nativeCarrierVisible);
+        if (refreshMode == PixelFingerprintIconPolicy.RefreshMode.SKIP) {
             PixelAodLog.log("Pixel fingerprint icon refresh skipped"
                     + " source=" + source
                     + " reason=power-policy-denied-native-hide"
@@ -1691,7 +1872,12 @@ public final class PixelAodClockView extends FrameLayout {
                     + " trace=" + decision.trace
                     + " state={" + describeAodState(context) + "}");
         }
-        return shouldRefresh;
+        return refreshMode;
+    }
+
+    static boolean shouldRefreshFingerprintIcon(Context context, String source) {
+        return fingerprintIconRefreshMode(context, source, false)
+                != PixelFingerprintIconPolicy.RefreshMode.SKIP;
     }
 
     static boolean isContinuousAodPolicyAllowingDisplay(Context context, String source) {
@@ -1972,7 +2158,8 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static void logAodPolicyDecision(OosAodLifecycleAdapter.AodPolicyDecision decision) {
-        PixelAodLog.log("AOD policy decision source=" + decision.source
+        PixelAodLog.log("AOD policy decision", () -> "AOD policy decision source="
+                + decision.source
                 + " trace=" + decision.trace
                 + " shouldDrawPixelOverlay=" + decision.shouldDrawPixelOverlay
                 + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
@@ -2552,57 +2739,98 @@ public final class PixelAodClockView extends FrameLayout {
         }
         try {
             WeatherSnapshot snapshot = parseBreezyWeatherIntent(intent);
+            boolean snapshotAvailable = shouldApplyBreezyContextualSnapshot(
+                    intent.hasExtra(BreezyWeatherRelayReceiver.EXTRA_SNAPSHOT_AVAILABLE)
+                            && intent.getBooleanExtra(
+                            BreezyWeatherRelayReceiver.EXTRA_SNAPSHOT_AVAILABLE, false),
+                    intent.getBooleanExtra(BreezyWeatherRelayReceiver.EXTRA_SNAPSHOT_SYNCED,
+                            false));
+            BreezyWeatherSnapshot contextualSnapshot = snapshotAvailable
+                    ? BreezyWeatherSnapshot.fromRelayJson(
+                    intent.getStringExtra(BreezyWeatherRelayReceiver.EXTRA_SNAPSHOT_JSON))
+                    : null;
             boolean alertsSynced = intent.getBooleanExtra(
                     BreezyWeatherRelayReceiver.EXTRA_ALERTS_SYNCED, false);
             BreezyWeatherAlert alert = alertsSynced
                     ? BreezyWeatherAlert.fromRelayJson(
                     intent.getStringExtra(BreezyWeatherRelayReceiver.EXTRA_ALERT_JSON))
                     : null;
-            if ((snapshot == null || !snapshot.hasDisplayableWeather()) && !alertsSynced) {
+            if (contextualSnapshot == null && alertsSynced) {
+                contextualSnapshot = BreezyWeatherSnapshot.queried(
+                        alert != null ? alert.locationId : "",
+                        alert != null && !alert.isEmpty()
+                                ? Collections.singletonList(alert) : Collections.emptyList(),
+                        Collections.emptyList(), System.currentTimeMillis());
+            }
+            if ((snapshot == null || !snapshot.hasDisplayableWeather())
+                    && contextualSnapshot == null && !alertsSynced) {
                 if (ACTION_BREEZY_UPDATE_NOTIFIER.equals(intent.getAction())) {
                     logBreezyWeather("received Breezy update notifier without weather payload");
                 }
                 return;
             }
             boolean weatherChanged = false;
-            boolean alertChanged = false;
+            boolean contextualChanged = false;
             long now = System.currentTimeMillis();
             synchronized (PixelAodClockView.class) {
                 if (snapshot != null && snapshot.hasDisplayableWeather()) {
                     weatherChanged = !breezyWeather.sameDisplay(snapshot);
                     breezyWeather = snapshot;
                 }
-                if (alertsSynced) {
-                    boolean wasActive = breezyWeatherAlert.isActive(now);
-                    boolean isActive = alert.isActive(now);
-                    alertChanged = !breezyWeatherAlert.sameDisplay(alert)
-                            || wasActive != isActive;
-                    breezyWeatherAlert = alert;
+                if (contextualSnapshot != null) {
+                    contextualChanged = !breezyWeatherSnapshot.sameContextualDisplay(
+                            contextualSnapshot)
+                            || breezyWeatherSnapshot.sourceQuerySucceeded
+                            != contextualSnapshot.sourceQuerySucceeded;
+                    breezyWeatherSnapshot = contextualSnapshot;
+                    if (!contextualSnapshot.activeAlerts.isEmpty()) {
+                        BreezyWeatherAlert selected = BreezyWeatherAlert.empty();
+                        for (BreezyWeatherAlert candidate : contextualSnapshot.activeAlerts) {
+                            selected = BreezyWeatherAlert.selectActive(now, selected, candidate);
+                        }
+                        breezyWeatherAlert = selected;
+                    } else {
+                        breezyWeatherAlert = BreezyWeatherAlert.empty();
+                    }
                 }
             }
-            if (alertsSynced) {
-                scheduleWeatherAlertExpiryRefresh(alert, source);
+            if (contextualSnapshot != null) {
+                ContextualAtAGlanceStateStore store;
+                synchronized (PixelAodClockView.class) {
+                    if (contextualStateStore == null && appContext != null) {
+                        contextualStateStore = new ContextualAtAGlanceStateStore(appContext);
+                    }
+                    store = contextualStateStore;
+                }
+                if (store != null) {
+                    boolean enabled = PixelAodSettings.getBoolean(appContext,
+                            PixelAodSettings.KEY_WEATHER_ALERTS, false);
+                    store.reconcile(contextualSnapshot, enabled, now);
+                }
+                scheduleContextualDeadline(0L, source + "#relay-reconcile");
             }
             if (weatherChanged) {
                 logBreezyWeather("updated Breezy weather from " + source
                         + " text=" + snapshot.logText());
             }
-            if (alertChanged) {
-                PixelAodLog.log("updated Breezy weather alert from " + source
-                        + " active=" + alert.isActive(System.currentTimeMillis())
-                        + " severity=" + alert.severity);
+            if (contextualChanged) {
+                PixelAodLog.log("updated contextual Breezy snapshot from " + source
+                        + " alerts=" + (contextualSnapshot != null
+                        ? contextualSnapshot.activeAlerts.size() : 0)
+                        + " sourceSuccess=" + (contextualSnapshot != null
+                        && contextualSnapshot.sourceQuerySucceeded));
             }
-            if (!weatherChanged && !alertChanged) {
+            if (!weatherChanged && !contextualChanged) {
                 return;
             }
             mainHandler().post(() -> {
                 for (PixelAodClockView view : INSTANCES) {
                     if (view != null) {
                         view.updateTime();
-                        view.requestAodFrameRefresh("weather");
+                        view.requestAodFrameRefresh("weather-contextual");
                     }
                 }
-                PixelLockscreenClockView.refreshAll("weather");
+                PixelLockscreenClockView.refreshAll("weather-contextual");
             });
         } catch (Throwable t) {
             PixelAodLog.log("failed to handle Breezy weather payload", t);
@@ -3541,6 +3769,18 @@ public final class PixelAodClockView extends FrameLayout {
         requestAodFrameRefresh(source + "#ClockPlugin");
     }
 
+    /**
+     * Late media discovery must not restyle the whole clock surface.  OOS can publish an active
+     * MediaSession shortly after Doze starts, but refreshing date, weather, notification icons,
+     * and layout for every retry blocks the same SystemUI frame that is turning the display off.
+     */
+    void refreshClockPluginAodMedia(String source) {
+        if (!clockPluginManaged) {
+            return;
+        }
+        refreshActiveMediaControllers();
+    }
+
     void setClockPluginLayerVisible(boolean visible) {
         if (!clockPluginManaged) {
             return;
@@ -3818,6 +4058,14 @@ public final class PixelAodClockView extends FrameLayout {
                 + " state={" + describeAodState(getContext()) + "}");
         if (visibilityChanged) {
             if (visible) {
+                boolean lockscreenHandoff = PixelLockscreenClockView
+                        .shouldAnimateLockscreenToAodTransition();
+                if (!lockscreenHandoff) {
+                    beginContextualSurfaceEntry(source + "#visible");
+                } else {
+                    PixelAodLog.log("preserved contextual surface entry for lockscreen-to-AOD handoff"
+                            + " source=" + source + " entry=" + currentContextualSurfaceEntry());
+                }
                 refreshAodContentBeforeVisible(source);
             }
             setVisibility(desiredVisibility);
@@ -4197,7 +4445,8 @@ public final class PixelAodClockView extends FrameLayout {
             return false;
         }
         if (logAllowed) {
-            PixelAodLog.log("AOD power policy allows overlay trace=" + trace
+            PixelAodLog.log("AOD power policy allows overlay", () ->
+                    "AOD power policy allows overlay trace=" + trace
                     + " source=" + source
                     + " reason=" + decision.reason
                     + " powerCategory=" + decision.categoryLabel
@@ -4224,9 +4473,9 @@ public final class PixelAodClockView extends FrameLayout {
                 decision,
                 source,
                 powerSaveMode,
-                batteryStatus.describeForLog(),
+                batteryStatus::describeForLog,
                 trace,
-                describeAodState(context));
+                () -> describeAodState(context));
         return decision;
     }
 
@@ -4247,8 +4496,9 @@ public final class PixelAodClockView extends FrameLayout {
                 cachedScheduleKey = "";
                 cachedScheduleResult = true;
             }
-            PixelAodLog.log("AOD schedule check disabled result=true state={"
-                    + describeAodState(ctx) + "}");
+            PixelAodLog.log("AOD schedule check disabled", () ->
+                    "AOD schedule check disabled result=true state={"
+                            + describeAodState(ctx) + "}");
             return true;
         }
         String startTimeStr = PixelAodSettings.getString(ctx, PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, "22:00");
@@ -4258,7 +4508,8 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             if (key.equals(cachedScheduleKey)
                     && now - cachedScheduleCheckedAt < SCHEDULE_CACHE_MILLIS) {
-                PixelAodLog.log("AOD schedule cache hit key=" + key
+                PixelAodLog.log("AOD schedule cache hit", () ->
+                        "AOD schedule cache hit key=" + key
                         + " result=" + cachedScheduleResult
                         + " ageMs=" + (now - cachedScheduleCheckedAt)
                         + " state={" + describeAodState(ctx) + "}");
@@ -4515,21 +4766,31 @@ public final class PixelAodClockView extends FrameLayout {
         boolean hadMedia = !TextUtils.isEmpty(lastMediaLineText)
                 || mediaRow.getVisibility() == View.VISIBLE
                 || currentMediaNotificationKey != null;
-        if (hadMedia) {
-            PixelAodLog.log("AOD media line cleared source=" + source
-                    + " oldText=" + describeMediaTextForLog(lastMediaLineText)
-                    + " notificationKey=" + currentMediaNotificationKey
-                    + " expiredMedia=" + expiredInactiveMediaPackageSignature()
-                    + " trace=" + currentAodTraceId());
-        }
+        String previousMediaText = lastMediaLineText;
+        String previousNotificationKey = currentMediaNotificationKey;
+        // Dedupe state is logical media state, not UI work. An active controller can briefly
+        // publish an empty metadata line during AOD entry; updateMediaLine() has already written
+        // its key/icon signature before arriving here. Always clear those signatures so the same
+        // session or track can populate normally on the next callback, even when the row was
+        // already hidden and no layout/rebuild is necessary.
         currentMediaNotificationKey = null;
-        // Reset the dedupe signature so that resuming the SAME track later is not
-        // mistaken for an unchanged state and silently skipped (which previously
-        // left the media row hidden until the player was swiped away and reopened).
         lastMediaLineText = "";
         lastMediaLineKey = "";
         lastMediaIconSignature = "";
         lastMediaIconRecoverySignature = "";
+        if (!hadMedia) {
+            // AOD entry deliberately polls media a few times to catch a late MediaSession.  In
+            // the usual no-media case this method used to submit a full information-stack layout
+            // and notification rebuild on every poll, making launcher/app screen-off stutter.
+            return;
+        }
+        if (hadMedia) {
+            PixelAodLog.log("AOD media line cleared source=" + source
+                    + " oldText=" + describeMediaTextForLog(previousMediaText)
+                    + " notificationKey=" + previousNotificationKey
+                    + " expiredMedia=" + expiredInactiveMediaPackageSignature()
+                    + " trace=" + currentAodTraceId());
+        }
         mediaView.setText("");
         mediaArtistView.setText("");
         mediaSubtitleRow.setVisibility(View.GONE);
@@ -6076,9 +6337,8 @@ public final class PixelAodClockView extends FrameLayout {
         int clockColor = resolveMaterialClockColor(getContext());
         int infoColor = resolveMaterialInfoColor(getContext());
         clockView.setTextColor(clockColor);
-        // COUI keeps its date and weather information neutral; only the clock is accented.
-        dateView.setTextColor(Color.WHITE);
-        weatherView.setTextColor(Color.WHITE);
+        dateView.setTextColor(clockColor);
+        weatherView.setTextColor(clockColor);
         calendarView.setTextColor(infoColor);
         applyCalendarIcon(infoColor);
         syncNotificationOverflowStyle(notificationOverflowView, dateView, notificationIconRow);
@@ -6090,11 +6350,35 @@ public final class PixelAodClockView extends FrameLayout {
         mediaArtistView.setTextColor(mediaColor);
         batteryView.setTextColor(Color.WHITE);
         chargeBoltView.setTint(Color.WHITE);
-        applyWeatherLeadingIcon(weatherView, currentFreshWeather(getContext()), Color.WHITE);
+        applyWeatherLeadingIcon(weatherView, currentFreshWeather(getContext()), clockColor);
     }
 
     private void refreshCalendarIconFromSettings() {
         applyCalendarIcon(resolveMaterialInfoColor(getContext()));
+    }
+
+    static boolean shouldApplyBreezyContextualSnapshot(Intent intent) {
+        if (intent == null) {
+            return false;
+        }
+        return shouldApplyBreezyContextualSnapshot(
+                intent.hasExtra(BreezyWeatherRelayReceiver.EXTRA_SNAPSHOT_AVAILABLE)
+                        && intent.getBooleanExtra(
+                        BreezyWeatherRelayReceiver.EXTRA_SNAPSHOT_AVAILABLE, false),
+                intent.getBooleanExtra(BreezyWeatherRelayReceiver.EXTRA_SNAPSHOT_SYNCED, false));
+    }
+
+    static boolean shouldApplyBreezyContextualSnapshot(boolean snapshotAvailable,
+            boolean snapshotSynced) {
+        // New broadcasts use availability; older successful broadcasts only had synced.
+        return snapshotAvailable || snapshotSynced;
+    }
+
+    private void restoreCalendarIconForContextual(int infoColor, int textSizeDp) {
+        usingCalendarApplicationIcon = ContextualAtAGlanceCalendarIcon.usesApplicationIcon(
+                getContext());
+        calendarIconView.setImageDrawable(resolveCalendarIcon(getContext(), infoColor));
+        updateCalendarRowStyle(textSizeDp);
     }
 
     private void applyCalendarIcon(int infoColor) {
@@ -6102,25 +6386,29 @@ public final class PixelAodClockView extends FrameLayout {
                 PixelAodSettings.KEY_CALENDAR_ICON_PACKAGE, "");
         if (!TextUtils.equals(appliedCalendarIconPackage, selectedPackage)) {
             appliedCalendarIconPackage = selectedPackage;
-            Drawable applicationIcon = TextUtils.isEmpty(selectedPackage)
-                    ? null : loadCalendarApplicationMonochromeIcon(getContext(), selectedPackage);
-            usingCalendarApplicationIcon = applicationIcon != null;
+            usingCalendarApplicationIcon = ContextualAtAGlanceCalendarIcon.usesApplicationIcon(
+                    getContext());
+            calendarIconView.setImageDrawable(resolveCalendarIcon(getContext(), infoColor));
             if (usingCalendarApplicationIcon) {
-                calendarIconView.clearColorFilter();
-                calendarIconView.setImageDrawable(applicationIcon);
                 PixelAodLog.log("applied selected calendar application monochrome icon package="
                         + selectedPackage + " trace=" + currentAodTraceId());
             } else {
-                calendarIconView.setImageResource(android.R.drawable.ic_menu_my_calendar);
                 PixelAodLog.log("using framework monochrome calendar icon selectedPackage="
                         + (TextUtils.isEmpty(selectedPackage) ? "none" : selectedPackage)
                         + " trace=" + currentAodTraceId());
             }
-            updateCalendarRowStyle(compactClock
-                    ? COMPACT_AUXILIARY_INFO_TEXT_DP : LARGE_INFO_TEXT_DP);
+            updateCalendarRowStyle(contextualTextSizeDp(
+                    ContextualAtAGlancePresentation.current(calendarRow)));
         }
-        // Apply the current AOD information color to either the app monochrome layer or fallback.
         calendarIconView.setColorFilter(infoColor, PorterDuff.Mode.SRC_IN);
+    }
+
+    /** Forecast stays at the compact auxiliary size while either clock size is active. */
+    private int contextualTextSizeDp(ContextualAtAGlanceCard card) {
+        if (card != null && card.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST) {
+            return COMPACT_AUXILIARY_INFO_TEXT_DP;
+        }
+        return compactClock ? COMPACT_AUXILIARY_INFO_TEXT_DP : LARGE_INFO_TEXT_DP;
     }
 
     static int resolveMaterialClockColor(Context context) {
@@ -6298,7 +6586,8 @@ public final class PixelAodClockView extends FrameLayout {
             float referenceAdvance = referencePaint.measureText(normalizedText, index, index + 1);
             float trackingPixels = ClockGlyphMetrics.infoTrackingPixels(
                     referencePaint.getTextSize(), lineEnd);
-            fixedText.setSpan(new FixedAdvanceSpan(referenceAdvance, trackingPixels, lineEnd),
+            fixedText.setSpan(new FixedAdvanceSpan(referenceAdvance, trackingPixels, lineEnd,
+                            referencePaint.getTextSize()),
                     index, index + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         textView.setLetterSpacing(0f);
@@ -6309,8 +6598,7 @@ public final class PixelAodClockView extends FrameLayout {
         if (textView == null) {
             return 0;
         }
-        CharSequence text = textView.getText();
-        float width = measuredTextContentWidthPx(textView, text);
+        float width = measuredTextAdvancePx(textView);
         Drawable[] drawables = textView.getCompoundDrawablesRelative();
         for (Drawable drawable : drawables) {
             if (drawable != null) {
@@ -6319,6 +6607,14 @@ public final class PixelAodClockView extends FrameLayout {
         }
         width += textView.getTotalPaddingLeft() + textView.getTotalPaddingRight();
         return Math.max(0, Math.round(width));
+    }
+
+    /** Returns the active one-line advance, including FixedAdvanceSpan cells when present. */
+    static float measuredTextAdvancePx(TextView textView) {
+        if (textView == null) {
+            return 0f;
+        }
+        return measuredTextContentWidthPx(textView, textView.getText());
     }
 
     private static float measuredTextContentWidthPx(TextView textView, CharSequence text) {
@@ -6366,7 +6662,18 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static Drawable getExternalWeatherIconDrawable(Context context, WeatherSnapshot weather) {
-        int weatherCode = weather.weatherCode;
+        if (weather == null) {
+            return null;
+        }
+        return getExternalWeatherIconDrawable(context, weather.weatherCode,
+                resolveIsNight(weather, System.currentTimeMillis()), true);
+    }
+
+    private static Drawable getExternalWeatherIconDrawable(Context context, int weatherCode,
+            boolean isNight, boolean allowPlaceholderFallback) {
+        if (context == null) {
+            return null;
+        }
         String packageName = PixelAodSettings.getString(context, PixelAodSettings.KEY_WEATHER_ICON_PACK, "");
         if (TextUtils.isEmpty(packageName)) {
             return null;
@@ -6375,7 +6682,6 @@ public final class PixelAodClockView extends FrameLayout {
             PackageManager pm = context.getPackageManager();
             android.content.res.Resources res = pm.getResourcesForApplication(packageName);
 
-            boolean isNight = resolveIsNight(weather, System.currentTimeMillis());
             String breezyName = getBreezyWeatherIconName(weatherCode, isNight);
 
             int xmlId = 0;
@@ -6430,9 +6736,15 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
 
-            int fallbackId = res.getIdentifier("weather_na", "drawable", packageName);
-            if (fallbackId == 0) fallbackId = res.getIdentifier("weather_0", "drawable", packageName);
-            if (fallbackId != 0) return res.getDrawable(fallbackId, null);
+            if (allowPlaceholderFallback) {
+                int fallbackId = res.getIdentifier("weather_na", "drawable", packageName);
+                if (fallbackId == 0) {
+                    fallbackId = res.getIdentifier("weather_0", "drawable", packageName);
+                }
+                if (fallbackId != 0) {
+                    return res.getDrawable(fallbackId, null);
+                }
+            }
 
         } catch (Exception e) {
             PixelAodLog.e("Failed to load external weather icon from " + packageName, e);
@@ -6475,6 +6787,10 @@ public final class PixelAodClockView extends FrameLayout {
         if (code == 801 || code == 802) return "weather_partly_cloudy" + suffix;
         if (code == 803 || code == 804) return "weather_cloudy" + suffix;
         return "weather_cloudy" + suffix;
+    }
+
+    static String weatherIconNameForForecast(int code) {
+        return getBreezyWeatherIconName(code, false);
     }
 
     private static int getChronusWeatherCode(int code, boolean isNight) {
@@ -6525,6 +6841,8 @@ public final class PixelAodClockView extends FrameLayout {
             // Unlink original to avoid mutating shared state across views
             drawable = drawable.mutate();
         }
+        // External weather icon packs own their colour artwork.  Do not tint it to the clock
+        // accent: a source-provided multicolour icon must remain multicolour on both surfaces.
         drawable.setBounds(0, 0, size, size);
         textView.setCompoundDrawablePadding(dp(textView.getContext(), WEATHER_ICON_PADDING_DP));
         textView.setCompoundDrawablesRelative(leading ? drawable : null, null,
@@ -6591,39 +6909,38 @@ public final class PixelAodClockView extends FrameLayout {
         CharSequence previousClockText = clockView.getText();
         applySharedClockText(clockView, getContext(), model.clockText, compactClock);
         int infoColor = resolveMaterialInfoColor(getContext());
+        int clockColor = resolveMaterialClockColor(getContext());
         applySharedInfoText(dateView, getContext(), model.dateText);
         applySharedInfoText(weatherView, getContext(), model.weatherText);
         weatherView.setVisibility(TextUtils.isEmpty(model.weatherText) ? View.GONE : View.VISIBLE);
-        applyWeatherLeadingIcon(weatherView, model.weather, Color.WHITE);
-        weatherAlertIconView.setColorFilter(infoColor, PorterDuff.Mode.SRC_IN);
-        BreezyWeatherAlert weatherAlert = currentFreshWeatherAlert(getContext());
-        boolean weatherAlertVisible = weatherAlert != BreezyWeatherAlert.empty();
-        boolean weatherAlertVisibilityChanged = (weatherAlertRow.getVisibility() == View.VISIBLE)
-                != weatherAlertVisible;
-        boolean weatherAlertContentChanged = !TextUtils.equals(weatherAlertView.getText(),
-                weatherAlert.headline);
-        weatherAlertView.setText(weatherAlert.headline);
-        weatherAlertRow.setVisibility(weatherAlertVisible ? View.VISIBLE : View.GONE);
-        String calendarText = currentCalendarAtAGlanceExtra();
-        boolean calendarVisible = !TextUtils.isEmpty(calendarText);
-        boolean calendarVisibilityChanged = (calendarRow.getVisibility() == View.VISIBLE)
-                != calendarVisible;
-        boolean calendarContentChanged = !TextUtils.equals(calendarView.getText(), calendarText);
-        calendarView.setText(calendarText);
-        calendarRow.setVisibility(calendarVisible ? View.VISIBLE : View.GONE);
-        if (weatherAlertVisibilityChanged || weatherAlertContentChanged
-                || calendarVisibilityChanged || calendarContentChanged) {
-            updateInfoStackLayout();
+        applyWeatherLeadingIcon(weatherView, model.weather, clockColor);
+        weatherAlertRow.setVisibility(View.GONE);
+        ContextualAtAGlanceSelector.Selection contextual = selectContextualCard(
+                getContext(), getVisibility() == View.VISIBLE && isShown() && getAlpha() > 0.01f,
+                true, "aod-update");
+        int contextualTextSize = contextualTextSizeDp(contextual.card);
+        if (contextual.card.kind == ContextualAtAGlanceCard.Kind.CALENDAR_EVENT) {
+            restoreCalendarIconForContextual(infoColor, contextualTextSize);
+        } else {
+            usingCalendarApplicationIcon = false;
+            updateCalendarRowStyle(contextualTextSize);
+        }
+        boolean contextualChanged = ContextualAtAGlancePresentation.apply(
+                getContext(), calendarRow, calendarIconView, calendarView, contextual.card,
+                infoColor, clockColor,
+                contextualTextSize,
+                contextualInfoWeight(contextual.card,
+                        currentInfoWeight > 0 ? currentInfoWeight : INFO_AOD_WEIGHT), "aod-update");
+        updateInfoStackLayout(contextualChanged);
+        if (contextualChanged) {
             FrameLayout.LayoutParams notificationParams =
                     (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
-            PixelAodLog.log("updated At a Glance row visibility alert="
-                    + weatherAlertVisible
-                    + " calendar=" + calendarVisible
+            PixelAodLog.log("updated contextual slot visibility=" + contextual.card.isVisible()
+                    + " kind=" + contextual.card.kind
                     + " notificationTopPx=" + notificationParams.topMargin
                     + " compact=" + compactClock
                     + " trace=" + currentAodTraceId());
         }
-        updateInfoStackLayout();
         batteryView.setText(model.batteryText);
         chargeBoltView.setVisibility(model.batteryCharging ? View.VISIBLE : View.GONE);
         batteryRow.setVisibility(TextUtils.isEmpty(model.batteryText) ? View.GONE : View.VISIBLE);
@@ -6776,7 +7093,8 @@ public final class PixelAodClockView extends FrameLayout {
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, COMPACT_INFO_TEXT_DP);
             weatherView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, COMPACT_INFO_TEXT_DP);
             updateWeatherAlertRowStyle(COMPACT_AUXILIARY_INFO_TEXT_DP);
-            updateCalendarRowStyle(COMPACT_AUXILIARY_INFO_TEXT_DP);
+            updateCalendarRowStyle(contextualTextSizeDp(
+                    ContextualAtAGlancePresentation.current(calendarRow)));
         } else {
             applySharedClockTextStyle(clockView, getContext(), currentClockWeight,
                     scaledClockTextDp(getContext(), LARGE_CLOCK_TEXT_DP), false);
@@ -6787,12 +7105,12 @@ public final class PixelAodClockView extends FrameLayout {
             dateView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, LARGE_INFO_TEXT_DP);
             weatherView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, LARGE_INFO_TEXT_DP);
             updateWeatherAlertRowStyle(LARGE_INFO_TEXT_DP);
-            updateCalendarRowStyle(LARGE_INFO_TEXT_DP);
+            updateCalendarRowStyle(contextualTextSizeDp(
+                    ContextualAtAGlancePresentation.current(calendarRow)));
         }
         clockView.setLayoutParams(clockParams);
         syncNotificationOverflowStyle(notificationOverflowView, dateView, notificationIconRow);
         updateTime();
-        updateInfoStackLayout();
         PixelAodLog.log("applied Pixel AOD clock mode trace=" + currentAodTraceId()
                 + " compact=" + compact
                 + " changed=" + changed
@@ -6922,7 +7240,8 @@ public final class PixelAodClockView extends FrameLayout {
     CouiClockSizeTransitionLayer.SceneSnapshot captureClockPluginSizeTransition(
             CouiClockSizeTransitionLayer transitionLayer, ViewGroup coordinateRoot) {
         return transitionLayer.capture(coordinateRoot, clockView, dateView, weatherView,
-                currentClockWeight, currentInfoWeight);
+                calendarRow, calendarIconView, calendarView, currentClockWeight,
+                currentInfoWeight);
     }
 
     void setClockPluginGlyphTransitionActive(boolean active) {
@@ -6964,6 +7283,43 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    private static void scheduleContextualDeadline(long deadlineMillis, String source) {
+        long nowMillis = System.currentTimeMillis();
+        synchronized (PixelAodClockView.class) {
+            if (contextualDeadlineRunnable != null
+                    && contextualDeadlineAtMillis == deadlineMillis) {
+                return;
+            }
+            if (contextualDeadlineRunnable != null) {
+                mainHandler().removeCallbacks(contextualDeadlineRunnable);
+                contextualDeadlineRunnable = null;
+            }
+            contextualDeadlineAtMillis = deadlineMillis;
+            if (deadlineMillis <= nowMillis) {
+                return;
+            }
+            contextualDeadlineRunnable = () -> {
+                synchronized (PixelAodClockView.class) {
+                    if (contextualDeadlineAtMillis != deadlineMillis) {
+                        return;
+                    }
+                    contextualDeadlineRunnable = null;
+                }
+                for (PixelAodClockView view : INSTANCES) {
+                    if (view != null && view.getVisibility() == View.VISIBLE) {
+                        view.updateTime();
+                        view.requestAodFrameRefresh("contextual-deadline");
+                    }
+                }
+                PixelLockscreenClockView.refreshAll("contextual-deadline");
+                PixelAodLog.log("reevaluated contextual card deadline=" + deadlineMillis
+                        + " source=" + source);
+            };
+            mainHandler().postDelayed(contextualDeadlineRunnable,
+                    Math.max(1L, deadlineMillis - nowMillis + 1L));
+        }
+    }
+
     int clockPluginInfoWeight() {
         return currentInfoWeight;
     }
@@ -6993,8 +7349,10 @@ public final class PixelAodClockView extends FrameLayout {
         applySharedClockTypeface(clockView, getContext(), weight);
         applySharedClockLetterSpacing(clockView, compactClock);
         if (PixelAodLog.isDebugEnabled()) {
-            PixelAodLog.log("clock paint snapshot layer=aod requestedWeight=" + weight
-                    + " state=" + describeClockTextView(clockView));
+            final int loggedWeight = weight;
+            PixelAodLog.log("clock paint snapshot", () ->
+                    "clock paint snapshot layer=aod requestedWeight=" + loggedWeight
+                            + " state=" + describeClockTextView(clockView));
         }
     }
 
@@ -7007,58 +7365,60 @@ public final class PixelAodClockView extends FrameLayout {
         currentInfoWeight = normalizedWeight;
         applySharedClockTypeface(dateView, getContext(), normalizedWeight);
         applySharedClockTypeface(weatherView, getContext(), normalizedWeight);
+        applySharedClockTypeface(calendarView, getContext(), contextualInfoWeight(
+                ContextualAtAGlancePresentation.current(calendarRow), normalizedWeight));
+        // Text metrics can change with the synchronized variable-font weight. Recalculate the
+        // shared information group before notification/media rows are positioned below it.
+        if (calendarRow != null && notificationIconRow != null && mediaRow != null) {
+            updateInfoStackLayout();
+        }
+    }
+
+    private static int contextualInfoWeight(ContextualAtAGlanceCard card, int baseWeight) {
+        if (card != null && card.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST) {
+            return Math.min(500, baseWeight + WEATHER_FORECAST_AOD_WEIGHT_COMPENSATION);
+        }
+        return baseWeight;
     }
 
     private void updateInfoStackLayout() {
+        updateInfoStackLayout(false);
+    }
+
+    private void updateInfoStackLayout(boolean animateLowerRows) {
         updateCompactClockAnchor();
         FrameLayout.LayoutParams dateParams = (FrameLayout.LayoutParams) dateView.getLayoutParams();
         FrameLayout.LayoutParams weatherParams = (FrameLayout.LayoutParams) weatherView.getLayoutParams();
-        FrameLayout.LayoutParams weatherAlertParams =
-                (FrameLayout.LayoutParams) weatherAlertRow.getLayoutParams();
         FrameLayout.LayoutParams calendarParams =
                 (FrameLayout.LayoutParams) calendarRow.getLayoutParams();
         FrameLayout.LayoutParams notificationParams = (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
         FrameLayout.LayoutParams mediaParams = (FrameLayout.LayoutParams) mediaRow.getLayoutParams();
+        int previousNotificationTopPx = notificationParams.topMargin;
+        int previousMediaTopPx = mediaParams.topMargin;
         int dateTopPx;
         int weatherTopPx;
-        int weatherAlertTopPx;
         int calendarTopPx;
         int notificationTopPx;
-        boolean weatherAlertVisible = weatherAlertRow.getVisibility() == View.VISIBLE;
         boolean weatherVisible = weatherView.getVisibility() == View.VISIBLE;
-        boolean calendarVisible = calendarRow.getVisibility() == View.VISIBLE;
+        boolean contextualVisible = ContextualAtAGlancePresentation.current(calendarRow).isVisible();
         int mediaTopPx;
+        ClockInfoGroupLayout.Result infoGroup;
         if (compactClock) {
             CouiCompactLayout.Anchors anchors = compactAnchors();
             int compactInfoTopPx = anchors.infoTopPx;
-
-            dateTopPx = compactInfoTopPx;
-            weatherTopPx = CouiCompactLayout.weatherTop(anchors,
-                    getResources().getDisplayMetrics().density);
-            int compactGapPx = dp(LARGE_INFO_ROW_GAP_DP);
-            int lastInfoBottomPx = AodInfoStackLayout.rowBottom(dateTopPx, dateView.getHeight(),
-                    dp(COMPACT_INFO_TEXT_DP));
-            if (weatherVisible) {
-                lastInfoBottomPx = Math.max(lastInfoBottomPx,
-                        AodInfoStackLayout.rowBottom(weatherTopPx, weatherView.getHeight(),
-                                dp(COMPACT_INFO_TEXT_DP)));
-            }
-            weatherAlertTopPx = Math.max(
-                    weatherVisible
-                            ? CouiCompactLayout.weatherAlertTop(anchors,
-                            getResources().getDisplayMetrics().density)
-                            : compactInfoTopPx + dp(COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP),
-                    lastInfoBottomPx + compactGapPx);
-            if (weatherAlertVisible) {
-                lastInfoBottomPx = Math.max(lastInfoBottomPx,
-                        AodInfoStackLayout.rowBottom(weatherAlertTopPx, weatherAlertRow.getHeight(),
-                                dp(COMPACT_AUXILIARY_INFO_TEXT_DP)));
-            }
-            calendarTopPx = Math.max(weatherAlertVisible ? weatherAlertTopPx
-                            + dp(COMPACT_AUXILIARY_INFO_TEXT_DP + LARGE_INFO_ROW_GAP_DP)
-                            : compactInfoTopPx + dp(COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP),
-                    lastInfoBottomPx + compactGapPx);
-            if (calendarVisible) {
+            int compactGapPx = dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
+            infoGroup = ClockInfoGroupLayout.layout(true, anchors.infoLeftPx, compactInfoTopPx,
+                    infoLineWidthPx(dateView), infoLineHeightPx(dateView, COMPACT_INFO_TEXT_DP),
+                    weatherVisible, infoLineHeightPx(weatherView, COMPACT_INFO_TEXT_DP),
+                    CouiCompactLayout.weatherTop(anchors,
+                            getResources().getDisplayMetrics().density),
+                    compactGapPx,
+                    compactInfoTopPx + dp(COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP));
+            dateTopPx = infoGroup.dateTopPx;
+            weatherTopPx = infoGroup.weatherTopPx;
+            int lastInfoBottomPx = infoGroup.infoBottomPx;
+            calendarTopPx = infoGroup.contextualTopPx;
+            if (contextualVisible) {
                 int calendarFallbackHeightPx = dp(usingCalendarApplicationIcon
                         ? Math.max(COMPACT_AUXILIARY_INFO_TEXT_DP, CALENDAR_APPLICATION_ICON_SIZE_DP)
                         : COMPACT_AUXILIARY_INFO_TEXT_DP);
@@ -7086,29 +7446,17 @@ public final class PixelAodClockView extends FrameLayout {
             boolean notificationVisible = notificationIconRow.getVisibility() == View.VISIBLE;
             int defaultMediaTopPx = dp(notificationVisible
                     ? LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP : LARGE_MEDIA_TOP_DP);
-
-            dateTopPx = dp(largeInfoTopDp);
-            weatherTopPx = dp(largeInfoTopDp + LARGE_INFO_TEXT_DP + LARGE_INFO_ROW_GAP_DP);
-            int lastInfoBottomPx = AodInfoStackLayout.rowBottom(dateTopPx, dateView.getHeight(),
-                    dp(LARGE_INFO_TEXT_DP));
-            if (weatherVisible) {
-                lastInfoBottomPx = Math.max(lastInfoBottomPx,
-                        AodInfoStackLayout.rowBottom(weatherTopPx, weatherView.getHeight(),
-                                dp(LARGE_INFO_TEXT_DP)));
-            }
-            weatherAlertTopPx = Math.max(dp(largeInfoTopDp + CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP),
-                    lastInfoBottomPx + dp(LARGE_INFO_ROW_GAP_DP));
-            if (weatherAlertVisible) {
-                lastInfoBottomPx = Math.max(lastInfoBottomPx,
-                        AodInfoStackLayout.rowBottom(weatherAlertTopPx,
-                                weatherAlertRow.getHeight(), dp(LARGE_INFO_TEXT_DP)));
-            }
             int gapPx = dp(LARGE_INFO_ROW_GAP_DP);
-            calendarTopPx = Math.max(weatherAlertVisible
-                            ? weatherAlertTopPx + dp(LARGE_INFO_TEXT_DP + LARGE_INFO_ROW_GAP_DP)
-                            : dp(largeInfoTopDp + CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP),
-                    lastInfoBottomPx + gapPx);
-            if (calendarVisible) {
+            infoGroup = ClockInfoGroupLayout.layout(false, dp(INFO_EDGE_DP),
+                    dp(largeInfoTopDp), infoLineWidthPx(dateView),
+                    infoLineHeightPx(dateView, LARGE_INFO_TEXT_DP), weatherVisible,
+                    infoLineHeightPx(weatherView, LARGE_INFO_TEXT_DP),
+                    0, gapPx, dp(largeInfoTopDp + CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP));
+            dateTopPx = infoGroup.dateTopPx;
+            weatherTopPx = infoGroup.weatherTopPx;
+            int lastInfoBottomPx = infoGroup.infoBottomPx;
+            calendarTopPx = infoGroup.contextualTopPx;
+            if (contextualVisible) {
                 int calendarFallbackHeightPx = dp(usingCalendarApplicationIcon
                         ? CALENDAR_APPLICATION_ICON_SIZE_DP : LARGE_INFO_TEXT_DP);
                 lastInfoBottomPx = Math.max(lastInfoBottomPx,
@@ -7129,38 +7477,73 @@ public final class PixelAodClockView extends FrameLayout {
                         defaultMediaTopPx, lastInfoBottomPx, gapPx);
             }
         }
-        int infoLeftPx = compactClock ? compactAnchors().infoLeftPx : dp(INFO_EDGE_DP);
-        dateParams.leftMargin = infoLeftPx;
+        boolean dateLayoutChanged = dateParams.leftMargin != infoGroup.dateLeftPx
+                || dateParams.topMargin != dateTopPx;
+        boolean weatherLayoutChanged = weatherParams.leftMargin != infoGroup.weatherLeftPx
+                || weatherParams.topMargin != weatherTopPx;
+        boolean calendarLayoutChanged = calendarParams.topMargin != calendarTopPx;
+        boolean notificationLayoutChanged = notificationParams.topMargin != notificationTopPx;
+        int mediaLeftPx = compactClock
+                ? CouiCompactLayout.mediaLeft(getResources().getDisplayMetrics().density)
+                : dp(INFO_EDGE_DP);
+        boolean mediaLayoutChanged = mediaParams.leftMargin != mediaLeftPx
+                || mediaParams.rightMargin != mediaLeftPx || mediaParams.topMargin != mediaTopPx;
+        dateParams.leftMargin = infoGroup.dateLeftPx;
         dateParams.topMargin = dateTopPx;
-        weatherParams.leftMargin = infoLeftPx;
+        weatherParams.leftMargin = infoGroup.weatherLeftPx;
         weatherParams.topMargin = weatherTopPx;
-        weatherAlertParams.topMargin = weatherAlertTopPx;
         calendarParams.topMargin = calendarTopPx;
         notificationParams.topMargin = notificationTopPx;
-        mediaParams.leftMargin = compactClock
-                ? CouiCompactLayout.mediaLeft(getResources().getDisplayMetrics().density)
-                : dp(INFO_EDGE_DP);
-        mediaParams.rightMargin = compactClock
-                ? CouiCompactLayout.mediaLeft(getResources().getDisplayMetrics().density)
-                : dp(INFO_EDGE_DP);
+        mediaParams.leftMargin = mediaLeftPx;
+        mediaParams.rightMargin = mediaLeftPx;
         mediaParams.topMargin = mediaTopPx;
-        dateView.setLayoutParams(dateParams);
-        weatherView.setLayoutParams(weatherParams);
-        weatherAlertRow.setLayoutParams(weatherAlertParams);
-        calendarRow.setLayoutParams(calendarParams);
-        notificationIconRow.setLayoutParams(notificationParams);
-        mediaRow.setLayoutParams(mediaParams);
-        PixelAodLog.log("committed AOD info stack layout"
-                + " compact=" + compactClock
-                + " weather=" + weatherVisible
-                + " weatherAlert=" + weatherAlertVisible
-                + " calendar=" + calendarVisible
-                + " notificationVisible="
-                + (notificationIconRow.getVisibility() == View.VISIBLE)
-                + " notificationTopPx=" + notificationParams.topMargin
-                + " mediaTopPx=" + mediaParams.topMargin
-                + " notificationAlpha=" + notificationIconRow.getAlpha()
-                + " trace=" + currentAodTraceId());
+        if (dateLayoutChanged) {
+            dateView.setLayoutParams(dateParams);
+        }
+        if (weatherLayoutChanged) {
+            weatherView.setLayoutParams(weatherParams);
+        }
+        if (calendarLayoutChanged) {
+            calendarRow.setLayoutParams(calendarParams);
+        }
+        if (notificationLayoutChanged) {
+            notificationIconRow.setLayoutParams(notificationParams);
+        }
+        if (mediaLayoutChanged) {
+            mediaRow.setLayoutParams(mediaParams);
+        }
+        if (animateLowerRows && (notificationLayoutChanged || mediaLayoutChanged)) {
+            ContextualAtAGlancePresentation.animateLowerRows(notificationIconRow, mediaRow,
+                    previousNotificationTopPx, notificationParams.topMargin,
+                    previousMediaTopPx, mediaParams.topMargin);
+        }
+        if (dateLayoutChanged || weatherLayoutChanged || calendarLayoutChanged
+                || notificationLayoutChanged || mediaLayoutChanged) {
+            PixelAodLog.log("committed AOD info stack layout"
+                    + " compact=" + compactClock
+                    + " weather=" + weatherVisible
+                    + " contextual=" + contextualVisible
+                    + " notificationVisible="
+                    + (notificationIconRow.getVisibility() == View.VISIBLE)
+                    + " notificationTopPx=" + notificationParams.topMargin
+                    + " mediaTopPx=" + mediaParams.topMargin
+                    + " notificationAlpha=" + notificationIconRow.getAlpha()
+                    + " trace=" + currentAodTraceId());
+        }
+    }
+
+    private static int infoLineWidthPx(TextView view) {
+        return Math.max(1, estimatedTextContentWidthPx(view));
+    }
+
+    private static int infoLineHeightPx(TextView view, int fallbackTextDp) {
+        if (view == null) {
+            return Math.max(1, fallbackTextDp);
+        }
+        Paint.FontMetrics metrics = view.getPaint().getFontMetrics();
+        int paintedHeight = Math.max(1, Math.round(metrics.descent - metrics.ascent));
+        return Math.max(Math.max(1, view.getMeasuredHeight()), paintedHeight
+                + view.getTotalPaddingTop() + view.getTotalPaddingBottom());
     }
 
     private void updateCompactClockAnchor() {
@@ -7182,31 +7565,19 @@ public final class PixelAodClockView extends FrameLayout {
     private CouiCompactLayout.Anchors compactAnchors() {
         return CouiCompactLayout.anchors(getWidth(), getHeight(),
                 estimatedTextContentWidthPx(clockView), Math.max(estimatedTextContentWidthPx(dateView),
-                        estimatedTextContentWidthPx(weatherView)),
+                        Math.max(estimatedTextContentWidthPx(weatherView),
+                                estimatedTextContentWidthPx(calendarView))),
                 getResources().getDisplayMetrics().density);
     }
 
     private void updateCalendarRowStyle(int textSizeDp) {
         calendarView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, textSizeDp);
-        int iconSizeDp = usingCalendarApplicationIcon
-                ? Math.max(textSizeDp, CALENDAR_APPLICATION_ICON_SIZE_DP) : textSizeDp;
-        LinearLayout.LayoutParams iconParams =
-                (LinearLayout.LayoutParams) calendarIconView.getLayoutParams();
-        iconParams.width = dp(iconSizeDp);
-        iconParams.height = dp(iconSizeDp);
-        calendarIconView.setLayoutParams(iconParams);
-        float iconScale = usingCalendarApplicationIcon
-                ? CALENDAR_APPLICATION_MONOCHROME_SCALE : 1f;
-        calendarIconView.setScaleX(iconScale);
-        calendarIconView.setScaleY(iconScale);
-        calendarIconView.setTranslationX(0f);
-
-        int leadingOffset = usingCalendarApplicationIcon
-                ? dp(CALENDAR_APPLICATION_ICON_LEADING_OFFSET_DP) : 0;
+        ContextualAtAGlanceCalendarIcon.applyGeometry(calendarIconView, getContext(), textSizeDp,
+                usingCalendarApplicationIcon);
         FrameLayout.LayoutParams rowParams =
                 (FrameLayout.LayoutParams) calendarRow.getLayoutParams();
-        rowParams.leftMargin = dp(INFO_EDGE_DP) - leadingOffset;
-        rowParams.rightMargin = dp(INFO_EDGE_DP) + leadingOffset;
+        ContextualAtAGlanceCalendarIcon.applyRowMargins(rowParams, getContext(), INFO_EDGE_DP,
+                usingCalendarApplicationIcon);
         calendarRow.setLayoutParams(rowParams);
     }
 
@@ -7441,7 +7812,7 @@ public final class PixelAodClockView extends FrameLayout {
                     lineEnd ? '\0' : normalizedText.charAt(index + 1), lineEnd)
                     : letterSpacingPixels;
             fixedText.setSpan(new FixedAdvanceSpan(referenceAdvance, cellTrackingPixels,
-                            lineEnd),
+                            lineEnd, referencePaint.getTextSize()),
                     index, index + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         textView.setLetterSpacing(0f);
@@ -7451,12 +7822,14 @@ public final class PixelAodClockView extends FrameLayout {
     private static final class FixedAdvanceSpan extends ReplacementSpan {
         private final float referenceGlyphAdvance;
         private final float cellAdvance;
+        private final float referenceTextSize;
 
         FixedAdvanceSpan(float referenceGlyphAdvance, float letterSpacingPixels,
-                boolean lineEnd) {
+                boolean lineEnd, float referenceTextSize) {
             this.referenceGlyphAdvance = referenceGlyphAdvance;
             cellAdvance = ClockGlyphMetrics.cellAdvance(
                     referenceGlyphAdvance, letterSpacingPixels, lineEnd);
+            this.referenceTextSize = Math.max(1f, referenceTextSize);
         }
 
         @Override
@@ -7470,14 +7843,19 @@ public final class PixelAodClockView extends FrameLayout {
                 fontMetrics.bottom = source.bottom;
                 fontMetrics.leading = source.leading;
             }
-            return Math.max(1, Math.round(cellAdvance));
+            float scaledCellAdvance = ClockGlyphMetrics.scaledForTextSize(cellAdvance,
+                    referenceTextSize, paint.getTextSize());
+            return Math.max(1, Math.round(scaledCellAdvance));
         }
 
         @Override
         public void draw(Canvas canvas, CharSequence text, int start, int end, float x,
                 int top, int y, int bottom, Paint paint) {
             float animatedAdvance = paint.measureText(text, start, end);
-            float offset = ClockGlyphMetrics.centerOffset(referenceGlyphAdvance, animatedAdvance);
+            float scaledReferenceAdvance = ClockGlyphMetrics.scaledForTextSize(
+                    referenceGlyphAdvance, referenceTextSize, paint.getTextSize());
+            float offset = ClockGlyphMetrics.centerOffset(scaledReferenceAdvance,
+                    animatedAdvance);
             canvas.drawText(text, start, end, x + offset, y, paint);
         }
     }

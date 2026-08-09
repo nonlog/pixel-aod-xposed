@@ -621,7 +621,8 @@ final class AodNotificationPipeline {
     }
 
     private static void logFilteredNotification(StatusBarNotification sbn, String reason, String trace) {
-        PixelAodLog.log("filtered AOD notification pkg=" + sbn.getPackageName()
+        PixelAodLog.log("filtered AOD notification", () ->
+                "filtered AOD notification pkg=" + sbn.getPackageName()
                 + " key=" + sbn.getKey()
                 + " category=" + sbn.getNotification().category
                 + " visibility=" + sbn.getNotification().visibility
@@ -631,7 +632,8 @@ final class AodNotificationPipeline {
 
     private static void logKeptNotification(StatusBarNotification sbn, RankingSnapshot ranking,
             String trace, String reason) {
-        PixelAodLog.log("kept AOD notification pkg=" + sbn.getPackageName()
+        PixelAodLog.log("kept AOD notification", () ->
+                "kept AOD notification pkg=" + sbn.getPackageName()
                 + " key=" + sbn.getKey()
                 + " category=" + sbn.getNotification().category
                 + " visibility=" + sbn.getNotification().visibility

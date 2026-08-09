@@ -21,29 +21,31 @@ Status: Final — approved on 2026-08-05 as the implementation and acceptance co
 
 ### Weather Alert
 
-- A newly observed active alert becomes pending immediately and receives a 10-minute window when it is first visibly selected on the lock screen or AOD.
+- Weather Alert is AOD-only. A newly observed active alert becomes pending immediately and receives a 10-minute window when it is first visibly selected on AOD.
 - An unchanged minor or moderate alert is displayed only once.
 - An unchanged severe or extreme alert enters a two-hour cooldown after its display window.
-- After that cooldown, the severe or extreme alert becomes eligible for another 10-minute display on the next lock-screen or AOD entry. It does not wake or refresh the display solely to repeat itself.
+- After that cooldown, the severe or extreme alert becomes eligible for another 10-minute display on the next AOD entry. It does not wake or refresh the display solely to repeat itself.
 - A changed headline or increased severity is treated as a new alert and receives a new immediate 10-minute display window.
 - An alert becomes ineligible immediately when its source validity period ends or the weather source removes it.
 - Refreshing an unchanged alert does not extend its current display window or cooldown.
+- Lock-screen selection and rendering never show an alert, start its 10-minute window, or consume the AOD repeat-entry marker.
 
 ### At a Glance Card Selection
 
 - At most one contextual At a Glance card is visible at a time.
 - Card priority is: Weather Alert, then upcoming Calendar Event, then Weather Forecast.
+- On AOD, Weather Alert has the stated highest priority. On the lock screen, Weather Alert is not eligible, so Calendar Event then Weather Forecast provide the contextual-card choices.
 - Current weather remains part of the baseline date-and-weather surface and does not compete for the contextual card slot.
 - Notification icons and media information are not At a Glance cards. They remain eligible and move below the selected contextual card without overlapping it.
 
 ### Lock-screen and AOD Presentation
 
-- Lock screen and AOD use identical card content, icon geometry, spacing, line count, and truncation.
+- Weather Forecast and Calendar Event are eligible on both the lock screen and AOD and use identical card content, icon geometry, spacing, line count, and truncation on both surfaces.
 - Weather Forecast is one line: weather icon followed by a localized equivalent of `Tomorrow 31° / 25°`.
-- Weather Alert is one line: warning icon followed by the alert headline.
-- Both cards are limited to one line and truncate at the end when necessary.
+- Weather Alert is AOD-only and, when selected there, is one line: warning icon followed by the alert headline. The lock screen never selects or renders it.
+- Each contextual card is limited to one line and truncates at the end when necessary.
 - Alert descriptions, validity periods, issuing organizations, hourly details, and multi-line expansions are excluded.
-- A lock-screen/AOD transition may change color and font weight, but must not change text, icon size, spacing, wrapping, or measured character positions.
+- A lock-screen/AOD transition may change color and font weight, but must not change text, icon size, spacing, wrapping, or measured character positions for the card eligible on the receiving surface. The transition must not cause lock-screen rendering to select an alert or consume its AOD history.
 
 ### Forecast Freshness
 
@@ -81,18 +83,18 @@ Status: Final — approved on 2026-08-05 as the implementation and acceptance co
 ### Alert Display Clock
 
 - Reading or caching an alert does not start its 10-minute display window.
-- The display window starts when the alert is first visibly presented on the lock screen or AOD.
+- The display window starts when the alert is first visibly presented on AOD. Lock-screen selection and rendering do not show the alert, start its window, or consume the AOD repeat-entry marker.
 - An unseen pending alert is discarded if it ends, becomes source-stale, or otherwise becomes ineligible before its first presentation.
 - A severe or extreme alert's two-hour cooldown starts when its visible 10-minute window ends.
 - A changed alert receives a new pending presentation even if an older alert is currently hidden or cooling down.
 
 ### Card Transition and Layout Stability
 
-- Weather Forecast, Calendar Event, and Weather Alert share one fixed-height, one-line contextual card slot while a card is visible.
+- Weather Forecast and Calendar Event share one fixed-height, one-line contextual card slot on both surfaces; AOD Weather Alert uses that same slot when it is eligible.
 - Replacing one selected card with another uses an approximately 250 ms crossfade without moving notification or media rows.
 - Entering or leaving the no-card state uses an approximately 300 ms coordinated card fade and vertical movement of lower notification/media rows.
 - Card transitions do not use per-character motion, scaling, or horizontal slides.
-- A lock-screen/AOD transition preserves the current card, transition progress, and layout geometry rather than replaying the card-entry animation.
+- A lock-screen/AOD transition preserves the current eligible card, transition progress, and layout geometry rather than replaying the card-entry animation. Lock-screen rendering does not select an AOD-only alert or consume its repeat-entry marker.
 
 ### Visual Emphasis
 
@@ -116,8 +118,8 @@ Status: Final — approved on 2026-08-05 as the implementation and acceptance co
 - A contextual card does not independently force the dynamic clock into compact mode.
 - Clock size continues to depend on notifications, media, total content height, and available safe space.
 - The layout selects compact mode only when the complete visible content set cannot fit safely with the large clock.
-- Lock screen and AOD must produce the same clock-size decision for the same content set.
-- Alert appearance or expiry must not cause a size transition unless the aggregate space calculation actually crosses the large/compact boundary.
+- Lock screen and AOD use the same clock-size calculation for the content eligible on each surface; Weather Alert can affect that calculation only on AOD.
+- Alert appearance or expiry on AOD must not cause a size transition unless the aggregate space calculation actually crosses the large/compact boundary.
 
 ### Alert-state Persistence
 
@@ -198,17 +200,17 @@ Status: Final — approved on 2026-08-05 as the implementation and acceptance co
 - A forecast update must not wake the display.
 - If the displayed icon, date, high, and low are unchanged, do not invalidate or redraw the card solely because a new source payload arrived.
 
-### Lock-screen Privacy
+### Lock-screen and AOD Privacy
 
-- Weather Alert follows the system's lock-screen sensitive-content policy.
-- When sensitive content is hidden, AOD and the unauthenticated lock screen show a localized generic label equivalent to `Weather alert` instead of the provider headline.
+- Weather Alert follows the existing SystemUI sensitive-content policy on AOD.
+- When sensitive content is hidden, AOD shows a localized generic label equivalent to `Weather alert` instead of the provider headline. The lock screen never selects or renders Weather Alert, so it neither shows the headline nor a redacted alert label.
 - The generic privacy label retains the normal warning icon, deeper accent, selection priority, display window, and cooldown history.
 - Redaction changes presentation only. It does not change logical alert identity or create a new display window.
-- Tomorrow's high/low forecast is treated as non-sensitive weather information and remains visible under the same privacy setting.
+- Tomorrow's high/low forecast is treated as non-sensitive weather information and remains visible on both the lock screen and AOD under the same privacy setting.
 
 ### Card Interaction
 
-- Weather Forecast and Weather Alert cards are display-only in the initial implementation.
+- Weather Forecast and Calendar Event cards are display-only on the lock screen and AOD; Weather Alert is display-only on AOD.
 - They do not register tap, long-press, swipe, or other touch handlers and do not launch Breezy Weather.
 - AOD touch input remains owned by the existing OOS wake, gesture, and fingerprint flows.
 - Adding authenticated lock-screen navigation is outside the scope of this policy and requires a separate design decision.

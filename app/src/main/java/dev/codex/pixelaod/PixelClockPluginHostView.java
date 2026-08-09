@@ -455,7 +455,6 @@ final class PixelClockPluginHostView extends FrameLayout {
         } finally {
             aodLayer.setClockPluginGlyphTransitionActive(false);
         }
-        aodLayer.refreshClockPluginAodContent(source + "#ClockPlugin-host-media");
         boolean aodMediaReady = aodLayer.hasVisibleMediaLine();
 
         if (forceLargeAodSurface) {
@@ -713,14 +712,19 @@ final class PixelClockPluginHostView extends FrameLayout {
     }
 
     private void scheduleAodMediaRetries(long generation, String source) {
-        // Earlier denser retries so media row is filled before/during first AOD frames.
-        long[] delaysMs = new long[]{0L, 16L, 48L, 100L, 200L, 320L};
+        // The initial AOD presentation has already queried MediaSessionManager.  Keep the late
+        // retries for players which publish a session after Doze begins, but do not run a second
+        // full date/weather/notification refresh at frame zero.
+        long[] delaysMs = new long[]{16L, 48L, 100L, 200L, 320L};
         for (long delayMs : delaysMs) {
             Runnable retry = () -> {
                 if (generation != entryGeneration || !scene.isAod()) {
                     return;
                 }
-                aodLayer.refreshClockPluginAodContent(source + "#media-retry+" + delayMs);
+                if (aodLayer.hasVisibleMediaLine()) {
+                    return;
+                }
+                aodLayer.refreshClockPluginAodMedia(source + "#media-retry+" + delayMs);
                 if (aodLayer.hasVisibleMediaLine() && aodLayer.getAlpha() < 1f) {
                     aodLayer.setAlpha(1f);
                 }
@@ -843,12 +847,14 @@ final class PixelClockPluginHostView extends FrameLayout {
                 + " source=" + handoffDiagnosticSource
                 + " scene=" + scene
                 + " trace=" + handoffDiagnosticTrace;
-        PixelAodLog.log(framePrefix
+        PixelAodLog.log("handoff-frame-layers", () -> framePrefix
                 + " section=layers host=" + PixelAodClockView.describeViewForHandoff(this)
                 + " lockscreen=" + lockscreenLayer.clockPluginDiagnosticState()
                 + " aod=" + aodLayer.clockPluginDiagnosticState());
-        PixelAodLog.log(framePrefix + " section=ancestors value=" + describeAncestorChain());
-        PixelAodLog.log(framePrefix + " section=root value=" + describeClockPluginRoot());
+        PixelAodLog.log("handoff-frame-ancestors",
+                () -> framePrefix + " section=ancestors value=" + describeAncestorChain());
+        PixelAodLog.log("handoff-frame-root",
+                () -> framePrefix + " section=root value=" + describeClockPluginRoot());
     }
 
     private String describeAncestorChain() {

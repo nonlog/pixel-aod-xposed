@@ -53,8 +53,12 @@ final class PixelAodVisualStyle {
     static final int COUI_COMPACT_INFO_TOP_OFFSET_DP = 24;
     static final int COUI_COMPACT_CLOCK_TO_INFO_GAP_DP = 16;
     static final int COUI_COMPACT_CLOCK_TO_EVENT_GAP_DP = 6;
+    // Keep a readable gap between the compact date and weather, then lift the contextual row
+    // away from OOS notification cards without letting it overlap the current-weather line.
+    // Keep the date top, current-weather bottom, and contextual-row anchor unchanged while the
+    // compact date/current-weather type moves to the requested 16 dp.
     static final int COUI_COMPACT_DATE_TO_WEATHER_TOP_OFFSET_DP = 27;
-    static final int COUI_COMPACT_INFO_TO_EVENT_GAP_DP = 7;
+    static final int COUI_COMPACT_INFO_TO_EVENT_GAP_DP = 4;
     static final int COUI_COMPACT_MEDIA_EDGE_DP = 32;
     static final float COUI_COMPACT_MEDIA_TOP_FRACTION = 0.255f;
     static final int COUI_COMPACT_MEDIA_TOP_OFFSET_DP = 8;
@@ -80,7 +84,7 @@ final class PixelAodVisualStyle {
     static final int NOTIFICATION_ROW_LEADING_OFFSET_DP = 2;
     static final int LARGE_INFO_ROW_GAP_DP = 6;
     static final int LARGE_INFO_TEXT_DP = 16;
-    static final int COMPACT_INFO_TEXT_DP = 20;
+    static final int COMPACT_INFO_TEXT_DP = 16;
     static final int COMPACT_AUXILIARY_INFO_TEXT_DP = 14;
 
     static String aodProfile(Context context, int runtimeClockWeight) {
@@ -190,6 +194,8 @@ final class PixelAodVisualStyle {
         /** Compensated output range for the optically smaller date and weather text. */
         static final int DATE_WEATHER_MIN_WEIGHT = 400;
         static final int DATE_WEATHER_MAX_WEIGHT = 500;
+        /** Forecast auxiliary text needs extra optical weight on the dim AOD surface. */
+        static final int WEATHER_FORECAST_WEIGHT_COMPENSATION = 36;
         static final int WEATHER_ICON_SIZE_DP = 15;
         static final int WEATHER_ICON_PADDING_DP = 6;
         static final int BURN_IN_OFFSET_X_DP = 8;

@@ -155,9 +155,15 @@ final class PixelFingerprintIconController {
             restoreTrackedPressedIcons(source + "#pressed-disabled");
             return;
         }
-        if (!PixelAodClockView.shouldRefreshFingerprintIcon(resolvedContext, source)) {
+        boolean nativeCarrierVisible = iconView.getVisibility() == View.VISIBLE;
+        PixelFingerprintIconPolicy.RefreshMode refreshMode =
+                PixelAodClockView.fingerprintIconRefreshMode(
+                        resolvedContext, source, nativeCarrierVisible);
+        if (refreshMode == PixelFingerprintIconPolicy.RefreshMode.SKIP) {
             return;
         }
+        boolean carrierRefreshAllowed =
+                refreshMode == PixelFingerprintIconPolicy.RefreshMode.REFRESH_CARRIER;
 
         trackPressedIcon(pressedIcon);
         updatePressedVisual(pressedIcon, source + "#pressed-passive");
@@ -174,7 +180,8 @@ final class PixelFingerprintIconController {
             applyPixelDrawable(resolvedContext, uiMech, iconView, source, animate,
                     aodStyle, dark, onDozeState, onDreamingStart, screenTurnedOff, true);
         }
-        if (scheduleReclaim && PixelFingerprintIconPolicy.shouldReplaceCarrier(true)
+        if (scheduleReclaim && carrierRefreshAllowed
+                && PixelFingerprintIconPolicy.shouldReplaceCarrier(true)
                 && !isPixelOwnedDrawable(iconView.getDrawable())
                 && !isVendorTemporaryAnimation(iconView.getDrawable())) {
             scheduleVendorReclaim(resolvedContext, uiMech, iconView, source);
@@ -634,7 +641,8 @@ final class PixelFingerprintIconController {
             if (Float.compare(beforeAlpha, targetAlpha) != 0) {
                 setPressedAlphaInternal(pressedIcon, targetAlpha);
             }
-            PixelAodLog.log("[FP-PRESSED-A2] applied source=" + source
+            PixelAodLog.log("[FP-PRESSED-A2] applied", () ->
+                    "[FP-PRESSED-A2] applied source=" + source
                     + " fingerDown=" + fingerDown
                     + " beforeAlpha=" + beforeAlpha
                     + " afterAlpha=" + pressedIcon.getAlpha()
@@ -652,14 +660,16 @@ final class PixelFingerprintIconController {
         Looper currentLooper = Looper.myLooper();
         boolean sameLooper = handler != null && currentLooper == handler.getLooper();
         if (sameLooper) {
-            PixelAodLog.log("[FP-PRESSED-A2] dispatch source=" + source
+            PixelAodLog.log("[FP-PRESSED-A2] dispatch", () ->
+                    "[FP-PRESSED-A2] dispatch source=" + source
                     + " route=inline handler=" + describeHandler(handler)
                     + " currentThread=" + Thread.currentThread().getName());
             apply.run();
             return;
         }
         boolean posted = handler != null ? handler.post(apply) : pressedIcon.post(apply);
-        PixelAodLog.log("[FP-PRESSED-A2] dispatch source=" + source
+        PixelAodLog.log("[FP-PRESSED-A2] dispatch", () ->
+                "[FP-PRESSED-A2] dispatch source=" + source
                 + " route=" + (handler != null ? "view-handler" : "view-post")
                 + " posted=" + posted
                 + " handler=" + describeHandler(handler)
@@ -849,7 +859,10 @@ final class PixelFingerprintIconController {
                 context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false)) {
             return;
         }
-        if (!PixelAodClockView.shouldRefreshFingerprintIcon(context, source)) {
+        PixelFingerprintIconPolicy.RefreshMode refreshMode =
+                PixelAodClockView.fingerprintIconRefreshMode(
+                        context, source, iconView.getVisibility() == View.VISIBLE);
+        if (refreshMode == PixelFingerprintIconPolicy.RefreshMode.SKIP) {
             return;
         }
         boolean onDozeState = readBooleanField(uiMech, "onDozeState");
@@ -1201,7 +1214,8 @@ final class PixelFingerprintIconController {
         if (!PixelAodLog.isDebugEnabled()) {
             return;
         }
-        PixelAodLog.log("Pixel fingerprint carrier state"
+        PixelAodLog.log("Pixel fingerprint carrier state", () ->
+                "Pixel fingerprint carrier state"
                 + " stage=" + stage
                 + " source=" + source
                 + " primary={" + describeCarrier(primary) + "}"
@@ -1212,7 +1226,8 @@ final class PixelFingerprintIconController {
         if (!PixelAodLog.isDebugEnabled()) {
             return;
         }
-        PixelAodLog.log("Pixel fingerprint carrier state"
+        PixelAodLog.log("Pixel fingerprint carrier state", () ->
+                "Pixel fingerprint carrier state"
                 + " stage=" + stage
                 + " view={" + describeCarrier(view) + "}");
     }

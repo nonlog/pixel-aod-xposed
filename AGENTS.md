@@ -44,6 +44,13 @@
 ### 4. 构建、安装、交给用户验证
 
 - 构建使用项目自带 wrapper：`./gradlew :app:assembleDebug`
+- 在隔离 Luna worktree 中，每次执行 Gradle 前都必须仅为当前进程设置 SDK 环境变量：
+  ```powershell
+  $env:ANDROID_HOME='D:\Android\sdk'
+  $env:ANDROID_SDK_ROOT='D:\Android\sdk'
+  .\gradlew.bat ...
+  ```
+  禁止先运行未设置这些变量的裸 Gradle 命令，也不要为了隔离 worktree 的 SDK 发现而创建或复制 `local.properties`。
 - 安装一律优先使用覆盖安装：`adb install -r app/build/outputs/apk/debug/app-debug.apk`
 - 除非用户明确要求卸载，否则禁止先 `uninstall` 再安装。
 - 安装后重启 `com.android.systemui`，然后告知用户“已可测试”。

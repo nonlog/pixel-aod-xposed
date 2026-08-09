@@ -4,7 +4,12 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import android.widget.TextView;
+
 import org.junit.Test;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 public final class CouiClockSizeTransitionMathTest {
     @Test
@@ -25,6 +30,31 @@ public final class CouiClockSizeTransitionMathTest {
         assertEquals(300f, top.centerY, 0.001f);
         assertEquals(450f, bottom.centerY, 0.001f);
         assertEquals(103f / 56f, top.scaleFromSource, 0.001f);
+    }
+
+    @Test
+    public void allFourPaintedDigitCentersFollowTheirOwnSourceAndTargetPaths() {
+        CouiClockSizeTransitionMath.Element[] source = {
+                new CouiClockSizeTransitionMath.Element(120f, 200f, 150f, 1f),
+                new CouiClockSizeTransitionMath.Element(280f, 200f, 150f, 1f),
+                new CouiClockSizeTransitionMath.Element(120f, 430f, 150f, 1f),
+                new CouiClockSizeTransitionMath.Element(280f, 430f, 150f, 1f)
+        };
+        CouiClockSizeTransitionMath.Element[] target = {
+                new CouiClockSizeTransitionMath.Element(420f, 680f, 56f, 1f),
+                new CouiClockSizeTransitionMath.Element(520f, 680f, 56f, 1f),
+                new CouiClockSizeTransitionMath.Element(420f, 760f, 56f, 1f),
+                new CouiClockSizeTransitionMath.Element(520f, 760f, 56f, 1f)
+        };
+        float[] expectedX = {270f, 400f, 270f, 400f};
+        float[] expectedY = {440f, 440f, 595f, 595f};
+
+        for (int index = 0; index < source.length; index++) {
+            CouiClockSizeTransitionMath.Frame frame = CouiClockSizeTransitionMath.frame(
+                    source[index], target[index], 0.5f);
+            assertEquals(expectedX[index], frame.centerX, 0.001f);
+            assertEquals(expectedY[index], frame.centerY, 0.001f);
+        }
     }
 
     @Test
@@ -49,15 +79,134 @@ public final class CouiClockSizeTransitionMathTest {
     }
 
     @Test
-    public void trailingTrackingDoesNotMoveThePaintedGlyphCenter() {
-        float referenceAdvance = 40f;
-        float cellAdvanceWithTracking = 34f;
-
-        assertEquals(120f, CouiClockSizeTransitionMath.glyphCenter(100f, referenceAdvance),
+    public void paintedCenterUsesActualInkBoundsInsteadOfCellTracking() {
+        assertEquals(120f, CouiClockSizeTransitionMath.paintedBoundsCenter(100f, 140f),
                 0.001f);
-        assertFalse(Math.abs(117f - CouiClockSizeTransitionMath.glyphCenter(
-                100f, referenceAdvance)) < 0.001f);
-        assertEquals(134f, 100f + cellAdvanceWithTracking, 0.001f);
+        assertFalse(Math.abs(117f - CouiClockSizeTransitionMath.paintedBoundsCenter(
+                100f, 140f)) < 0.001f);
+        assertEquals(134f, CouiClockSizeTransitionMath.paintedBoundsCenter(117f, 151f),
+                0.001f);
+    }
+
+    @Test
+    public void largeTwoLineGlyphUsesItsPaintedBoundsInsteadOfTheLineBoxCenter() {
+        float lineBoxCenter = 80f;
+        float paintedLeft = 106f;
+        float paintedRight = 130f;
+
+        assertEquals(118f, CouiClockSizeTransitionMath.paintedBoundsCenter(
+                paintedLeft, paintedRight), 0.001f);
+        assertFalse(Math.abs(lineBoxCenter - CouiClockSizeTransitionMath.paintedBoundsCenter(
+                paintedLeft, paintedRight)) < 0.001f);
+    }
+
+    @Test
+    public void replacementSpanPaintedCenterIncludesItsWeightOffset() {
+        assertEquals(103f, CouiClockSizeTransitionMath.replacementSpanPaintOrigin(
+                100f, 40f, 34f), 0.001f);
+        assertEquals(113f, CouiClockSizeTransitionMath.paintedGlyphCenter(
+                100f, 40f, 34f, 0f, 20f), 0.001f);
+        assertEquals(61f, CouiClockSizeTransitionMath.paintedBaselineCenter(
+                118f, -111f, -3f), 0.001f);
+    }
+
+    @Test
+    public void shortInformationBoxUsesTextViewsClampedVerticalBaseline() {
+        // A 50 px font line cannot be vertically centred inside a 30 px overlay box. TextView
+        // pins the line to the top, producing baseline 40; the old unconditional centre formula
+        // produced baseline 30 and rendered the weather temperature 10 px too low.
+        assertEquals(40f, CouiClockSizeTransitionMath.centeredTextBaseline(
+                30f, -40f, 10f), 0.001f);
+        assertEquals(50f, CouiClockSizeTransitionMath.centeredTextBaseline(
+                70f, -40f, 10f), 0.001f);
+    }
+
+    @Test
+    public void asymmetricDigitAndLeadingWeatherIconStayOnTheirVisualCentersAfterWeightChange() {
+        // The narrow painted "1" sits left of the cell center. The clone must pivot at its
+        // painted center, not at the 100 px overlay box center, before scaling it.
+        float digitVisualOffset = CouiClockSizeTransitionMath.visualContentOffset(
+                100f, 60f, 2f, 32f);
+        assertEquals(37f, digitVisualOffset, 0.001f);
+        assertEquals(363f, CouiClockSizeTransitionMath.positionForVisualCenter(
+                400f, digitVisualOffset), 0.001f);
+
+        // A leading weather glyph and its text form one visual union. A heavier target font
+        // changes the text advance but must still land at exactly the requested center.
+        float weatherVisualOffset = CouiClockSizeTransitionMath.visualContentOffset(
+                180f, 136f, 0f, 132f);
+        assertEquals(88f, weatherVisualOffset, 0.001f);
+        assertEquals(512f, CouiClockSizeTransitionMath.positionForVisualCenter(
+                600f, weatherVisualOffset), 0.001f);
+    }
+
+    @Test
+    public void informationRowsInterpolateTextMetricsWithoutAffineDrawableScaling() {
+        CouiClockSizeTransitionMath.InfoFrame halfway =
+                CouiClockSizeTransitionMath.informationFrame(
+                        new CouiClockSizeTransitionMath.Element(100f, 300f, 80f, 1f),
+                        new CouiClockSizeTransitionMath.Element(200f, 100f, 64f, 1f),
+                        0.5f);
+
+        assertEquals(150f, halfway.centerX, 0.001f);
+        assertEquals(200f, halfway.centerY, 0.001f);
+        assertEquals(72f, halfway.textSizePx, 0.001f);
+        // The weather icon is 15 dp in both scenes. It must remain 15 dp at every frame,
+        // rather than inheriting the 0.9x TextView scale used by the old renderer.
+        assertEquals(60, CouiClockSizeTransitionMath.interpolatedDimension(60, 60, 0.5f));
+        assertEquals(54, CouiClockSizeTransitionMath.interpolatedDimension(60, 48, 0.5f));
+    }
+
+    @Test
+    public void fixedCellWeatherTrackScalesOneStableSourceCorridor() {
+        CouiClockSizeTransitionMath.InfoFrame halfway =
+                CouiClockSizeTransitionMath.informationFrame(
+                        new CouiClockSizeTransitionMath.Element(100f, 300f, 20f, 1f),
+                        new CouiClockSizeTransitionMath.Element(200f, 100f, 16f, 1f),
+                        0.5f);
+
+        // The 20 px source cells remain intact: their complete corridor is transformed by 0.9,
+        // rather than rebuilding and rounding each of 3 / 1 / degree at an 18 px text size.
+        assertEquals(0.9f, CouiClockSizeTransitionMath.fixedCellTextScale(20f,
+                halfway.textSizePx), 0.001f);
+        assertEquals(0.8f, CouiClockSizeTransitionMath.fixedCellTextScale(20f, 16f), 0.001f);
+    }
+
+    @Test
+    public void compiledTransitionLayerUsesPlatformTextViewClones() {
+        Class<?> layer = CouiClockSizeTransitionLayer.class;
+
+        assertEquals(TextView[].class, declaredField(layer, "digitViews").getType());
+        assertEquals(TextView.class, declaredField(layer, "colonView").getType());
+        assertEquals(TextView.class, declaredField(layer, "dateView").getType());
+        assertEquals(TextView.class, declaredField(layer, "weatherView").getType());
+        assertEquals(TextView.class, declaredMethod(layer, "createClockGlyph").getReturnType());
+        assertEquals(TextView.class,
+                declaredMethod(layer, "createInformationClone").getReturnType());
+
+        for (Class<?> nested : layer.getDeclaredClasses()) {
+            assertFalse("custom glyph renderer must not be compiled: " + nested.getName(),
+                    "GlyphTextView".equals(nested.getSimpleName()));
+            assertFalse("nested info renderer must not be compiled: " + nested.getName(),
+                    "InfoRowView".equals(nested.getSimpleName()));
+        }
+    }
+
+    private static Field declaredField(Class<?> owner, String name) {
+        try {
+            return owner.getDeclaredField(name);
+        } catch (NoSuchFieldException e) {
+            throw new AssertionError("missing transition field " + name, e);
+        }
+    }
+
+    private static Method declaredMethod(Class<?> owner, String name) {
+        for (Method method : owner.getDeclaredMethods()) {
+            if (name.equals(method.getName())) {
+                return method;
+            }
+        }
+        throw new AssertionError("missing transition method " + name);
     }
 
     @Test

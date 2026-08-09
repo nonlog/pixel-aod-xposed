@@ -44,9 +44,13 @@ public final class CouiCompactLayoutTest {
                 + Math.round(PixelAodVisualStyle.SMALL_CLOCK_TEXT_DP * density);
 
         assertEquals(784, anchors.infoLeftPx);
-        assertEquals(686, weatherAlertTopPx);
+        // The forecast moves up with the compact weather row, but never crosses the clock's
+        // six-dp safety boundary.
+        assertEquals(681, weatherAlertTopPx);
         assertTrue(anchors.infoLeftPx - clockRightPx >= minimumHorizontalGapPx);
         assertTrue(weatherAlertTopPx - clockBottomPx >= minimumVerticalGapPx);
+        // 16 dp text keeps the same 43 dp date-top-to-weather-bottom envelope: its weather top
+        // moves down by three dp while downstream rows keep their existing anchor.
         assertEquals(578, CouiCompactLayout.weatherTop(anchors, density));
     }
 

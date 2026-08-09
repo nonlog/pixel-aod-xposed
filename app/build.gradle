@@ -13,8 +13,8 @@ android {
         applicationId "dev.codex.pixelaod"
         minSdk 26
         targetSdk 36
-        versionCode 303
-        versionName "0.1.293"
+        versionCode 317
+        versionName "0.1.307"
     }
 
     buildTypes {
@@ -58,8 +58,7 @@ dependencies {
     }
     compileOnly(project(":libxposed-stubs"))
     testImplementation("junit:junit:4.13.2")
+    // Android's org.json methods are framework stubs in local JVM tests; use the same API's
+    // reference implementation so provider-payload parsing has executable regression coverage.
+    testImplementation("org.json:json:20240303")
 }
-
-
-
-

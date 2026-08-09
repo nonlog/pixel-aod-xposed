@@ -98,6 +98,15 @@ public final class PixelFingerprintIconPolicyTest {
                 false, automaticLowBattery.allowsDisplay, true));
         assertFalse(PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
                 false, manualPowerSaver.allowsDisplay, true));
+        assertEquals(PixelFingerprintIconPolicy.RefreshMode.STYLE_EXISTING_NATIVE,
+                PixelFingerprintIconPolicy.refreshMode(
+                        false, automaticLowBattery.allowsDisplay, true, true));
+        assertEquals(PixelFingerprintIconPolicy.RefreshMode.SKIP,
+                PixelFingerprintIconPolicy.refreshMode(
+                        false, automaticLowBattery.allowsDisplay, true, false));
+        assertEquals(PixelFingerprintIconPolicy.RefreshMode.STYLE_EXISTING_NATIVE,
+                PixelFingerprintIconPolicy.refreshMode(
+                        false, manualPowerSaver.allowsDisplay, true, true));
     }
 
     @Test
@@ -110,6 +119,9 @@ public final class PixelFingerprintIconPolicyTest {
         assertFalse(OosAodLifecycleAdapter.isPowerPolicyDenial(allowed.reason));
         assertTrue(PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
                 false, allowed.allowsDisplay, false));
+        assertEquals(PixelFingerprintIconPolicy.RefreshMode.REFRESH_CARRIER,
+                PixelFingerprintIconPolicy.refreshMode(
+                        false, allowed.allowsDisplay, false, true));
         assertFalse(PassiveFodShowGate.shouldSuppress(15_000L, 20L, -1L));
     }
 
