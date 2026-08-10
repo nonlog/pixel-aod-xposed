@@ -25,6 +25,7 @@ final class PixelAodLog {
             "kept AOD notification",
             "blocked lockscreen policy override",
             "forcing lockscreen silent-notification hide",
+            "forcing lockscreen low-importance notification hide",
             "ClockPlugin lockscreen size",
             "ClockPlugin host sync",
             "[CLOCK-HANDOFF-FRAME]"
@@ -111,7 +112,7 @@ final class PixelAodLog {
         }
     }
 
-    private static String debugKey(String message) {
+    static String debugKey(String message) {
         for (String prefix : HOT_PREFIXES) {
             if (message.startsWith(prefix)) {
                 return prefix;
@@ -127,7 +128,7 @@ final class PixelAodLog {
         return message.substring(0, Math.min(end, 96));
     }
 
-    private static long minimumIntervalMillis(String key) {
+    static long minimumIntervalMillis(String key) {
         if (key.startsWith("clock paint snapshot")
                 || key.startsWith("Pixel fingerprint carrier state")
                 || key.startsWith("[FP-PRESSED-A2]")) {
@@ -138,6 +139,7 @@ final class PixelAodLog {
                 || key.startsWith("kept AOD notification")
                 || key.startsWith("blocked lockscreen policy override")
                 || key.startsWith("forcing lockscreen silent-notification hide")
+                || key.startsWith("forcing lockscreen low-importance notification hide")
                 || key.startsWith("ClockPlugin lockscreen size")
                 || key.startsWith("ClockPlugin host sync")
                 || key.startsWith("handoff-frame-")

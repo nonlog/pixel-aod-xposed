@@ -9,6 +9,8 @@ import android.widget.ImageView;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class CouiClockSizeTransitionLayerTest {
     @Test
@@ -50,6 +52,44 @@ public final class CouiClockSizeTransitionLayerTest {
                 "weatherIconView").getType());
         assertEquals(ImageView.class, declaredField(CouiClockSizeTransitionLayer.class,
                 "contextualIconView").getType());
+    }
+
+    @Test
+    public void primesTypefaceBeforeExactMeasureAndFirstFramePlacement() {
+        // setTypeface() can invalidate TextView measurement.  The overlay must not become
+        // drawable until the final typeface has been followed by an EXACTLY measure/layout and
+        // the first frame has been positioned with those resulting glyph bounds.
+        List<String> calls = new ArrayList<>();
+        CouiClockSizeTransitionLayer.runOverlayPrimeSteps(
+                () -> calls.add("typeface"),
+                () -> calls.add("measure-layout"),
+                () -> calls.add("first-frame"));
+
+        assertEquals(List.of("typeface", "measure-layout", "first-frame"), calls);
+    }
+
+    @Test
+    public void preparedSourceOwnsDrawBeforeLiveTargetMayMutate() {
+        CouiClockSizeTransitionLayer.SourceFrameOwnership ownership =
+                new CouiClockSizeTransitionLayer.SourceFrameOwnership();
+
+        assertFalse(ownership.mayMutateOrCaptureTarget());
+        ownership.acquirePreparedSource();
+        assertTrue(ownership.mayMutateOrCaptureTarget());
+        assertFalse(ownership.keepsSourceOwnershipAtFrameZero());
+    }
+
+    @Test
+    public void targetFrameZeroKeepsPreparedSourceDrawableUntilTransitionFinishes() {
+        CouiClockSizeTransitionLayer.SourceFrameOwnership ownership =
+                new CouiClockSizeTransitionLayer.SourceFrameOwnership();
+
+        ownership.acquirePreparedSource();
+        ownership.commitTargetFrameZero();
+
+        assertTrue(ownership.keepsSourceOwnershipAtFrameZero());
+        ownership.reset();
+        assertFalse(ownership.mayMutateOrCaptureTarget());
     }
 
     private static Field declaredField(Class<?> owner, String name) {

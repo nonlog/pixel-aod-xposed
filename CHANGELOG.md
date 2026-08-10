@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.1.310] - 2026-08-09
+### Meta
+- **Model:** Terra; Codex (OOS 16 capsule lifecycle correction)
+- **Scope:** Correct the device-proven compact-to-large handoff failure while retaining the
+  enhanced SystemUI notification drawable and DEFAULT-silent notification policy changes.
+
+### Fixed
+- The 0.1.309 source-only-overlay ordering was incorrect: frame 705 of the 15:44:53 recording
+  proved that `applyClockMode(target)` could draw one malformed target-sized live clock in compact
+  coordinates before `OnPreDraw`. A primed source snapshot now becomes drawable and hides the
+  live source inside `prepare()`, before any target mutation. The source overlay remains visible
+  while the hidden target lays out and through frame zero of the existing 550 ms animation.
+- Coalesce an equivalent lockscreen target while a prepared/running size transaction owns the
+  frame, avoiding cancellation/re-entry that could restore a live intermediate layout.
+- The previously targeted `com.oplus.systemui.keyguard.notificationcapsule.*` classes do not exist
+  in the tested OOS 16.0.9 `SystemUI.apk`. The active path is now the device-proven
+  `notification.lockscreen.notification.CapsuleNotificationCardView.bind(...)` card binding,
+  which updates its `CachingIconView` directly.
+- Capture an isolated final `StatusBarIconView` drawable at its next pre-draw boundary and verify
+  the current `getNotification().getKey()` again before caching. A same-key capture generation,
+  recycled-view generation, and removal generation reject stale callbacks.
+- OPlus capsule icons now use a key-matched clone on the currently bound `CachingIconView`.
+  A late cache hit coalesces direct, data-generation-checked live icon updates; it never clears or
+  replays OOS's notification list. Binding ownership is indexed by both notification key and weak
+  live view identity, so a recycled icon view cannot receive another key's queued update. A failed
+  clone preserves the vendor drawable.
+- Deferred StatusBar icon capture tokens now hold their view weakly, preventing the weak capture
+  index from retaining recycled SystemUI views. The renamed low-importance lockscreen-hide debug
+  prefix remains in the existing 100 ms hot-log throttle.
+- Treat `FLAG_SILENT` independently from importance. DEFAULT (3) private notifications remain
+  eligible for lockscreen/AOD policy override, while LOW (2) and lower remain blocked; secret,
+  transport, android/SystemUI, module non-test, and missing-icon exclusions remain in force.
+- Final enhanced icon capture is generation-bound to its `StatusBarIconView` and invalidated on
+  removal. A late capture after one capsule cache miss coalesces one ordered UI-thread replay;
+  the final ImageView is rasterized so instance-specific drawable state is retained. Production
+  lockscreen override exclusion now also shares the tested media-session/media-icon policy.
+
+### Success
+- **Success (code/unit/build evidence):** JVM tests cover source-frame ownership, two-view
+  same-key reverse capture completion, removal invalidation, stale capsule data generations,
+  coalesced direct late updates, and media exclusion parity; the debug build completed.
+
+### Deferred/Failed
+- **Deferred (device test):** Compact-to-large clock transitions can still occasionally expose
+  one malformed intermediate frame with the large clock rendered at an incorrect left-side
+  coordinate before the normal motion begins. The supplied device screenshot confirms this is
+  not resolved; it needs a separate frame-by-frame diagnosis and must not be presented as fixed.
+- **Failed (0.1.309 device test):** The first source-only-overlay attempt left the source live
+  during `applyClockMode(target)`. Recording frame 705 visibly clipped the target-sized clock at
+  compact coordinates before the intended animation began.
+- **Deferred:** Runtime proof for this corrected frame ordering, the enhanced capsule icon, and
+  Weekly scrobble visibility requires user testing after a SystemUI restart. JVM tests and a build
+  cannot prove rendered device behavior.
+- **Failed (previous capsule implementation):** The inferred legacy
+  `keyguard.notificationcapsule.*` hook path is absent from the tested device's SystemUI, so it
+  could not alter the live OOS 16 notification capsule.
+
 ## [0.1.307] - 2026-08-09
 ### Meta
 - **Model:** Codex

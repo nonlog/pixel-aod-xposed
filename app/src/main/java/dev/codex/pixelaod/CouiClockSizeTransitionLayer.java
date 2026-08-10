@@ -60,6 +60,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
     private String transitionSource = "";
     private long targetPreDrawGeneration;
     private boolean waitingForTargetPreDraw;
+    private final SourceFrameOwnership sourceFrameOwnership = new SourceFrameOwnership();
 
     CouiClockSizeTransitionLayer(Context context) {
         super(context);
@@ -113,21 +114,31 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         if (source == null || !source.valid()) {
             return false;
         }
+        // Keep the whole synthetic surface non-drawable while it is being primed.  Once primed,
+        // it becomes the stable source frame before the host is allowed to mutate live views to
+        // their target layout.
+        setVisibility(View.INVISIBLE);
         sourceSnapshot = source;
+        sourceFrameOwnership.reset();
         transitionSource = sourceTag != null ? sourceTag : "";
         createOverlayViews(source);
-        // addView() gives FrameLayout children MATCH_PARENT defaults. Configure and synchronously
-        // measure the source frame before exposing the overlay; otherwise the FIT_XY weather icon
-        // can fill the whole transition layer for the one traversal between prepare() and start().
-        configureOverlayGeometry(source, source);
-        applyWeights(source.clockWeight, source.infoWeight, true);
-        applyFrame(source, source, 0f, 0f, new LinearInterpolator());
+        // addView() gives FrameLayout children MATCH_PARENT defaults.  Typeface replacement can
+        // also invalidate TextView measurement, so weight must be finalized before the exact
+        // source measure/layout and first-frame placement.
+        runOverlayPrimeSteps(
+                () -> applyWeights(source.clockWeight, source.infoWeight, true),
+                () -> configureOverlayGeometry(source, source),
+                () -> applyFrame(source, source, 0f, 0f, new LinearInterpolator()));
+        // This is the ownership boundary.  prepare() is called before applyClockMode(target):
+        // hiding the live source and showing its exact synthetic snapshot synchronously means
+        // the target-sized live clock has no drawable traversal at compact coordinates.
         rememberAndHide(source.clockContent);
         rememberAndHide(source.dateContent);
         rememberAndHide(source.weatherContent);
         rememberAndHide(source.contextualContent);
         setVisibility(View.VISIBLE);
         bringToFront();
+        sourceFrameOwnership.acquirePreparedSource();
         PixelAodLog.log("prepared COUI per-glyph size transaction source=" + transitionSource
                 + " fromCompact=" + source.compact
                 + " clockWeight=" + source.clockWeight
@@ -143,6 +154,10 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
             cancelAndRestore("invalid-target");
             return false;
         }
+        if (!sourceFrameOwnership.mayMutateOrCaptureTarget()) {
+            cancelAndRestore("target-without-prepared-source");
+            return false;
+        }
         final SceneSnapshot from = sourceSnapshot;
         final SceneSnapshot to = target;
         if (!CouiClockSizeTransitionMath.shouldRunActualSizeTransition(
@@ -156,6 +171,8 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
             return false;
         }
         transitionSource = sourceTag != null ? sourceTag : transitionSource;
+        // The prepared source overlay remains visible here. Target-only clones are added and
+        // the hidden live target is measured while that stable source frame owns every draw.
         rememberAndHide(to.clockContent);
         rememberAndHide(to.dateContent);
         rememberAndHide(to.weatherContent);
@@ -198,9 +215,11 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
             contextualIconView = createInformationIconClone(to.contextualIcon.withAlpha(0f));
             addView(contextualIconView);
         }
-        configureOverlayGeometry(from, to);
-        applyWeights(from.clockWeight, from.infoWeight);
-        applyFrame(from, to, 0f, 0f, motionInterpolator);
+        runOverlayPrimeSteps(
+                () -> applyWeights(from.clockWeight, from.infoWeight),
+                () -> configureOverlayGeometry(from, to),
+                () -> applyFrame(from, to, 0f, 0f, motionInterpolator));
+        sourceFrameOwnership.commitTargetFrameZero();
 
         animator = ValueAnimator.ofFloat(0f, 1f);
         animator.setDuration(Math.max(1L, durationMs));
@@ -499,6 +518,51 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
                 View.MeasureSpec.makeMeasureSpec(safeWidth, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(safeHeight, View.MeasureSpec.EXACTLY));
         view.layout(0, 0, safeWidth, safeHeight);
+    }
+
+    static void runOverlayPrimeSteps(Runnable typefaceStep, Runnable measureLayoutStep,
+            Runnable firstFrameStep) {
+        typefaceStep.run();
+        measureLayoutStep.run();
+        firstFrameStep.run();
+    }
+
+    boolean ownsPreparedSourceFrame() {
+        return sourceFrameOwnership.mayMutateOrCaptureTarget();
+    }
+
+    /** Pure state policy for the source-overlay/live-target handoff. */
+    static final class SourceFrameOwnership {
+        private boolean overlayDrawable;
+        private boolean liveSourceHidden;
+        private boolean targetFrameCommitted;
+
+        void acquirePreparedSource() {
+            overlayDrawable = true;
+            liveSourceHidden = true;
+            targetFrameCommitted = false;
+        }
+
+        boolean mayMutateOrCaptureTarget() {
+            return overlayDrawable && liveSourceHidden;
+        }
+
+        void commitTargetFrameZero() {
+            if (!mayMutateOrCaptureTarget()) {
+                throw new IllegalStateException("target frame without prepared source ownership");
+            }
+            targetFrameCommitted = true;
+        }
+
+        boolean keepsSourceOwnershipAtFrameZero() {
+            return targetFrameCommitted && overlayDrawable && liveSourceHidden;
+        }
+
+        void reset() {
+            overlayDrawable = false;
+            liveSourceHidden = false;
+            targetFrameCommitted = false;
+        }
     }
 
     private void applyFrame(SceneSnapshot from, SceneSnapshot to, float motionProgress,
@@ -971,6 +1035,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         weatherIconView = null;
         contextualIconView = null;
         sourceSnapshot = null;
+        sourceFrameOwnership.reset();
         lastAppliedClockWeight = Integer.MIN_VALUE;
         lastAppliedInfoWeight = Integer.MIN_VALUE;
         setVisibility(View.INVISIBLE);

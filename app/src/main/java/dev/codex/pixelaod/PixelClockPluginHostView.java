@@ -289,6 +289,15 @@ final class PixelClockPluginHostView extends FrameLayout {
     }
 
     private void presentLockscreen(ClockPluginSceneMachine.Scene target, String source) {
+        // A repeated request for the scene already selected by the first present() must not
+        // cancel a prepared source frame and run applyClockMode(target) a second time. The
+        // pending pre-draw will start the original transaction from its stable source snapshot.
+        if (sizeTransitionLayer.hasActiveTransition() && target == scene) {
+            PixelAodLog.log("coalesced equivalent lockscreen size transition source=" + source
+                    + " target=" + target
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
+            return;
+        }
         SizeTransitionRequest sizeTransition = prepareSizeTransition(target, source);
         cancelAodEntry();
         preparingAodWeight = false;
@@ -555,6 +564,10 @@ final class PixelClockPluginHostView extends FrameLayout {
             return null;
         }
         if (!sizeTransitionLayer.prepare(snapshot, source + "#glyph-source")) {
+            return null;
+        }
+        if (!sizeTransitionLayer.ownsPreparedSourceFrame()) {
+            sizeTransitionLayer.cancelAndRestore("prepared-source-ownership-lost");
             return null;
         }
         return new SizeTransitionRequest(target, source + "#glyph-target", generation);

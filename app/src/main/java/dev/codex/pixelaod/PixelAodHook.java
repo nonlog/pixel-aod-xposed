@@ -7,7 +7,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.database.ContentObserver;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Rect;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.hardware.camera2.CameraManager;
 import android.os.Build;
 import android.os.Handler;
@@ -20,8 +24,10 @@ import android.view.Display;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
+import android.view.ViewTreeObserver;
 import android.text.TextUtils;
 import android.widget.TextView;
+import android.widget.ImageView;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Modifier;
@@ -121,6 +127,11 @@ final class PixelAodHook {
             "com.android.systemui.keyguard.WakefulnessLifecycle";
     private static final String KEYGUARD_NOTIFICATION_VISIBILITY_PROVIDER_IMPL =
             "com.android.systemui.statusbar.notification.interruption.KeyguardNotificationVisibilityProviderImpl";
+    // Verified from CPH2573/OOS 16.0.9 SystemUI.apk, classes3.dex.
+    private static final String OPLUS_CAPSULE_NOTIFICATION_CARD_VIEW =
+            "com.oplus.systemui.notification.lockscreen.notification.CapsuleNotificationCardView";
+    private static final String STATUS_BAR_ICON_VIEW =
+            "com.android.systemui.statusbar.StatusBarIconView";
     private static final String NOTIF_FILTER =
             "com.android.systemui.statusbar.notification.collection.listbuilder.pluggable.NotifFilter";
     private static final String CUSTOM_TAG = "dev.codex.pixelaod.PIXEL_CLOCK";
@@ -152,6 +163,8 @@ final class PixelAodHook {
             Collections.newSetFromMap(new WeakHashMap<>());
     private static final Map<View, Long> LOCKSCREEN_HOST_TOUCH_TIMES = new WeakHashMap<>();
     private static final LinkedHashMap<String, StatusBarNotification> NOTIFICATION_CACHE = new LinkedHashMap<>();
+    private static final NotificationCapsuleIconPolicy NOTIFICATION_CAPSULE_ICON_POLICY =
+            new NotificationCapsuleIconPolicy();
     private static final Pattern TEMPERATURE_PATTERN =
             Pattern.compile("-?\\d{1,2}\\s*(?:[°℃℉]|\\s?[CF]\\b)");
     private static final Pattern NOTIFICATION_RELATIVE_TIME_PATTERN =
@@ -281,6 +294,8 @@ final class PixelAodHook {
         if (notificationIcons) {
             hookNotificationListenerService();
             hookSystemUiNotificationListener(classLoader);
+            hookStatusBarNotificationIconCapture(classLoader);
+            hookOplusNotificationCapsuleIcons(classLoader);
             registerTorchStateCallback(appContext);
             registerTorchRefreshReceiver(appContext);
         }
@@ -1213,6 +1228,7 @@ final class PixelAodHook {
                 NOTIFICATION_CACHE.remove(sbn.getKey());
                 snapshot = NOTIFICATION_CACHE.values().toArray(new StatusBarNotification[0]);
             }
+            NOTIFICATION_CAPSULE_ICON_POLICY.removeFinalDrawable(sbn.getKey());
             PixelAodClockView.setActiveNotifications(snapshot, source);
             PixelAodClockView.removeMediaNotificationCandidate(sbn, source);
             PixelAodLog.log("removed notification from " + source
@@ -1225,6 +1241,293 @@ final class PixelAodHook {
         } catch (Throwable t) {
             PixelAodLog.log("failed to remove notification from " + source, t);
         }
+    }
+
+    /**
+     * Captures the real StatusBarIconView at its next pre-draw boundary.  On this device
+     * StatusBarIconView.setNotification() stores mNotification and synchronously updates the
+     * ImageView drawable; pre-draw additionally waits for all work queued for that frame.
+     */
+    private static void hookStatusBarNotificationIconCapture(ClassLoader classLoader) {
+        try {
+            Class<?> statusBarIconViewClass = ModernHookBridge.findClass(STATUS_BAR_ICON_VIEW,
+                    classLoader);
+            ModernHookBridge.hookAfter(statusBarIconViewClass, "setNotification", param -> {
+                if (param.args == null || param.args.length == 0
+                        || !(param.args[0] instanceof StatusBarNotification)
+                        || !(param.thisObject instanceof ImageView)) {
+                    return;
+                }
+                StatusBarNotification sbn = (StatusBarNotification) param.args[0];
+                ImageView iconView = (ImageView) param.thisObject;
+                NotificationCapsuleIconPolicy.CaptureToken token =
+                        NOTIFICATION_CAPSULE_ICON_POLICY.beginFinalDrawableCapture(iconView,
+                                sbn.getKey());
+                if (token != null) {
+                    captureFinalStatusBarNotificationIconAtPreDraw(iconView, token);
+                }
+            }, StatusBarNotification.class);
+            PixelAodLog.log("hooked StatusBarIconView final notification drawable capture class="
+                    + STATUS_BAR_ICON_VIEW);
+        } catch (Throwable t) {
+            PixelAodLog.log("StatusBarIconView final notification drawable capture unavailable", t);
+        }
+    }
+
+    private static void captureFinalStatusBarNotificationIconAtPreDraw(ImageView iconView,
+            NotificationCapsuleIconPolicy.CaptureToken token) {
+        if (iconView == null || token == null) {
+            return;
+        }
+        if (!iconView.isAttachedToWindow()) {
+            iconView.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+                @Override
+                public void onViewAttachedToWindow(View view) {
+                    iconView.removeOnAttachStateChangeListener(this);
+                    captureFinalStatusBarNotificationIconAtPreDraw(iconView, token);
+                }
+
+                @Override
+                public void onViewDetachedFromWindow(View view) {
+                    iconView.removeOnAttachStateChangeListener(this);
+                }
+            });
+            return;
+        }
+        ViewTreeObserver observer = iconView.getViewTreeObserver();
+        if (!observer.isAlive()) {
+            PixelAodLog.log("skipped OPlus capsule final icon capture reason=no-pre-draw-observer");
+            return;
+        }
+        observer.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                ViewTreeObserver currentObserver = iconView.getViewTreeObserver();
+                if (currentObserver.isAlive()) {
+                    currentObserver.removeOnPreDrawListener(this);
+                } else {
+                    observer.removeOnPreDrawListener(this);
+                }
+                captureFinalStatusBarNotificationIcon(iconView, token);
+                return true;
+            }
+        });
+    }
+
+    private static void captureFinalStatusBarNotificationIcon(ImageView iconView,
+            NotificationCapsuleIconPolicy.CaptureToken token) {
+        if (iconView == null || token == null) {
+            return;
+        }
+        try {
+            if (!NOTIFICATION_CAPSULE_ICON_POLICY.acceptsFinalDrawableCapture(token)) {
+                PixelAodLog.log("OPlus capsule final icon capture stale", () ->
+                        "OPlus capsule final icon capture stale key=" + token.notificationKey);
+                return;
+            }
+            Object currentNotification = ModernHookBridge.callMethod(iconView, "getNotification");
+            if (!(currentNotification instanceof StatusBarNotification)
+                    || !token.notificationKey.equals(
+                            ((StatusBarNotification) currentNotification).getKey())) {
+                PixelAodLog.log("OPlus capsule final icon capture stale", () ->
+                        "OPlus capsule final icon capture stale key=" + token.notificationKey
+                                + " reason=statusbar-key-changed");
+                return;
+            }
+            Drawable isolated = rasterizeFinalStatusBarIcon(iconView);
+            if (isolated == null) {
+                PixelAodLog.log("OPlus capsule final icon capture miss", () ->
+                        "OPlus capsule final icon capture miss key=" + token.notificationKey
+                                + " reason=no-final-drawable");
+                return;
+            }
+            boolean directUpdateNeeded = NOTIFICATION_CAPSULE_ICON_POLICY
+                    .acceptFinalDrawableCapture(token, isolated);
+            PixelAodLog.log("OPlus capsule final icon capture hit", () ->
+                    "OPlus capsule final icon capture hit key=" + token.notificationKey
+                            + " drawable=" + isolated.getClass().getName());
+            if (directUpdateNeeded) {
+                scheduleLateCapsuleIconDirectUpdate();
+            }
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to capture StatusBarIconView final notification drawable", t);
+        }
+    }
+
+    private static void hookOplusNotificationCapsuleIcons(ClassLoader classLoader) {
+        try {
+            Class<?> cardViewClass = ModernHookBridge.findClass(
+                    OPLUS_CAPSULE_NOTIFICATION_CARD_VIEW, classLoader);
+            Method bindMethod = null;
+            for (Method method : cardViewClass.getDeclaredMethods()) {
+                if ("bind".equals(method.getName()) && method.getParameterCount() == 1) {
+                    bindMethod = method;
+                    break;
+                }
+            }
+            if (bindMethod == null) {
+                throw new NoSuchMethodException(OPLUS_CAPSULE_NOTIFICATION_CARD_VIEW
+                        + "#bind(one argument)");
+            }
+            ModernHookBridge.hookAfter(bindMethod, param -> {
+                if (param.args == null || param.args.length != 1) {
+                    return;
+                }
+                bindOplusCapsuleNotificationIcon(param.thisObject, param.args[0]);
+            });
+            PixelAodLog.log("hooked OPlus notification capsule direct icon binding class="
+                    + OPLUS_CAPSULE_NOTIFICATION_CARD_VIEW);
+        } catch (Throwable t) {
+            PixelAodLog.log("OPlus notification capsule direct icon binding unavailable", t);
+        }
+    }
+
+    private static void bindOplusCapsuleNotificationIcon(Object cardView, Object innerData) {
+        String notificationKey = capsuleNotificationCardKey(innerData);
+        ImageView iconView = capsuleNotificationCardIconView(cardView, innerData);
+        if (TextUtils.isEmpty(notificationKey) || iconView == null) {
+            return;
+        }
+        try {
+            NotificationCapsuleIconPolicy.CapsuleBindingToken token =
+                    NOTIFICATION_CAPSULE_ICON_POLICY.beginCapsuleIconBinding(iconView,
+                            notificationKey);
+            Object captured = NOTIFICATION_CAPSULE_ICON_POLICY.finalDrawableFor(notificationKey);
+            if (!(captured instanceof Drawable)) {
+                NOTIFICATION_CAPSULE_ICON_POLICY.noteCapsuleCacheMiss(token);
+                PixelAodLog.log("OPlus capsule final icon cache miss", () ->
+                        "OPlus capsule final icon cache miss key=" + notificationKey);
+                return;
+            }
+            NOTIFICATION_CAPSULE_ICON_POLICY.noteCapsuleCacheMiss(token);
+            applyFinalDrawableToCapsuleIcon(iconView, (Drawable) captured, notificationKey,
+                    "card-bind");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed OPlus capsule direct icon binding", t);
+        }
+    }
+
+    private static String capsuleNotificationCardKey(Object innerData) {
+        if (innerData == null) {
+            return null;
+        }
+        try {
+            Object iconData = ModernHookBridge.callMethod(innerData, "getIconData");
+            Object entry = ModernHookBridge.callMethod(iconData, "getEntry");
+            Object sbn = ModernHookBridge.callMethod(entry, "getSbn");
+            return sbn instanceof StatusBarNotification ? ((StatusBarNotification) sbn).getKey() : null;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to read OPlus capsule card notification key", t);
+            return null;
+        }
+    }
+
+    private static ImageView capsuleNotificationCardIconView(Object cardView, Object innerData) {
+        if (cardView == null || innerData == null) {
+            return null;
+        }
+        try {
+            Object cardType = ModernHookBridge.callMethod(innerData, "getCardType");
+            String cardTypeName = String.valueOf(cardType);
+            Object target = "SINGLE_MESSAGE".equals(cardTypeName)
+                    ? ModernHookBridge.callMethod(cardView, "getBottomRightBadge")
+                    : ModernHookBridge.callMethod(cardView, "getIcon");
+            return target instanceof ImageView ? (ImageView) target : null;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to read OPlus capsule card icon view", t);
+            return null;
+        }
+    }
+
+    private static Drawable copyCapsuleNotificationDrawable(View capsuleView, Drawable source) {
+        if (source == null || capsuleView == null || capsuleView.getContext() == null) {
+            return null;
+        }
+        Context context = capsuleView.getContext();
+        Rect originalBounds = new Rect(source.getBounds());
+        int width = originalBounds.width() > 0 ? originalBounds.width() : source.getIntrinsicWidth();
+        int height = originalBounds.height() > 0 ? originalBounds.height() : source.getIntrinsicHeight();
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+        try {
+            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            source.setBounds(0, 0, width, height);
+            source.draw(canvas);
+            return new BitmapDrawable(context.getResources(), bitmap).mutate();
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to snapshot OPlus notification capsule drawable", t);
+            return null;
+        } finally {
+            source.setBounds(originalBounds);
+        }
+    }
+
+    /** Rasterizes the actual ImageView draw so final per-instance state is retained. */
+    private static Drawable rasterizeFinalStatusBarIcon(ImageView iconView) {
+        if (iconView == null || iconView.getContext() == null || iconView.getDrawable() == null) {
+            return null;
+        }
+        int width = iconView.getWidth();
+        int height = iconView.getHeight();
+        Drawable source = iconView.getDrawable();
+        Rect bounds = source.getBounds();
+        if (width <= 0) {
+            width = bounds.width() > 0 ? bounds.width() : source.getIntrinsicWidth();
+        }
+        if (height <= 0) {
+            height = bounds.height() > 0 ? bounds.height() : source.getIntrinsicHeight();
+        }
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+        try {
+            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            iconView.draw(canvas);
+            return new BitmapDrawable(iconView.getContext().getResources(), bitmap).mutate();
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to rasterize final StatusBarIconView drawable", t);
+            return null;
+        }
+    }
+
+    private static void scheduleLateCapsuleIconDirectUpdate() {
+        MAIN.post(() -> {
+            for (NotificationCapsuleIconPolicy.CapsuleBindingToken token
+                    : NOTIFICATION_CAPSULE_ICON_POLICY.takeQueuedLateCapsuleBindings()) {
+                if (!NOTIFICATION_CAPSULE_ICON_POLICY.acceptsCapsuleBinding(token)) {
+                    continue;
+                }
+                Object target = token.iconView.get();
+                Object captured = NOTIFICATION_CAPSULE_ICON_POLICY
+                        .finalDrawableFor(token.notificationKey);
+                if (!(target instanceof ImageView) || !(captured instanceof Drawable)) {
+                    continue;
+                }
+                applyFinalDrawableToCapsuleIcon((ImageView) target, (Drawable) captured,
+                        token.notificationKey, "late-capture");
+            }
+        });
+    }
+
+    private static void applyFinalDrawableToCapsuleIcon(ImageView iconView, Drawable captured,
+            String notificationKey, String source) {
+        Drawable replacement = copyCapsuleNotificationDrawable(iconView, captured);
+        if (replacement == null) {
+            PixelAodLog.log("skipped OPlus capsule final icon update", () ->
+                    "OPlus capsule final icon update skipped key=" + notificationKey
+                            + " source=" + source + " reason=copy-failed");
+            return;
+        }
+        // The captured bitmap already contains StatusBarIconView's final tint/filter/state.
+        // OOS leaves a card-type-specific color filter on some CachingIconViews; retaining it
+        // would tint the final bitmap a second time.
+        iconView.clearColorFilter();
+        iconView.setImageDrawable(replacement);
+        PixelAodLog.log("applied OPlus capsule final icon", () ->
+                "OPlus capsule final icon applied key=" + notificationKey + " source=" + source);
     }
 
     private static void hookRuntimeNotificationView(Class<?> notificationViewClass, String source) {
@@ -1327,6 +1630,7 @@ final class PixelAodHook {
             synchronized (NOTIFICATION_CACHE) {
                 NOTIFICATION_CACHE.clear();
             }
+            NOTIFICATION_CAPSULE_ICON_POLICY.clearFinalDrawables();
             PixelAodClockView.clearActiveNotifications();
             PixelAodLog.log("cleared fallback native AOD notification icons from " + source
                     + " trace=" + PixelAodClockView.currentAodTraceId()
@@ -2498,7 +2802,8 @@ final class PixelAodHook {
                 Object ranking = rankingFromEntry(param.args[0]);
                 String source = "KeyguardNotificationVisibilityProvider";
                 boolean hidden = Boolean.TRUE.equals(param.getResult());
-                if (!hidden && shouldForceHideSilentNotificationOnLockscreen(sbn, ranking, source)) {
+                if (!hidden && shouldForceHideLowImportanceNotificationOnLockscreen(
+                        sbn, ranking, source)) {
                     param.setResult(true);
                     hidden = true;
                 }
@@ -2539,7 +2844,8 @@ final class PixelAodHook {
                 Object ranking = rankingFromEntry(param.args[0]);
                 String source = filterName(param.thisObject);
                 boolean hidden = Boolean.TRUE.equals(param.getResult());
-                if (!hidden && shouldForceHideSilentNotificationOnLockscreen(sbn, ranking, source)) {
+                if (!hidden && shouldForceHideLowImportanceNotificationOnLockscreen(
+                        sbn, ranking, source)) {
                     param.setResult(true);
                     hidden = true;
                 }
@@ -2641,50 +2947,24 @@ final class PixelAodHook {
                     + " state={" + PixelAodClockView.describeAodState(null) + "}");
             return false;
         }
-        if ("android".equals(pkg) || "com.android.systemui".equals(pkg)) {
+        boolean rankingSecret = rankingVisibilitySecret(ranking);
+        if (AodNotificationPipeline.isExcludedFromLockscreenPolicyOverride(sbn, rankingSecret)) {
             PixelAodLog.log("blocked lockscreen policy override", () ->
                     "blocked lockscreen policy override pkg=" + pkg
                     + " key=" + sbn.getKey()
                     + " source=" + source
-                    + " reason=system-package"
-                    + " trace=" + PixelAodClockView.currentAodTraceId());
-            return false;
-        }
-        if (Notification.CATEGORY_TRANSPORT.equals(notification.category)) {
-            PixelAodLog.log("blocked lockscreen policy override", () ->
-                    "blocked lockscreen policy override pkg=" + pkg
-                    + " key=" + sbn.getKey()
-                    + " source=" + source
-                    + " reason=transport-category"
-                    + " trace=" + PixelAodClockView.currentAodTraceId());
-            return false;
-        }
-        if (notification.visibility == Notification.VISIBILITY_SECRET) {
-            PixelAodLog.log("blocked lockscreen policy override", () ->
-                    "blocked lockscreen policy override pkg=" + pkg
-                    + " key=" + sbn.getKey()
-                    + " source=" + source
-                    + " reason=secret-visibility"
-                    + " trace=" + PixelAodClockView.currentAodTraceId());
-            return false;
-        }
-        if (rankingVisibilitySecret(ranking)) {
-            PixelAodLog.log("blocked lockscreen policy override", () ->
-                    "blocked lockscreen policy override pkg=" + pkg
-                    + " key=" + sbn.getKey()
-                    + " source=" + source
-                    + " reason=ranking-secret"
+                    + " reason=system-transport-secret-or-media"
                     + " trace=" + PixelAodClockView.currentAodTraceId());
             return false;
         }
         int importance = rankingImportance(ranking);
-        if (!testNotification && (importance == 0 || importance > 0 && importance < 3
-                || (notification.flags & AodNotificationPipeline.NOTIFICATION_FLAG_SILENT) != 0)) {
+        if (!testNotification
+                && AodNotificationPipeline.isLowImportanceForLockscreenPolicy(importance)) {
             PixelAodLog.log("blocked lockscreen policy override", () ->
                     "blocked lockscreen policy override pkg=" + pkg
                     + " key=" + sbn.getKey()
                     + " source=" + source
-                    + " reason=low-importance-or-silent"
+                    + " reason=low-importance"
                     + " importance=" + importance
                     + " flags=0x" + Integer.toHexString(notification.flags)
                     + " trace=" + PixelAodClockView.currentAodTraceId());
@@ -2702,7 +2982,8 @@ final class PixelAodHook {
         return true;
     }
 
-    private static boolean shouldForceHideSilentNotificationOnLockscreen(StatusBarNotification sbn,
+    private static boolean shouldForceHideLowImportanceNotificationOnLockscreen(
+            StatusBarNotification sbn,
             Object ranking, String source) {
         if (!PixelAodClockView.isLockscreenPolicyEnabled()) {
             return false;
@@ -2722,12 +3003,8 @@ final class PixelAodHook {
         if (MODULE_PACKAGE.equals(pkg) && !testNotification) {
             return false;
         }
-        if ("android".equals(pkg) || "com.android.systemui".equals(pkg)) {
-            return false;
-        }
-        if (Notification.CATEGORY_TRANSPORT.equals(notification.category)
-                || notification.visibility == Notification.VISIBILITY_SECRET
-                || rankingVisibilitySecret(ranking)) {
+        if (AodNotificationPipeline.isExcludedFromLockscreenPolicyOverride(sbn,
+                rankingVisibilitySecret(ranking))) {
             return false;
         }
         int importance = rankingImportance(ranking);
@@ -2735,7 +3012,7 @@ final class PixelAodHook {
         if (testNotification || hiddenReason == null) {
             return false;
         }
-        PixelAodLog.log("forcing lockscreen silent-notification hide pkg=" + pkg
+        PixelAodLog.log("forcing lockscreen low-importance notification hide pkg=" + pkg
                 + " key=" + sbn.getKey()
                 + " source=" + source
                 + " reason=" + hiddenReason

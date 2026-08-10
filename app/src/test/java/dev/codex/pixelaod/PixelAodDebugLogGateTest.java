@@ -34,6 +34,15 @@ public final class PixelAodDebugLogGateTest {
     }
 
     @Test
+    public void lowImportanceLockscreenHideUsesTheHundredMillisecondHotPrefixThrottle() {
+        String key = PixelAodLog.debugKey(
+                "forcing lockscreen low-importance notification hide pkg=test key=1");
+
+        assertEquals("forcing lockscreen low-importance notification hide", key);
+        assertEquals(100L, PixelAodLog.minimumIntervalMillis(key));
+    }
+
+    @Test
     public void disabledDebugLoggingDoesNotBuildLazyMessages() {
         AtomicInteger builds = new AtomicInteger();
         PixelAodLog.setDebugEnabled(false);

@@ -181,14 +181,46 @@ final class AodNotificationPipeline {
             return null;
         }
         Notification notification = sbn.getNotification();
-        if ((notification.flags & NOTIFICATION_FLAG_SILENT) != 0) {
-            return "lockscreen-policy-notification-flag-silent";
-        }
-        if (importance != NotificationManagerImportance.UNKNOWN
-                && importance <= NotificationManagerImportance.LOW) {
+        if (shouldHideForLockscreenImportance(notification.flags, importance)) {
             return "lockscreen-policy-ranking-importance-low-or-less importance=" + importance;
         }
         return null;
+    }
+
+    /** FLAG_SILENT is intentionally not a visibility policy input; only importance is. */
+    static boolean shouldHideForLockscreenImportance(int notificationFlags, int importance) {
+        return isLowImportanceForLockscreenPolicy(importance);
+    }
+
+    static boolean isLowImportanceForLockscreenPolicy(int importance) {
+        return importance != NotificationManagerImportance.UNKNOWN
+                && importance <= NotificationManagerImportance.LOW;
+    }
+
+    static boolean isExcludedFromLockscreenPolicyOverride(String packageName, String category,
+            int visibility, boolean rankingSecret) {
+        return isExcludedFromLockscreenPolicyOverride(packageName, category, visibility,
+                rankingSecret, false);
+    }
+
+    static boolean isExcludedFromLockscreenPolicyOverride(String packageName, String category,
+            int visibility, boolean rankingSecret, boolean mediaSessionOrIcon) {
+        return isSystemUiOrAndroidPackage(packageName)
+                || Notification.CATEGORY_TRANSPORT.equals(category)
+                || visibility == Notification.VISIBILITY_SECRET
+                || rankingSecret
+                || mediaSessionOrIcon;
+    }
+
+    static boolean isExcludedFromLockscreenPolicyOverride(StatusBarNotification sbn,
+            boolean rankingSecret) {
+        if (sbn == null || sbn.getNotification() == null) {
+            return true;
+        }
+        Notification notification = sbn.getNotification();
+        return isExcludedFromLockscreenPolicyOverride(sbn.getPackageName(), notification.category,
+                notification.visibility, rankingSecret,
+                hasMediaSessionExtra(notification) || isMediaIconCandidate(sbn));
     }
 
     static boolean isOosLiveAlertCarrier(StatusBarNotification sbn) {
