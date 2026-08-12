@@ -3,8 +3,8 @@ package dev.codex.pixelaod;
 /**
  * Pure layout rules for the date, current-weather, and contextual At a Glance group.
  *
- * <p>Large clocks present date and weather as one horizontal information group. Compact
- * clocks retain COUI's separate right-side anchors. In both modes the contextual row starts
+ * <p>Large clocks present date and weather as one horizontal information group. Small clocks
+ * use the adaptive right-side Pixel information column. In both modes the contextual row starts
  * below the actual information-group bottom while retaining its established minimum anchor.</p>
  */
 final class ClockInfoGroupLayout {

@@ -1,5 +1,96 @@
 # Changelog
 
+## [0.1.324] - 2026-08-12
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.
+- **Scope:** Restore a clear vertical hierarchy between the Small clock, contextual warning row, and AOD notification glyphs after 0.1.323 device feedback.
+
+### Changed
+- Make the runtime Small layout actually use `CouiCompactLayout.weatherAlertTop()` as the contextual-row minimum. The helper already encoded clock clearance, but 0.1.323 only exercised it in tests while the live AOD/lockscreen path still used `infoTop + COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP`, allowing the alert to crowd the clock.
+- Increase the Small clock-to-contextual minimum gap from 6 dp to 12 dp. On the 4x-density OnePlus 12 canvas this reserves 48 px between the clock layout box and the contextual row.
+- Add a dedicated 12 dp contextual-to-notification gap instead of reusing the 4 dp date/weather stack gap. The notification glyph row now stays visibly separated from an alert/calendar row without unnecessarily expanding the date-to-weather spacing.
+- Align the compact AOD handoff notification anchor with the new contextual stack (`COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP` 57→85 dp) so lockscreen→AOD handoff does not momentarily place glyphs at the old compressed coordinate.
+- Keep the 0.1.323 global Small positions (`clockTop=90 dp`, `infoTop=99 dp`, `smallMediaTop=218 dp`), the 0.1.322 vendor-authoritative Dynamic policy, and the 0.1.320 transition ownership fix unchanged.
+
+### Success
+- **Success (device-feedback localization):** The 0.1.323 screenshot shows the global Small scene at the intended height, but the clock, weather-alert row, and notification glyphs form one visually compressed block. This revision changes only the two internal vertical gaps responsible for that result.
+
+### Success (continued)
+- **Success (targeted JVM tests):** `PixelDynamicClockPolicyTest`, `NotificationCapsuleClockModeTest`, `CouiCompactLayoutTest`, `PixelAodVisualStyleTest`, `CouiClockSizeTransitionLayerTest`, and `CouiClockSizeTransitionMathTest` all pass under JDK 17, including a new assertion that the contextual row and notification glyphs retain a 12 dp separation on the 4x-density reference canvas.
+- **Success (debug build):** `:app:assembleDebug --rerun-tasks` completes with 39/39 tasks executed. APK and packaged Xposed metadata both report `0.1.324` / versionCode `334`; SHA-256 is `88860B3B5527873F9E27662B1EB773F2C873FBE3B6EAE0DD518518AEFD8B4C43`.
+- **Success (installation):** Installed with `adb install -r` on the connected CPH2573, restarted `com.android.systemui`, confirmed SystemUI returned with PID `28960`, and `dumpsys package dev.codex.pixelaod` reports `0.1.324` / `334`.
+
+### Success (device verification)
+- **Success:** User testing confirmed the 0.1.324 Small AOD spacing is substantially improved and approved for commit; the clock, warning row, and notification glyphs now read as distinct vertical layers.
+
+## [0.1.323] - 2026-08-12
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.
+- **Scope:** Rebalance the Pixel-style Small scene after device feedback without changing the recovered Dynamic state machine or the device-validated size-transition transaction.
+
+### Changed
+- Move the Small clock and its date/weather information group down by 16 dp (`74→90 dp` clock top, `83→99 dp` info top) so the scene no longer crowds the face-unlock/charging area while preserving their measured optical center relationship.
+- Raise the Small AOD media baseline by 16 dp (`234→218 dp`) so title/artist content sits closer to the clock information group instead of drifting too far down the AOD canvas.
+- Reduce Small notification offsets by the same 16 dp so moving the clock/info group down does not push notification glyphs lower when media is absent; when media is visible, the icon row still follows the raised media stack and therefore moves upward with it.
+- Keep the 0.1.322 vendor-authoritative Dynamic policy, the 0.1.321 edge-anchored Small horizontal layout, and the 0.1.320 per-glyph transition ownership fix unchanged.
+
+### Success
+- **Success (device feedback basis):** User testing confirmed 0.1.322 restored automatic Small/Large switching; screenshots then showed the new Small clock too close to the face-unlock icon and the AOD media/notification rows too low, which this revision addresses directly.
+
+### Success (continued)
+- **Success (targeted JVM tests):** `PixelDynamicClockPolicyTest`, `NotificationCapsuleClockModeTest`, `CouiCompactLayoutTest`, `PixelAodVisualStyleTest`, `CouiClockSizeTransitionLayerTest`, and `CouiClockSizeTransitionMathTest` all pass under the repository JDK 17 environment.
+- **Success (debug build):** `:app:assembleDebug --rerun-tasks` completes with 39/39 tasks executed. APK and packaged Xposed metadata both report `0.1.323` / versionCode `333`; SHA-256 is `C3EE692A9E4EFC0F184BD8E020F08B9B73209F664D0CE8D5C709F9B1C98ECC34`.
+
+### Deferred/Failed
+- **Deferred (installation):** The device disconnected before installation (`adb devices` returned no online device), so 0.1.323 was not installed or SystemUI-restarted in this pass.
+- **Failed (visual verification):** After the user installed 0.1.323, the overall Small scene height was improved but the clock, contextual weather-warning row, and notification glyphs were still packed too tightly vertically. The live runtime was not applying the existing `weatherAlertTop()` safety anchor and still reused a 4 dp stack gap below contextual content. Superseded by 0.1.324.
+
+## [0.1.322] - 2026-08-12
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.
+- **Scope:** Restore automatic Small/Large switching after the 0.1.321 Dynamic-clock regression while retaining the new Pixel-style Small layout and unified AOD media profile.
+
+### Fixed
+- Remove the 0.1.321 whole-SystemUI `isLargeClockSpaceBlockedIn()` classifier. Persistent OPlus capsule/background containers are not notification-card geometry and must never override the vendor clock-size state.
+- Make a valid OPlus `ClockPlugin.clockSizeState` authoritative on the interactive lockscreen. Only when that vendor state is missing/invalid does the module inspect actual visible lockscreen card content; raw notification/MediaSession presence remains the final bootstrap fallback.
+- Make the standalone lockscreen fallback follow actual visible card presence rather than raw active notification/media state, so dismissed/collapsed content cannot pin Small.
+- Keep the 0.1.321 Pixel-style edge-anchored Small geometry, AOD media constant unification, and the device-verified 0.1.320 per-glyph transition ownership fix unchanged.
+
+### Success
+- **Success (device-log root cause):** The 0.1.321 LSPosed log shows OPlus correctly publishing `oosClockSize=1` (LARGE) while the module forced `effectiveClockSize=0` (SMALL) because `largeClockBlocked=true`. False positives included full-screen `OplusImmersiveBgContainer` (`top=0 bottom=3168`) and `capsule_fake_container` (`top=0 bottom=160`).
+- **Success (targeted JVM tests):** `PixelDynamicClockPolicyTest`, `NotificationCapsuleClockModeTest`, `CouiCompactLayoutTest`, `PixelAodVisualStyleTest`, `CouiClockSizeTransitionLayerTest`, and `CouiClockSizeTransitionMathTest` pass under JDK 17. The Dynamic policy regression test now requires vendor LARGE/SMALL to win even when fallback signals disagree.
+
+### Success (continued)
+- **Success (debug build):** `:app:assembleDebug --rerun-tasks` completes under the repository JDK 17 environment with 39/39 tasks executed. APK and packaged Xposed metadata both report `0.1.322` / versionCode `332`; SHA-256 is `B861F637663E9E25AB7C98D5BCE05BEE67E15D20EC7B73D01022730E0593EF6D`.
+- **Success (installation):** `adb install -r` succeeds on the connected CPH2573, `dumpsys package dev.codex.pixelaod` reports `0.1.322` / `332`, and SystemUI returns after the root restart with PID `16635`.
+
+### Success (device verification)
+- **Success:** User testing confirmed 0.1.322 restored automatic Small/Large switching. The remaining feedback was visual spacing only: the Small scene sat too high and the Small-AOD media/notification rows sat too low, addressed separately in 0.1.323.
+
+## [0.1.321] - 2026-08-12
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.
+- **Scope:** Align the Small/Dynamic lockscreen scene more closely with Pixel behavior and remove stale duplicate AOD media geometry constants.
+
+### Changed
+- Replace the fixed COUI 25%/75% compact-scene anchors with a Pixel-style Small layout: the clock is edge-anchored while the date/weather/contextual information uses a width-aware right column. The small scene now uses stable dp anchors instead of viewport-fraction offsets inherited from the OOS 16 COUI reference.
+- Add `PixelDynamicClockPolicy` and make visible lockscreen content pressure the strongest module-owned Small/Large signal. Native OOS `clockSizeState` remains the next fallback, while raw notification or MediaSession presence is only used when neither measured geometry nor a valid vendor state is available.
+- Detect whether visible notification/media card content actually intersects the reserved large-clock region before forcing Small, so a notification that has collapsed away from the clock area no longer needs to keep the module compact solely because the notification/session is still active.
+- Keep the existing COUI per-glyph size-transition implementation and the 0.1.320 ownership fixes unchanged; this update changes target Small geometry and size policy, not the transition transaction model.
+
+### Fixed
+- Eliminate the AOD media-profile mismatch: title size/weight, artist size, icon size/spacing, and subtitle gap now come from `PixelAodVisualStyle.Aod` and are the same values used by `PixelAodClockView` at render time. The visual profile log therefore reflects the actual media row instead of the previous stale 13dp/14dp constants.
+
+### Success
+- **Success (targeted JVM tests):** `PixelDynamicClockPolicyTest`, `NotificationCapsuleClockModeTest`, `CouiCompactLayoutTest`, `PixelAodVisualStyleTest`, `CouiClockSizeTransitionLayerTest`, and `CouiClockSizeTransitionMathTest` all pass under the repository JDK 17 environment.
+
+### Success (continued)
+- **Success (debug build):** With the repository JDK 17 environment, `:app:assembleDebug --rerun-tasks` completes successfully with 39/39 tasks executed. The APK reports `versionName=0.1.321` / `versionCode=331`, and packaged `META-INF/xposed/module.prop` matches.
+- **Success (installation):** Installed `0.1.321` with `adb install -r`, restarted `com.android.systemui` through root, confirmed SystemUI returned with PID 1739, and `dumpsys package dev.codex.pixelaod` reports `0.1.321` / `331`.
+
+### Deferred/Failed
+- **Failed (device verification):** Automatic Small/Large switching regressed and the clock remained Small. Persistent LSPosed logs showed the new whole-tree geometry classifier falsely treating OPlus capsule/background containers as large-clock blockers and overriding a correct vendor LARGE state. Superseded by 0.1.322.
+
 ## [0.1.320] - 2026-08-12
 ### Meta
 - **Owner / Model:** ChatGPT Web / GPT-5.6 Sol — took over the remaining clock-size transition bug from the prior Codex investigation and completed the final device-validated fix.

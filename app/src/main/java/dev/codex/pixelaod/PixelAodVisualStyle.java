@@ -8,7 +8,7 @@ import android.util.DisplayMetrics;
 import java.util.Locale;
 
 final class PixelAodVisualStyle {
-    private static final String PROFILE_REVISION = "6.8";
+    private static final String PROFILE_REVISION = "7.2";
 
     // Clock and media use one deeper COUI-like accent rather than two near-identical tints.
     static final int CLOCK_COLOR_RED = 183;
@@ -37,48 +37,38 @@ final class PixelAodVisualStyle {
     static final int LARGE_CLOCK_TEXT_DP = 150;
     static final int LARGE_CLOCK_TOP_DP = 184;
     static final int SMALL_CLOCK_TEXT_DP = 56;
-    static final int SMALL_CLOCK_TOP_DP = 74;
+    static final int SMALL_CLOCK_TOP_DP = 90;
+    static final int SMALL_INFO_TOP_DP = 99;
     static final int EDGE_DP = 34;
     static final int COMPACT_CLOCK_VISUAL_START_OFFSET_DP = 7;
-    static final float COUI_COMPACT_CLOCK_CENTER_X_FRACTION = 0.25f;
-    static final int COUI_COMPACT_CLOCK_CENTER_X_OFFSET_DP = 10;
-    static final float COUI_COMPACT_CLOCK_TOP_FRACTION = 0.105f;
-    static final int COUI_COMPACT_CLOCK_TOP_OFFSET_DP = 25;
-    static final float COUI_COMPACT_INFO_CENTER_X_FRACTION = 0.75f;
-    static final int COUI_COMPACT_INFO_CENTER_X_OFFSET_DP = -34;
-    static final float COUI_COMPACT_INFO_TOP_FRACTION = 0.118f;
-    // COUI uses 33 dp for its grouped information container. Our individual TextViews render
-    // the two-line group 36 px lower on the OnePlus 12, so compensate by 9 dp to align its
-    // visible centre with the compact clock glyphs.
-    static final int COUI_COMPACT_INFO_TOP_OFFSET_DP = 24;
+    // Pixel Small keeps time edge-anchored and starts the information column just right of the
+    // screen midpoint. Actual text widths then decide whether extra clearance is required.
+    static final int PIXEL_SMALL_INFO_COLUMN_OFFSET_DP = 4;
     static final int COUI_COMPACT_CLOCK_TO_INFO_GAP_DP = 16;
-    static final int COUI_COMPACT_CLOCK_TO_EVENT_GAP_DP = 6;
+    static final int COUI_COMPACT_CLOCK_TO_EVENT_GAP_DP = 12;
     // Keep a readable gap between the compact date and weather, then lift the contextual row
     // away from OOS notification cards without letting it overlap the current-weather line.
     // Keep the date top, current-weather bottom, and contextual-row anchor unchanged while the
     // compact date/current-weather type moves to the requested 16 dp.
     static final int COUI_COMPACT_DATE_TO_WEATHER_TOP_OFFSET_DP = 27;
     static final int COUI_COMPACT_INFO_TO_EVENT_GAP_DP = 4;
+    static final int COMPACT_CONTEXTUAL_TO_NOTIFICATION_GAP_DP = 12;
     static final int COUI_COMPACT_MEDIA_EDGE_DP = 32;
-    static final float COUI_COMPACT_MEDIA_TOP_FRACTION = 0.255f;
-    static final int COUI_COMPACT_MEDIA_TOP_OFFSET_DP = 8;
     static final int COUI_COMPACT_MEDIA_FALLBACK_HEIGHT_DP = 40;
     static final long COUI_WEIGHT_MORPH_MILLIS = 550L;
     static final int LARGE_INFO_TOP_DP = 100;
-    static final int SMALL_INFO_TOP_DP = 150;
     static final int NOTIFICATION_LINE_TOP_DP = 198;
     static final int CALENDAR_DATE_TO_EVENT_TOP_OFFSET_DP = 22;
     static final int CALENDAR_DATE_TO_NOTIFICATION_TOP_OFFSET_DP = 50;
     static final int CALENDAR_DATE_TO_SECOND_EVENT_TOP_OFFSET_DP = 50;
     static final int CALENDAR_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP = 78;
     static final int COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP = 34;
-    static final int COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP = 73;
-    static final int COMPACT_DATE_TO_SECOND_EVENT_TOP_OFFSET_DP = 73;
-    static final int COMPACT_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP = 112;
-    // COUI leaves a clear visual break after the compact date/weather pair before icons begin.
-    // At 4x density this targets 822 px on OnePlus 12, rather than letting the weather row
-    // force icons up to its immediate 702 px clearance.
-    static final int COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP = 88;
+    static final int COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP = 85;
+    static final int COMPACT_DATE_TO_SECOND_EVENT_TOP_OFFSET_DP = 57;
+    static final int COMPACT_DATE_TO_NOTIFICATION_WITH_TWO_EVENTS_TOP_OFFSET_DP = 96;
+    // Keep Small notification anchors stable while the time/info group moves down 16 dp.
+    // Row-bottom clearance still wins when localized content or contextual cards need more room.
+    static final int COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP = 72;
     static final int CALENDAR_ICON_SPACING_DP = 2;
     static final int CALENDAR_APPLICATION_ICON_LEADING_OFFSET_DP = 6;
     static final int NOTIFICATION_ROW_LEADING_OFFSET_DP = 2;
@@ -92,8 +82,10 @@ final class PixelAodVisualStyle {
                 + ",notificationIcon=" + Aod.NOTIFICATION_ICON_SIZE_DP
                 + ",notificationSpacing=" + Aod.NOTIFICATION_ICON_SPACING_DP
                 + ",mediaIcon=" + Aod.MEDIA_ICON_SIZE_DP
-                + ",mediaSpacing=" + Aod.MEDIA_ICON_SPACING_DP
-                + ",mediaText=" + Aod.MEDIA_TEXT_DP
+                + ",mediaIconSpacing=" + Aod.MEDIA_ICON_SPACING_DP
+                + ",mediaTitleText=" + Aod.MEDIA_TITLE_TEXT_DP
+                + ",mediaArtistText=" + Aod.MEDIA_ARTIST_TEXT_DP
+                + ",mediaSubtitleGap=" + Aod.MEDIA_SUBTITLE_TOP_GAP_DP
                 + ",weatherIcon=" + Aod.WEATHER_ICON_SIZE_DP
                 + ",weatherPadding=" + Aod.WEATHER_ICON_PADDING_DP
                 + ",batteryText=" + Aod.BATTERY_TEXT_DP
@@ -120,11 +112,8 @@ final class PixelAodVisualStyle {
                 + ",smallTop=" + SMALL_CLOCK_TOP_DP
                 + ",edge=" + EDGE_DP
                 + ",compactOffset=" + COMPACT_CLOCK_VISUAL_START_OFFSET_DP
-                + ",couiCompactClock=" + COUI_COMPACT_CLOCK_CENTER_X_FRACTION
-                + "/" + COUI_COMPACT_CLOCK_TOP_FRACTION
-                + ",couiCompactInfo=" + COUI_COMPACT_INFO_CENTER_X_FRACTION
-                + "/" + COUI_COMPACT_INFO_TOP_FRACTION
-                + ",couiCompactMedia=" + COUI_COMPACT_MEDIA_TOP_FRACTION
+                + ",pixelSmallClockLeft=" + (EDGE_DP - COMPACT_CLOCK_VISUAL_START_OFFSET_DP)
+                + ",pixelSmallInfoColumnOffset=" + PIXEL_SMALL_INFO_COLUMN_OFFSET_DP
                 + ",largeInfoTop=" + LARGE_INFO_TOP_DP
                 + ",smallInfoTop=" + SMALL_INFO_TOP_DP
                 + ",notificationTop=" + NOTIFICATION_LINE_TOP_DP
@@ -178,12 +167,15 @@ final class PixelAodVisualStyle {
     static final class Aod {
         static final int LARGE_MEDIA_TOP_DP = 132;
         static final int LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP = 224;
-        static final int SMALL_MEDIA_TOP_DP = 234;
+        static final int SMALL_MEDIA_TOP_DP = 218;
         static final int NOTIFICATION_ICON_SIZE_DP = 14;
         static final int NOTIFICATION_ICON_SPACING_DP = 8;
-        static final int MEDIA_ICON_SIZE_DP = 13;
-        static final int MEDIA_ICON_SPACING_DP = 8;
-        static final int MEDIA_TEXT_DP = 14;
+        static final int MEDIA_TITLE_TEXT_DP = 18;
+        static final int MEDIA_TITLE_WEIGHT = 500;
+        static final int MEDIA_ARTIST_TEXT_DP = 15;
+        static final int MEDIA_ICON_SIZE_DP = 18;
+        static final int MEDIA_ICON_SPACING_DP = 6;
+        static final int MEDIA_SUBTITLE_TOP_GAP_DP = 4;
         static final int BATTERY_TOP_DP = 720;
         static final int BATTERY_TEXT_DP = 16;
         static final int CHARGE_BOLT_WIDTH_DP = 9;

@@ -6,11 +6,12 @@ final class ClockPluginLockscreenSizePolicy {
     }
 
     static int resolve(Integer vendorClockSize, boolean moduleNotifications, boolean activeMedia) {
-        if (vendorClockSize != null) {
-            return vendorClockSize;
-        }
-        return moduleNotifications || activeMedia
-                ? ClockPluginSceneMachine.CLOCK_SIZE_SMALL
-                : ClockPluginSceneMachine.CLOCK_SIZE_LARGE;
+        return resolve(vendorClockSize, null, moduleNotifications, activeMedia);
+    }
+
+    static int resolve(Integer vendorClockSize, Boolean visibleLockscreenContent,
+            boolean moduleNotifications, boolean activeMedia) {
+        return PixelDynamicClockPolicy.resolve(vendorClockSize, visibleLockscreenContent,
+                moduleNotifications, activeMedia);
     }
 }

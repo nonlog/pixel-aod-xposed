@@ -1,36 +1,43 @@
 package dev.codex.pixelaod;
 
-/** Pixel coordinates for the compact COUI Expressive clock scene. */
+/**
+ * Layout math for the small clock scene.
+ *
+ * <p>The class keeps its historical name to avoid a broad transition-layer refactor, but the
+ * primary anchors are no longer the OOS/COUI 25%/75% viewport fractions. Pixel Small uses an
+ * edge-anchored clock plus a width-aware right information column, so longer localized content
+ * can consume available space without shifting the clock itself.</p>
+ */
 final class CouiCompactLayout {
     private CouiCompactLayout() {
     }
 
-    static int clockCenterX(int widthPx, float density) {
-        return Math.round(widthPx * PixelAodVisualStyle.COUI_COMPACT_CLOCK_CENTER_X_FRACTION)
-                + dp(PixelAodVisualStyle.COUI_COMPACT_CLOCK_CENTER_X_OFFSET_DP, density);
-    }
-
     static int clockTop(int heightPx, float density) {
-        return Math.round(heightPx * PixelAodVisualStyle.COUI_COMPACT_CLOCK_TOP_FRACTION)
-                + dp(PixelAodVisualStyle.COUI_COMPACT_CLOCK_TOP_OFFSET_DP, density);
+        return dp(PixelAodVisualStyle.SMALL_CLOCK_TOP_DP, density);
     }
 
     static int clockLeft(int widthPx, int contentWidthPx, float density) {
-        return Math.max(0, clockCenterX(widthPx, density) - Math.max(0, contentWidthPx) / 2);
+        return dp(PixelAodVisualStyle.EDGE_DP
+                - PixelAodVisualStyle.COMPACT_CLOCK_VISUAL_START_OFFSET_DP, density);
     }
 
-    static int infoCenterX(int widthPx, float density) {
-        return Math.round(widthPx * PixelAodVisualStyle.COUI_COMPACT_INFO_CENTER_X_FRACTION)
-                + dp(PixelAodVisualStyle.COUI_COMPACT_INFO_CENTER_X_OFFSET_DP, density);
+    static int clockCenterX(int widthPx, int contentWidthPx, float density) {
+        return clockLeft(widthPx, contentWidthPx, density) + Math.max(0, contentWidthPx) / 2;
     }
 
     static int infoTop(int heightPx, float density) {
-        return Math.round(heightPx * PixelAodVisualStyle.COUI_COMPACT_INFO_TOP_FRACTION)
-                + dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TOP_OFFSET_DP, density);
+        return dp(PixelAodVisualStyle.SMALL_INFO_TOP_DP, density);
     }
 
     static int infoLeft(int widthPx, int contentWidthPx, float density) {
-        return Math.max(0, infoCenterX(widthPx, density) - Math.max(0, contentWidthPx) / 2);
+        if (widthPx <= 0) {
+            return dp(PixelAodVisualStyle.EDGE_DP, density);
+        }
+        int preferredLeftPx = widthPx / 2
+                + dp(PixelAodVisualStyle.PIXEL_SMALL_INFO_COLUMN_OFFSET_DP, density);
+        int preferredMaxPx = Math.max(0, widthPx
+                - dp(PixelAodVisualStyle.EDGE_DP, density) - Math.max(0, contentWidthPx));
+        return Math.max(0, Math.min(preferredLeftPx, preferredMaxPx));
     }
 
     static int weatherAlertTop(Anchors anchors, float density) {
@@ -55,14 +62,8 @@ final class CouiCompactLayout {
         return dp(PixelAodVisualStyle.COUI_COMPACT_MEDIA_EDGE_DP, density);
     }
 
-    static int mediaTop(int heightPx) {
-        return Math.round(heightPx * PixelAodVisualStyle.COUI_COMPACT_MEDIA_TOP_FRACTION);
-    }
-
     static int mediaTopForViewport(int heightPx, float density) {
-        return heightPx > 0 ? mediaTop(heightPx)
-                + dp(PixelAodVisualStyle.COUI_COMPACT_MEDIA_TOP_OFFSET_DP, density)
-                : dp(PixelAodVisualStyle.Aod.SMALL_MEDIA_TOP_DP, density);
+        return dp(PixelAodVisualStyle.Aod.SMALL_MEDIA_TOP_DP, density);
     }
 
     static int mediaTopAfterInfo(int defaultTopPx, int infoBottomPx, int gapPx) {
@@ -71,24 +72,25 @@ final class CouiCompactLayout {
 
     static Anchors anchors(int widthPx, int heightPx, int clockContentWidthPx,
             int infoContentWidthPx, float density) {
-        int clockLeftPx = widthPx > 0
-                ? clockLeft(widthPx, clockContentWidthPx, density)
-                : dp(PixelAodVisualStyle.EDGE_DP
-                - PixelAodVisualStyle.COMPACT_CLOCK_VISUAL_START_OFFSET_DP, density);
-        int clockTopPx = heightPx > 0 ? clockTop(heightPx, density)
-                : dp(PixelAodVisualStyle.SMALL_CLOCK_TOP_DP, density);
+        int clockLeftPx = clockLeft(widthPx, clockContentWidthPx, density);
+        int clockTopPx = clockTop(heightPx, density);
         int infoLeftPx;
         if (widthPx > 0) {
             int preferredInfoLeftPx = infoLeft(widthPx, infoContentWidthPx, density);
             int minimumInfoLeftPx = clockLeftPx + Math.max(0, clockContentWidthPx)
                     + dp(PixelAodVisualStyle.COUI_COMPACT_CLOCK_TO_INFO_GAP_DP, density);
-            int maxInfoLeftPx = Math.max(0, widthPx - Math.max(0, infoContentWidthPx));
-            infoLeftPx = Math.min(maxInfoLeftPx, Math.max(preferredInfoLeftPx, minimumInfoLeftPx));
+            int preferredMaxInfoLeftPx = Math.max(0, widthPx
+                    - dp(PixelAodVisualStyle.EDGE_DP, density)
+                    - Math.max(0, infoContentWidthPx));
+            int hardMaxInfoLeftPx = Math.max(0, widthPx - Math.max(0, infoContentWidthPx));
+            int maxInfoLeftPx = minimumInfoLeftPx <= preferredMaxInfoLeftPx
+                    ? preferredMaxInfoLeftPx : hardMaxInfoLeftPx;
+            infoLeftPx = Math.min(maxInfoLeftPx,
+                    Math.max(preferredInfoLeftPx, minimumInfoLeftPx));
         } else {
             infoLeftPx = dp(PixelAodVisualStyle.EDGE_DP, density);
         }
-        int infoTopPx = heightPx > 0 ? infoTop(heightPx, density)
-                : dp(PixelAodVisualStyle.SMALL_INFO_TOP_DP, density);
+        int infoTopPx = infoTop(heightPx, density);
         return new Anchors(clockLeftPx, clockTopPx, infoLeftPx, infoTopPx);
     }
 

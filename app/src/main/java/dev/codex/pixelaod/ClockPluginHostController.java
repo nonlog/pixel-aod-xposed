@@ -439,14 +439,28 @@ final class ClockPluginHostController {
                         + " trace=" + PixelAodClockView.currentAodTraceId());
             }
         } else {
-            // Lockscreen size: OOS clockSizeState is authoritative for the visible card shape.
-            // A notification remains active after its card collapses into the bottom capsule, so
-            // module notification presence is only a fallback while vendor size is unavailable.
+            // OPlus owns the actual notification/card layout and publishes its resolved Dynamic
+            // size through ClockPlugin. Treat that vendor state as authoritative whenever valid.
+            // Only inspect visible cards if the vendor state is temporarily unavailable; raw
+            // notification/MediaSession activity is the final bootstrap fallback.
+            boolean validVendorClockSize = renderState.clockSizeState != null
+                    && (renderState.clockSizeState == ClockPluginSceneMachine.CLOCK_SIZE_SMALL
+                    || renderState.clockSizeState == ClockPluginSceneMachine.CLOCK_SIZE_LARGE);
+            Boolean visibleLockscreenContent = null;
+            if (!validVendorClockSize) {
+                View topLevel = record.root.getRootView();
+                if (topLevel instanceof ViewGroup) {
+                    visibleLockscreenContent =
+                            PixelAodHook.hasVisibleLockscreenNotificationCardsIn((ViewGroup) topLevel);
+                }
+            }
             effectiveClockSize = ClockPluginLockscreenSizePolicy.resolve(
-                    renderState.clockSizeState, moduleNotifs, mediaActive);
+                    renderState.clockSizeState, visibleLockscreenContent, moduleNotifs, mediaActive);
             compactAod = false;
             PixelAodLog.log("ClockPlugin lockscreen size source=" + source
                     + " oosClockSize=" + renderState.clockSizeState
+                    + " vendorAuthoritative=" + validVendorClockSize
+                    + " visibleLockscreenContent=" + visibleLockscreenContent
                     + " effectiveClockSize=" + effectiveClockSize
                     + " moduleNotifs=" + moduleNotifs
                     + " mediaActive=" + mediaActive

@@ -139,10 +139,14 @@ public final class PixelAodClockView extends FrameLayout {
             PixelAodVisualStyle.Aod.NOTIFICATION_ICON_SIZE_DP;
     private static final int NOTIFICATION_ICON_SPACING_DP =
             PixelAodVisualStyle.Aod.NOTIFICATION_ICON_SPACING_DP;
+    private static final int MEDIA_TITLE_TEXT_DP = PixelAodVisualStyle.Aod.MEDIA_TITLE_TEXT_DP;
+    private static final int MEDIA_TITLE_WEIGHT = PixelAodVisualStyle.Aod.MEDIA_TITLE_WEIGHT;
+    private static final int MEDIA_ARTIST_TEXT_DP = PixelAodVisualStyle.Aod.MEDIA_ARTIST_TEXT_DP;
     private static final int MEDIA_ICON_SIZE_DP = PixelAodVisualStyle.Aod.MEDIA_ICON_SIZE_DP;
     private static final int MEDIA_ICON_SPACING_DP =
             PixelAodVisualStyle.Aod.MEDIA_ICON_SPACING_DP;
-    private static final int MEDIA_TEXT_DP = PixelAodVisualStyle.Aod.MEDIA_TEXT_DP;
+    private static final int MEDIA_SUBTITLE_TOP_GAP_DP =
+            PixelAodVisualStyle.Aod.MEDIA_SUBTITLE_TOP_GAP_DP;
     private static final int MAX_NOTIFICATION_ICONS = 5;
     private static final int ICON_MASK_SAMPLE_SIZE = 48;
     private static final int BATTERY_TOP_DP = PixelAodVisualStyle.Aod.BATTERY_TOP_DP;
@@ -585,7 +589,7 @@ public final class PixelAodClockView extends FrameLayout {
         mediaIconView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         mediaIconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         mediaIconView.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);
-        mediaView = makeInfoLine(context, infoTypeface, 500, 18,
+        mediaView = makeInfoLine(context, infoTypeface, MEDIA_TITLE_WEIGHT, MEDIA_TITLE_TEXT_DP,
                 Gravity.START);
         mediaView.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams mediaTextParams = new LinearLayout.LayoutParams(
@@ -597,16 +601,17 @@ public final class PixelAodClockView extends FrameLayout {
         mediaSubtitleRow.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams mediaSubtitleParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        mediaSubtitleParams.topMargin = dp(4);
+        mediaSubtitleParams.topMargin = dp(MEDIA_SUBTITLE_TOP_GAP_DP);
         mediaRow.addView(mediaSubtitleRow, mediaSubtitleParams);
 
         mediaIconView.setAlpha(INFO_ALPHA);
-        LinearLayout.LayoutParams mediaGlyphParams = new LinearLayout.LayoutParams(dp(18), dp(18));
-        mediaGlyphParams.rightMargin = dp(6);
+        LinearLayout.LayoutParams mediaGlyphParams = new LinearLayout.LayoutParams(
+                dp(MEDIA_ICON_SIZE_DP), dp(MEDIA_ICON_SIZE_DP));
+        mediaGlyphParams.rightMargin = dp(MEDIA_ICON_SPACING_DP);
         mediaSubtitleRow.addView(mediaIconView, mediaGlyphParams);
 
-        mediaArtistView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT, 15,
-                Gravity.START);
+        mediaArtistView = makeInfoLine(context, infoTypeface, INFO_AOD_WEIGHT,
+                MEDIA_ARTIST_TEXT_DP, Gravity.START);
         mediaArtistView.setEllipsize(TextUtils.TruncateAt.END);
         mediaSubtitleRow.addView(mediaArtistView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -7442,13 +7447,13 @@ public final class PixelAodClockView extends FrameLayout {
             CouiCompactLayout.Anchors anchors = compactAnchors();
             int compactInfoTopPx = anchors.infoTopPx;
             int compactGapPx = dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
+            float density = getResources().getDisplayMetrics().density;
             infoGroup = ClockInfoGroupLayout.layout(true, anchors.infoLeftPx, compactInfoTopPx,
                     infoLineWidthPx(dateView), infoLineHeightPx(dateView, COMPACT_INFO_TEXT_DP),
                     weatherVisible, infoLineHeightPx(weatherView, COMPACT_INFO_TEXT_DP),
-                    CouiCompactLayout.weatherTop(anchors,
-                            getResources().getDisplayMetrics().density),
+                    CouiCompactLayout.weatherTop(anchors, density),
                     compactGapPx,
-                    compactInfoTopPx + dp(COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP));
+                    CouiCompactLayout.weatherAlertTop(anchors, density));
             dateTopPx = infoGroup.dateTopPx;
             weatherTopPx = infoGroup.weatherTopPx;
             int lastInfoBottomPx = infoGroup.infoBottomPx;
@@ -7461,9 +7466,12 @@ public final class PixelAodClockView extends FrameLayout {
                         AodInfoStackLayout.rowBottom(calendarTopPx, calendarRow.getHeight(),
                                 calendarFallbackHeightPx));
             }
+            int notificationGapPx = dp(contextualVisible
+                    ? PixelAodVisualStyle.COMPACT_CONTEXTUAL_TO_NOTIFICATION_GAP_DP
+                    : PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
             notificationTopPx = AodInfoStackLayout.topAfterVisibleRow(
                     compactInfoTopPx + dp(COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP),
-                    lastInfoBottomPx, compactGapPx);
+                    lastInfoBottomPx, notificationGapPx);
             int couiMediaTopPx = CouiCompactLayout.mediaTopForViewport(getHeight(),
                     getResources().getDisplayMetrics().density);
             mediaTopPx = CouiCompactLayout.mediaTopAfterInfo(couiMediaTopPx, lastInfoBottomPx,

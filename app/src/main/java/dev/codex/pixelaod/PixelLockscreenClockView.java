@@ -806,7 +806,7 @@ final class PixelLockscreenClockView extends FrameLayout {
                     ? getHeight()
                     : getResources().getDisplayMetrics().heightPixels;
             snap.centerX = CouiCompactLayout.clockCenterX(Math.round(parentW),
-                    getResources().getDisplayMetrics().density);
+                    Math.round(snap.width), getResources().getDisplayMetrics().density);
             snap.centerY = CouiCompactLayout.clockTop(Math.round(parentH),
                     getResources().getDisplayMetrics().density) + snap.pivotY;
             snap.textSize = textPx;
@@ -1307,9 +1307,12 @@ final class PixelLockscreenClockView extends FrameLayout {
         List<StatusBarNotification> notifications = currentNotifications();
         boolean hasCards = hasVisibleLockscreenNotificationCards()
                 || hasLiveLockscreenNotificationCards(firstVisibleFrame);
-        // Lockscreen: visible cards (incl. OOS media chrome) force compact. Playing media
-        // alone does not stick compact after the card is dismissed (PAUSED sessions linger).
-        boolean compact = !notifications.isEmpty() || hasCards || playingMedia;
+        // Standalone fallback has no vendor ClockPlugin state. Follow actual visible lockscreen
+        // card presence; raw notification or MediaSession activity must not pin Small after the
+        // card has collapsed away from the clock area.
+        int resolvedClockSize = ClockPluginLockscreenSizePolicy.resolve(null,
+                hasCards, !notifications.isEmpty(), playingMedia);
+        boolean compact = resolvedClockSize == ClockPluginSceneMachine.CLOCK_SIZE_SMALL;
         applyClockMode(compact);
         applyMaterialColors();
         updateTime();
@@ -1621,9 +1624,9 @@ final class PixelLockscreenClockView extends FrameLayout {
             }
             infoLeftPx = anchors.infoLeftPx;
             dateTopPx = anchors.infoTopPx;
-            compactWeatherTopPx = CouiCompactLayout.weatherTop(anchors,
-                    getResources().getDisplayMetrics().density);
-            contextualMinimumTopPx = dateTopPx + dp(COMPACT_DATE_TO_EVENT_TOP_OFFSET_DP);
+            float density = getResources().getDisplayMetrics().density;
+            compactWeatherTopPx = CouiCompactLayout.weatherTop(anchors, density);
+            contextualMinimumTopPx = CouiCompactLayout.weatherAlertTop(anchors, density);
         } else {
             infoLeftPx = dp(EDGE_DP);
             dateTopPx = dp(LARGE_INFO_TOP_DP);
