@@ -17,8 +17,20 @@ final class CouiCompactLayout {
     }
 
     static int clockLeft(int widthPx, int contentWidthPx, float density) {
+        return leadingEdge(density);
+    }
+
+    static int leadingEdge(float density) {
         return dp(PixelAodVisualStyle.EDGE_DP
                 - PixelAodVisualStyle.COMPACT_CLOCK_VISUAL_START_OFFSET_DP, density);
+    }
+
+    static int notificationLayoutLeft(float density) {
+        // notificationIconRow keeps a small negative optical translation so mixed app glyphs
+        // visually sit on the same edge. Offset its layout box by the same amount so the
+        // resulting painted edge resolves to the Small clock/contextual leading edge.
+        return leadingEdge(density)
+                + dp(PixelAodVisualStyle.NOTIFICATION_ROW_LEADING_OFFSET_DP, density);
     }
 
     static int clockCenterX(int widthPx, int contentWidthPx, float density) {

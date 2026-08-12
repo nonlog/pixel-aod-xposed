@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.1.325] - 2026-08-12
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.
+- **Scope:** Add deterministic offline English presentation for Breezy Weather warnings and expose Breezy's structured alert severity through progressively stronger contextual warning icons.
+
+### Changed
+- Add `WeatherAlertDisplayFormatter`, a presentation-only Chinese weather-warning formatter. It keeps Breezy's original headline untouched for identity/dedup/cooldown, uses structured severity (`1..4`) for Blue/Yellow/Orange/Red, recognizes common Chinese meteorological hazard terms with a longest-match dictionary, and emits the fixed English template `{Color} alert for {hazard}`. Known examples now render `中原发布暴雨蓝色预警` as `Blue alert for rainstorms` and `中原发布暴雨红色预警` as `Red alert for rainstorms`.
+- Preserve already-English/non-Chinese warning headlines verbatim. Unknown Chinese warning types also remain in their original source language rather than being guessed or sent to a network service.
+- Carry `alert.severity` into `ContextualAtAGlanceCard` and include it in `sameContent()`, so a provider severity escalation refreshes the contextual presentation even if the logical warning identity is otherwise unchanged.
+- Map alert severity to distinct monochrome AOD/lockscreen silhouettes: UNKNOWN/MINOR uses the existing warning triangle, MODERATE uses a warning diamond, SEVERE uses a warning shield, and EXTREME uses a warning octagon. Existing Material tinting remains unchanged; severity is conveyed by icon geometry rather than introducing colored AOD pixels.
+- Add `docs/WEATHER_ALERT_LOCALIZATION.md`, including the deferred optional ML Kit on-device translation fallback for dictionary misses. Any future ML Kit path must run outside SystemUI drawing, cache by normalized source headline, preserve Breezy severity/identity, and fall back to the original headline on model/download/translation failure.
+- Align the Small AOD contextual row and notification-glyph row to the same leading edge as the Small clock. The contextual row now uses `CouiCompactLayout.leadingEdge()` instead of the older 34 dp information edge, while the notification row offsets its layout margin by the existing 2 dp optical translation so its final painted edge resolves to that same clock baseline. Large-mode geometry is unchanged.
+
+### Success
+- **Success (targeted JVM tests):** `WeatherAlertDisplayFormatterTest`, the alert privacy/severity-replacement cases in `ContextualAtAGlanceSelectorTest`, `BreezyWeatherAlertTest`, `PixelDynamicClockPolicyTest`, `CouiCompactLayoutTest`, `CouiClockSizeTransitionLayerTest`, and `CouiClockSizeTransitionMathTest` pass under JDK 17.
+- **Success (debug build):** After one Gradle daemon disappearance with no compile error, the required JDK 17 `:app:assembleDebug --rerun-tasks --no-daemon` retry completes with `BUILD SUCCESSFUL` and 39/39 tasks executed. APK and packaged Xposed metadata both report `0.1.325` / versionCode `335`; final SHA-256 is `5A3BD61716498532451A728DB0A0928BD65127C953C51F94B55E56A112E5FDD2`.
+- **Success (installation):** Installed the final alignment build with `adb install -r` on the connected CPH2573; SystemUI is running again (PID `29403`) and `dumpsys package dev.codex.pixelaod` reports `0.1.325` / `335`.
+- **Success (device wording/severity verification):** User AOD testing confirms `中原发布暴雨红色预警` renders as `Red alert for rainstorms` and the EXTREME warning uses the intended octagonal monochrome icon. The same screenshot exposed a remaining horizontal grid mismatch, addressed by the shared Small leading-edge refinement above.
+
+### Deferred/Failed
+- **Deferred (ML Kit):** ML Kit on-device translation is documented as a future optional fallback only and is not bundled in 0.1.325; deterministic dictionary formatting remains the sole active translation path.
+- **Deferred (known pre-existing tests):** The broader targeted run still reports the two existing `ContextualAtAGlanceSelectorTest` deadline-policy failures (`schedulesAlertEndBeforeTheTenMinuteDisplayDeadline` and `schedulesSourceFreshnessExpiryBeforeTheTenMinuteDisplayDeadline`); all other 58 tests in that run pass, including the new localization/severity/leading-edge coverage.
+- **Deferred (final edge visual verification):** The final Small leading-edge refinement is built after the approved screenshot but still requires one device screenshot to confirm the optical result; do not treat the alignment as user-verified yet.
+
 ## [0.1.324] - 2026-08-12
 ### Meta
 - **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.

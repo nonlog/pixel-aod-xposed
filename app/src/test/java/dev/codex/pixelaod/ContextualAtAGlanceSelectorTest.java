@@ -103,10 +103,17 @@ public final class ContextualAtAGlanceSelectorTest {
                 NOW - 1_000L, NOW + 86_400_000L, 3);
         String redacted = ContextualAtAGlancePrivacy.alertText(alert, true, "Weather alert");
         assertEquals("Weather alert", redacted);
-        assertEquals(alert.presentationKey,
-                ContextualAtAGlanceCard.alert(alert, redacted, true, 1f).identity);
+        ContextualAtAGlanceCard redactedCard =
+                ContextualAtAGlanceCard.alert(alert, redacted, true, 1f);
+        assertEquals(alert.presentationKey, redactedCard.identity);
+        assertEquals(3, redactedCard.alertSeverity);
         assertEquals("Storm headline", ContextualAtAGlancePrivacy.alertText(alert, false,
                 "Weather alert"));
+
+        BreezyWeatherAlert chinese = BreezyWeatherAlert.forFields("cn", "loc",
+                "中原发布暴雨蓝色预警", NOW - 1_000L, NOW + 86_400_000L, 1);
+        assertEquals("Blue alert for rainstorms",
+                ContextualAtAGlancePrivacy.alertText(chinese, false, "Weather alert"));
     }
 
     @Test
@@ -121,6 +128,23 @@ public final class ContextualAtAGlanceSelectorTest {
         assertTrue(calendar.isReplacementOf(forecast));
         assertEquals(250L, ContextualAtAGlanceCard.REPLACEMENT_CROSSFADE_MILLIS);
         assertEquals(300L, ContextualAtAGlanceCard.ENTER_LEAVE_FADE_MILLIS);
+    }
+
+    @Test
+    public void severityEscalationRefreshesTheAlertCardVisual() {
+        BreezyWeatherAlert minor = BreezyWeatherAlert.forFields("same-id", "loc",
+                "中原发布暴雨预警", NOW - 1_000L, NOW + 86_400_000L, 1);
+        BreezyWeatherAlert extreme = BreezyWeatherAlert.forFields("same-id", "loc",
+                "中原发布暴雨预警", NOW - 1_000L, NOW + 86_400_000L, 4);
+        ContextualAtAGlanceCard minorCard = ContextualAtAGlanceCard.alert(
+                minor, "Blue alert for rainstorms", false, 1f);
+        ContextualAtAGlanceCard extremeCard = ContextualAtAGlanceCard.alert(
+                extreme, "Red alert for rainstorms", false, 1f);
+
+        assertEquals(minor.presentationKey, extreme.presentationKey);
+        assertEquals(1, minorCard.alertSeverity);
+        assertEquals(4, extremeCard.alertSeverity);
+        assertTrue(extremeCard.isReplacementOf(minorCard));
     }
 
     @Test

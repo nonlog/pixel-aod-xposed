@@ -839,7 +839,18 @@ public final class PixelAodClockView extends FrameLayout {
             return null;
         }
         if (card.kind == ContextualAtAGlanceCard.Kind.WEATHER_ALERT) {
-            return moduleDrawable(context, R.drawable.ic_weather_alert);
+            switch (WeatherAlertVisuals.iconLevel(card.alertSeverity)) {
+                case MODERATE:
+                    return moduleDrawable(context, R.drawable.ic_weather_alert_moderate);
+                case SEVERE:
+                    return moduleDrawable(context, R.drawable.ic_weather_alert_severe);
+                case EXTREME:
+                    return moduleDrawable(context, R.drawable.ic_weather_alert_extreme);
+                case MINOR:
+                case UNKNOWN:
+                default:
+                    return moduleDrawable(context, R.drawable.ic_weather_alert);
+            }
         }
         if (card.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST) {
             if (card.weatherCode == BreezyWeatherForecast.UNKNOWN_WEATHER_CODE) {
@@ -7442,12 +7453,18 @@ public final class PixelAodClockView extends FrameLayout {
         boolean weatherVisible = weatherView.getVisibility() == View.VISIBLE;
         boolean contextualVisible = ContextualAtAGlancePresentation.current(calendarRow).isVisible();
         int mediaTopPx;
+        int calendarLeftPx;
+        int notificationLeftPx;
         ClockInfoGroupLayout.Result infoGroup;
         if (compactClock) {
             CouiCompactLayout.Anchors anchors = compactAnchors();
             int compactInfoTopPx = anchors.infoTopPx;
             int compactGapPx = dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
             float density = getResources().getDisplayMetrics().density;
+            int compactLeadingPx = CouiCompactLayout.leadingEdge(density);
+            calendarLeftPx = compactLeadingPx - dp(usingCalendarApplicationIcon
+                    ? ContextualAtAGlanceCalendarIcon.APPLICATION_ICON_LEADING_OFFSET_DP : 0);
+            notificationLeftPx = CouiCompactLayout.notificationLayoutLeft(density);
             infoGroup = ClockInfoGroupLayout.layout(true, anchors.infoLeftPx, compactInfoTopPx,
                     infoLineWidthPx(dateView), infoLineHeightPx(dateView, COMPACT_INFO_TEXT_DP),
                     weatherVisible, infoLineHeightPx(weatherView, COMPACT_INFO_TEXT_DP),
@@ -7485,6 +7502,9 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
         } else {
+            calendarLeftPx = dp(INFO_EDGE_DP - (usingCalendarApplicationIcon
+                    ? ContextualAtAGlanceCalendarIcon.APPLICATION_ICON_LEADING_OFFSET_DP : 0));
+            notificationLeftPx = dp(INFO_EDGE_DP);
             int largeInfoTopDp = LARGE_INFO_TOP_DP;
             boolean notificationVisible = notificationIconRow.getVisibility() == View.VISIBLE;
             int defaultMediaTopPx = dp(notificationVisible
@@ -7524,8 +7544,10 @@ public final class PixelAodClockView extends FrameLayout {
                 || dateParams.topMargin != dateTopPx;
         boolean weatherLayoutChanged = weatherParams.leftMargin != infoGroup.weatherLeftPx
                 || weatherParams.topMargin != weatherTopPx;
-        boolean calendarLayoutChanged = calendarParams.topMargin != calendarTopPx;
-        boolean notificationLayoutChanged = notificationParams.topMargin != notificationTopPx;
+        boolean calendarLayoutChanged = calendarParams.leftMargin != calendarLeftPx
+                || calendarParams.topMargin != calendarTopPx;
+        boolean notificationLayoutChanged = notificationParams.leftMargin != notificationLeftPx
+                || notificationParams.topMargin != notificationTopPx;
         int mediaLeftPx = compactClock
                 ? CouiCompactLayout.mediaLeft(getResources().getDisplayMetrics().density)
                 : dp(INFO_EDGE_DP);
@@ -7535,7 +7557,9 @@ public final class PixelAodClockView extends FrameLayout {
         dateParams.topMargin = dateTopPx;
         weatherParams.leftMargin = infoGroup.weatherLeftPx;
         weatherParams.topMargin = weatherTopPx;
+        calendarParams.leftMargin = calendarLeftPx;
         calendarParams.topMargin = calendarTopPx;
+        notificationParams.leftMargin = notificationLeftPx;
         notificationParams.topMargin = notificationTopPx;
         mediaParams.leftMargin = mediaLeftPx;
         mediaParams.rightMargin = mediaLeftPx;

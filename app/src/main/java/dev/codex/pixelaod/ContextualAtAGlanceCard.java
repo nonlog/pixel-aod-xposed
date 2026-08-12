@@ -24,23 +24,25 @@ final class ContextualAtAGlanceCard {
     final String identity;
     final String text;
     final int weatherCode;
+    final int alertSeverity;
     final float alpha;
     final boolean privacyRedacted;
 
     private ContextualAtAGlanceCard(Kind kind, IconKind iconKind, String identity, String text,
-            int weatherCode, float alpha, boolean privacyRedacted) {
+            int weatherCode, int alertSeverity, float alpha, boolean privacyRedacted) {
         this.kind = kind;
         this.iconKind = iconKind;
         this.identity = identity != null ? identity : "";
         this.text = text != null ? text : "";
         this.weatherCode = weatherCode;
+        this.alertSeverity = Math.max(0, alertSeverity);
         this.alpha = alpha;
         this.privacyRedacted = privacyRedacted;
     }
 
     static ContextualAtAGlanceCard none() {
         return new ContextualAtAGlanceCard(Kind.NONE, IconKind.NONE, "", "",
-                BreezyWeatherForecast.UNKNOWN_WEATHER_CODE, 0f, false);
+                BreezyWeatherForecast.UNKNOWN_WEATHER_CODE, 0, 0f, false);
     }
 
     static ContextualAtAGlanceCard alert(BreezyWeatherAlert alert, String text,
@@ -50,7 +52,7 @@ final class ContextualAtAGlanceCard {
         }
         return new ContextualAtAGlanceCard(Kind.WEATHER_ALERT, IconKind.WEATHER_ALERT,
                 alert.presentationKey, text, BreezyWeatherForecast.UNKNOWN_WEATHER_CODE,
-                alpha, privacyRedacted);
+                alert.severity, alpha, privacyRedacted);
     }
 
     static ContextualAtAGlanceCard calendar(String text, float alpha) {
@@ -60,7 +62,7 @@ final class ContextualAtAGlanceCard {
         }
         return new ContextualAtAGlanceCard(Kind.CALENDAR_EVENT, IconKind.CALENDAR,
                 "calendar:" + normalized, normalized,
-                BreezyWeatherForecast.UNKNOWN_WEATHER_CODE, alpha, false);
+                BreezyWeatherForecast.UNKNOWN_WEATHER_CODE, 0, alpha, false);
     }
 
     static ContextualAtAGlanceCard forecast(BreezyWeatherForecast forecast, String text,
@@ -70,7 +72,7 @@ final class ContextualAtAGlanceCard {
         }
         return new ContextualAtAGlanceCard(Kind.WEATHER_FORECAST,
                 IconKind.WEATHER_FORECAST, forecast.displayKey(), text, forecast.weatherCode,
-                alpha, false);
+                0, alpha, false);
     }
 
     boolean isVisible() {
@@ -81,6 +83,7 @@ final class ContextualAtAGlanceCard {
         return other != null && kind == other.kind && iconKind == other.iconKind
                 && identity.equals(other.identity) && text.equals(other.text)
                 && weatherCode == other.weatherCode
+                && alertSeverity == other.alertSeverity
                 && Float.compare(alpha, other.alpha) == 0
                 && privacyRedacted == other.privacyRedacted;
     }

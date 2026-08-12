@@ -37,6 +37,6 @@ final class ContextualAtAGlancePrivacy {
             return genericLabel == null || genericLabel.trim().isEmpty()
                     ? "Weather alert" : genericLabel.trim();
         }
-        return alert.headline;
+        return WeatherAlertDisplayFormatter.format(alert);
     }
 }

@@ -11,12 +11,26 @@ public final class CouiCompactLayoutTest {
         float density = 4f;
 
         assertEquals(108, CouiCompactLayout.clockLeft(1440, 320, density));
+        assertEquals(108, CouiCompactLayout.leadingEdge(density));
+        assertEquals(116, CouiCompactLayout.notificationLayoutLeft(density));
         assertEquals(268, CouiCompactLayout.clockCenterX(1440, 320, density));
         assertEquals(360, CouiCompactLayout.clockTop(3168, density));
         assertEquals(736, CouiCompactLayout.infoLeft(1440, 400, density));
         assertEquals(396, CouiCompactLayout.infoTop(3168, density));
         assertEquals(128, CouiCompactLayout.mediaLeft(density));
         assertEquals(872, CouiCompactLayout.mediaTopForViewport(3168, density));
+    }
+
+    @Test
+    public void alignsSmallContextualAndNotificationVisualEdgesWithTheClock() {
+        float density = 4f;
+        int clockLeftPx = CouiCompactLayout.clockLeft(1440, 320, density);
+        int notificationTranslationPx = Math.round(
+                PixelAodVisualStyle.NOTIFICATION_ROW_LEADING_OFFSET_DP * density);
+
+        assertEquals(clockLeftPx, CouiCompactLayout.leadingEdge(density));
+        assertEquals(clockLeftPx, CouiCompactLayout.notificationLayoutLeft(density)
+                - notificationTranslationPx);
     }
 
     @Test
