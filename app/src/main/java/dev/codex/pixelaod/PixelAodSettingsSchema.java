@@ -17,6 +17,8 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_WEATHER = "weather";
     public static final String KEY_WEATHER_ALERTS = "weather_alerts";
     public static final String KEY_WEATHER_FORECAST = "weather_forecast";
+    public static final String KEY_WEATHER_FORECAST_START_TIME = "weather_forecast_start_time";
+    public static final String KEY_WEATHER_FORECAST_END_TIME = "weather_forecast_end_time";
     public static final String KEY_WEATHER_ICON_PACK = "weather_icon_pack";
     public static final String KEY_CALENDAR_EVENTS = "calendar_events";
     public static final String KEY_CALENDAR_ICON_PACKAGE = "calendar_icon_package";
@@ -54,6 +56,10 @@ public final class PixelAodSettingsSchema {
     public static final SettingSpec WEATHER_ALERTS = booleanSpec(KEY_WEATHER_ALERTS, false, false);
     public static final SettingSpec WEATHER_FORECAST =
             booleanSpec(KEY_WEATHER_FORECAST, false, false);
+    public static final SettingSpec WEATHER_FORECAST_START_TIME = stringSpec(
+            KEY_WEATHER_FORECAST_START_TIME, ForecastDisplayWindow.DEFAULT_START_TIME, false);
+    public static final SettingSpec WEATHER_FORECAST_END_TIME = stringSpec(
+            KEY_WEATHER_FORECAST_END_TIME, ForecastDisplayWindow.DEFAULT_END_TIME, false);
     public static final SettingSpec WEATHER_ICON_PACK = stringSpec(KEY_WEATHER_ICON_PACK, "", false);
     public static final SettingSpec CALENDAR_EVENTS = booleanSpec(KEY_CALENDAR_EVENTS, false, false);
     public static final SettingSpec CALENDAR_ICON_PACKAGE =

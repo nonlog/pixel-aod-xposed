@@ -15,17 +15,20 @@ public final class BreezyWeatherForecastTest {
     private static final long NOW = Instant.parse("2026-08-05T10:00:00Z").toEpochMilli();
 
     @Test
-    public void isEligibleOnlyFromLocalSixteenHundredThroughBeforeMidnight() {
-        BreezyWeatherForecast forecast = complete(LocalDate.of(2026, 8, 6), NOW);
+    public void dataEligibilityUsesTheDeviceLocalTomorrowWithoutAHardCodedHour() {
         long beforeSix = Instant.parse("2026-08-05T09:59:00Z").toEpochMilli();
         long sixPm = Instant.parse("2026-08-05T10:00:00Z").toEpochMilli();
         long beforeMidnight = Instant.parse("2026-08-05T15:59:59Z").toEpochMilli();
         long midnight = Instant.parse("2026-08-05T16:00:00Z").toEpochMilli();
 
-        assertFalse(forecast.isEligible(beforeSix, SINGAPORE));
-        assertTrue(forecast.isEligible(sixPm, SINGAPORE));
-        assertTrue(forecast.isEligible(beforeMidnight, SINGAPORE));
-        assertFalse(forecast.isEligible(midnight, SINGAPORE));
+        assertTrue(complete(LocalDate.of(2026, 8, 6), beforeSix - 1_000L)
+                .isEligible(beforeSix, SINGAPORE));
+        assertTrue(complete(LocalDate.of(2026, 8, 6), sixPm - 1_000L)
+                .isEligible(sixPm, SINGAPORE));
+        assertTrue(complete(LocalDate.of(2026, 8, 6), beforeMidnight - 1_000L)
+                .isEligible(beforeMidnight, SINGAPORE));
+        assertFalse(complete(LocalDate.of(2026, 8, 6), midnight - 1_000L)
+                .isEligible(midnight, SINGAPORE));
     }
 
     @Test

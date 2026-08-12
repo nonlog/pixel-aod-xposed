@@ -78,10 +78,6 @@ final class BreezyWeatherForecast {
             return false;
         }
         java.time.ZonedDateTime localNow = Instant.ofEpochMilli(nowMillis).atZone(zoneId);
-        int hour = localNow.getHour();
-        if (hour < 18) {
-            return false;
-        }
         LocalDate tomorrow = localNow.toLocalDate().plusDays(1);
         return tomorrow.equals(forecastDate);
     }

@@ -1006,8 +1006,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         synchronized (PixelLockscreenClockView.class) {
             activeNotifications = notifications != null ? notifications.clone() : EMPTY_NOTIFICATIONS;
         }
-        refreshAll("notifications");
-        PixelAodHook.reapplyLockscreenClockFromKnownHost("notifications");
+        refreshVisibleNotificationPresentation("notifications");
     }
 
     static void setVisibleLockscreenNotificationCards(boolean hasCards, String source) {
@@ -1108,6 +1107,27 @@ final class PixelLockscreenClockView extends FrameLayout {
                 if (view != null) {
                     view.updatePresentation(source);
                 }
+            }
+        });
+    }
+
+    private static void refreshVisibleNotificationPresentation(String source) {
+        mainHandler().post(() -> {
+            int refreshed = 0;
+            for (PixelLockscreenClockView view : INSTANCES) {
+                if (view == null
+                        || !NotificationPresentationGate.shouldRefreshLockscreen(
+                        view.isAttachedToWindow(),
+                        view.getVisibility() == View.VISIBLE,
+                        view.isShown(),
+                        view.getAlpha())) {
+                    continue;
+                }
+                refreshed++;
+                view.updatePresentation(source);
+            }
+            if (refreshed > 0) {
+                PixelAodHook.reapplyLockscreenClockFromKnownHost(source);
             }
         });
     }

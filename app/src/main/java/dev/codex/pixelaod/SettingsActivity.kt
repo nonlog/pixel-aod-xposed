@@ -97,6 +97,13 @@ private const val BREEZY_READ_PROVIDER_PERMISSION = "org.breezyweather.READ_PROV
 private const val REQUEST_BREEZY_WEATHER_RELAY =
     "dev.codex.pixelaod.REQUEST_BREEZY_WEATHER_RELAY"
 
+private enum class ClockDialTarget {
+    AOD_START,
+    AOD_END,
+    FORECAST_START,
+    FORECAST_END
+}
+
 class SettingsActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(applyLanguage(newBase))
@@ -319,6 +326,16 @@ private fun SettingsContent(
     val weatherForecast = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_WEATHER_FORECAST, false))
     }
+    val weatherForecastStartTime = remember {
+        mutableStateOf(
+            prefs.schemaString(PixelAodSettings.KEY_WEATHER_FORECAST_START_TIME, "21:00")
+        )
+    }
+    val weatherForecastEndTime = remember {
+        mutableStateOf(
+            prefs.schemaString(PixelAodSettings.KEY_WEATHER_FORECAST_END_TIME, "23:30")
+        )
+    }
     val pendingBreezyWeatherFeature = remember { mutableStateOf<String?>(null) }
     val calendarEvents = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_CALENDAR_EVENTS, false))
@@ -355,20 +372,33 @@ private fun SettingsContent(
         )
     }
     var showClockDial by remember { mutableStateOf(false) }
-    var clockDialIsStart by remember { mutableStateOf(true) }
+    var clockDialTarget by remember { mutableStateOf(ClockDialTarget.AOD_START) }
     var clockDialTitle by remember { mutableStateOf("") }
     var clockDialHour by remember { mutableIntStateOf(22) }
     var clockDialMinute by remember { mutableIntStateOf(0) }
 
     val startTimeLabel = stringResource(R.string.title_schedule_start_time)
     val endTimeLabel = stringResource(R.string.title_schedule_end_time)
+    val forecastStartTimeLabel = stringResource(R.string.title_weather_forecast_start_time)
+    val forecastEndTimeLabel = stringResource(R.string.title_weather_forecast_end_time)
 
-    val showClockDialPicker: (Boolean, String) -> Unit = { isStart, currentTime ->
+    val showClockDialPicker: (ClockDialTarget, String) -> Unit = { target, currentTime ->
         val parts = currentTime.split(":")
-        val hour = parts.getOrNull(0)?.toIntOrNull() ?: if (isStart) 22 else 7
+        val defaultHour = when (target) {
+            ClockDialTarget.AOD_START -> 22
+            ClockDialTarget.AOD_END -> 7
+            ClockDialTarget.FORECAST_START -> 21
+            ClockDialTarget.FORECAST_END -> 23
+        }
+        val hour = parts.getOrNull(0)?.toIntOrNull() ?: defaultHour
         val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
-        clockDialIsStart = isStart
-        clockDialTitle = if (isStart) startTimeLabel else endTimeLabel
+        clockDialTarget = target
+        clockDialTitle = when (target) {
+            ClockDialTarget.AOD_START -> startTimeLabel
+            ClockDialTarget.AOD_END -> endTimeLabel
+            ClockDialTarget.FORECAST_START -> forecastStartTimeLabel
+            ClockDialTarget.FORECAST_END -> forecastEndTimeLabel
+        }
         clockDialHour = hour
         clockDialMinute = minute
         showClockDial = true
@@ -472,7 +502,10 @@ private fun SettingsContent(
                             valueText = aodScheduleStartTime.value,
                             showDivider = true
                         ) {
-                            showClockDialPicker(true, aodScheduleStartTime.value)
+                            showClockDialPicker(
+                                ClockDialTarget.AOD_START,
+                                aodScheduleStartTime.value
+                            )
                         }
                         CouiChoiceRow(
                             icon = Icons.Outlined.Schedule,
@@ -480,7 +513,10 @@ private fun SettingsContent(
                             valueText = aodScheduleEndTime.value,
                             showDivider = false
                         ) {
-                            showClockDialPicker(false, aodScheduleEndTime.value)
+                            showClockDialPicker(
+                                ClockDialTarget.AOD_END,
+                                aodScheduleEndTime.value
+                            )
                         }
                     }
                 }
@@ -565,6 +601,30 @@ private fun SettingsContent(
                         pendingBreezyWeatherFeature.value =
                             ContextualAtAGlancePermission.WEATHER_FORECAST
                         breezyWeatherPermissionLauncher.launch(BREEZY_READ_PROVIDER_PERMISSION)
+                    }
+                }
+                if (weatherForecast.value) {
+                    CouiChoiceRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_weather_forecast_start_time),
+                        valueText = weatherForecastStartTime.value,
+                        showDivider = true
+                    ) {
+                        showClockDialPicker(
+                            ClockDialTarget.FORECAST_START,
+                            weatherForecastStartTime.value
+                        )
+                    }
+                    CouiChoiceRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_weather_forecast_end_time),
+                        valueText = weatherForecastEndTime.value,
+                        showDivider = true
+                    ) {
+                        showClockDialPicker(
+                            ClockDialTarget.FORECAST_END,
+                            weatherForecastEndTime.value
+                        )
                     }
                 }
                 if (weather.value) {
@@ -774,20 +834,41 @@ private fun SettingsContent(
                 TextButton(onClick = {
                     showClockDial = false
                     val formatted = String.format("%02d:%02d", state.hour, state.minute)
-                    if (clockDialIsStart) {
-                        aodScheduleStartTime.value = formatted
-                        updateModuleStringSetting(
-                            context,
-                            PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME,
-                            formatted
-                        )
-                    } else {
-                        aodScheduleEndTime.value = formatted
-                        updateModuleStringSetting(
-                            context,
-                            PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME,
-                            formatted
-                        )
+                    when (clockDialTarget) {
+                        ClockDialTarget.AOD_START -> {
+                            aodScheduleStartTime.value = formatted
+                            updateModuleStringSetting(
+                                context,
+                                PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME,
+                                formatted
+                            )
+                        }
+                        ClockDialTarget.AOD_END -> {
+                            aodScheduleEndTime.value = formatted
+                            updateModuleStringSetting(
+                                context,
+                                PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME,
+                                formatted
+                            )
+                        }
+                        ClockDialTarget.FORECAST_START -> {
+                            weatherForecastStartTime.value = formatted
+                            updateModuleStringSetting(
+                                context,
+                                PixelAodSettings.KEY_WEATHER_FORECAST_START_TIME,
+                                formatted
+                            )
+                            requestBreezyWeatherRefresh(context)
+                        }
+                        ClockDialTarget.FORECAST_END -> {
+                            weatherForecastEndTime.value = formatted
+                            updateModuleStringSetting(
+                                context,
+                                PixelAodSettings.KEY_WEATHER_FORECAST_END_TIME,
+                                formatted
+                            )
+                            requestBreezyWeatherRefresh(context)
+                        }
                     }
                 }) {
                     Text("OK")

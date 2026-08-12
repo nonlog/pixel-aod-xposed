@@ -4,8 +4,10 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.text.Layout;
@@ -15,6 +17,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.ViewTreeObserver;
 import android.view.animation.Interpolator;
 import android.view.animation.LinearInterpolator;
@@ -54,13 +57,25 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
     private ImageView weatherIconView;
     private ImageView contextualIconView;
     private SceneSnapshot sourceSnapshot;
+    private SceneSnapshot targetSnapshot;
+    private SceneSnapshot handoffSnapshot;
+    private WeightProvider activeWeightProvider;
     private ValueAnimator animator;
+    private boolean finishingAtSource;
+    private float motionSegmentStartDriver;
+    private float motionSegmentEndDriver = 1f;
+    private float motionSegmentStartProgress;
+    private float motionSegmentEndProgress = 1f;
+    private float lastMotionDriver;
+    private float lastMotionProgress;
     private int lastAppliedClockWeight = Integer.MIN_VALUE;
     private int lastAppliedInfoWeight = Integer.MIN_VALUE;
     private String transitionSource = "";
     private long targetPreDrawGeneration;
     private boolean waitingForTargetPreDraw;
     private final SourceFrameOwnership sourceFrameOwnership = new SourceFrameOwnership();
+    private final GlyphSlotGeometryOwnership glyphSlotGeometryOwnership =
+            new GlyphSlotGeometryOwnership();
 
     CouiClockSizeTransitionLayer(Context context) {
         super(context);
@@ -84,26 +99,25 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         if (coordinateRoot == null || clock == null || clock.getVisibility() != View.VISIBLE) {
             return SceneSnapshot.EMPTY;
         }
-        int[] rootLocation = new int[2];
-        try {
-            coordinateRoot.getLocationOnScreen(rootLocation);
-        } catch (Throwable ignored) {
+        RootSpaceMapper mapper = new RootSpaceMapper(coordinateRoot);
+        if (!mapper.canMap(clock)) {
             return SceneSnapshot.EMPTY;
         }
-        GlyphCollection glyphs = captureClockGlyphs(clock, rootLocation);
+        GlyphCollection glyphs = captureClockGlyphs(clock, mapper);
         if (!glyphs.valid()) {
             return SceneSnapshot.EMPTY;
         }
-        InfoSnapshot dateSnapshot = captureInformation(date, rootLocation);
-        InfoSnapshot weatherSnapshot = captureInformation(weather, rootLocation);
-        IconSnapshot dateIconSnapshot = captureCompoundIcon(date, rootLocation);
-        IconSnapshot weatherIconSnapshot = captureCompoundIcon(weather, rootLocation);
+        logCoordinateOwnershipIfDistorted(coordinateRoot, clock, mapper);
+        InfoSnapshot dateSnapshot = captureInformation(date, mapper);
+        InfoSnapshot weatherSnapshot = captureInformation(weather, mapper);
+        IconSnapshot dateIconSnapshot = captureCompoundIcon(date, mapper);
+        IconSnapshot weatherIconSnapshot = captureCompoundIcon(weather, mapper);
         InfoSnapshot contextualSnapshot = contextualContent != null
                 && contextualContent.getVisibility() == View.VISIBLE
-                ? captureInformation(contextualText, contextualContent, rootLocation)
+                ? captureInformation(contextualText, contextualContent, mapper)
                 : InfoSnapshot.INVALID;
         IconSnapshot contextualIconSnapshot = captureImageIcon(contextualContent, contextualIcon,
-                rootLocation);
+                mapper);
         return new SceneSnapshot(glyphs.digits, glyphs.colon, dateSnapshot, weatherSnapshot,
                 contextualSnapshot, dateIconSnapshot, weatherIconSnapshot, contextualIconSnapshot,
                 clock, date, weather, contextualContent, contextualText, clockWeight, infoWeight);
@@ -120,6 +134,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         setVisibility(View.INVISIBLE);
         sourceSnapshot = source;
         sourceFrameOwnership.reset();
+        glyphSlotGeometryOwnership.reset();
         transitionSource = sourceTag != null ? sourceTag : "";
         createOverlayViews(source);
         // addView() gives FrameLayout children MATCH_PARENT defaults.  Typeface replacement can
@@ -171,6 +186,10 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
             return false;
         }
         transitionSource = sourceTag != null ? sourceTag : transitionSource;
+        targetSnapshot = target;
+        handoffSnapshot = target;
+        activeWeightProvider = weightProvider;
+        finishingAtSource = false;
         // The prepared source overlay remains visible here. Target-only clones are added and
         // the hidden live target is measured while that stable source frame owns every draw.
         rememberAndHide(to.clockContent);
@@ -221,19 +240,33 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
                 () -> applyFrame(from, to, 0f, 0f, motionInterpolator));
         sourceFrameOwnership.commitTargetFrameZero();
 
+        motionSegmentStartDriver = 0f;
+        motionSegmentEndDriver = 1f;
+        motionSegmentStartProgress = 0f;
+        motionSegmentEndProgress = 1f;
+        lastMotionDriver = 0f;
+        lastMotionProgress = 0f;
+
         animator = ValueAnimator.ofFloat(0f, 1f);
         animator.setDuration(Math.max(1L, durationMs));
         // ValueAnimator otherwise applies AccelerateDecelerateInterpolator before the COUI path.
         animator.setInterpolator(new LinearInterpolator());
         animator.addUpdateListener(valueAnimator -> {
             float linear = (Float) valueAnimator.getAnimatedValue();
-            float motion = motionInterpolator.getInterpolation(linear);
-            int clockWeight = weightProvider != null
-                    ? weightProvider.clockWeight()
+            float motion = CouiClockSizeTransitionMath.redirectedMotionProgress(
+                    linear,
+                    motionSegmentStartDriver, motionSegmentEndDriver,
+                    motionSegmentStartProgress, motionSegmentEndProgress,
+                    motionInterpolator::getInterpolation);
+            lastMotionDriver = linear;
+            lastMotionProgress = motion;
+            WeightProvider currentWeightProvider = activeWeightProvider;
+            int clockWeight = currentWeightProvider != null
+                    ? currentWeightProvider.clockWeight()
                     : CouiClockSizeTransitionMath.interpolatedWeight(
                     from.clockWeight, to.clockWeight, motion);
-            int infoWeight = weightProvider != null
-                    ? weightProvider.infoWeight()
+            int infoWeight = currentWeightProvider != null
+                    ? currentWeightProvider.infoWeight()
                     : CouiClockSizeTransitionMath.interpolatedWeight(
                     from.infoWeight, to.infoWeight, motion);
             applyWeights(clockWeight, infoWeight);
@@ -252,14 +285,18 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
             @Override
             public void onAnimationEnd(Animator animation) {
                 if (!cancelled) {
-                    int finalClockWeight = weightProvider != null
-                            ? weightProvider.clockWeight() : to.clockWeight;
-                    int finalInfoWeight = weightProvider != null
-                            ? weightProvider.infoWeight() : to.infoWeight;
+                    SceneSnapshot finalSnapshot = handoffSnapshot != null
+                            ? handoffSnapshot : (finishingAtSource ? from : to);
+                    WeightProvider finalWeightProvider = activeWeightProvider;
+                    int finalClockWeight = finalWeightProvider != null
+                            ? finalWeightProvider.clockWeight() : finalSnapshot.clockWeight;
+                    int finalInfoWeight = finalWeightProvider != null
+                            ? finalWeightProvider.infoWeight() : finalSnapshot.infoWeight;
+                    float finalProgress = finishingAtSource ? 0f : 1f;
                     applyWeights(finalClockWeight, finalInfoWeight, true);
-                    applyFrame(from, to, 1f, 1f, motionInterpolator);
-                    applyTargetWeightAndWaitForPreDraw(to, finalClockWeight, finalInfoWeight,
-                            "finished");
+                    applyFrame(from, to, finalProgress, finalProgress, motionInterpolator);
+                    applyTargetWeightAndWaitForPreDraw(finalSnapshot, finalClockWeight,
+                            finalInfoWeight, finishingAtSource ? "reversed" : "finished");
                     return;
                 }
                 finishAndRestore("cancelled");
@@ -276,6 +313,125 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
 
     boolean isRunning() {
         return animator != null && animator.isRunning();
+    }
+
+    boolean canRedirectActiveTransition(boolean requestedCompact) {
+        return animator != null && animator.isRunning()
+                && sourceSnapshot != null && sourceSnapshot.valid()
+                && targetSnapshot != null && targetSnapshot.valid()
+                && sourceSnapshot.compact != targetSnapshot.compact
+                && (requestedCompact == sourceSnapshot.compact
+                || requestedCompact == targetSnapshot.compact);
+    }
+
+    /**
+     * Redirects an in-flight size morph to the opposite endpoint without exposing a live
+     * endpoint in between. OOS can reverse its clock-size decision before the 550 ms COUI
+     * transaction ends; cancelling the animator first made the fully-mutated live view flash for
+     * one traversal and the replacement overlay then started from a different geometry.
+     */
+    boolean redirectActiveTransitionDirection(boolean requestedCompact, String sourceTag) {
+        if (!canRedirectActiveTransition(requestedCompact)) {
+            return false;
+        }
+        boolean reverse = shouldReverseActivePath(sourceSnapshot.compact, targetSnapshot.compact,
+                finishingAtSource, requestedCompact);
+        finishingAtSource = requestedCompact == sourceSnapshot.compact;
+        handoffSnapshot = finishingAtSource ? sourceSnapshot : targetSnapshot;
+        transitionSource = sourceTag != null ? sourceTag : transitionSource;
+        if (reverse) {
+            // Reversing the original ease-out curve directly starts in its almost-flat tail and
+            // is the slow path visible in the 22:40-22:41 device run. Keep the same animator and
+            // current frame, but make the reverse leg a fresh ease-out segment.
+            motionSegmentStartDriver = lastMotionDriver;
+            motionSegmentEndDriver = finishingAtSource ? 0f : 1f;
+            motionSegmentStartProgress = lastMotionProgress;
+            motionSegmentEndProgress = finishingAtSource ? 0f : 1f;
+            animator.reverse();
+        }
+        PixelAodLog.log("redirected COUI per-glyph size transaction source=" + transitionSource
+                + " requestedCompact=" + requestedCompact
+                + " reverse=" + reverse
+                + " finishingAtSource=" + finishingAtSource
+                + " trace=" + PixelAodClockView.currentAodTraceId());
+        return true;
+    }
+
+    boolean updateRedirectTarget(SceneSnapshot target, WeightProvider weightProvider) {
+        if (target == null || !target.valid() || !canRedirectActiveTransition(target.compact)
+                || finishingAtSource != (target.compact == sourceSnapshot.compact)) {
+            return false;
+        }
+        rememberAndHide(target.clockContent);
+        rememberAndHide(target.dateContent);
+        rememberAndHide(target.weatherContent);
+        rememberAndHide(target.contextualContent);
+        handoffSnapshot = target;
+        activeWeightProvider = weightProvider;
+        return true;
+    }
+
+    static boolean shouldReverseActivePath(boolean sourceCompact, boolean targetCompact,
+            boolean finishingAtSource, boolean requestedCompact) {
+        if (sourceCompact == targetCompact
+                || (requestedCompact != sourceCompact && requestedCompact != targetCompact)) {
+            return false;
+        }
+        boolean requestedAtSource = requestedCompact == sourceCompact;
+        return requestedAtSource != finishingAtSource;
+    }
+
+    /**
+     * Rejects a target snapshot captured before Android has committed the requested TextView
+     * layout.  A small-to-large mutation changes the clock to MATCH_PARENT immediately, but when
+     * ClockPlugin#render runs inside an active traversal the view can still retain its old compact
+     * width until the following layout pass. Capturing that mixed state produces a correctly
+     * large glyph set whose centres are still anchored to the left-side compact box.
+     */
+    static boolean targetClockGeometryReady(boolean expectedCompact, int rootWidth,
+            int clockWidth, int lineCount, int layoutWidth, boolean layoutRequested) {
+        if (layoutRequested || rootWidth <= 0 || clockWidth <= 0 || lineCount <= 0) {
+            return false;
+        }
+        if (expectedCompact) {
+            return layoutWidth == ViewGroup.LayoutParams.WRAP_CONTENT
+                    && lineCount == 1
+                    && clockWidth < rootWidth;
+        }
+        int minimumLargeWidth = Math.max(1, Math.round(rootWidth * 0.90f));
+        return layoutWidth == ViewGroup.LayoutParams.MATCH_PARENT
+                && lineCount >= 2
+                && clockWidth >= minimumLargeWidth;
+    }
+
+    static boolean targetClockGeometryReady(SceneSnapshot snapshot, int rootWidth,
+            boolean expectedCompact) {
+        if (snapshot == null || !snapshot.valid() || snapshot.compact != expectedCompact
+                || snapshot.clockContent == null) {
+            return false;
+        }
+        TextView clock = snapshot.clockContent;
+        Layout layout = clock.getLayout();
+        ViewGroup.LayoutParams params = clock.getLayoutParams();
+        return targetClockGeometryReady(expectedCompact, rootWidth, clock.getWidth(),
+                layout != null ? layout.getLineCount() : 0,
+                params != null ? params.width : 0, clock.isLayoutRequested());
+    }
+
+    static String describeTargetClockGeometry(SceneSnapshot snapshot, int rootWidth) {
+        if (snapshot == null || snapshot.clockContent == null) {
+            return "rootWidth=" + rootWidth + ",clock=missing";
+        }
+        TextView clock = snapshot.clockContent;
+        Layout layout = clock.getLayout();
+        ViewGroup.LayoutParams params = clock.getLayoutParams();
+        return "rootWidth=" + rootWidth
+                + ",clockWidth=" + clock.getWidth()
+                + ",clockHeight=" + clock.getHeight()
+                + ",lineCount=" + (layout != null ? layout.getLineCount() : 0)
+                + ",layoutWidth=" + (params != null ? params.width : 0)
+                + ",layoutRequested=" + clock.isLayoutRequested()
+                + ",snapshotCompact=" + snapshot.compact;
     }
 
     boolean hasActiveTransition() {
@@ -452,10 +608,18 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
     }
 
     private void configureOverlayGeometry(SceneSnapshot from, SceneSnapshot to) {
-        for (int index = 0; index < DIGIT_COUNT; index++) {
-            configureBox(digitViews[index], from.digits[index], to.digits[index]);
+        // Digit/colon boxes become drawable at the end of prepare(). Never resize those visible
+        // slots when start() later learns the target geometry: a LayoutParams mutation can be
+        // drawn before frame-zero placement restores the source centres. The MP4 failure sample
+        // shows exactly that split state (source-sized glyph ink shifted as a group for 4 frames).
+        // COUI keeps per-digit child slots stable and animates transforms within those owners.
+        if (glyphSlotGeometryOwnership.mayConfigureInitialSlots()) {
+            for (int index = 0; index < DIGIT_COUNT; index++) {
+                configureBox(digitViews[index], from.digits[index], to.digits[index]);
+            }
+            configureBox(colonView, from.colon, to.colon);
+            glyphSlotGeometryOwnership.commitPrepared();
         }
-        configureBox(colonView, from.colon, to.colon);
         configureInfoBox(dateView, from.date, to.date);
         configureInfoBox(weatherView, from.weather, to.weather);
         configureInfoBox(contextualView, from.contextual, to.contextual);
@@ -565,6 +729,26 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         }
     }
 
+    /**
+     * Freezes the physical digit/colon clone boxes once the prepared source becomes drawable.
+     * Only transforms/weight are allowed to move those visual owners until the transaction ends.
+     */
+    static final class GlyphSlotGeometryOwnership {
+        private boolean prepared;
+
+        boolean mayConfigureInitialSlots() {
+            return !prepared;
+        }
+
+        void commitPrepared() {
+            prepared = true;
+        }
+
+        void reset() {
+            prepared = false;
+        }
+    }
+
     private void applyFrame(SceneSnapshot from, SceneSnapshot to, float motionProgress,
             float linearProgress, Interpolator motionInterpolator) {
         for (int index = 0; index < DIGIT_COUNT; index++) {
@@ -586,7 +770,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
             Interpolator motionInterpolator) {
         CouiClockSizeTransitionMath.Frame frame = CouiClockSizeTransitionMath.frame(
                 from.element, to.element, motionProgress);
-        placeGlyphAtVisualCenter(view, frame.centerX, frame.centerY);
+        placeGlyphAtFixedCellCenter(view, frame.centerX, frame.centerY);
         view.setScaleX(frame.scaleFromSource);
         view.setScaleY(frame.scaleFromSource);
         float alpha = colon
@@ -867,10 +1051,18 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
     }
 
     /**
-     * Aligns the actual painted glyph with the captured target. The clone box intentionally has
-     * extra room for scaling, so its geometric centre is not stable for asymmetric glyphs.
+     * Positions a digit by its stable advance-cell centre, not by its current painted-ink centre.
+     *
+     * <p>The real COUI big clock uses separate DigitalTimeView children inside stable per-digit
+     * containers. This module's live TextView has the same horizontal contract through one
+     * FixedAdvanceSpan per character: a variable-font digit is centred inside a fixed reference
+     * advance. Re-measuring getTextBounds() after every weight update changed the geometry owner
+     * from that slot to the ink and is what allowed narrow digits to pull a whole intermediate
+     * frame left. The overlay box is the synthetic digit slot, so its horizontal centre stays the
+     * pivot for the entire transaction. Vertical placement still follows the painted baseline so
+     * the one-line/two-line transition lands on the actual glyph rows.</p>
      */
-    private static void placeGlyphAtVisualCenter(TextView view, float centerX, float centerY) {
+    private static void placeGlyphAtFixedCellCenter(TextView view, float centerX, float centerY) {
         if (view == null) {
             return;
         }
@@ -891,15 +1083,13 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
             paintedBounds.top = Math.round(metrics.ascent);
             paintedBounds.bottom = Math.round(metrics.descent);
         }
-        float advance = Math.max(0f, paint.measureText(value));
-        float visualX = CouiClockSizeTransitionMath.visualContentOffset(width, advance,
-                paintedBounds.left, paintedBounds.right);
+        float visualX = width / 2f;
         Paint.FontMetrics metrics = paint.getFontMetrics();
         float baseline = (height / 2f) - ((metrics.ascent + metrics.descent) / 2f);
         float visualY = CouiClockSizeTransitionMath.paintedBaselineCenter(baseline,
                 paintedBounds.top, paintedBounds.bottom);
-        // Scaling around the painted centre keeps the first digit and colon stationary at both
-        // endpoints even when a weight update changes their ink bounds.
+        // Scaling around the stable slot centre mirrors COUI: ink may breathe as weight changes,
+        // but its parent slot owns X and therefore cannot drift sideways.
         view.setPivotX(visualX);
         view.setPivotY(visualY);
         view.setX(CouiClockSizeTransitionMath.positionForVisualCenter(centerX, visualX));
@@ -954,6 +1144,17 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         }
         Float remembered = hiddenContentAlphas.get(view);
         return remembered != null ? remembered : view.getAlpha();
+    }
+
+    private float desiredVisualAlpha(View alphaOwner, View content) {
+        float ownerAlpha = desiredAlpha(alphaOwner);
+        float contentAlpha = content != null ? content.getAlpha() : 1f;
+        return composedVisualAlpha(ownerAlpha, contentAlpha, alphaOwner == content);
+    }
+
+    static float composedVisualAlpha(float ownerAlpha, float contentAlpha, boolean sameView) {
+        float effective = sameView ? ownerAlpha : ownerAlpha * contentAlpha;
+        return Math.max(0f, Math.min(1f, effective));
     }
 
     /**
@@ -1035,7 +1236,18 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         weatherIconView = null;
         contextualIconView = null;
         sourceSnapshot = null;
+        targetSnapshot = null;
+        handoffSnapshot = null;
+        activeWeightProvider = null;
+        finishingAtSource = false;
+        motionSegmentStartDriver = 0f;
+        motionSegmentEndDriver = 1f;
+        motionSegmentStartProgress = 0f;
+        motionSegmentEndProgress = 1f;
+        lastMotionDriver = 0f;
+        lastMotionProgress = 0f;
         sourceFrameOwnership.reset();
+        glyphSlotGeometryOwnership.reset();
         lastAppliedClockWeight = Integer.MIN_VALUE;
         lastAppliedInfoWeight = Integer.MIN_VALUE;
         setVisibility(View.INVISIBLE);
@@ -1045,16 +1257,10 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         transitionSource = "";
     }
 
-    private GlyphCollection captureClockGlyphs(TextView clock, int[] rootLocation) {
+    private GlyphCollection captureClockGlyphs(TextView clock, RootSpaceMapper mapper) {
         Layout layout = clock.getLayout();
         CharSequence text = clock.getText();
-        if (layout == null || text == null || text.length() == 0) {
-            return GlyphCollection.EMPTY;
-        }
-        int[] clockLocation = new int[2];
-        try {
-            clock.getLocationOnScreen(clockLocation);
-        } catch (Throwable ignored) {
+        if (layout == null || text == null || text.length() == 0 || !mapper.canMap(clock)) {
             return GlyphCollection.EMPTY;
         }
         GlyphSnapshot[] digits = new GlyphSnapshot[DIGIT_COUNT];
@@ -1065,8 +1271,10 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
             if (!Character.isDigit(value) && value != ':') {
                 continue;
             }
-            GlyphSnapshot glyph = captureGlyph(clock, layout, text, offset, value,
-                    rootLocation, clockLocation);
+            GlyphSnapshot glyph = captureGlyph(clock, layout, text, offset, value, mapper);
+            if (glyph == null) {
+                return GlyphCollection.EMPTY;
+            }
             if (value == ':') {
                 colon = glyph;
             } else if (digitIndex < DIGIT_COUNT) {
@@ -1097,7 +1305,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
     }
 
     private GlyphSnapshot captureGlyph(TextView clock, Layout layout, CharSequence text,
-            int offset, char value, int[] rootLocation, int[] clockLocation) {
+            int offset, char value, RootSpaceMapper mapper) {
         int line = layout.getLineForOffset(offset);
         float leading = layout.getPrimaryHorizontal(offset);
         float trailing = layout.getPrimaryHorizontal(Math.min(text.length(), offset + 1));
@@ -1115,17 +1323,18 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
             paintedBounds.top = Math.round(metrics.ascent);
             paintedBounds.bottom = Math.round(metrics.descent);
         }
-        float centerX = (clockLocation[0] - rootLocation[0])
-                + clock.getTotalPaddingLeft()
-                + CouiClockSizeTransitionMath.paintedGlyphCenter(cellStart, referenceAdvance,
-                animatedAdvance, paintedBounds.left, paintedBounds.right);
+        float localCenterX = clock.getTotalPaddingLeft()
+                + CouiClockSizeTransitionMath.fixedGlyphCellCenter(cellStart, referenceAdvance);
         float baseline = layout.getLineBaseline(line);
-        float centerY = (clockLocation[1] - rootLocation[1])
-                + clock.getTotalPaddingTop()
+        float localCenterY = clock.getTotalPaddingTop()
                 + CouiClockSizeTransitionMath.paintedBaselineCenter(
                 baseline, paintedBounds.top, paintedBounds.bottom);
+        float[] rootCenter = mapper.mapPoint(clock, localCenterX, localCenterY);
+        if (rootCenter == null) {
+            return null;
+        }
         CouiClockSizeTransitionMath.Element element =
-                new CouiClockSizeTransitionMath.Element(centerX, centerY,
+                new CouiClockSizeTransitionMath.Element(rootCenter[0], rootCenter[1],
                         clock.getTextSize(), desiredAlpha(clock));
         float paintedWidth = Math.max(1f, paintedBounds.width());
         float paintedHeight = Math.max(1f, paintedBounds.height());
@@ -1133,8 +1342,8 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
                 clock.getCurrentTextColor(), clock.getTypeface());
     }
 
-    private InfoSnapshot captureInformation(TextView view, int[] rootLocation) {
-        return captureInformation(view, view, rootLocation);
+    private InfoSnapshot captureInformation(TextView view, RootSpaceMapper mapper) {
+        return captureInformation(view, view, mapper);
     }
 
     /**
@@ -1142,27 +1351,21 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
      * this corridor, so including it in the TextView clone makes a wider target row change the
      * text origin at the hand-off.  Icons are captured on their own track below.
      */
-    private InfoSnapshot captureInformation(TextView view, View alphaOwner, int[] rootLocation) {
+    private InfoSnapshot captureInformation(TextView view, View alphaOwner, RootSpaceMapper mapper) {
         if (view == null || view.getVisibility() != View.VISIBLE || view.getText() == null
-                || view.getText().length() == 0) {
-            return InfoSnapshot.INVALID;
-        }
-        int[] location = new int[2];
-        try {
-            view.getLocationOnScreen(location);
-        } catch (Throwable ignored) {
+                || view.getText().length() == 0 || !mapper.canMap(view)) {
             return InfoSnapshot.INVALID;
         }
         if (view.getWidth() <= 0 || view.getHeight() <= 0) {
             return InfoSnapshot.INVALID;
         }
-        TextMetrics text = captureTextMetrics(view, location, rootLocation);
+        TextMetrics text = captureTextMetrics(view, mapper);
         if (!text.valid()) {
             return InfoSnapshot.INVALID;
         }
         CouiClockSizeTransitionMath.Element element =
                 new CouiClockSizeTransitionMath.Element(text.centerX(), text.centerY(),
-                        view.getTextSize(), desiredAlpha(alphaOwner));
+                        view.getTextSize(), desiredVisualAlpha(alphaOwner, view));
         return new InfoSnapshot(true, view.getText(), element, text.width(), text.height(),
                 view.getCurrentTextColor(), view.getTypeface(), Gravity.CENTER,
                 View.TEXT_ALIGNMENT_CENTER, view.getLetterSpacing(), 0, new Drawable[4],
@@ -1170,7 +1373,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
                 view.getShadowColor());
     }
 
-    private TextMetrics captureTextMetrics(TextView view, int[] location, int[] rootLocation) {
+    private TextMetrics captureTextMetrics(TextView view, RootSpaceMapper mapper) {
         Paint paint = view.getPaint();
         String value = view.getText().toString();
         Rect textBounds = new Rect();
@@ -1191,30 +1394,25 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         float baseline = layout != null && layout.getLineCount() > 0
                 ? layout.getLineBaseline(0) : (view.getHeight() / 2f)
                 - ((metrics.ascent + metrics.descent) / 2f);
-        float left = (location[0] - rootLocation[0]) + view.getTotalPaddingLeft() + lineLeft;
-        float right = (location[0] - rootLocation[0]) + view.getTotalPaddingLeft() + lineRight;
-        float top = (location[1] - rootLocation[1]) + view.getTotalPaddingTop()
-                + baseline + textBounds.top;
-        float bottom = (location[1] - rootLocation[1]) + view.getTotalPaddingTop()
-                + baseline + textBounds.bottom;
-        return new TextMetrics(left, top, right, bottom);
+        float localLeft = view.getTotalPaddingLeft() + lineLeft;
+        float localRight = view.getTotalPaddingLeft() + lineRight;
+        float localTop = view.getTotalPaddingTop() + baseline + textBounds.top;
+        float localBottom = view.getTotalPaddingTop() + baseline + textBounds.bottom;
+        RectF rootRect = mapper.mapRect(view, localLeft, localTop, localRight, localBottom);
+        return rootRect != null
+                ? new TextMetrics(rootRect.left, rootRect.top, rootRect.right, rootRect.bottom)
+                : TextMetrics.INVALID;
     }
 
-    /** Captures one leading or trailing compound weather icon at its actual on-screen centre. */
-    private IconSnapshot captureCompoundIcon(TextView view, int[] rootLocation) {
+    /** Captures one leading or trailing compound weather icon in the overlay root's local space. */
+    private IconSnapshot captureCompoundIcon(TextView view, RootSpaceMapper mapper) {
         if (view == null || view.getVisibility() != View.VISIBLE || view.getWidth() <= 0
-                || view.getHeight() <= 0) {
+                || view.getHeight() <= 0 || !mapper.canMap(view)) {
             return IconSnapshot.INVALID;
         }
         Drawable[] drawables = view.getCompoundDrawablesRelative();
         Drawable drawable = drawables[0] != null ? drawables[0] : drawables[2];
         if (drawable == null) {
-            return IconSnapshot.INVALID;
-        }
-        int[] location = new int[2];
-        try {
-            view.getLocationOnScreen(location);
-        } catch (Throwable ignored) {
             return IconSnapshot.INVALID;
         }
         Rect bounds = drawableBounds(drawable, null);
@@ -1232,10 +1430,13 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         float left = drawables[0] != null ? contentLeft + bounds.left
                 : textLeft + advance + (value.isEmpty() ? 0f : padding) + bounds.left;
         float top = (view.getHeight() - bounds.height()) / 2f + bounds.top;
+        float[] rootCenter = mapper.mapPoint(view,
+                left + bounds.width() / 2f, top + bounds.height() / 2f);
+        if (rootCenter == null) {
+            return IconSnapshot.INVALID;
+        }
         CouiClockSizeTransitionMath.Element element =
-                new CouiClockSizeTransitionMath.Element(
-                        (location[0] - rootLocation[0]) + left + bounds.width() / 2f,
-                        (location[1] - rootLocation[1]) + top + bounds.height() / 2f,
+                new CouiClockSizeTransitionMath.Element(rootCenter[0], rootCenter[1],
                         1f, desiredAlpha(view));
         Drawable copy = copyDrawable(drawable);
         if (copy != null) {
@@ -1245,16 +1446,10 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
     }
 
     /** Captures the separate ImageView used by contextual Weather Forecast and Weather Alert rows. */
-    private IconSnapshot captureImageIcon(View row, ImageView icon, int[] rootLocation) {
+    private IconSnapshot captureImageIcon(View row, ImageView icon, RootSpaceMapper mapper) {
         if (row == null || icon == null || row.getVisibility() != View.VISIBLE
                 || icon.getVisibility() != View.VISIBLE || icon.getDrawable() == null
-                || icon.getWidth() <= 0 || icon.getHeight() <= 0) {
-            return IconSnapshot.INVALID;
-        }
-        int[] location = new int[2];
-        try {
-            icon.getLocationOnScreen(location);
-        } catch (Throwable ignored) {
+                || icon.getWidth() <= 0 || icon.getHeight() <= 0 || !mapper.canMap(icon)) {
             return IconSnapshot.INVALID;
         }
         int width = Math.max(1, icon.getWidth());
@@ -1263,10 +1458,136 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         if (drawable != null) {
             drawable.setBounds(0, 0, width, height);
         }
+        float[] rootCenter = mapper.mapPoint(icon, width / 2f, height / 2f);
+        if (rootCenter == null) {
+            return IconSnapshot.INVALID;
+        }
         return new IconSnapshot(true, new CouiClockSizeTransitionMath.Element(
-                (location[0] - rootLocation[0]) + width / 2f,
-                (location[1] - rootLocation[1]) + height / 2f, 1f, desiredAlpha(row)),
+                rootCenter[0], rootCenter[1], 1f, desiredVisualAlpha(row, icon)),
                 width, height, drawable);
+    }
+
+    /**
+     * Maps live clock content into the coordinate system that actually owns the transition
+     * overlay. Screen coordinates are deliberately not involved.
+     *
+     * <p>The ClockPlugin host can itself be inside an OPlus keyguard container whose transform is
+     * changing while notification/clock state settles. A capture based on
+     * {@code child.getLocationOnScreen() - root.getLocationOnScreen()} bakes that ancestor
+     * transform into what is later treated as a root-local X/Y. When the same ancestor transform
+     * is applied again while drawing this overlay, the whole digit group is displaced. Walking
+     * only from the descendant up to {@code root} keeps one local geometry owner, matching the
+     * native COUI child-slot model.</p>
+     */
+    private static final class RootSpaceMapper {
+        private final ViewGroup root;
+        private final IdentityHashMap<View, Matrix> descendantMatrices = new IdentityHashMap<>();
+
+        RootSpaceMapper(ViewGroup root) {
+            this.root = root;
+        }
+
+        boolean canMap(View descendant) {
+            return matrixFor(descendant) != null;
+        }
+
+        float[] mapPoint(View descendant, float localX, float localY) {
+            Matrix matrix = matrixFor(descendant);
+            if (matrix == null) {
+                return null;
+            }
+            float[] point = {localX, localY};
+            matrix.mapPoints(point);
+            return point;
+        }
+
+        RectF mapRect(View descendant, float left, float top, float right, float bottom) {
+            Matrix matrix = matrixFor(descendant);
+            if (matrix == null) {
+                return null;
+            }
+            RectF rect = new RectF(left, top, right, bottom);
+            matrix.mapRect(rect);
+            return rect;
+        }
+
+        private Matrix matrixFor(View descendant) {
+            if (descendant == null || root == null) {
+                return null;
+            }
+            Matrix cached = descendantMatrices.get(descendant);
+            if (cached != null) {
+                return cached;
+            }
+            Matrix matrix = new Matrix();
+            if (!transformDescendantToAncestor(descendant, root, matrix)) {
+                return null;
+            }
+            descendantMatrices.put(descendant, matrix);
+            return matrix;
+        }
+
+        /** Same local-parent walk Android transitions use, but intentionally stops at root. */
+        private static boolean transformDescendantToAncestor(View descendant, View ancestor,
+                Matrix matrix) {
+            if (descendant == ancestor) {
+                return true;
+            }
+            ViewParent parent = descendant.getParent();
+            if (!(parent instanceof View)) {
+                return false;
+            }
+            View parentView = (View) parent;
+            if (!transformDescendantToAncestor(parentView, ancestor, matrix)) {
+                return false;
+            }
+            matrix.preTranslate(-parentView.getScrollX(), -parentView.getScrollY());
+            matrix.preTranslate(descendant.getLeft(), descendant.getTop());
+            Matrix descendantMatrix = descendant.getMatrix();
+            if (descendantMatrix != null && !descendantMatrix.isIdentity()) {
+                matrix.preConcat(descendantMatrix);
+            }
+            return true;
+        }
+    }
+
+    /**
+     * Leaves a persistent breadcrumb only when the old screen-delta capture and the new local
+     * capture disagree by more than rounding noise. This lets a later device log prove whether
+     * an OPlus ancestor transform was active at the exact bad frame without logging every frame.
+     */
+    private static void logCoordinateOwnershipIfDistorted(ViewGroup root, View clock,
+            RootSpaceMapper mapper) {
+        if (root == null || clock == null || mapper == null) {
+            return;
+        }
+        float[] localOrigin = mapper.mapPoint(clock, 0f, 0f);
+        if (localOrigin == null) {
+            return;
+        }
+        int[] rootScreen = new int[2];
+        int[] clockScreen = new int[2];
+        try {
+            root.getLocationOnScreen(rootScreen);
+            clock.getLocationOnScreen(clockScreen);
+        } catch (Throwable ignored) {
+            return;
+        }
+        float legacyX = clockScreen[0] - rootScreen[0];
+        float legacyY = clockScreen[1] - rootScreen[1];
+        float deltaX = legacyX - localOrigin[0];
+        float deltaY = legacyY - localOrigin[1];
+        if (Math.abs(deltaX) < 1.5f && Math.abs(deltaY) < 1.5f) {
+            return;
+        }
+        PixelAodLog.log("corrected COUI transition coordinate ownership"
+                + " legacyScreenDelta=" + Math.round(legacyX) + "," + Math.round(legacyY)
+                + " rootLocal=" + Math.round(localOrigin[0]) + "," + Math.round(localOrigin[1])
+                + " correction=" + Math.round(deltaX) + "," + Math.round(deltaY)
+                + " rootScale=" + root.getScaleX() + "x" + root.getScaleY()
+                + " rootTranslation=" + Math.round(root.getTranslationX()) + ","
+                + Math.round(root.getTranslationY())
+                + " trace=" + PixelAodClockView.currentAodTraceId());
     }
 
     static final class SceneSnapshot {
@@ -1382,6 +1703,8 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
     }
 
     private static final class TextMetrics {
+        static final TextMetrics INVALID = new TextMetrics(0f, 0f, 0f, 0f);
+
         final float left;
         final float top;
         final float right;

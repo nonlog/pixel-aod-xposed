@@ -79,6 +79,21 @@ public final class CouiClockSizeTransitionMathTest {
     }
 
     @Test
+    public void redirectedMotionStartsExactlyAtCurrentFrameAndGetsFreshEaseOut() {
+        CouiClockSizeTransitionMath.Easing easeOut =
+                progress -> 1f - ((1f - progress) * (1f - progress));
+
+        assertEquals(0.92f, CouiClockSizeTransitionMath.redirectedMotionProgress(
+                0.80f, 0.80f, 0f, 0.92f, 0f, easeOut), 0.001f);
+        assertEquals(0f, CouiClockSizeTransitionMath.redirectedMotionProgress(
+                0f, 0.80f, 0f, 0.92f, 0f, easeOut), 0.001f);
+        // Ten percent into the reversed driver has already covered 19% of the visual segment.
+        // Evaluating the original ease-out backwards would instead remain in its slow tail.
+        assertEquals(0.7452f, CouiClockSizeTransitionMath.redirectedMotionProgress(
+                0.72f, 0.80f, 0f, 0.92f, 0f, easeOut), 0.001f);
+    }
+
+    @Test
     public void paintedCenterUsesActualInkBoundsInsteadOfCellTracking() {
         assertEquals(120f, CouiClockSizeTransitionMath.paintedBoundsCenter(100f, 140f),
                 0.001f);
@@ -108,6 +123,22 @@ public final class CouiClockSizeTransitionMathTest {
                 100f, 40f, 34f, 0f, 20f), 0.001f);
         assertEquals(61f, CouiClockSizeTransitionMath.paintedBaselineCenter(
                 118f, -111f, -3f), 0.001f);
+    }
+
+    @Test
+    public void clockDigitHorizontalOwnerIsFixedAdvanceCellNotChangingInkBounds() {
+        float cellCenter = CouiClockSizeTransitionMath.fixedGlyphCellCenter(100f, 40f);
+        assertEquals(120f, cellCenter, 0.001f);
+
+        // The same fixed cell can contain very different variable-font ink. Neither shape is
+        // allowed to move the slot that COUI-style per-digit motion interpolates.
+        float narrowInkCenter = CouiClockSizeTransitionMath.paintedGlyphCenter(
+                100f, 40f, 28f, 1f, 17f);
+        float wideInkCenter = CouiClockSizeTransitionMath.paintedGlyphCenter(
+                100f, 40f, 38f, -1f, 31f);
+        assertFalse(Math.abs(narrowInkCenter - wideInkCenter) < 0.001f);
+        assertEquals(120f, CouiClockSizeTransitionMath.fixedGlyphCellCenter(
+                100f, 40f), 0.001f);
     }
 
     @Test

@@ -8,7 +8,9 @@
     <string name="title_weather_alerts">Weather Alerts</string>
     <string name="desc_weather_alerts">Show active alerts from Breezy Weather</string>
     <string name="title_weather_forecast">Weather Forecast</string>
-    <string name="desc_weather_forecast">Show the Breezy Weather forecast for tomorrow from 18:00 to 23:59 local time</string>
+    <string name="desc_weather_forecast">Show the Breezy Weather forecast for tomorrow during the selected local time window</string>
+    <string name="title_weather_forecast_start_time">Forecast Start Time</string>
+    <string name="title_weather_forecast_end_time">Forecast End Time</string>
     <string name="generic_weather_alert">Weather alert</string>
     <string name="weather_tomorrow">Tmr</string>
     <string name="weather_alert_permission_denied">Weather Alerts require Breezy Weather data access</string>

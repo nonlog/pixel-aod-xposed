@@ -797,6 +797,12 @@ public final class PixelAodClockView extends FrameLayout {
                 PixelAodSettings.KEY_WEATHER_ALERTS, false);
         boolean forecastEnabled = PixelAodSettings.getBoolean(resolved,
                 PixelAodSettings.KEY_WEATHER_FORECAST, false);
+        String forecastStartTime = PixelAodSettings.getString(resolved,
+                PixelAodSettings.KEY_WEATHER_FORECAST_START_TIME,
+                ForecastDisplayWindow.DEFAULT_START_TIME);
+        String forecastEndTime = PixelAodSettings.getString(resolved,
+                PixelAodSettings.KEY_WEATHER_FORECAST_END_TIME,
+                ForecastDisplayWindow.DEFAULT_END_TIME);
         boolean calendarEnabled = PixelAodSettings.getBoolean(resolved,
                 PixelAodSettings.KEY_CALENDAR_EVENTS, false);
         String genericAlert = moduleString(resolved, R.string.generic_weather_alert,
@@ -816,7 +822,7 @@ public final class PixelAodClockView extends FrameLayout {
                 contextualStateStore, System.currentTimeMillis(), ZoneId.systemDefault(),
                 surfaceEntryId, nextSurfaceEntry, surfaceVisible, allowWeatherAlerts,
                 ContextualAtAGlancePrivacy.isSensitiveContentHidden(resolved), genericAlert,
-                tomorrow);
+                tomorrow, forecastStartTime, forecastEndTime);
         if (surfaceVisible) {
             scheduleContextualDeadline(selection.nextDeadlineMillis, source);
         }
@@ -984,9 +990,10 @@ public final class PixelAodClockView extends FrameLayout {
                     isLockscreenPolicyEnabled(),
                     currentAodTraceId());
             mediaCandidateCount = replaceMediaNotificationCandidatesLocked(rawNotifications);
+            lastMediaCandidatesSignature = mediaCandidatesSignatureLocked();
             signature = AodNotificationPipeline.notificationSignature(rawNotifications) + "|"
                     + AodNotificationPipeline.notificationSignature(activeNotifications) + "|media="
-                    + mediaCandidatesSignatureLocked();
+                    + lastMediaCandidatesSignature;
             if (TextUtils.equals(lastNotificationSnapshotSignature, signature)) {
                 return;
             }
@@ -2276,6 +2283,7 @@ public final class PixelAodClockView extends FrameLayout {
         long now = SystemClock.uptimeMillis();
         boolean active;
         long screenOffAt;
+        boolean screenOffFromInteractiveLockscreen;
         long aodActivatedAt;
         long overlayVisibleAt;
         String traceId;
@@ -2311,6 +2319,7 @@ public final class PixelAodClockView extends FrameLayout {
             }
             active = aodActive;
             screenOffAt = lastScreenOffAt;
+            screenOffFromInteractiveLockscreen = lastScreenOffFromInteractiveLockscreen;
             aodActivatedAt = lastAodActivatedAt;
             overlayVisibleAt = lastAodOverlayVisibleAt;
             revealBlockedUntilAt = nonLockscreenAodRevealBlockedUntilAt;
@@ -2374,7 +2383,8 @@ public final class PixelAodClockView extends FrameLayout {
                 isRecentUptime(now, overlayVisibleAt, AOD_FORCE_DOZE_RECENT_OVERLAY_MILLIS);
         boolean rawShouldDrawPixelAod = context != null
                 && !interactive
-                && (displayAod || entryDelay || triggerBriefActive || (active && graceWindow));
+                && NonLockscreenAodVisibilityGate.shouldDraw(screenOffFromInteractiveLockscreen,
+                displayAod, entryDelay, triggerBriefActive, active, graceWindow);
         boolean revealBlocked = rawShouldDrawPixelAod
                 && revealBlockedUntilAt > 0L
                 && now >= screenOffAt
@@ -3896,19 +3906,26 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static void refreshInstancesFromNotificationSnapshot(String source) {
         Runnable task = () -> {
-            int count = 0;
+            int refreshed = 0;
+            int cachedOnly = 0;
             for (PixelAodClockView view : INSTANCES) {
-                if (view != null) {
-                    count++;
-                    view.updateTime();
-                    view.rebuildNotificationIcons("snapshot-" + source);
-                    view.updateMediaLine("snapshot-" + source);
-                    view.updateAodVisibility("snapshot-" + source);
-                    view.requestAodFrameRefresh("snapshot-" + source);
+                if (view == null) {
+                    continue;
                 }
+                if (!view.shouldRefreshNotificationPresentation()) {
+                    cachedOnly++;
+                    continue;
+                }
+                refreshed++;
+                view.updateTime();
+                view.rebuildNotificationIcons("snapshot-" + source);
+                view.updateMediaLine("snapshot-" + source);
+                view.updateAodVisibility("snapshot-" + source);
+                view.requestAodFrameRefresh("snapshot-" + source);
             }
             PixelAodLog.log("refreshed Pixel AOD instances trace=" + currentAodTraceId()
-                    + " source=" + source + " count=" + count
+                    + " source=" + source + " refreshed=" + refreshed
+                    + " cachedOnly=" + cachedOnly
                     + " state={" + describeAodState(appContext) + "}");
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -6586,8 +6603,10 @@ public final class PixelAodClockView extends FrameLayout {
             float referenceAdvance = referencePaint.measureText(normalizedText, index, index + 1);
             float trackingPixels = ClockGlyphMetrics.infoTrackingPixels(
                     referencePaint.getTextSize(), lineEnd);
+            // Do not centre information glyphs in their fixed cells: their changing variable-font
+            // advance made date/weather ink wobble sideways during the weight handoff.
             fixedText.setSpan(new FixedAdvanceSpan(referenceAdvance, trackingPixels, lineEnd,
-                            referencePaint.getTextSize()),
+                            referencePaint.getTextSize(), false),
                     index, index + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         textView.setLetterSpacing(0f);
@@ -7320,6 +7339,22 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    private boolean shouldRefreshNotificationPresentation() {
+        if (!isAttachedToWindow()
+                || getVisibility() != View.VISIBLE
+                || !isShown()
+                || getAlpha() <= 0.01f) {
+            return false;
+        }
+        AodLifecycleState lifecycle = currentAodLifecycleState(getContext());
+        return NotificationPresentationGate.shouldRefreshAod(
+                true,
+                true,
+                true,
+                getAlpha(),
+                lifecycle != null && lifecycle.shouldDrawPixelAod());
+    }
+
     int clockPluginInfoWeight() {
         return currentInfoWeight;
     }
@@ -7823,13 +7858,20 @@ public final class PixelAodClockView extends FrameLayout {
         private final float referenceGlyphAdvance;
         private final float cellAdvance;
         private final float referenceTextSize;
+        private final boolean centerGlyphInCell;
 
         FixedAdvanceSpan(float referenceGlyphAdvance, float letterSpacingPixels,
                 boolean lineEnd, float referenceTextSize) {
+            this(referenceGlyphAdvance, letterSpacingPixels, lineEnd, referenceTextSize, true);
+        }
+
+        FixedAdvanceSpan(float referenceGlyphAdvance, float letterSpacingPixels,
+                boolean lineEnd, float referenceTextSize, boolean centerGlyphInCell) {
             this.referenceGlyphAdvance = referenceGlyphAdvance;
             cellAdvance = ClockGlyphMetrics.cellAdvance(
                     referenceGlyphAdvance, letterSpacingPixels, lineEnd);
             this.referenceTextSize = Math.max(1f, referenceTextSize);
+            this.centerGlyphInCell = centerGlyphInCell;
         }
 
         @Override
@@ -7854,8 +7896,9 @@ public final class PixelAodClockView extends FrameLayout {
             float animatedAdvance = paint.measureText(text, start, end);
             float scaledReferenceAdvance = ClockGlyphMetrics.scaledForTextSize(
                     referenceGlyphAdvance, referenceTextSize, paint.getTextSize());
-            float offset = ClockGlyphMetrics.centerOffset(scaledReferenceAdvance,
-                    animatedAdvance);
+            float offset = centerGlyphInCell
+                    ? ClockGlyphMetrics.centerOffset(scaledReferenceAdvance, animatedAdvance)
+                    : ClockGlyphMetrics.fixedOriginOffset(scaledReferenceAdvance, animatedAdvance);
             canvas.drawText(text, start, end, x + offset, y, paint);
         }
     }

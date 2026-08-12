@@ -15,8 +15,8 @@ Status: Final — approved on 2026-08-05 as the implementation and acceptance co
 
 - Content: tomorrow's weather icon and tomorrow's highest and lowest temperature.
 - Excluded: hourly forecasts, precipitation graphs, multi-day forecasts, and current weather.
-- Eligibility window: 18:00 through 23:59 in the device's local time.
-- The forecast becomes ineligible at local midnight.
+- Default eligibility window: 21:00 through 23:30 in the device's local time.
+- Users may adjust the local start and end times; the end boundary is exclusive, and a range may cross midnight.
 - The forecast is low-priority contextual information and must yield to more important At a Glance information.
 
 ### Weather Alert
@@ -73,7 +73,7 @@ Status: Final — approved on 2026-08-05 as the implementation and acceptance co
 
 - Weather Forecast has an independent user setting and is disabled by default.
 - Disabling Weather Forecast does not disable the baseline current-weather surface.
-- The setting description states that the optional tomorrow high/low card is eligible from 18:00 through 23:59 local time.
+- The setting exposes configurable local start and end times for the optional tomorrow high/low card; its default window is 21:00 through 23:30.
 - Weather Alert remains controlled by its existing independent setting and Breezy Weather data-access permission.
 - Weather Alert remains disabled by default, matching the existing settings schema.
 - Rename the user-facing setting from `Severe Weather Alerts` / `恶劣天气提醒` to `Weather Alerts` / `天气预警`, because minor, moderate, and unknown-severity alerts are also eligible for one-time display.
@@ -170,9 +170,9 @@ Status: Final — approved on 2026-08-05 as the implementation and acceptance co
 
 ### Forecast Time-boundary Updates
 
-- While the lock screen or AOD is already visible, forecast eligibility is reevaluated when local time reaches 18:00 and local midnight.
-- At 18:00, an eligible forecast enters the contextual slot using the standard approximately 300 ms no-card-to-card transition when no higher-priority card is selected.
-- At local midnight, the previous day's tomorrow forecast becomes ineligible immediately and leaves using the corresponding coordinated transition.
+- While the lock screen or AOD is already visible, forecast eligibility is reevaluated when local time reaches the configured start/end boundaries and at local midnight when a cross-midnight range is in use.
+- At the configured start time, an eligible forecast enters the contextual slot using the standard approximately 300 ms no-card-to-card transition when no higher-priority card is selected.
+- At the configured end time, the forecast becomes ineligible immediately and leaves using the corresponding coordinated transition.
 - A boundary update may change an already visible lock-screen/AOD surface, but it must not wake the display solely to show or hide the forecast.
 - If the display is hidden at the boundary, no presentation animation is run; the next lock-screen/AOD entry renders the state appropriate to the then-current local time.
 - Manual clock, date, or time-zone changes trigger immediate reevaluation against the new device-local date and time.

@@ -26,6 +26,7 @@ final class PixelClockPluginHostView extends FrameLayout {
             new PathInterpolator(0.2f, 0f, 0f, 1f);
     /** COUI applies the clock and information target positions in one 550 ms transaction. */
     private static final long SIZE_MORPH_MILLIS = PixelAodVisualStyle.COUI_WEIGHT_MORPH_MILLIS;
+    private static final int SIZE_TARGET_LAYOUT_MAX_RETRIES = 3;
     /** Compact text size / large text size — start scale for morph into LARGE. */
     private static final float COMPACT_TO_LARGE_START_SCALE =
             PixelAodVisualStyle.SMALL_CLOCK_TEXT_DP / (float) PixelAodVisualStyle.LARGE_CLOCK_TEXT_DP;
@@ -543,16 +544,26 @@ final class PixelClockPluginHostView extends FrameLayout {
     private SizeTransitionRequest prepareSizeTransition(ClockPluginSceneMachine.Scene target,
             String source) {
         boolean sceneRequestsSizeChange = isClockSizeChange(scene, target);
-        if (!sceneRequestsSizeChange || getWidth() <= 0 || getHeight() <= 0) {
+        Boolean targetCompact = compactScene(target);
+        if (!sceneRequestsSizeChange || targetCompact == null
+                || getWidth() <= 0 || getHeight() <= 0) {
             return null;
         }
         if (sizeTransitionLayer.hasActiveTransition()) {
+            String redirectSource = source + "#glyph-redirect";
+            if (sizeTransitionLayer.redirectActiveTransitionDirection(targetCompact,
+                    redirectSource)) {
+                long generation = ++sizeTransitionGeneration;
+                PixelAodLog.log("redirecting active COUI size transaction source=" + source
+                        + " targetCompact=" + targetCompact
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
+                return new SizeTransitionRequest(target, redirectSource, generation, true);
+            }
             cancelSizeTransition("superseded-size-transition");
         }
         long generation = ++sizeTransitionGeneration;
         CouiClockSizeTransitionLayer.SceneSnapshot snapshot = captureSceneSnapshot(scene);
-        Boolean targetCompact = compactScene(target);
-        if (snapshot == null || !snapshot.valid() || targetCompact == null) {
+        if (snapshot == null || !snapshot.valid()) {
             return null;
         }
         if (!CouiClockSizeTransitionMath.shouldRunActualSizeTransition(
@@ -570,10 +581,14 @@ final class PixelClockPluginHostView extends FrameLayout {
             sizeTransitionLayer.cancelAndRestore("prepared-source-ownership-lost");
             return null;
         }
-        return new SizeTransitionRequest(target, source + "#glyph-target", generation);
+        return new SizeTransitionRequest(target, source + "#glyph-target", generation, false);
     }
 
     private void startSizeTransitionAfterLayout(SizeTransitionRequest request) {
+        startSizeTransitionAfterLayout(request, 0);
+    }
+
+    private void startSizeTransitionAfterLayout(SizeTransitionRequest request, int retryCount) {
         if (request == null) {
             return;
         }
@@ -588,11 +603,58 @@ final class PixelClockPluginHostView extends FrameLayout {
             CouiClockSizeTransitionLayer.SceneSnapshot targetSnapshot =
                     captureSceneSnapshot(request.target);
             if (targetSnapshot == null || !targetSnapshot.valid()) {
+                if (retryCount < SIZE_TARGET_LAYOUT_MAX_RETRIES) {
+                    PixelAodLog.log("deferred unavailable COUI target geometry source="
+                            + request.source
+                            + " retry=" + (retryCount + 1)
+                            + " trace=" + PixelAodClockView.currentAodTraceId());
+                    postOnAnimation(() -> startSizeTransitionAfterLayout(request,
+                            retryCount + 1));
+                    return;
+                }
                 cancelSizeTransition("target-geometry-unavailable");
+                return;
+            }
+            Boolean targetCompact = compactScene(request.target);
+            if (targetCompact == null) {
+                cancelSizeTransition("target-size-unavailable");
+                return;
+            }
+            if (!CouiClockSizeTransitionLayer.targetClockGeometryReady(
+                    targetSnapshot, getWidth(), targetCompact)) {
+                if (retryCount < SIZE_TARGET_LAYOUT_MAX_RETRIES) {
+                    PixelAodLog.log("deferred COUI target geometry source=" + request.source
+                            + " retry=" + (retryCount + 1)
+                            + " targetCompact=" + targetCompact
+                            + " geometry={"
+                            + CouiClockSizeTransitionLayer.describeTargetClockGeometry(
+                            targetSnapshot, getWidth()) + "}"
+                            + " trace=" + PixelAodClockView.currentAodTraceId());
+                    // ClockPlugin#render can arrive during a traversal. requestLayout() in that
+                    // traversal is legally deferred, so the current pre-draw can still expose
+                    // the old compact width with the new large text. Cross a frame boundary
+                    // before looking again while the prepared source overlay remains visible.
+                    postOnAnimation(() -> startSizeTransitionAfterLayout(request,
+                            retryCount + 1));
+                    return;
+                }
+                PixelAodLog.log("abandoned COUI target geometry source=" + request.source
+                        + " targetCompact=" + targetCompact
+                        + " geometry={"
+                        + CouiClockSizeTransitionLayer.describeTargetClockGeometry(
+                        targetSnapshot, getWidth()) + "}"
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
+                cancelSizeTransition("target-geometry-not-settled");
                 return;
             }
             CouiClockSizeTransitionLayer.WeightProvider weightProvider =
                     weightProviderFor(request.target);
+            if (request.redirectExisting) {
+                if (!sizeTransitionLayer.updateRedirectTarget(targetSnapshot, weightProvider)) {
+                    cancelSizeTransition("active-size-redirect-unavailable");
+                }
+                return;
+            }
             sizeTransitionLayer.start(targetSnapshot, weightProvider, SIZE_MORPH_MILLIS,
                     SIZE_MORPH_INTERPOLATOR, request.source);
         };
@@ -687,12 +749,14 @@ final class PixelClockPluginHostView extends FrameLayout {
         final ClockPluginSceneMachine.Scene target;
         final String source;
         final long generation;
+        final boolean redirectExisting;
 
         SizeTransitionRequest(ClockPluginSceneMachine.Scene target, String source,
-                long generation) {
+                long generation, boolean redirectExisting) {
             this.target = target;
             this.source = source;
             this.generation = generation;
+            this.redirectExisting = redirectExisting;
         }
     }
 

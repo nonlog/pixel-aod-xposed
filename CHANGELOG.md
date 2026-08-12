@@ -1,5 +1,240 @@
 # Changelog
 
+## [0.1.320] - 2026-08-12
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol — took over the remaining clock-size transition bug from the prior Codex investigation and completed the final device-validated fix.
+- **Scope:** Remove the pre-animation whole-digit jump exposed by the 0.1.319 high-frame-rate recording by freezing the synthetic COUI digit-slot geometry after the prepared source becomes drawable.
+
+### Fixed
+- Stop resizing the four visible digit clones and colon inside `start()`. `prepare()` now establishes their physical overlay boxes once, while the layer is still invisible; after source-frame ownership is acquired, those boxes remain immutable for the entire size transaction and only position, scale, alpha, and variable-font weight are animated.
+- Keep date/weather/contextual text and icon tracks independently configurable. The new recording proves those tracks do not participate in the approximately 270 px bad-frame displacement, so their existing geometry/alpha behavior is intentionally unchanged.
+- Retain the 0.1.319 host-local `RootSpaceMapper` as a correct coordinate-space cleanup, but no longer treat an OPlus ancestor/root transform as the cause of this bug.
+- Mirror the relevant COUI ownership model more closely: the decompiled SystemUI `ClockPlugin` loads `com.oplus.keyguard.personality.clocks` and forwards `clockSizeState` through `onClockSizeChanged`; prior runtime hierarchy evidence shows distinct `DigitalTimeView` children for the large clock. The module's transition clones now likewise keep each digit child as a stable geometry owner instead of changing its bounds after it becomes visible.
+
+### Success
+- **Success (frame-level failure localization):** In `screenshots/lock-to-aod.mp4`, frames 195-199 show the stable small clock; frames 200-203 preserve the same roughly 162-166 px digit height but move the digit group left by about 270 px; frame 204 returns to the correct small-clock positions; frame 205 onward begins the actual small-to-large scale/motion. Date/weather move only about 0-2 px in the same bad-frame window. This isolates the failure to digit-clone setup before animation progress starts.
+- **Success (code-path correlation):** The only start-time operation that mutates digit geometry before frame zero is `configureOverlayGeometry(from, to) -> configureBox() -> setLayoutParams()/measure()/layout()`. That second visible-slot configuration is now gated out after the source prepare pass.
+- **Success (COUI host-source audit):** Saved OOS SystemUI decompile confirms non-legacy clocks are loaded from `com.oplus.keyguard.personality.clocks`, and a size-state change is dispatched as `onClockSizeChanged` rather than by rebuilding the SystemUI host view.
+- **Success (targeted JVM tests):** `CouiClockSizeTransitionLayerTest` passes 12/12 and `CouiClockSizeTransitionMathTest` passes 21/21, including a new regression policy that prepared digit-slot geometry cannot be configured a second time until transaction reset.
+- **Success (debug build):** With the project-standard JDK 17, `:app:assembleDebug` completes successfully and produces `0.1.320` / versionCode `330` with matching packaged Xposed metadata.
+- **Success (device verification):** After installing 0.1.320, repeated notification swipe tests confirmed the small-clock → large-clock transition no longer produces the pre-animation whole-digit jump. The user explicitly confirmed the fix is successful on device.
+
+### Deferred/Failed
+- **Failed (0.1.319 root-transform hypothesis):** The new recording disproves the whole-host/ancestor-coordinate explanation: date/weather remain stationary while only digit clones jump, and the bad frames occur before the actual size interpolation begins.
+- **Failed (first full-build environment attempt):** A rerun launched against the machine's Temurin 21 daemon and that daemon disappeared after Java compilation. Rebuilding under the repository's documented JDK 17 environment succeeds; no source failure was involved.
+
+## [0.1.319] - 2026-08-11
+### Meta
+- **Model:** GPT-5.6 Sol
+- **Scope:** Correct the whole-clock leftward size-transition failure at the overlay coordinate-system boundary instead of applying another glyph-shape compensation.
+
+### Fixed
+- Stop capturing transition geometry as `descendant.getLocationOnScreen() - host.getLocationOnScreen()` and then treating that screen-derived delta as host-local X/Y. The per-glyph overlay now maps clock/date/weather/contextual points through the descendant-to-host view hierarchy only, including child layout/scroll/matrix transforms while deliberately excluding the host and its OPlus ancestors. Those outer transforms are therefore applied exactly once when the host/overlay is drawn instead of being baked into the snapshot and applied again.
+- Use the same host-local coordinate mapper for clock digits, information text corridors, compound weather icons, and contextual forecast/alert icons so all tracks share one geometry owner throughout the 550 ms transaction.
+- Add a low-volume persistent diagnostic, `corrected COUI transition coordinate ownership`, which records the legacy screen delta versus host-local origin only when they differ materially. A subsequent device log can therefore prove whether an OPlus ancestor transform was active at the exact transition capture without logging every animation frame.
+- Keep the 0.1.317 redirected easing/target-layout readiness behavior and the confirmed 0.1.316 forecast-alpha fix. The 0.1.318 fixed-digit-cell change remains as COUI-style slot geometry, but is no longer treated as the explanation for the reported whole-clock drift.
+
+### Success
+- **Success (latest LSPosed export):** `LSPosed_20260811_230515.zip` shows the residual issue occurring on the COUI per-glyph path and contains no legacy `size-morph-clock`/whole-TextView fallback starts in the relevant run, ruling out that fallback as the observed whole-group displacement path.
+- **Success (code-path audit):** Transition capture no longer uses `getLocationOnScreen()` for animation geometry; the only remaining calls are isolated in the new comparison diagnostic.
+- **Success (targeted JVM tests):** `CouiClockSizeTransitionLayerTest` and `CouiClockSizeTransitionMathTest` pass after the coordinate-owner change; 24 tasks execute successfully.
+- **Success (debug build):** `:app:assembleDebug --rerun-tasks` succeeds with all 39 build tasks executed for `0.1.319` / versionCode `329`.
+
+### Deferred/Failed
+- **Failed (0.1.318 hypothesis):** Device testing confirmed that changing each digit from painted-ink X ownership to a fixed advance-cell X owner did not remove the probabilistic whole-clock leftward drift; that theory must not be reused as the root cause.
+- **Deferred (device verification):** The host-local coordinate fix still requires repeated small-to-large testing on the phone. A successful build proves compilation only; the user-visible drift is not considered fixed until device validation confirms it.
+
+## [0.1.318] - 2026-08-11
+### Meta
+- **Model:** GPT-5.6 Sol
+- **Scope:** Replace the residual painted-ink clock positioning with COUI-style stable per-digit slot geometry after the 0.1.317 device test.
+
+### Fixed
+- Mirror the stock OPlus clock's horizontal geometry ownership instead of continuing to correct individual malformed frames. Runtime LSPosed hierarchy shows the native big clock as `BigClockDigitalTimeView` with separate hour/minute `DigitalTimeView` children, while SystemUI's `ClockPlugin` delegates rendering to `com.oplus.keyguard.personality.clocks`. The transition overlay now treats each digit's fixed advance cell as that stable slot.
+- Stop recomputing each moving digit's X pivot and capture centre from variable-font `getTextBounds()` ink on every weight frame. The module's live clock already renders every character through `FixedAdvanceSpan`, which centres changing font advance inside a stable reference cell; source/target capture and overlay placement now use the same cell centre. Narrow glyphs such as `1` can change ink shape without dragging the interpolated digit path left.
+- Keep the proven 0.1.317 redirected easing and target-layout readiness gate, and keep the 0.1.316 contextual forecast composed-alpha fix unchanged.
+
+### Success
+- **Success (new device LSPosed export):** `LSPosed_20260811_230515.zip` shows the residual drift occurring on direct compact-to-large transactions even when the 0.1.317 geometry-readiness gate never defers, excluding stale compact measured width as the remaining cause.
+- **Success (COUI reference):** The saved OOS SystemUI dex confirms `ClockPlugin.render()` delegates to the separate personality-clocks renderer; runtime LSPosed view dumps expose stable per-digit `DigitalTimeView` children rather than one clock whose animation origin is repeatedly derived from changing painted bounds.
+- **Success (targeted JVM tests):** `CouiClockSizeTransitionMathTest` and `CouiClockSizeTransitionLayerTest` pass, including a new regression proving two different variable-font ink bounds cannot move the fixed digit-cell owner.
+- **Success (debug build):** `:app:assembleDebug --rerun-tasks` succeeds with all 39 build tasks executed. APK badging and packaged Xposed metadata both report `0.1.318` / versionCode `328`.
+
+### Deferred/Failed
+- **Deferred (device verification):** Repeated compact-to-large transitions on the phone are still required to prove the left-drift artifact is eliminated in rendered SystemUI frames.
+
+## [0.1.317] - 2026-08-11
+### Meta
+- **Model:** GPT-5.6 Sol
+- **Scope:** Remove the residual compact-to-large left-side clock drift and normalize redirected large/small transition speed after the 0.1.316 device test.
+
+### Fixed
+- Do not capture a size-transition target merely because a pre-draw callback fired. A ClockPlugin render can mutate the large clock to two-line/MATCH_PARENT while Android still retains the previous compact measured width for that traversal; that mixed snapshot places otherwise-correct large glyphs around the old left-side compact box. The prepared source overlay now keeps ownership while target geometry is checked, defers across animation frames when layout is still requested or physically inconsistent, and starts the 550 ms transaction only after the requested compact/large line mode and measured width have settled.
+- Re-ease every in-flight size redirection from its exact current visual frame toward the newly requested endpoint. The 0.1.316 implementation reversed the linear driver but evaluated the original COUI ease-out curve backwards, so a reversal could begin in the curve's near-flat tail and look abnormally slow. Redirected legs now get a fresh ease-out segment without cancelling or replacing the active overlay.
+- Retain the 0.1.316 composed-alpha handling for Weather Forecast text/icons; the device report confirms that brightness fix is effective.
+
+### Success
+- **Success (device LSPosed export):** The supplied `LSPosed_20260811_224340.zip` contains repeated 0.1.316 redirected transitions around 22:41 where a running large/small transaction reverses in place, matching the reported slow-but-stable path, alongside direct approximately-550 ms compact-to-large transactions matching the path that can still expose the left-side malformed frame.
+- **Success (targeted JVM tests):** `CouiClockSizeTransitionLayerTest` and `CouiClockSizeTransitionMathTest` pass with new coverage rejecting a two-line large clock that still owns compact physical width, waiting for requested layout completion, and preserving current-frame continuity while applying a fresh easing segment on reversal.
+- **Success (debug build):** `:app:assembleDebug --rerun-tasks` succeeds with all 39 build tasks executed. The APK and packaged Xposed metadata both report `0.1.317` / versionCode `327`.
+
+### Deferred/Failed
+- **Deferred (device verification):** The new target-geometry gate and redirected easing still require repeated rapid small↔large testing on the phone; compilation and JVM tests cannot prove rendered SystemUI frames.
+
+## [0.1.316] - 2026-08-11
+### Meta
+- **Model:** GPT-5.6 Sol
+- **Scope:** Stabilize rapid lockscreen large/small clock reversals and preserve contextual weather-forecast opacity during the COUI size transition.
+
+### Fixed
+- Keep the existing per-glyph overlay as the visual owner when OOS reverses the requested clock size before the 550 ms transaction finishes. Reverse the active `ValueAnimator` in place instead of cancelling it, exposing a fully-mutated live endpoint, recapturing that endpoint, and starting a second animation.
+- Preserve the contextual forecast row's real composed opacity in transition snapshots. Forecast text/icon children are intentionally rendered at `0.72` alpha while their parent row remains at `1.0`; the transition now captures parent × child alpha instead of temporarily rendering the clone at full opacity.
+
+### Success
+- **Success (recording + persistent LSPosed log):** `screenshots/lock-to-aod.mp4` aligns with repeated large→small transactions that are cancelled mid-flight and immediately restarted small→large; the 21:34:58.564→21:34:58.926→21:34:58.953 sequence reproduces the problematic ownership break exactly.
+- **Success (targeted JVM tests):** `CouiClockSizeTransitionLayerTest` and `CouiClockSizeTransitionMathTest` pass, including new coverage for active-path reversal policy and composed contextual alpha.
+- **Success (debug build):** `:app:assembleDebug --rerun-tasks` succeeds; the APK reports version `0.1.316` / versionCode `326`, and the packaged Xposed metadata matches.
+
+### Deferred/Failed
+- **Deferred (device verification):** The phone disconnected before the rebuilt APK could be installed. Repeated rapid small↔large switching is still required before the visual drift and forecast-brightness issues can be considered fixed.
+- **Deferred (pre-existing selector tests):** Adding `ContextualAtAGlanceSelectorTest` to the targeted run still exposes two existing deadline-policy failures (`schedulesAlertEndBeforeTheTenMinuteDisplayDeadline` and `schedulesSourceFreshnessExpiryBeforeTheTenMinuteDisplayDeadline`); the transition-only test set passes and this change does not touch that deadline policy.
+
+## [0.1.315] - 2026-08-11
+### Meta
+- **Model:** Codex
+- **Scope:** Correct the failed non-lockscreen AOD flash mitigation on OOS 16.0.9.
+
+### Fixed
+- Do not convert the persistent ClockPlugin's 120 ms native-Doze deadline into a visible AOD
+  pre-presentation. If native Doze has not arrived, abandon only that early path and let the
+  normal AOD host-ready flow present the module.
+- Prevent a desktop/app-originated screen-off entry from using the lockscreen-only entry/grace
+  draw window while the display is still `ON`; preserve the existing lockscreen-to-AOD handoff
+  and explicit brief-trigger behavior.
+
+### Success
+- **Success (persistent LSPosed log):** The failed 0.1.314 trace showed both the early
+  `shouldDrawPixelOverlay=true` decision and `ClockPlugin-pre-present` while
+  `displayState=ON`; this release guards both proven paths.
+- **Success (targeted JVM tests):** The new timeout regression and non-lockscreen visibility
+  policy tests pass (6 cases total).
+
+### Deferred/Failed
+- **Failed (0.1.314 device QA):** The previous 120 ms fallback still presented the module while
+  Android reported `displayState=ON`; the user correctly reported the flash as unchanged.
+- **Deferred (device verification):** Repeated desktop/app screen-off testing is still required;
+  a successful build cannot prove the visual flash is gone or that no unrelated AOD behavior
+  regressed.
+
+## [0.1.314] - 2026-08-11
+### Meta
+- **Model:** Codex
+- **Scope:** Prevent the persistent ClockPlugin AOD layer from flashing over wallpaper during a
+  desktop/app-to-AOD transition on OOS 16.0.9.
+
+### Fixed
+- Gate only the non-lockscreen ClockPlugin pre-presentation until the native display reports
+  Doze; use a 120 ms safety fallback when OOS does not surface that state promptly.
+- Cancel a pending pre-presentation if the user wakes before the display reaches AOD, and
+  coalesce duplicate retries for the same AOD trace.
+- Preserve the existing lockscreen-to-AOD animation path and avoid restoring the former 810 ms
+  replacement delay.
+
+### Success
+- **Success (recording/log evidence):** The supplied 100.9 fps recording and persistent LSPosed
+  log identify the immediate `ClockPlugin-pre-present` call as the wallpaper-overlaid Pixel AOD
+  frame on non-lockscreen entry.
+- **Success (targeted JVM tests):** 20 targeted tests passed: the new entry gate (3),
+  ClockPlugin scene machine (11), and clock-typeface/handoff profile (6).
+- **Success (debug build):** `:app:assembleDebug` completed and produced an APK reporting
+  version `0.1.314` / versionCode `324`.
+
+### Deferred/Failed
+- **Deferred (device verification):** The new gate must be checked on the phone with repeated
+  desktop/app screen-off transitions; build success cannot prove the one-frame flash is gone.
+
+## [0.1.313] - 2026-08-11
+### Meta
+- **Model:** Codex
+- **Scope:** Reduce SystemUI work caused by high-frequency notification callbacks while the
+  Pixel AOD or Pixel lockscreen surface cannot actually draw.
+
+### Fixed
+- Cache posted and removed notifications immediately, but coalesce their presentation snapshot
+  on the SystemUI main thread with a 500 ms cooldown.
+- Skip AOD icon/media/layout rebuilding unless the AOD view is attached, visible, shown,
+  drawable, and its lifecycle currently permits Pixel AOD rendering.
+- Skip lockscreen presentation and host reapplication unless an attached lockscreen surface is
+  actually visible.
+- Exclude pure postTime updates from icon/media snapshot signatures while retaining keys,
+  visibility, flags, category, small-icon identity, and media content changes.
+
+### Success
+- **Success (targeted JVM tests):** New tests pass for visibility gates, callback coalescing, and
+  postTime-only signature stability.
+
+### Deferred/Failed
+- **Deferred (device verification):** Actual lock-from-home/app latency and idle drain still need
+  verification on the connected phone; a build cannot prove them.
+- **Deferred (unrelated full-suite failures):** The full Debug JVM suite currently reports three
+  weather/alert-policy failures in BreezyWeatherForecastTest and
+  ContextualAtAGlanceSelectorTest, outside this notification-path change.
+
+## [0.1.312] - 2026-08-11
+### Meta
+- **Model:** Codex
+- **Scope:** Pin At a Glance date, current-weather, and forecast glyph origins during the
+  lockscreen-to-AOD variable-font weight handoff.
+
+### Fixed
+- Information rows retain their existing fixed advance cells, but no longer centre each changing
+  glyph inside its cell. The clock keeps its established centred-cell behavior; only date/weather
+  and forecast text use the fixed origin.
+
+### Success
+- **Success (recording evidence):** All five lockscreen-to-AOD segments in the supplied 112 fps
+  recording show the previous date row settling roughly 0.72–0.76 px right of its lockscreen
+  origin, with larger short-lived local-glyph deviations. The fix removes that centring offset at
+  the text-drawing seam.
+- **Success (test/build evidence):** All Debug JVM tests passed, including the new fixed-origin
+  regression case; `:app:assembleDebug` completed successfully through the process-local system
+  proxy. The APK reports `0.1.312` / versionCode `322`.
+
+### Deferred/Failed
+- **Deferred (device test):** The new glyph-origin behavior must be verified on device; a build
+  cannot prove that the perceived wobble is gone or that the intended weight transition remains
+  visually smooth.
+
+## [0.1.311] - 2026-08-10
+### Meta
+- **Model:** Codex
+- **Scope:** Make the optional Weather Forecast card's local display window configurable, with
+  the approved 21:00–23:30 default, while auditing the reported lockscreen-to-AOD text motion.
+
+### Changed
+- Add separate Weather Forecast start/end settings below the forecast toggle. The clock picker
+  writes `HH:mm`, refreshes the Breezy relay, and accepts cross-midnight ranges.
+- Move forecast time eligibility into a pure `ForecastDisplayWindow`: start is inclusive and end
+  is exclusive. Malformed or equal start/end values fall back atomically to `21:00–23:30`.
+- Schedule an already visible lockscreen/AOD surface to re-evaluate at the nearest configured
+  boundary and at local midnight for cross-midnight windows; this applies even while a
+  higher-priority alert or calendar card owns the slot.
+- Update the approved At a Glance policy and Chinese/English settings text for the configurable
+  default window.
+
+### Success
+- **Success (source evidence):** The supplied `lock-to-aod.mp4` was sampled at its native
+  approximately 112 fps. Enlarged `Mon, Aug 10` and `Tmr 26° / 22°` crops show no reproducible
+  per-character spacing change; only a sub-pixel whole-row difference occurs during the wallpaper
+  fade. No clock-animation change was made from this inconclusive evidence.
+- **Success (JVM/build evidence):** `:app:testDebugUnitTest` passed with the new forecast-window
+  boundary/eligibility coverage, and `:app:assembleDebug` completed through the system proxy.
+  The resulting debug APK reports `0.1.311` / versionCode `321`.
+
+### Deferred/Failed
+- **Deferred (device test):** The new user-selected forecast window and the unchanged
+  lockscreen-to-AOD typography still require device observation. No APK was installed.
+
 ## [0.1.310] - 2026-08-09
 ### Meta
 - **Model:** Terra; Codex (OOS 16 capsule lifecycle correction)

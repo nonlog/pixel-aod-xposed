@@ -28,6 +28,11 @@ final class ClockGlyphMetrics {
         return (referenceGlyphAdvance - animatedGlyphAdvance) / 2f;
     }
 
+    /** Keeps information glyph ink on the cell's fixed origin during a weight handoff. */
+    static float fixedOriginOffset(float referenceGlyphAdvance, float animatedGlyphAdvance) {
+        return 0f;
+    }
+
     /**
      * A replacement span stores its reference cell in pixels.  During a size transaction the
      * Paint changes before the text is re-spanned, so keep that stored cell in the same scale as

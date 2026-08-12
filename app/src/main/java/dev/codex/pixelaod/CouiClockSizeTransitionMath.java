@@ -69,6 +69,30 @@ final class CouiClockSizeTransitionMath {
         return lerp(from, to, clamp01(progress));
     }
 
+    /**
+     * Re-eases an in-flight motion from its current visual progress to a new endpoint.
+     *
+     * <p>The size layer's normal path is an ease-out. Calling {@code ValueAnimator.reverse()}
+     * while continuing to evaluate that original ease-out backwards makes the first half of a
+     * reversal look abnormally slow: the animation starts in the original curve's near-flat
+     * tail.  Treat every redirection as a fresh segment instead.  The driver can still reverse
+     * in place, but the visual motion begins at the exact current frame and gets a new ease-out
+     * toward the requested endpoint.</p>
+     */
+    static float redirectedMotionProgress(float driverProgress,
+            float segmentStartDriver, float segmentEndDriver,
+            float segmentStartMotion, float segmentEndMotion, Easing easing) {
+        float driverDistance = segmentEndDriver - segmentStartDriver;
+        if (Math.abs(driverDistance) < 0.0001f) {
+            return clamp01(segmentEndMotion);
+        }
+        float segmentProgress = clamp01(
+                (driverProgress - segmentStartDriver) / driverDistance);
+        Easing safeEasing = easing != null ? easing : value -> value;
+        float eased = clamp01(safeEasing.apply(segmentProgress));
+        return clamp01(lerp(segmentStartMotion, segmentEndMotion, eased));
+    }
+
     static float paintedBoundsCenter(float paintedStart, float paintedEnd) {
         return (paintedStart + paintedEnd) / 2f;
     }
@@ -82,6 +106,15 @@ final class CouiClockSizeTransitionMath {
             float animatedGlyphAdvance, float paintedLeft, float paintedRight) {
         return replacementSpanPaintOrigin(cellStart, referenceGlyphAdvance,
                 animatedGlyphAdvance) + paintedBoundsCenter(paintedLeft, paintedRight);
+    }
+
+    /**
+     * Stable horizontal owner for one clock digit, matching a COUI DigitalTimeView slot and the
+     * module's own FixedAdvanceSpan contract. Variable-font ink is allowed to change inside the
+     * slot; the slot itself must never be re-anchored from the glyph's changing painted bounds.
+     */
+    static float fixedGlyphCellCenter(float cellStart, float referenceGlyphAdvance) {
+        return cellStart + (Math.max(0f, referenceGlyphAdvance) / 2f);
     }
 
     static float paintedBaselineCenter(float baseline, float paintedTop, float paintedBottom) {

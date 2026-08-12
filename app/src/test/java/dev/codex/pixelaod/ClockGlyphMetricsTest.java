@@ -26,6 +26,12 @@ public final class ClockGlyphMetricsTest {
     }
 
     @Test
+    public void pinsInformationGlyphOriginWhenItsWeightChanges() {
+        assertEquals(0f, ClockGlyphMetrics.fixedOriginOffset(405f, 349f), 0.001f);
+        assertEquals(0f, ClockGlyphMetrics.fixedOriginOffset(349f, 405f), 0.001f);
+    }
+
+    @Test
     public void usesCouiCompactTrackingForDigitsAndColonCorridors() {
         float compactTextSizePx = 245f;
 

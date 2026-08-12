@@ -1,6 +1,8 @@
 package dev.codex.pixelaod;
 
+import java.time.Instant;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -17,7 +19,27 @@ final class AtAGlanceWeatherPolicy {
 
     static boolean forecastEligible(BreezyWeatherForecast forecast, long nowMillis,
             ZoneId zoneId, boolean enabled) {
-        return enabled && forecast != null && forecast.isEligible(nowMillis, zoneId);
+        return forecastEligible(forecast, nowMillis, zoneId, enabled,
+                ForecastDisplayWindow.defaults());
+    }
+
+    static boolean forecastEligible(BreezyWeatherForecast forecast, long nowMillis,
+            ZoneId zoneId, boolean enabled, ForecastDisplayWindow displayWindow) {
+        ForecastDisplayWindow window = displayWindow != null
+                ? displayWindow : ForecastDisplayWindow.defaults();
+        return enabled && forecast != null && forecast.isEligible(nowMillis, zoneId)
+                && window.contains(nowMillis, zoneId);
+    }
+
+    static long nextForecastBoundary(ForecastDisplayWindow displayWindow, long nowMillis,
+            ZoneId zoneId, boolean enabled) {
+        if (!enabled) {
+            return 0L;
+        }
+        ForecastDisplayWindow window = displayWindow != null
+                ? displayWindow : ForecastDisplayWindow.defaults();
+        return earliest(window.nextBoundaryMillis(nowMillis, zoneId),
+                nextLocalMidnight(nowMillis, zoneId));
     }
 
     static boolean alertEligible(BreezyWeatherAlert alert, AlertHistory history,
@@ -78,8 +100,20 @@ final class AtAGlanceWeatherPolicy {
         return deadlineMillis > nowMillis ? deadlineMillis : 0L;
     }
 
+    private static long nextLocalMidnight(long nowMillis, ZoneId zoneId) {
+        if (zoneId == null) {
+            return 0L;
+        }
+        ZonedDateTime now = Instant.ofEpochMilli(nowMillis).atZone(zoneId);
+        return now.toLocalDate().plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli();
+    }
+
     private static long earliest(long current, long candidate) {
         return current <= 0L ? candidate : Math.min(current, candidate);
+    }
+
+    static long earlierDeadline(long first, long second) {
+        return earliest(first, second);
     }
 
     static final class AlertHistory {

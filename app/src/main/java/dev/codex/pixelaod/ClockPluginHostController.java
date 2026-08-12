@@ -41,6 +41,11 @@ final class ClockPluginHostController {
     private static final long PENDING_LOCKSCREEN_HANDOFF_WINDOW_MS = 2_500L;
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final ClockPluginNonLockscreenEntryGate NON_LOCKSCREEN_ENTRY_GATE =
+            new ClockPluginNonLockscreenEntryGate();
+    /** Main-thread only: one display-state retry is enough for the active AOD trace. */
+    private static String pendingNonLockscreenAodRetryTrace = "";
+    private static boolean pendingNonLockscreenAodRetry;
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
     private static final Set<Method> HOOKED_METHODS =
             Collections.newSetFromMap(new IdentityHashMap<>());
@@ -110,43 +115,123 @@ final class ClockPluginHostController {
     }
 
     /**
-     * Presents the final AOD scene at the screen-off boundary instead of waiting roughly 600 ms
-     * for OPlus ClockPlugin#render to publish uiState=AOD.
+     * Presents the final AOD scene before OPlus ClockPlugin#render publishes uiState=AOD, but
+     * never while the desktop/app wallpaper is still the visible display surface.
      */
     static void prepareNonLockscreenAodEntry(String source) {
-        runOnMain(() -> {
-            List<HostRecord> records;
-            synchronized (HOSTS) {
-                records = new ArrayList<>(HOSTS.values());
+        String currentTrace = PixelAodClockView.currentAodTraceId();
+        String trace = currentTrace != null ? currentTrace : "";
+        runOnMain(() -> prepareNonLockscreenAodEntryOnMain(source, trace));
+    }
+
+    private static void prepareNonLockscreenAodEntryOnMain(String source, String trace) {
+        List<HostRecord> records;
+        synchronized (HOSTS) {
+            records = new ArrayList<>(HOSTS.values());
+        }
+        Context gateContext = firstEligibleNonLockscreenAodContext(records, source);
+        if (gateContext == null) {
+            PixelAodLog.log("skipped persistent ClockPlugin non-lockscreen AOD pre-present"
+                    + " source=" + source
+                    + " reason=no-eligible-host"
+                    + " trace=" + trace);
+            return;
+        }
+
+        long now = SystemClock.uptimeMillis();
+        boolean interactive = PixelAodClockView.isDeviceInteractive(gateContext);
+        ClockPluginNonLockscreenEntryGate.Decision gateDecision =
+                NON_LOCKSCREEN_ENTRY_GATE.evaluate(trace,
+                        interactive,
+                        PixelAodClockView.isDisplayInAodState(gateContext), now);
+        if (gateDecision == ClockPluginNonLockscreenEntryGate.Decision.DEFER) {
+            long retryDelay = NON_LOCKSCREEN_ENTRY_GATE.retryDelayMillis(now);
+            PixelAodLog.log("deferred persistent ClockPlugin non-lockscreen AOD pre-present"
+                    + " source=" + source
+                    + " retryDelayMs=" + retryDelay
+                    + " trace=" + trace
+                    + " state={" + PixelAodClockView.describeAodState(gateContext) + "}");
+            scheduleNonLockscreenAodPrePresentRetry(source, trace, retryDelay);
+            return;
+        }
+        clearPendingNonLockscreenAodPrePresentRetry(trace);
+        if (gateDecision == ClockPluginNonLockscreenEntryGate.Decision.CANCEL) {
+            PixelAodLog.log("cancelled persistent ClockPlugin non-lockscreen AOD pre-present"
+                    + " source=" + source
+                    + " reason=" + (interactive
+                    ? "interactive-before-doze"
+                    : "native-doze-not-observed-before-deadline")
+                    + " trace=" + trace);
+            return;
+        }
+        if (gateDecision == ClockPluginNonLockscreenEntryGate.Decision.ALREADY_PRESENTED) {
+            return;
+        }
+
+        int prepared = 0;
+        boolean compactAod = PixelAodClockView.hasCompactClockNotificationContent();
+        for (HostRecord record : records) {
+            if (record == null || record.host.getParent() != record.root) {
+                continue;
             }
-            int prepared = 0;
-            boolean compactAod = PixelAodClockView.hasCompactClockNotificationContent();
-            for (HostRecord record : records) {
-                if (record == null || record.host.getParent() != record.root) {
-                    continue;
-                }
-                Context context = record.root.getContext();
-                if (context == null || !PixelAodClockView.isContinuousAodPolicyAllowingDisplay(
-                        context, source + "#ClockPlugin-pre-present")) {
-                    continue;
-                }
-                ClockPluginSceneMachine.Decision decision =
-                        record.machine.prepareAod(compactAod);
-                record.suppressNativeDraw = true;
-                StockAodVisibilityController.restoreHiddenAncestorChain(
-                        record.host, source + "#ClockPlugin-pre-present");
-                record.host.present(decision, source + "#ClockPlugin-pre-present");
-                if (record.validated) {
-                    suppressNativeVisuals(record);
-                }
-                prepared++;
+            Context context = record.root.getContext();
+            if (context == null || !PixelAodClockView.isContinuousAodPolicyAllowingDisplay(
+                    context, source + "#ClockPlugin-pre-present")) {
+                continue;
             }
-            PixelAodLog.log("prepared persistent ClockPlugin AOD before vendor uiState source="
-                    + source
-                    + " compact=" + compactAod
-                    + " prepared=" + prepared
-                    + " trace=" + PixelAodClockView.currentAodTraceId());
-        });
+            ClockPluginSceneMachine.Decision decision = record.machine.prepareAod(compactAod);
+            record.suppressNativeDraw = true;
+            StockAodVisibilityController.restoreHiddenAncestorChain(
+                    record.host, source + "#ClockPlugin-pre-present");
+            record.host.present(decision, source + "#ClockPlugin-pre-present");
+            if (record.validated) {
+                suppressNativeVisuals(record);
+            }
+            prepared++;
+        }
+        PixelAodLog.log("prepared persistent ClockPlugin AOD before vendor uiState source="
+                + source
+                + " compact=" + compactAod
+                + " prepared=" + prepared
+                + " trace=" + trace);
+    }
+
+    private static Context firstEligibleNonLockscreenAodContext(List<HostRecord> records,
+            String source) {
+        for (HostRecord record : records) {
+            if (record == null || record.host.getParent() != record.root) {
+                continue;
+            }
+            Context context = record.root.getContext();
+            if (context != null && PixelAodClockView.isContinuousAodPolicyAllowingDisplay(
+                    context, source + "#ClockPlugin-pre-present-gate")) {
+                return context;
+            }
+        }
+        return null;
+    }
+
+    private static void scheduleNonLockscreenAodPrePresentRetry(String source, String trace,
+            long delayMillis) {
+        if (pendingNonLockscreenAodRetry && trace.equals(pendingNonLockscreenAodRetryTrace)) {
+            return;
+        }
+        pendingNonLockscreenAodRetryTrace = trace;
+        pendingNonLockscreenAodRetry = true;
+        MAIN.postDelayed(() -> {
+            if (!trace.equals(pendingNonLockscreenAodRetryTrace)) {
+                return;
+            }
+            pendingNonLockscreenAodRetry = false;
+            prepareNonLockscreenAodEntryOnMain(source, trace);
+        }, delayMillis);
+    }
+
+    private static void clearPendingNonLockscreenAodPrePresentRetry(String trace) {
+        if (trace.equals(pendingNonLockscreenAodRetryTrace)) {
+            pendingNonLockscreenAodRetry = false;
+            pendingNonLockscreenAodRetryTrace = "";
+        }
     }
 
     private static int hookPluginClass(Class<?> pluginClass) {

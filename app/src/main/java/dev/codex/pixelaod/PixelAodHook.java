@@ -163,6 +163,8 @@ final class PixelAodHook {
             Collections.newSetFromMap(new WeakHashMap<>());
     private static final Map<View, Long> LOCKSCREEN_HOST_TOUCH_TIMES = new WeakHashMap<>();
     private static final LinkedHashMap<String, StatusBarNotification> NOTIFICATION_CACHE = new LinkedHashMap<>();
+    private static final NotificationSnapshotRefreshGate NOTIFICATION_SNAPSHOT_REFRESH_GATE =
+            new NotificationSnapshotRefreshGate();
     private static final NotificationCapsuleIconPolicy NOTIFICATION_CAPSULE_ICON_POLICY =
             new NotificationCapsuleIconPolicy();
     private static final Pattern TEMPERATURE_PATTERN =
@@ -1202,17 +1204,16 @@ final class PixelAodHook {
 
     private static void cacheNotification(StatusBarNotification sbn, String source) {
         try {
-            StatusBarNotification[] snapshot;
+            int cacheSize;
             synchronized (NOTIFICATION_CACHE) {
                 NOTIFICATION_CACHE.put(sbn.getKey(), sbn);
-                snapshot = NOTIFICATION_CACHE.values().toArray(new StatusBarNotification[0]);
+                cacheSize = NOTIFICATION_CACHE.size();
             }
-            PixelAodClockView.setActiveNotifications(snapshot, source);
-            PixelAodClockView.cacheMediaNotificationCandidate(sbn, source);
+            scheduleCachedNotificationSnapshotRefresh(source);
             PixelAodLog.log("cached notification from " + source
                     + " pkg=" + sbn.getPackageName()
                     + " key=" + sbn.getKey()
-                    + " count=" + snapshot.length
+                    + " count=" + cacheSize
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(null) + "}");
             maybeScheduleFlashlightNotificationRefresh(sbn, source, "posted");
@@ -1223,23 +1224,49 @@ final class PixelAodHook {
 
     private static void removeCachedNotification(StatusBarNotification sbn, String source) {
         try {
-            StatusBarNotification[] snapshot;
+            int cacheSize;
             synchronized (NOTIFICATION_CACHE) {
                 NOTIFICATION_CACHE.remove(sbn.getKey());
-                snapshot = NOTIFICATION_CACHE.values().toArray(new StatusBarNotification[0]);
+                cacheSize = NOTIFICATION_CACHE.size();
             }
             NOTIFICATION_CAPSULE_ICON_POLICY.removeFinalDrawable(sbn.getKey());
-            PixelAodClockView.setActiveNotifications(snapshot, source);
-            PixelAodClockView.removeMediaNotificationCandidate(sbn, source);
+            scheduleCachedNotificationSnapshotRefresh(source);
             PixelAodLog.log("removed notification from " + source
                     + " pkg=" + sbn.getPackageName()
                     + " key=" + sbn.getKey()
-                    + " count=" + snapshot.length
+                    + " count=" + cacheSize
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(null) + "}");
             maybeScheduleFlashlightNotificationRefresh(sbn, source, "removed");
         } catch (Throwable t) {
             PixelAodLog.log("failed to remove notification from " + source, t);
+        }
+    }
+
+    private static void scheduleCachedNotificationSnapshotRefresh(String source) {
+        long delayMillis = NOTIFICATION_SNAPSHOT_REFRESH_GATE.requestDelayMillis(
+                SystemClock.uptimeMillis());
+        if (delayMillis == NotificationSnapshotRefreshGate.NO_SCHEDULE) {
+            return;
+        }
+        Runnable refresh = () -> {
+            NOTIFICATION_SNAPSHOT_REFRESH_GATE.markDispatched(SystemClock.uptimeMillis());
+            try {
+                StatusBarNotification[] snapshot;
+                synchronized (NOTIFICATION_CACHE) {
+                    snapshot = NOTIFICATION_CACHE.values().toArray(new StatusBarNotification[0]);
+                }
+                PixelAodClockView.setActiveNotifications(snapshot,
+                        source + "#coalesced-notification-snapshot");
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to publish coalesced notification snapshot from "
+                        + source, t);
+            }
+        };
+        if (delayMillis <= 0L) {
+            MAIN.post(refresh);
+        } else {
+            MAIN.postDelayed(refresh, delayMillis);
         }
     }
 

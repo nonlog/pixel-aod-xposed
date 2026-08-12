@@ -4,7 +4,9 @@ import android.app.Notification;
 
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
 public final class AodNotificationPipelineTest {
@@ -50,5 +52,24 @@ public final class AodNotificationPipelineTest {
                 "com.example", null, Notification.VISIBILITY_PRIVATE, false, true));
         assertFalse(AodNotificationPipeline.isExcludedFromLockscreenPolicyOverride(
                 "com.arn.scrobble", null, Notification.VISIBILITY_PRIVATE, false));
+    }
+
+    @Test
+    public void notificationPresentationSignatureIgnoresOnlyPostTime() {
+        String before = AodNotificationPipeline.notificationPresentationSignature(
+                "0|com.example|1|null|10001", 1_000L,
+                Notification.VISIBILITY_PRIVATE, Notification.FLAG_ONGOING_EVENT,
+                "status", "resource:com.example:0x7f080001");
+        String postTimeOnlyUpdate = AodNotificationPipeline.notificationPresentationSignature(
+                "0|com.example|1|null|10001", 2_000L,
+                Notification.VISIBILITY_PRIVATE, Notification.FLAG_ONGOING_EVENT,
+                "status", "resource:com.example:0x7f080001");
+        String iconUpdate = AodNotificationPipeline.notificationPresentationSignature(
+                "0|com.example|1|null|10001", 2_000L,
+                Notification.VISIBILITY_PRIVATE, Notification.FLAG_ONGOING_EVENT,
+                "status", "resource:com.example:0x7f080002");
+
+        assertEquals(before, postTimeOnlyUpdate);
+        assertNotEquals(before, iconUpdate);
     }
 }

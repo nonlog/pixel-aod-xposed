@@ -1,6 +1,7 @@
 package dev.codex.pixelaod;
 
 import android.app.Notification;
+import android.graphics.drawable.Icon;
 import android.app.NotificationChannel;
 import android.content.Context;
 import android.os.Bundle;
@@ -589,12 +590,29 @@ final class AodNotificationPipeline {
             if (builder.length() > 0) {
                 builder.append('|');
             }
-            builder.append(sbn.getKey())
-                    .append('@').append(sbn.getPostTime())
-                    .append(':').append(notification != null ? notification.visibility : 0)
-                    .append(':').append(notification != null ? notification.flags : 0);
+            builder.append(notificationPresentationSignature(
+                    sbn.getKey(),
+                    sbn.getPostTime(),
+                    notification != null ? notification.visibility : 0,
+                    notification != null ? notification.flags : 0,
+                    notification != null ? notification.category : "",
+                    smallIconIdentity(notification)));
         }
         return builder.toString();
+    }
+
+    /**
+     * Returns only fields that can change the notification presentation. A listener callback
+     * often supplies a new postTime for an otherwise identical notification; postTime by itself
+     * must not rebuild the AOD or lockscreen icon rows.
+     */
+    static String notificationPresentationSignature(String key, long ignoredPostTime,
+            int visibility, int flags, String category, String smallIconIdentity) {
+        return String.valueOf(key)
+                + ':' + visibility
+                + ':' + flags
+                + ':' + String.valueOf(category)
+                + ':' + String.valueOf(smallIconIdentity);
     }
 
     static String mediaCandidatesSignature(Iterable<StatusBarNotification> notifications) {
@@ -606,11 +624,19 @@ final class AodNotificationPipeline {
             if (sbn == null) {
                 continue;
             }
-            entries.add(sbn.getKey() + '@' + sbn.getPostTime()
-                    + '#' + mediaCandidateContentHash(sbn));
+            entries.add(sbn.getKey() + '#' + mediaCandidateContentHash(sbn));
         }
         Collections.sort(entries);
         return TextUtils.join("|", entries);
+    }
+
+    private static String smallIconIdentity(Notification notification) {
+        try {
+            Icon icon = notification != null ? notification.getSmallIcon() : null;
+            return icon != null ? icon.toString() : "";
+        } catch (Throwable ignored) {
+            return "";
+        }
     }
 
     private static int mediaCandidateContentHash(StatusBarNotification sbn) {

@@ -4,6 +4,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertEquals;
 
+import android.view.ViewGroup;
 import android.widget.ImageView;
 
 import org.junit.Test;
@@ -69,6 +70,19 @@ public final class CouiClockSizeTransitionLayerTest {
     }
 
     @Test
+    public void preparedSourceFreezesDigitCloneSlotGeometryUntilTransactionEnds() {
+        CouiClockSizeTransitionLayer.GlyphSlotGeometryOwnership ownership =
+                new CouiClockSizeTransitionLayer.GlyphSlotGeometryOwnership();
+
+        assertTrue(ownership.mayConfigureInitialSlots());
+        ownership.commitPrepared();
+        assertFalse(ownership.mayConfigureInitialSlots());
+
+        ownership.reset();
+        assertTrue(ownership.mayConfigureInitialSlots());
+    }
+
+    @Test
     public void preparedSourceOwnsDrawBeforeLiveTargetMayMutate() {
         CouiClockSizeTransitionLayer.SourceFrameOwnership ownership =
                 new CouiClockSizeTransitionLayer.SourceFrameOwnership();
@@ -90,6 +104,48 @@ public final class CouiClockSizeTransitionLayerTest {
         assertTrue(ownership.keepsSourceOwnershipAtFrameZero());
         ownership.reset();
         assertFalse(ownership.mayMutateOrCaptureTarget());
+    }
+
+    @Test
+    public void contextualClonePreservesChildAlphaInsideVisibleRow() {
+        assertEquals(0.72f, CouiClockSizeTransitionLayer.composedVisualAlpha(
+                1f, 0.72f, false), 0.001f);
+        // Direct date/weather TextViews own their own alpha; do not square it.
+        assertEquals(0.72f, CouiClockSizeTransitionLayer.composedVisualAlpha(
+                0.72f, 0.72f, true), 0.001f);
+    }
+
+    @Test
+    public void oppositeEndpointReversesActiveSizePathInsteadOfRestartingIt() {
+        // LARGE(false) -> SMALL(true) is currently moving toward SMALL.
+        assertTrue(CouiClockSizeTransitionLayer.shouldReverseActivePath(
+                false, true, false, false));
+        assertFalse(CouiClockSizeTransitionLayer.shouldReverseActivePath(
+                false, true, false, true));
+        // Once reversed toward LARGE, another SMALL request reverses the same animator again.
+        assertTrue(CouiClockSizeTransitionLayer.shouldReverseActivePath(
+                false, true, true, true));
+    }
+
+    @Test
+    public void largeTargetRejectsNewTextInsideOldCompactLayoutBox() {
+        int rootWidth = 1440;
+        // applyClockMode(false) has already changed LayoutParams to MATCH_PARENT, but the current
+        // traversal can still report the old ~compact width before the deferred layout pass.
+        assertFalse(CouiClockSizeTransitionLayer.targetClockGeometryReady(
+                false, rootWidth, 430, 2, ViewGroup.LayoutParams.MATCH_PARENT, false));
+        assertTrue(CouiClockSizeTransitionLayer.targetClockGeometryReady(
+                false, rootWidth, 1440, 2, ViewGroup.LayoutParams.MATCH_PARENT, false));
+    }
+
+    @Test
+    public void targetGeometryWaitsForRequestedLayoutAndCorrectLineMode() {
+        assertFalse(CouiClockSizeTransitionLayer.targetClockGeometryReady(
+                true, 1440, 430, 1, ViewGroup.LayoutParams.WRAP_CONTENT, true));
+        assertFalse(CouiClockSizeTransitionLayer.targetClockGeometryReady(
+                true, 1440, 430, 2, ViewGroup.LayoutParams.WRAP_CONTENT, false));
+        assertTrue(CouiClockSizeTransitionLayer.targetClockGeometryReady(
+                true, 1440, 430, 1, ViewGroup.LayoutParams.WRAP_CONTENT, false));
     }
 
     private static Field declaredField(Class<?> owner, String name) {

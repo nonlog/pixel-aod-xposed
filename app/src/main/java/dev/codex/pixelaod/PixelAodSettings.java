@@ -18,6 +18,10 @@ public final class PixelAodSettings {
     public static final String KEY_WEATHER_ALERTS = PixelAodSettingsSchema.KEY_WEATHER_ALERTS;
     public static final String KEY_WEATHER_FORECAST =
             PixelAodSettingsSchema.KEY_WEATHER_FORECAST;
+    public static final String KEY_WEATHER_FORECAST_START_TIME =
+            PixelAodSettingsSchema.KEY_WEATHER_FORECAST_START_TIME;
+    public static final String KEY_WEATHER_FORECAST_END_TIME =
+            PixelAodSettingsSchema.KEY_WEATHER_FORECAST_END_TIME;
     public static final String KEY_WEATHER_ICON_PACK = PixelAodSettingsSchema.KEY_WEATHER_ICON_PACK;
     public static final String KEY_CALENDAR_EVENTS = PixelAodSettingsSchema.KEY_CALENDAR_EVENTS;
     public static final String KEY_CALENDAR_ICON_PACKAGE =
