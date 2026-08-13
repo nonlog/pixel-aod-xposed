@@ -190,6 +190,8 @@ final class PixelAodHook {
     private static volatile long lastNativeAodFrameKickAt;
     private static volatile long lastFodOnlyNativeTimeoutHideSuppressionMs;
     private static volatile String lastFodOnlyNativeTimeoutHideTrace;
+    private static final FodNativeTimeoutHideGate FOD_NATIVE_TIMEOUT_HIDE_GATE =
+            new FodNativeTimeoutHideGate();
     private static final OosProximityTransitionGate OOS_PROXIMITY_TRANSITION_GATE =
             new OosProximityTransitionGate();
     private static volatile long lastOosProximityFarAt;
@@ -2062,12 +2064,15 @@ final class PixelAodHook {
                     Context context = contextFromHookParam(param);
                     rememberFingerprintAodInstance(sourceClass, param.thisObject);
                     if ("OnScreenFingerprintUiMech".equals(sourceClass)) {
-                        PixelFingerprintIconController.refresh(
-                                context, param.thisObject, source, true);
                         if ("onFpTouch".equals(targetMethod.getName())) {
+                            // Explicit fingerprint interaction owns a new visible FOD cycle.
+                            // Release the native-timeout latch before any carrier refresh runs.
+                            clearFodNativeTimeoutHide(source + "#explicit-fp-touch");
                             PixelFingerprintIconController.onFingerprintTouch(
                                     param.thisObject, param.args, source);
                         }
+                        PixelFingerprintIconController.refresh(
+                                context, param.thisObject, source, true);
                     }
                     PixelAodLog.log("FOD AOD diagnostic source=" + source
                             + " args=" + summarizeArgs(param.args, 6)
@@ -2552,6 +2557,14 @@ final class PixelAodHook {
 
     private static boolean dispatchFodOnlyNativeTimeoutHide(Context context, String source) {
         String trace = PixelAodClockView.peekAodTraceId();
+        long now = SystemClock.uptimeMillis();
+        boolean latched = FOD_NATIVE_TIMEOUT_HIDE_GATE.markHidden(trace, now);
+        if (latched) {
+            PixelAodLog.log("armed native FOD timeout-hide latch"
+                    + " source=" + source
+                    + " trace=" + trace
+                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+        }
         Object uiMech = lastOnScreenFingerprintUiMech.get();
         boolean dispatched = invokeFirstNoArgFodMethod(uiMech, "OnScreenFingerprintUiMech",
                 source, trace,
@@ -2560,6 +2573,9 @@ final class PixelAodHook {
                 "hideFingerprintIcon",
                 "fpIconHide");
         if (!dispatched) {
+            if (latched) {
+                FOD_NATIVE_TIMEOUT_HIDE_GATE.clearIfTrace(trace);
+            }
             PixelAodLog.log("allowed OPlus AOD native-timeout hide source=" + source
                     + " reason=fod-only-unavailable"
                     + " trace=" + trace
@@ -2568,8 +2584,42 @@ final class PixelAodHook {
         }
         lastFodOnlyNativeTimeoutHideSuppressionMs = SystemClock.uptimeMillis();
         lastFodOnlyNativeTimeoutHideTrace = trace;
-        PixelAodClockView.markRecentAodOverlayVisible(source + "#fod-only-native-timeout-hide");
+        // This callback hides only FOD. Do not renew the generic Pixel AOD-overlay visibility
+        // window here: doing so lets later vendor animation mutations reclaim the hidden carrier.
         return true;
+    }
+
+    static boolean isFodNativeTimeoutHideLatched(Context context) {
+        if (context == null) {
+            return false;
+        }
+        boolean interactive = PixelAodClockView.isDeviceInteractive(context);
+        if (interactive) {
+            clearFodNativeTimeoutHide("interactive");
+            return false;
+        }
+        String currentTrace = PixelAodClockView.peekAodTraceId();
+        boolean latched = FOD_NATIVE_TIMEOUT_HIDE_GATE.shouldPreserveNativeHide(
+                currentTrace, false);
+        String hiddenTrace = FOD_NATIVE_TIMEOUT_HIDE_GATE.hiddenTrace();
+        if (!latched && !TextUtils.isEmpty(hiddenTrace)
+                && !TextUtils.equals(hiddenTrace, currentTrace)) {
+            clearFodNativeTimeoutHide("aod-trace-changed");
+        }
+        return latched;
+    }
+
+    private static void clearFodNativeTimeoutHide(String source) {
+        String hiddenTrace = FOD_NATIVE_TIMEOUT_HIDE_GATE.hiddenTrace();
+        long hiddenAgeMs = FOD_NATIVE_TIMEOUT_HIDE_GATE.hiddenAgeMillis(SystemClock.uptimeMillis());
+        if (!FOD_NATIVE_TIMEOUT_HIDE_GATE.clear()) {
+            return;
+        }
+        PixelAodLog.log("cleared native FOD timeout-hide latch"
+                + " source=" + source
+                + " hiddenTrace=" + hiddenTrace
+                + " hiddenAgeMs=" + hiddenAgeMs
+                + " currentTrace=" + PixelAodClockView.peekAodTraceId());
     }
 
     private static boolean invokeFirstNoArgFodMethod(Object target, String targetName,

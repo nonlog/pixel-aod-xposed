@@ -126,6 +126,22 @@ public final class PixelFingerprintIconPolicyTest {
     }
 
     @Test
+    public void nativeTimeoutHideOutranksContinuousAodCarrierRefresh() {
+        assertEquals(PixelFingerprintIconPolicy.RefreshMode.SKIP,
+                PixelFingerprintIconPolicy.refreshMode(
+                        false, true, false, true, true));
+        assertEquals(PixelFingerprintIconPolicy.RefreshMode.SKIP,
+                PixelFingerprintIconPolicy.refreshMode(
+                        false, true, false, false, true));
+        assertEquals(PixelFingerprintIconPolicy.RefreshMode.REFRESH_CARRIER,
+                PixelFingerprintIconPolicy.refreshMode(
+                        true, true, false, true, true));
+        assertEquals(PixelFingerprintIconPolicy.RefreshMode.REFRESH_CARRIER,
+                PixelFingerprintIconPolicy.refreshMode(
+                        false, true, false, true, false));
+    }
+
+    @Test
     public void interactiveLockscreenIsNotBlockedByAodPowerPolicyGate() {
         assertTrue(PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
                 true, false, true));

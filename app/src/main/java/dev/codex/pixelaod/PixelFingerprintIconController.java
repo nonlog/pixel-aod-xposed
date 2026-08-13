@@ -160,10 +160,16 @@ final class PixelFingerprintIconController {
                 PixelAodClockView.fingerprintIconRefreshMode(
                         resolvedContext, source, nativeCarrierVisible);
         if (refreshMode == PixelFingerprintIconPolicy.RefreshMode.SKIP) {
+            cancelPendingReclaim(iconView);
             return;
         }
         boolean carrierRefreshAllowed =
                 refreshMode == PixelFingerprintIconPolicy.RefreshMode.REFRESH_CARRIER;
+        if (!carrierRefreshAllowed) {
+            // Native FOD hide owns the carrier until an explicit interaction/new AOD cycle.
+            // Cancel any first-pass reclaim queued before the timeout so it cannot race the hide.
+            cancelPendingReclaim(iconView);
+        }
 
         trackPressedIcon(pressedIcon);
         updatePressedVisual(pressedIcon, source + "#pressed-passive");
@@ -176,7 +182,7 @@ final class PixelFingerprintIconController {
                 interactive, onDozeState, onDreamingStart, screenTurnedOff);
         boolean dark = isDarkMode(resolvedContext);
 
-        if (PixelFingerprintIconPolicy.shouldReplaceCarrier(true)) {
+        if (carrierRefreshAllowed && PixelFingerprintIconPolicy.shouldReplaceCarrier(true)) {
             applyPixelDrawable(resolvedContext, uiMech, iconView, source, animate,
                     aodStyle, dark, onDozeState, onDreamingStart, screenTurnedOff, true);
         }

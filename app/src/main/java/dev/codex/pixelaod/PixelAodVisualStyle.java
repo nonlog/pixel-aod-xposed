@@ -40,7 +40,16 @@ final class PixelAodVisualStyle {
     static final int SMALL_CLOCK_TOP_DP = 90;
     static final int SMALL_INFO_TOP_DP = 99;
     static final int EDGE_DP = 34;
-    static final int COMPACT_CLOCK_VISUAL_START_OFFSET_DP = 7;
+    // Small AOD aligns painted content, not View layout boxes. Device screenshots show the
+    // Google Sans clock glyph starts about 5 dp inside its TextView, while forecast and
+    // notification glyphs have much smaller intrinsic insets. Keep one painted target edge and
+    // derive each row's layout compensation from it.
+    static final int COMPACT_PAINTED_LEADING_EDGE_DP = 32;
+    static final int COMPACT_CLOCK_GLYPH_LEADING_INSET_DP = 5;
+    static final int COMPACT_CONTEXTUAL_ICON_LEADING_INSET_DP = 0;
+    static final int COMPACT_NOTIFICATION_GLYPH_LEADING_INSET_DP = 1;
+    static final int COMPACT_CLOCK_VISUAL_START_OFFSET_DP = EDGE_DP
+            - (COMPACT_PAINTED_LEADING_EDGE_DP - COMPACT_CLOCK_GLYPH_LEADING_INSET_DP);
     // Pixel Small keeps time edge-anchored and starts the information column just right of the
     // screen midpoint. Actual text widths then decide whether extra clearance is required.
     static final int PIXEL_SMALL_INFO_COLUMN_OFFSET_DP = 4;
@@ -113,6 +122,12 @@ final class PixelAodVisualStyle {
                 + ",edge=" + EDGE_DP
                 + ",compactOffset=" + COMPACT_CLOCK_VISUAL_START_OFFSET_DP
                 + ",pixelSmallClockLeft=" + (EDGE_DP - COMPACT_CLOCK_VISUAL_START_OFFSET_DP)
+                + ",pixelSmallPaintedEdge=" + COMPACT_PAINTED_LEADING_EDGE_DP
+                + ",pixelSmallContextualLeft=" + (COMPACT_PAINTED_LEADING_EDGE_DP
+                - COMPACT_CONTEXTUAL_ICON_LEADING_INSET_DP)
+                + ",pixelSmallNotificationLayoutLeft=" + (COMPACT_PAINTED_LEADING_EDGE_DP
+                + NOTIFICATION_ROW_LEADING_OFFSET_DP
+                - COMPACT_NOTIFICATION_GLYPH_LEADING_INSET_DP)
                 + ",pixelSmallInfoColumnOffset=" + PIXEL_SMALL_INFO_COLUMN_OFFSET_DP
                 + ",largeInfoTop=" + LARGE_INFO_TOP_DP
                 + ",smallInfoTop=" + SMALL_INFO_TOP_DP

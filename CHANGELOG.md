@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.1.328] - 2026-08-12
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.
+- **Scope:** Fix the AOD fingerprint icon being reclaimed after ColorOS has already issued its native timeout hide, while keeping continuous Pixel AOD/Doze alive.
+
+### Changed
+- Add a trace-scoped `FodNativeTimeoutHideGate`. The latch is armed **before** invoking `OnScreenFingerprintUiMech#notifyHideAodIcon()` so the module's own hook-after and any synchronous `ImageView` mutations inside that OPlus method cannot race ahead and immediately reclaim the carrier. Failed reflective dispatch rolls the latch back.
+- While the latch is active for the current non-interactive AOD trace, `PixelFingerprintIconPolicy` now returns `SKIP` for carrier refresh even when the broader module AOD policy still allows display. This separates "keep Pixel AOD/Doze alive" from "keep FOD visible" and prevents `stopSwitchAnim`, `setImageDrawable`, vendor view mutations, style-only refreshes, and delayed reclaim work from re-wrapping the timed-out FOD carrier.
+- Release the latch on explicit `onFpTouch` **before** refreshing the Pixel carrier, on an interactive wake, or when a different AOD trace takes ownership. This keeps legitimate fingerprint interaction/new lock cycles able to show the Pixel icon again without imposing an arbitrary wall-clock suppression timeout.
+- Cancel an already queued first-pass vendor reclaim when refresh is blocked, reducing post-timeout races from work scheduled before the native hide.
+- Remove the `markRecentAodOverlayVisible(...)` renewal from successful FOD-only timeout dispatch. That call was semantically backwards for a hide event and extended the generic AOD-overlay visibility state that contributed to the observed reclaim chain. The outer Pixel AOD/Doze keepalive remains independent.
+- Preserve the 0.1.327 lockscreen/AOD Small contextual-row optical alignment changes in the same build.
+
+### Success
+- **Success (targeted JVM tests):** `FodNativeTimeoutHideGateTest`, `PixelFingerprintIconPolicyTest`, `PassiveFodShowGateTest`, `OosAodLifecycleAdapterTest`, `CouiCompactLayoutTest`, `WeatherAlertDisplayFormatterTest`, `CouiClockSizeTransitionLayerTest`, `CouiClockSizeTransitionMathTest`, and `PixelDynamicClockPolicyTest` pass. New cases verify trace scoping/rollback/clear semantics and that a native FOD timeout outranks continuous-AOD carrier refresh while interactive refresh remains allowed.
+- **Success (diff hygiene):** `git diff --check` passes before the final build.
+- **Success (debug build):** JDK 17 `:app:assembleDebug --rerun-tasks --no-daemon` completes with `BUILD SUCCESSFUL` and 39/39 tasks executed. APK badging and packaged Xposed metadata both report `0.1.328` / versionCode `338`; SHA-256 is `0D8BAD2C856261FD7090D36DC46BFA5E2B652EAE71E2FD4FFA1E5BEFF34A58DA`.
+
+### Deferred/Failed
+- **Deferred (device verification):** `adb devices -l` is empty after the build, so 0.1.328 was not installed and SystemUI was not restarted. This build cannot be claimed fixed until an on-device timeout reproducer confirms that native FOD disappears and stays hidden while the rest of Pixel AOD remains visible, then reappears normally on explicit fingerprint interaction or the next lock cycle.
+
+## [0.1.327] - 2026-08-12
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.
+- **Scope:** Synchronize Small lockscreen/AOD optical leading-edge geometry and investigate the 22:11 AOD fingerprint timeout-stuck report without changing fingerprint behavior.
+
+### Changed
+- Make Small lockscreen contextual/forecast rows use the same `CouiCompactLayout.contextualLayoutLeft(...)` painted-edge helper as AOD. The lockscreen previously reapplied the legacy 34 dp `EDGE_DP` while AOD used the new 32 dp optical target, so the same forecast row visibly shifted between lockscreen and AOD.
+- Re-assert the compact contextual left margin inside `updateInfoGroupLayout()` as well as `updateTime()`, so a Small/Large mode switch cannot leave the lockscreen row at a stale large-mode X coordinate. Calendar application-icon leading compensation is routed through the same shared helper on both surfaces.
+- Align ClockPlugin lockscreen→AOD notification-icon handoff rows with `CouiCompactLayout.notificationLayoutLeft(...)` while Small; normal lockscreen/Large geometry remains on the existing edge. Vertical spacing, Dynamic policy, alert localization/severity, and the 0.1.320 size-transition ownership fix are unchanged.
+- **No fingerprint behavior change in this release.** The fingerprint finding below is diagnostic only, per user request.
+
+### Fingerprint investigation
+- In `modules_2026-08-12T22:11:27.359664.log`, the timeout path is present at `22:12:01.408`: `OnScreenFingerprintUiMech#notifyHideAodIcon()` is invoked successfully. The module then records `FOD-only native-timeout hide invoked` and deliberately suppresses the enclosing `OplusWakeUpController#notifyHideCallback()` so continuous Pixel AOD/Doze remains alive.
+- The hide does not establish durable fingerprint ownership. Roughly one second later `OnScreenFingerprintIcon#stopSwitchAnim` reports the carrier View still `VISIBLE` with alpha `0.8` and a `PixelFingerprintAnimCarrier`; the AOD policy at `22:12:02.459` still returns `REFRESH_CARRIER` semantics because module display policy is allowed. `setVisibilityInAOD(int)` then appears with argument `1` at `22:12:02.464`.
+- Current strongest hypothesis is a fingerprint-specific hide/reclaim race inside the module's continuous-AOD ownership model: the FOD-only hide is issued, but a later vendor animation mutation is eligible for module carrier refresh while the underlying View remains visible. `dispatchFodOnlyNativeTimeoutHide()` also marks the Pixel overlay recently visible after invoking the hide, extending the state used by native-hide/Doze decisions. This is sufficient to explain why a full interactive wake→lock cycle clears the stale carrier, but the exact OPlus semantics of `setVisibilityInAOD(1)` are not proven from the available source dump/log alone.
+
+### Success
+- **Success (log investigation):** The 22:11/22:12 LSPosed trace rules out "no hide callback" and narrows the failure to post-hide fingerprint carrier/state ownership. No speculative fingerprint patch is included.
+
+### Success (continued)
+- **Success (targeted JVM tests):** `CouiCompactLayoutTest`, `WeatherAlertDisplayFormatterTest`, `CouiClockSizeTransitionLayerTest`, `CouiClockSizeTransitionMathTest`, and `PixelDynamicClockPolicyTest` pass under JDK 17. The shared compact contextual helper is now exercised for both normal and calendar-application-icon leading offsets.
+- **Success (debug build):** JDK 17 `:app:assembleDebug --rerun-tasks --no-daemon` completes with `BUILD SUCCESSFUL` and 39/39 tasks executed. APK and packaged Xposed metadata both report `0.1.327` / versionCode `337`; SHA-256 is `D8E456F87D6B0C6743EA103A7E6BC5100F3B2C29F5B1BFAC32EC53E80DA47F85`.
+- **Success (diff hygiene):** `git diff --check` passes; the build contains no fingerprint-code modification.
+
+### Deferred/Failed
+- **Deferred (fingerprint):** Do not change the FOD timeout/reclaim policy until `setVisibilityInAOD(int)` semantics and the intended OPlus `stopSwitchAnim`/drawable-clear ordering are verified from a usable vendor decompile or a more focused trace.
+- **Deferred (installation/device verification):** `adb devices -l` is empty after the build. Per project rules, 0.1.327 was not installed and SystemUI was not restarted; final lockscreen/AOD optical alignment requires user device verification.
+
+## [0.1.326] - 2026-08-12
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.
+- **Scope:** Correct the 0.1.325 Small-AOD horizontal alignment regression by aligning actual painted content instead of forcing unrelated View layout boxes onto one X coordinate.
+
+### Changed
+- Replace the 0.1.325 shared-layout-edge rule with an explicit painted-edge optical model. Device screenshots showed the Small clock painted edge around x=83..85 while the forced-layout version moved the forecast icon to about x=71 and notification glyphs to about x=72, even though their View margins were mathematically aligned.
+- Define a 32 dp Small painted target edge and model the measured per-element leading inset separately: the Google Sans Small clock keeps its 27 dp layout origin plus an approximately 5 dp glyph side-bearing; contextual forecast/warning icons use a 32 dp layout origin; notification glyphs use a 33 dp layout origin, then retain the existing -2 dp row translation plus approximately 1 dp glyph inset. The three resulting painted edges resolve to the same 32 dp optical line without moving the clock itself.
+- Keep Large geometry, vertical spacing, Breezy localization/severity visuals, Dynamic clock policy, and the device-validated size-transition animation unchanged.
+- Extend the AOD profile log with the painted target edge plus contextual and notification layout origins so future alignment work can distinguish layout coordinates from visible ink coordinates.
+
+### Success
+- **Success (screenshot calibration):** Compared the approved pre-alignment AOD screenshot with the rejected 0.1.325 alignment screenshot. Before the regression the forecast/notification painted edges were only about 5 px / 2 px to the right of the clock; the shared-layout-edge change moved them roughly 19 px / 15 px left. 0.1.326 applies only the smaller optical corrections implied by those measured deltas.
+- **Success (targeted JVM tests):** `CouiCompactLayoutTest`, `WeatherAlertDisplayFormatterTest`, `CouiClockSizeTransitionLayerTest`, and `CouiClockSizeTransitionMathTest` pass under JDK 17, including a new painted-edge equality assertion after clock/contextual/notification-specific insets and translations are applied.
+
+### Success (continued)
+- **Success (debug build):** JDK 17 `:app:assembleDebug --rerun-tasks --no-daemon` completes with `BUILD SUCCESSFUL` and 39/39 tasks executed. APK metadata reports `0.1.326` / versionCode `336`; SHA-256 is `30D86138239170655B1347852F04551C74B24BE3D1A7F70BF905AB041B617C82`.
+- **Success (installation):** Installed with `adb install -r` on the connected CPH2573, restarted `com.android.systemui`, and confirmed SystemUI returned with PID `19948`; `dumpsys package dev.codex.pixelaod` reports `0.1.326` / `336`.
+
+### Deferred/Failed
+- **Deferred (device visual verification):** Final painted-edge equality still requires the user to inspect a fresh AOD screenshot before this optical calibration should be committed.
+
 ## [0.1.325] - 2026-08-12
 ### Meta
 - **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.

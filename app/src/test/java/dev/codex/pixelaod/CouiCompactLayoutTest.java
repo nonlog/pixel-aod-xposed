@@ -11,8 +11,11 @@ public final class CouiCompactLayoutTest {
         float density = 4f;
 
         assertEquals(108, CouiCompactLayout.clockLeft(1440, 320, density));
-        assertEquals(108, CouiCompactLayout.leadingEdge(density));
-        assertEquals(116, CouiCompactLayout.notificationLayoutLeft(density));
+        assertEquals(128, CouiCompactLayout.paintedLeadingEdge(density));
+        assertEquals(128, CouiCompactLayout.contextualLayoutLeft(density));
+        assertEquals(104, CouiCompactLayout.contextualLayoutLeft(density,
+                ContextualAtAGlanceCalendarIcon.APPLICATION_ICON_LEADING_OFFSET_DP));
+        assertEquals(132, CouiCompactLayout.notificationLayoutLeft(density));
         assertEquals(268, CouiCompactLayout.clockCenterX(1440, 320, density));
         assertEquals(360, CouiCompactLayout.clockTop(3168, density));
         assertEquals(736, CouiCompactLayout.infoLeft(1440, 400, density));
@@ -22,15 +25,22 @@ public final class CouiCompactLayoutTest {
     }
 
     @Test
-    public void alignsSmallContextualAndNotificationVisualEdgesWithTheClock() {
+    public void alignsSmallPaintedEdgesAfterPerElementOpticalInsets() {
         float density = 4f;
-        int clockLeftPx = CouiCompactLayout.clockLeft(1440, 320, density);
-        int notificationTranslationPx = Math.round(
-                PixelAodVisualStyle.NOTIFICATION_ROW_LEADING_OFFSET_DP * density);
+        int targetPaintedEdgePx = CouiCompactLayout.paintedLeadingEdge(density);
+        int clockPaintedEdgePx = CouiCompactLayout.clockLeft(1440, 320, density)
+                + Math.round(PixelAodVisualStyle.COMPACT_CLOCK_GLYPH_LEADING_INSET_DP * density);
+        int contextualPaintedEdgePx = CouiCompactLayout.contextualLayoutLeft(density)
+                + Math.round(PixelAodVisualStyle.COMPACT_CONTEXTUAL_ICON_LEADING_INSET_DP
+                * density);
+        int notificationPaintedEdgePx = CouiCompactLayout.notificationLayoutLeft(density)
+                - Math.round(PixelAodVisualStyle.NOTIFICATION_ROW_LEADING_OFFSET_DP * density)
+                + Math.round(PixelAodVisualStyle.COMPACT_NOTIFICATION_GLYPH_LEADING_INSET_DP
+                * density);
 
-        assertEquals(clockLeftPx, CouiCompactLayout.leadingEdge(density));
-        assertEquals(clockLeftPx, CouiCompactLayout.notificationLayoutLeft(density)
-                - notificationTranslationPx);
+        assertEquals(targetPaintedEdgePx, clockPaintedEdgePx);
+        assertEquals(targetPaintedEdgePx, contextualPaintedEdgePx);
+        assertEquals(targetPaintedEdgePx, notificationPaintedEdgePx);
     }
 
     @Test

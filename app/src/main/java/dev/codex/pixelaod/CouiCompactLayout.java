@@ -17,20 +17,31 @@ final class CouiCompactLayout {
     }
 
     static int clockLeft(int widthPx, int contentWidthPx, float density) {
-        return leadingEdge(density);
+        return dp(PixelAodVisualStyle.COMPACT_PAINTED_LEADING_EDGE_DP
+                - PixelAodVisualStyle.COMPACT_CLOCK_GLYPH_LEADING_INSET_DP, density);
     }
 
-    static int leadingEdge(float density) {
-        return dp(PixelAodVisualStyle.EDGE_DP
-                - PixelAodVisualStyle.COMPACT_CLOCK_VISUAL_START_OFFSET_DP, density);
+    static int paintedLeadingEdge(float density) {
+        return dp(PixelAodVisualStyle.COMPACT_PAINTED_LEADING_EDGE_DP, density);
+    }
+
+    static int contextualLayoutLeft(float density) {
+        return contextualLayoutLeft(density, 0);
+    }
+
+    static int contextualLayoutLeft(float density, int applicationIconLeadingOffsetDp) {
+        return dp(PixelAodVisualStyle.COMPACT_PAINTED_LEADING_EDGE_DP
+                - PixelAodVisualStyle.COMPACT_CONTEXTUAL_ICON_LEADING_INSET_DP
+                - Math.max(0, applicationIconLeadingOffsetDp), density);
     }
 
     static int notificationLayoutLeft(float density) {
-        // notificationIconRow keeps a small negative optical translation so mixed app glyphs
-        // visually sit on the same edge. Offset its layout box by the same amount so the
-        // resulting painted edge resolves to the Small clock/contextual leading edge.
-        return leadingEdge(density)
-                + dp(PixelAodVisualStyle.NOTIFICATION_ROW_LEADING_OFFSET_DP, density);
+        // notificationIconRow is translated left after layout. Compensate for that translation
+        // and the measured glyph inset so the final painted icon edge lands on the same optical
+        // edge as the clock and contextual forecast icon.
+        return dp(PixelAodVisualStyle.COMPACT_PAINTED_LEADING_EDGE_DP
+                + PixelAodVisualStyle.NOTIFICATION_ROW_LEADING_OFFSET_DP
+                - PixelAodVisualStyle.COMPACT_NOTIFICATION_GLYPH_LEADING_INSET_DP, density);
     }
 
     static int clockCenterX(int widthPx, int contentWidthPx, float density) {

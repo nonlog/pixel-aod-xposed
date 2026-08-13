@@ -61,7 +61,22 @@ final class PixelFingerprintIconPolicy {
 
     static RefreshMode refreshMode(boolean interactive, boolean modulePolicyAllowsDisplay,
             boolean powerPolicyDenied, boolean nativeCarrierVisible) {
-        if (interactive || modulePolicyAllowsDisplay || !powerPolicyDenied) {
+        return refreshMode(interactive, modulePolicyAllowsDisplay, powerPolicyDenied,
+                nativeCarrierVisible, false);
+    }
+
+    static RefreshMode refreshMode(boolean interactive, boolean modulePolicyAllowsDisplay,
+            boolean powerPolicyDenied, boolean nativeCarrierVisible,
+            boolean nativeTimeoutFodHidden) {
+        if (interactive) {
+            return RefreshMode.REFRESH_CARRIER;
+        }
+        // A native FOD timeout is fingerprint-specific. Continuous Pixel AOD may stay alive,
+        // but it must not use that broader display policy to reclaim the hidden FOD carrier.
+        if (nativeTimeoutFodHidden) {
+            return RefreshMode.SKIP;
+        }
+        if (modulePolicyAllowsDisplay || !powerPolicyDenied) {
             return RefreshMode.REFRESH_CARRIER;
         }
         return nativeCarrierVisible ? RefreshMode.STYLE_EXISTING_NATIVE : RefreshMode.SKIP;

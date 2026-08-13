@@ -1503,6 +1503,13 @@ final class PixelLockscreenClockView extends FrameLayout {
                 && ContextualAtAGlanceCalendarIcon.usesApplicationIcon(getContext());
         ContextualAtAGlanceCalendarIcon.applyRowMargins(contextualParams, getContext(), EDGE_DP,
                 calendarApplicationIcon);
+        if (compactClock) {
+            contextualParams.leftMargin = CouiCompactLayout.contextualLayoutLeft(
+                    getResources().getDisplayMetrics().density,
+                    calendarApplicationIcon
+                            ? ContextualAtAGlanceCalendarIcon.APPLICATION_ICON_LEADING_OFFSET_DP
+                            : 0);
+        }
         contextualRow.setLayoutParams(contextualParams);
         updateInfoGroupLayout();
         FrameLayout.LayoutParams notificationParams =
@@ -1608,6 +1615,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         }
         int gapPx = dp(compactClock ? PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP
                 : LARGE_INFO_ROW_GAP_DP);
+        float density = getResources().getDisplayMetrics().density;
         int infoLeftPx;
         int dateTopPx;
         int compactWeatherTopPx = 0;
@@ -1624,7 +1632,6 @@ final class PixelLockscreenClockView extends FrameLayout {
             }
             infoLeftPx = anchors.infoLeftPx;
             dateTopPx = anchors.infoTopPx;
-            float density = getResources().getDisplayMetrics().density;
             compactWeatherTopPx = CouiCompactLayout.weatherTop(anchors, density);
             contextualMinimumTopPx = CouiCompactLayout.weatherAlertTop(anchors, density);
         } else {
@@ -1655,7 +1662,20 @@ final class PixelLockscreenClockView extends FrameLayout {
         }
         FrameLayout.LayoutParams contextualParams =
                 (FrameLayout.LayoutParams) contextualRow.getLayoutParams();
-        if (contextualParams.topMargin != layout.contextualTopPx) {
+        ContextualAtAGlanceCard contextualCard =
+                ContextualAtAGlancePresentation.current(contextualRow);
+        boolean applicationIcon = contextualCard != null
+                && contextualCard.kind == ContextualAtAGlanceCard.Kind.CALENDAR_EVENT
+                && ContextualAtAGlanceCalendarIcon.usesApplicationIcon(getContext());
+        int applicationIconLeadingOffsetDp = applicationIcon
+                ? ContextualAtAGlanceCalendarIcon.APPLICATION_ICON_LEADING_OFFSET_DP : 0;
+        int contextualLeftPx = compactClock
+                ? CouiCompactLayout.contextualLayoutLeft(
+                density, applicationIconLeadingOffsetDp)
+                : dp(EDGE_DP - applicationIconLeadingOffsetDp);
+        if (contextualParams.leftMargin != contextualLeftPx
+                || contextualParams.topMargin != layout.contextualTopPx) {
+            contextualParams.leftMargin = contextualLeftPx;
             contextualParams.topMargin = layout.contextualTopPx;
             contextualRow.setLayoutParams(contextualParams);
         }
@@ -1826,6 +1846,10 @@ final class PixelLockscreenClockView extends FrameLayout {
     private void applyNotificationRowPosition() {
         FrameLayout.LayoutParams params =
                 (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
+        params.leftMargin = showingClockPluginAodNotificationIcons && compactClock
+                ? CouiCompactLayout.notificationLayoutLeft(
+                getResources().getDisplayMetrics().density)
+                : dp(EDGE_DP);
         params.topMargin = notificationRowTopPx();
         notificationIconRow.setLayoutParams(params);
         float translationX = showingClockPluginAodNotificationIcons
@@ -1834,6 +1858,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         PixelAodLog.log("aligned lockscreen notification handoff row"
                 + " handoff=" + showingClockPluginAodNotificationIcons
                 + " compact=" + compactClock
+                + " leftPx=" + params.leftMargin
                 + " topPx=" + params.topMargin
                 + " translationX=" + translationX
                 + " trace=" + PixelAodClockView.currentAodTraceId());

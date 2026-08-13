@@ -1876,6 +1876,7 @@ public final class PixelAodClockView extends FrameLayout {
             return PixelFingerprintIconPolicy.RefreshMode.REFRESH_CARRIER;
         }
         boolean interactive = isDeviceInteractive(context);
+        boolean nativeTimeoutFodHidden = PixelAodHook.isFodNativeTimeoutHideLatched(context);
         if (interactive) {
             return PixelFingerprintIconPolicy.RefreshMode.REFRESH_CARRIER;
         }
@@ -1886,8 +1887,17 @@ public final class PixelAodClockView extends FrameLayout {
         PixelFingerprintIconPolicy.RefreshMode refreshMode =
                 PixelFingerprintIconPolicy.refreshMode(
                         interactive, decision.modulePolicyAllowsDisplay,
-                        powerPolicyDenied, nativeCarrierVisible);
-        if (refreshMode == PixelFingerprintIconPolicy.RefreshMode.SKIP) {
+                        powerPolicyDenied, nativeCarrierVisible, nativeTimeoutFodHidden);
+        if (nativeTimeoutFodHidden
+                && refreshMode != PixelFingerprintIconPolicy.RefreshMode.REFRESH_CARRIER) {
+            PixelAodLog.log("preserved native FOD timeout hide"
+                    + " source=" + source
+                    + " refreshMode=" + refreshMode
+                    + " nativeCarrierVisible=" + nativeCarrierVisible
+                    + " modulePolicyReason=" + decision.modulePolicyReason
+                    + " trace=" + decision.trace
+                    + " state={" + describeAodState(context) + "}");
+        } else if (refreshMode == PixelFingerprintIconPolicy.RefreshMode.SKIP) {
             PixelAodLog.log("Pixel fingerprint icon refresh skipped"
                     + " source=" + source
                     + " reason=power-policy-denied-native-hide"
@@ -7461,9 +7471,10 @@ public final class PixelAodClockView extends FrameLayout {
             int compactInfoTopPx = anchors.infoTopPx;
             int compactGapPx = dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
             float density = getResources().getDisplayMetrics().density;
-            int compactLeadingPx = CouiCompactLayout.leadingEdge(density);
-            calendarLeftPx = compactLeadingPx - dp(usingCalendarApplicationIcon
-                    ? ContextualAtAGlanceCalendarIcon.APPLICATION_ICON_LEADING_OFFSET_DP : 0);
+            int applicationIconLeadingOffsetDp = usingCalendarApplicationIcon
+                    ? ContextualAtAGlanceCalendarIcon.APPLICATION_ICON_LEADING_OFFSET_DP : 0;
+            calendarLeftPx = CouiCompactLayout.contextualLayoutLeft(
+                    density, applicationIconLeadingOffsetDp);
             notificationLeftPx = CouiCompactLayout.notificationLayoutLeft(density);
             infoGroup = ClockInfoGroupLayout.layout(true, anchors.infoLeftPx, compactInfoTopPx,
                     infoLineWidthPx(dateView), infoLineHeightPx(dateView, COMPACT_INFO_TEXT_DP),
