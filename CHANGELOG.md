@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.1.331] - 2026-08-14
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.
+- **Scope:** Prevent OPlus stock AOD notification icons from becoming drawable for a frame while UDFPS unlock flips Android to interactive before the native AOD APK root has actually retired.
+
+### Changed
+- Treat `interactive=true` and "stock AOD surface is gone" as separate lifecycle facts. A new `StockAodExitRestoreGate` defers stock-view restoration only while the current trace's concrete AOD root is still attached or parented, so normal post-AOD restoration is not blocked by stale hosts from older traces.
+- Observe the actual `mAodViewFromApk`/`AodRootLayout` host with a weak attach-state registration and bind it to the active AOD trace. Detach becomes the semantic handoff point that arms the existing trace-aware transition restore instead of guessing from PowerManager state alone.
+- Funnel interactive/unlocked restoration paths through one guarded `restoreStockViews(...)` path. If the current AOD root is still retiring, re-assert native clock/keyguard/`NotificationView` suppression rather than restoring their saved alpha/visibility and exposing stock notification glyphs.
+- Put the same retiring-host guard in the 900 ms transition restore. If OPlus still owns the AOD root at the delayed checkpoint, stock views remain hidden and the concrete host-detach callback becomes the next restoration opportunity.
+- Restore adjusted status-view state together with hidden stock-view state once the transition guard finally permits restoration, keeping the two pieces of saved native state atomic.
+- Preserve the 0.1.330 non-lockscreen pre-Doze ClockPlugin parking/Capsule null fast-path and the 0.1.320 clock-size transition implementation unchanged.
+
+### Evidence / Success
+- **Reproduced log:** on trace `aod-10-9898b34`, UDFPS touch occurs at `16:47:59.818`; by `16:48:00.501` Android reports `interactive=true` while `com.oplus.aodimpl.AodRootLayout` still has parent `AodClockLayout`. At `16:48:00.502` policy changes to `shouldSuppressStockAodViews=false`, immediately followed by `restored hidden stock AOD views`; OPlus calls `AodClockLayout#onAttachedToWindow` again four milliseconds later and a second restore happens at `16:48:00.507`.
+- **Targeted JVM tests:** `StockAodExitRestoreGateTest`, `ClockPluginNonLockscreenEntryGateTest`, `CouiClockSizeTransitionLayerTest`, and `CouiClockSizeTransitionMathTest` pass under JDK 17. The new gate covers current-trace attached-host deferral, detach release, stale-trace release, and unchanged non-interactive AOD ownership.
+- **Full JVM suite caveat:** `:app:testDebugUnitTest` ran 230 tests with 3 failures in untouched time-boundary tests (`BreezyWeatherForecastTest.usesDeviceLocalTomorrowAndReevaluatesAcrossTimeZones` and two `ContextualAtAGlanceSelectorTest` deadline cases). No BreezyWeather/At-a-Glance source or test file is modified by this change; the AOD-exit targeted suites remain green.
+- **Debug build:** JDK 17 `:app:assembleDebug --rerun-tasks --no-daemon` completes with `BUILD SUCCESSFUL` and 39/39 tasks executed. APK badging and packaged Xposed metadata both report `0.1.331` / versionCode `341`; SHA-256 is `C71C8E8FF25F6711E3EE5CBD86B6F1DCED8EE33D49F9A02C468879B102C275BB`.
+- **Installation:** exactly one CPH2573 was online; `adb install -r` succeeded without uninstalling, SystemUI restarted and returned with PID `18195`, and `dumpsys package dev.codex.pixelaod` reports `0.1.331` / `341`.
+
+### Device verification
+- **Success:** user confirmed on-device that the stock AOD notification-icon flash no longer appears during the affected unlock/exit path.
+- **Separate follow-up:** app/desktop-to-screen-off still has a perceptible delay after the OnePlus lock haptic; this is not considered resolved by the stock-AOD-exit fix and will be optimized separately.
+
+## [0.1.330] - 2026-08-14
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.
+- **Scope:** Remove the stale Large-clock first frame and reduce SystemUI main-thread exception pressure during app/desktop-to-AOD screen-off when notifications require Small.
+
+### Changed
+- Keep `ClockPluginNonLockscreenEntryGate` as the owner of app/desktop screen-off traces even after its 120 ms optional pre-presentation deadline expires. While that owned trace is non-interactive but the display/vendor state has not reached AOD, park the persistent ClockPlugin host `INVISIBLE` instead of allowing its last lockscreen scene to become drawable.
+- Park the host immediately from the screen-off pre-present path and re-assert the park from `syncHost()` when OPlus publishes stale `KEYGUARD` state. This closes the observed `stable-scene-skip` hole where `LOCKSCREEN_LARGE` was already committed and therefore skipped `PixelClockPluginHostView`'s existing non-lockscreen direct-AOD fallback.
+- Preserve the committed scene while parked. Once native DOZE/AOD arrives, host invisibility forces one real presentation and the existing AOD policy selects `AOD_SMALL` directly when module notification content is present; no new same-surface size animation is introduced and the 0.1.320 transition layer remains unchanged.
+- Make `PixelClockPluginHostView.parkForNonLockscreenAod(...)` idempotent so repeated vendor renders during the multi-second OPlus screen-off transition do not repeatedly cancel animations or emit extra debug work.
+- Treat transient OPlus Capsule `iconData == null` / `entry == null` as an ordinary cache miss. The previous reflection chain threw `NullPointerException` on the SystemUI main thread and wrote a full LSPosed stack trace; the captured log contained 343 occurrences, including one during the reproduced screen-off.
+
+### Evidence / Success
+- **Reproduced log:** trace `aod-50-9649738` starts at `16:07:37.029` with `fromInteractiveLockscreen=false` and `compact=true`; at `16:07:37.039` OPlus still publishes `uiState=KEYGUARD`, `clockSizeState=LARGE`, and the controller logs `presentation=stable-scene-skip scene=LOCKSCREEN_LARGE`. Native DOZE is not reported until roughly 2.6 s later, at which point the final scene is `AOD_SMALL`.
+- **Targeted JVM tests:** `ClockPluginNonLockscreenEntryGateTest`, `ClockPluginSceneMachineTest`, `ClockPluginPresentationGateTest`, `CouiClockSizeTransitionLayerTest`, `CouiClockSizeTransitionMathTest`, and `NotificationCapsuleIconPolicyTest` pass under JDK 17. New gate coverage verifies trace ownership, parking beyond the 120 ms pre-presentation deadline, and release for different traces, interactive wake, display-Doze, or vendor AOD state.
+- **Debug build:** JDK 17 `:app:assembleDebug --rerun-tasks --no-daemon` completes with `BUILD SUCCESSFUL` and 39/39 tasks executed. APK badging and packaged Xposed metadata both report `0.1.330` / versionCode `340`; SHA-256 is `4B625998C109CC87F74976F023AFF2A0FE8BB77F778E7CB4CD670DD329E3E7BC`.
+- **Installation:** exactly one CPH2573 was online; `adb install -r` succeeded without uninstalling, SystemUI restarted and returned with PID `17844`, and `dumpsys package dev.codex.pixelaod` reports `0.1.330` / `340`.
+
+### Deferred
+- **Device verification:** a fresh app/desktop screen-off with visible notifications is still required before claiming the Large-clock flash or perceived screen-off stutter fixed on-device.
+
 ## [0.1.329] - 2026-08-13
 ### Meta
 - **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.

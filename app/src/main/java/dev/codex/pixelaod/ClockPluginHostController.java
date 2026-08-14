@@ -145,9 +145,12 @@ final class ClockPluginHostController {
                         interactive,
                         PixelAodClockView.isDisplayInAodState(gateContext), now);
         if (gateDecision == ClockPluginNonLockscreenEntryGate.Decision.DEFER) {
+            int parked = parkPersistentHostsBeforeNonLockscreenDoze(
+                    records, source + "#ClockPlugin-pre-present");
             long retryDelay = NON_LOCKSCREEN_ENTRY_GATE.retryDelayMillis(now);
             PixelAodLog.log("deferred persistent ClockPlugin non-lockscreen AOD pre-present"
                     + " source=" + source
+                    + " parked=" + parked
                     + " retryDelayMs=" + retryDelay
                     + " trace=" + trace
                     + " state={" + PixelAodClockView.describeAodState(gateContext) + "}");
@@ -194,6 +197,25 @@ final class ClockPluginHostController {
                 + " compact=" + compactAod
                 + " prepared=" + prepared
                 + " trace=" + trace);
+    }
+
+    private static int parkPersistentHostsBeforeNonLockscreenDoze(List<HostRecord> records,
+            String source) {
+        int parked = 0;
+        for (HostRecord record : records) {
+            if (record == null || record.host.getParent() != record.root) {
+                continue;
+            }
+            record.suppressNativeDraw = true;
+            if (record.host.getVisibility() == View.VISIBLE
+                    && record.host.parkForNonLockscreenAod(source)) {
+                parked++;
+            }
+            if (record.validated) {
+                suppressNativeVisuals(record);
+            }
+        }
+        return parked;
     }
 
     private static Context firstEligibleNonLockscreenAodContext(List<HostRecord> records,
@@ -418,6 +440,36 @@ final class ClockPluginHostController {
         boolean mediaActive = PixelAodClockView.hasActiveDisplayableMedia();
         boolean interactive = PixelAodClockView.isDeviceInteractive(context);
         boolean displayInAodState = PixelAodClockView.isDisplayInAodState(context);
+        boolean parkNonLockscreenPreDoze =
+                NON_LOCKSCREEN_ENTRY_GATE.shouldParkPersistentHost(
+                        PixelAodClockView.currentAodTraceId(),
+                        interactive,
+                        displayInAodState,
+                        renderState.isAod());
+        if (parkNonLockscreenPreDoze) {
+            // Logs aod-50-9649738: app-originated screen-off already had compact=true, but OPlus
+            // kept publishing KEYGUARD/LARGE for ~2.6 s before native Doze.  The host was already
+            // on LOCKSCREEN_LARGE, so PresentationGate stable-skipped the render and exposed that
+            // stale layer for a frame. Park the persistent replacement until the display or
+            // vendor state reaches AOD; do not reveal an AOD layer over the still-visible app.
+            record.suppressNativeDraw = true;
+            boolean newlyParked = record.host.parkForNonLockscreenAod(
+                    source + "#non-lockscreen-pre-doze");
+            if (record.validated) {
+                suppressNativeVisuals(record);
+            }
+            if (newlyParked) {
+                PixelAodLog.log("parked stale ClockPlugin lockscreen scene during non-lockscreen sleep"
+                        + " source=" + source
+                        + " uiState=" + renderState.uiState
+                        + " clockSizeState=" + renderState.clockSizeState
+                        + " moduleNotifs=" + moduleNotifs
+                        + " mediaActive=" + mediaActive
+                        + " hostScene=" + record.host.scene()
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
+            }
+            return;
+        }
         Integer effectiveClockSize = renderState.clockSizeState;
         boolean compactAod;
         if (renderState.isAod() || (!interactive && displayInAodState)) {

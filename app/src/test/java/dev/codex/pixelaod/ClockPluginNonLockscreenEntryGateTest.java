@@ -6,6 +6,43 @@ import static org.junit.Assert.assertEquals;
 
 public final class ClockPluginNonLockscreenEntryGateTest {
     @Test
+    public void parksStaleLockscreenSceneDuringNonLockscreenScreenOff() {
+        ClockPluginNonLockscreenEntryGate gate = new ClockPluginNonLockscreenEntryGate();
+        assertEquals(ClockPluginNonLockscreenEntryGate.Decision.DEFER,
+                gate.evaluate("desktop-to-aod", false, false, 1_000L));
+        assertEquals(true, gate.shouldParkPersistentHost(
+                "desktop-to-aod", false, false, false));
+    }
+
+    @Test
+    public void keepsParkingOwnedTraceAfterPrePresentationDeadlineExpires() {
+        ClockPluginNonLockscreenEntryGate gate = new ClockPluginNonLockscreenEntryGate();
+        assertEquals(ClockPluginNonLockscreenEntryGate.Decision.DEFER,
+                gate.evaluate("desktop-to-aod", false, false, 1_000L));
+        assertEquals(ClockPluginNonLockscreenEntryGate.Decision.CANCEL,
+                gate.evaluate("desktop-to-aod", false, false, 1_120L));
+        assertEquals(true, gate.shouldParkPersistentHost(
+                "desktop-to-aod", false, false, false));
+    }
+
+    @Test
+    public void doesNotParkUnownedInteractiveOrNativeAodPresentation() {
+        ClockPluginNonLockscreenEntryGate gate = new ClockPluginNonLockscreenEntryGate();
+        assertEquals(false, gate.shouldParkPersistentHost(
+                "desktop-to-aod", false, false, false));
+        assertEquals(ClockPluginNonLockscreenEntryGate.Decision.DEFER,
+                gate.evaluate("desktop-to-aod", false, false, 1_000L));
+        assertEquals(false, gate.shouldParkPersistentHost(
+                "different-trace", false, false, false));
+        assertEquals(false, gate.shouldParkPersistentHost(
+                "desktop-to-aod", false, true, false));
+        assertEquals(false, gate.shouldParkPersistentHost(
+                "desktop-to-aod", false, false, true));
+        assertEquals(false, gate.shouldParkPersistentHost(
+                "desktop-to-aod", true, false, false));
+    }
+
+    @Test
     public void abandonsPrePresentationWhenNativeAodDidNotArriveBeforeTheDeadline() {
         ClockPluginNonLockscreenEntryGate gate = new ClockPluginNonLockscreenEntryGate();
 

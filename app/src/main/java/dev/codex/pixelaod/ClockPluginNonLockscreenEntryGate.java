@@ -25,6 +25,24 @@ final class ClockPluginNonLockscreenEntryGate {
     private boolean cancelled;
     private boolean presented;
 
+    /**
+     * A persistent ClockPlugin can keep its last lockscreen scene drawable for a few seconds
+     * while OPlus is transitioning an app/desktop screen-off into native Doze.  During that
+     * interval the vendor may still publish KEYGUARD/LARGE even though the module already knows
+     * this AOD trace did not originate from the interactive lockscreen.  Keep the replacement
+     * host parked until either the vendor publishes an AOD state or the display itself enters
+     * Doze; otherwise that stale lockscreen scene becomes a user-visible first frame.
+     */
+    synchronized boolean shouldParkPersistentHost(String trace, boolean interactive,
+            boolean displayInAod, boolean vendorReportsAod) {
+        String safeTrace = trace != null ? trace : "";
+        return entryStartedAt > 0L
+                && safeTrace.equals(activeTrace)
+                && !interactive
+                && !displayInAod
+                && !vendorReportsAod;
+    }
+
     synchronized Decision evaluate(String trace, boolean interactive, boolean displayInAod,
             long now) {
         String safeTrace = trace != null ? trace : "";

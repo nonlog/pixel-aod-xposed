@@ -161,6 +161,9 @@ final class PixelAodHook {
     private static final Set<String> HOOKED_NOTIFICATION_VIEW_CLASSES = new HashSet<>();
     private static final Set<View> INSPECTED_PLUGIN_NOTIFICATION_VIEWS =
             Collections.newSetFromMap(new WeakHashMap<>());
+    private static final Set<View> OBSERVED_STOCK_AOD_HOSTS =
+            Collections.newSetFromMap(new WeakHashMap<>());
+    private static final Map<View, String> STOCK_AOD_HOST_TRACES = new WeakHashMap<>();
     private static final Map<View, Long> LOCKSCREEN_HOST_TOUCH_TIMES = new WeakHashMap<>();
     private static final LinkedHashMap<String, StatusBarNotification> NOTIFICATION_CACHE = new LinkedHashMap<>();
     private static final NotificationSnapshotRefreshGate NOTIFICATION_SNAPSHOT_REFRESH_GATE =
@@ -1442,7 +1445,13 @@ final class PixelAodHook {
         }
         try {
             Object iconData = ModernHookBridge.callMethod(innerData, "getIconData");
+            if (iconData == null) {
+                return null;
+            }
             Object entry = ModernHookBridge.callMethod(iconData, "getEntry");
+            if (entry == null) {
+                return null;
+            }
             Object sbn = ModernHookBridge.callMethod(entry, "getSbn");
             return sbn instanceof StatusBarNotification ? ((StatusBarNotification) sbn).getKey() : null;
         } catch (Throwable t) {
@@ -3354,6 +3363,7 @@ final class PixelAodHook {
         try {
             ViewGroup pixelHost = findPixelClockInjectionHost(host);
             lastStockHost = new WeakReference<>(host);
+            observeStockAodHostLifecycle(host, source);
             lastPixelHost = new WeakReference<>(pixelHost);
             boolean persistentHost = refreshPersistentClockPluginHost(source);
             if (!persistentHost) {
@@ -3435,8 +3445,7 @@ final class PixelAodHook {
                     applyLockscreenClockReplacement(context, host, pixelHost, source);
                 }
             } else {
-                restoreAdjustedStatusViews();
-                restoreHiddenStockViews();
+                restoreStockViews(source + "#host-interactive-exit");
             }
             if (!persistentHost && ENABLE_EXPENSIVE_DEBUG_REAPPLY && PixelAodLog.isDebugEnabled()) {
                 scheduleReapply(context, host, pixelHost, source);
@@ -3466,8 +3475,7 @@ final class PixelAodHook {
                     PixelLockscreenClockView.setLockscreenSurfaceVisible(false,
                             source + "#interactive-unlocked");
                     PixelLockscreenClockView.refreshAll(source + "#interactive-unlocked");
-                    restoreAdjustedStatusViews();
-                    restoreHiddenStockViews();
+                    restoreStockViews(source + "#interactive-unlocked");
                     return;
                 }
             }
@@ -3826,8 +3834,7 @@ final class PixelAodHook {
                             hideStockKeyguardClockViews(highestParentGroup(pixelHost));
                         }
                     } else {
-                        restoreAdjustedStatusViews();
-                        restoreHiddenStockViews();
+                        restoreStockViews(source + "#persistent-host-interactive-exit");
                     }
                     return;
                 }
@@ -3851,8 +3858,7 @@ final class PixelAodHook {
                 }
                 if (!screenOff && !lockscreenVisible && !customizeNow) {
                     PixelLockscreenClockView.setLockscreenSurfaceVisible(false, "delayed-reapply");
-                    restoreAdjustedStatusViews();
-                    restoreHiddenStockViews();
+                    restoreStockViews(source + "#delayed-interactive-exit");
                     return;
                 }
                 if (lockscreenVisible && !screenOff) {
@@ -3884,8 +3890,7 @@ final class PixelAodHook {
                     + " pixelHost=" + hostSummary(pixelHost)
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
-            restoreAdjustedStatusViews();
-            restoreHiddenStockViews();
+            restoreStockViews(source + "#lockscreen-surface-hidden");
             return;
         }
         if (refreshPersistentClockPluginHost(source + "#lockscreen-replacement")) {
@@ -4228,8 +4233,7 @@ final class PixelAodHook {
                         applyLockscreenClockReplacement(root.getContext(), root, lastPixelHost.get(),
                                 source + "+parent-dump");
                     } else {
-                        restoreAdjustedStatusViews();
-                        restoreHiddenStockViews();
+                        restoreStockViews(source + "#parent-dump-interactive-exit");
                     }
                     return;
                 }
@@ -4301,6 +4305,8 @@ final class PixelAodHook {
                         return lastPixelHost.get();
                     }
                 },
+                (stockHost, pixelHost) -> deferStockAodRestoreIfRetiring(
+                        stockHost, source + "#transition-restore-guard"),
                 PixelAodHook::hostSummary);
     }
 
@@ -4857,21 +4863,115 @@ final class PixelAodHook {
         StockAodVisibilityController.hideView(view, marker, looksLikeSystemAodMediaView(marker));
     }
 
-    static void restoreSystemViewsForLockscreen(String source) {
-        MAIN.post(() -> {
-            PixelLockscreenClockView.refreshAll(source);
-            restoreAdjustedStatusViews();
-            if (PixelLockscreenClockView.shouldShowOnKnownContext()) {
-                PixelAodLog.log("kept stock keyguard clock hidden for Pixel lockscreen from " + source);
-                return;
+    private static void observeStockAodHostLifecycle(ViewGroup host, String source) {
+        if (host == null || !isAodRootLayout(host) || isChargingUiView(host)) {
+            return;
+        }
+        String trace = PixelAodClockView.currentAodTraceId();
+        synchronized (STOCK_AOD_HOST_TRACES) {
+            STOCK_AOD_HOST_TRACES.put(host, trace);
+        }
+        boolean firstObservation;
+        synchronized (OBSERVED_STOCK_AOD_HOSTS) {
+            firstObservation = OBSERVED_STOCK_AOD_HOSTS.add(host);
+        }
+        if (!firstObservation) {
+            return;
+        }
+        host.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override
+            public void onViewAttachedToWindow(View v) {
+                String currentTrace = PixelAodClockView.currentAodTraceId();
+                synchronized (STOCK_AOD_HOST_TRACES) {
+                    STOCK_AOD_HOST_TRACES.put(v, currentTrace);
+                }
+                PixelAodLog.log("observed stock AOD host attach source=" + source
+                        + " host=" + markerFor(v)
+                        + " trace=" + currentTrace);
             }
-            restoreHiddenStockViews();
-            PixelAodLog.log("restored system lockscreen views from " + source);
+
+            @Override
+            public void onViewDetachedFromWindow(View v) {
+                String expectedTrace;
+                synchronized (STOCK_AOD_HOST_TRACES) {
+                    expectedTrace = STOCK_AOD_HOST_TRACES.remove(v);
+                }
+                synchronized (OBSERVED_STOCK_AOD_HOSTS) {
+                    OBSERVED_STOCK_AOD_HOSTS.remove(v);
+                }
+                v.removeOnAttachStateChangeListener(this);
+                if (TextUtils.isEmpty(expectedTrace)) {
+                    expectedTrace = PixelAodClockView.peekAodTraceId();
+                }
+                PixelAodLog.log("observed stock AOD host detach source=" + source
+                        + " host=" + markerFor(v)
+                        + " expectedTrace=" + expectedTrace
+                        + " currentTrace=" + PixelAodClockView.peekAodTraceId());
+                restoreHiddenStockViewsAfterTransition(
+                        source + "#stock-aod-host-detached", expectedTrace);
+            }
         });
     }
 
-    private static void restoreHiddenStockViews() {
+    private static boolean deferStockAodRestoreIfRetiring(String source) {
+        return deferStockAodRestoreIfRetiring(lastStockHost.get(), source);
+    }
+
+    private static boolean deferStockAodRestoreIfRetiring(ViewGroup stockHost, String source) {
+        if (stockHost == null) {
+            return false;
+        }
+        String hostTrace;
+        synchronized (STOCK_AOD_HOST_TRACES) {
+            hostTrace = STOCK_AOD_HOST_TRACES.get(stockHost);
+        }
+        String currentTrace = PixelAodClockView.peekAodTraceId();
+        boolean sameAodTrace = !TextUtils.isEmpty(hostTrace)
+                && TextUtils.equals(hostTrace, currentTrace);
+        boolean attachedOrParented = stockHost.isAttachedToWindow()
+                || stockHost.getParent() != null;
+        Context context = stockHost.getContext();
+        boolean interactive = PixelAodClockView.isDeviceInteractive(context);
+        if (!StockAodExitRestoreGate.shouldDeferRestore(interactive,
+                isAodRootLayout(stockHost), attachedOrParented, sameAodTrace)) {
+            return false;
+        }
+
+        // UDFPS can flip PowerManager to interactive before OPlus detaches its AOD APK root.
+        // Keep the retiring native AOD subtree suppressed until that concrete host leaves the
+        // hierarchy; otherwise restoring its original NotificationView alpha/visibility can
+        // expose stock notification glyphs for a scanout frame.
+        hideStockClockViews(stockHost);
+        adjustPluginStatusViews(context, stockHost);
+        hideStockKeyguardClockViews(highestParentGroup(stockHost));
+        PixelAodLog.log("deferred restoring stock AOD views source=" + source
+                + " reason=current-aod-host-still-attached"
+                + " stockHost=" + hostSummary(stockHost)
+                + " hostTrace=" + hostTrace
+                + " currentTrace=" + currentTrace
+                + " state={" + PixelAodClockView.describeAodState(context) + "}");
+        return true;
+    }
+
+    private static void restoreStockViews(String source) {
+        if (deferStockAodRestoreIfRetiring(source)) {
+            return;
+        }
+        restoreAdjustedStatusViews();
         StockAodVisibilityController.restoreHiddenStockViews();
+    }
+
+    static void restoreSystemViewsForLockscreen(String source) {
+        MAIN.post(() -> {
+            PixelLockscreenClockView.refreshAll(source);
+            if (PixelLockscreenClockView.shouldShowOnKnownContext()) {
+                restoreAdjustedStatusViews();
+                PixelAodLog.log("kept stock keyguard clock hidden for Pixel lockscreen from " + source);
+                return;
+            }
+            restoreStockViews(source + "#system-lockscreen");
+            PixelAodLog.log("restored system lockscreen views from " + source);
+        });
     }
 
     private static void restoreAdjustedStatusViews() {

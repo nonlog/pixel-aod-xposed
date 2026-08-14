@@ -162,7 +162,8 @@ final class StockAodVisibilityController {
     }
 
     static void scheduleRestoreAfterTransition(Handler main, String source, String expectedTrace,
-            long delayMillis, HostLookup hosts, HostSummary hostSummary) {
+            long delayMillis, HostLookup hosts, RestoreGuard restoreGuard,
+            HostSummary hostSummary) {
         if (main == null) {
             return;
         }
@@ -188,6 +189,16 @@ final class StockAodVisibilityController {
                 context = pixelHost.getContext();
             } else if (stockHost != null) {
                 context = stockHost.getContext();
+            }
+            if (restoreGuard != null && restoreGuard.shouldDefer(stockHost, pixelHost)) {
+                PixelAodLog.log("kept stock AOD/keyguard views hidden after transition from "
+                        + source + " reason=retiring-stock-aod-host"
+                        + " stockHost=" + summarize(hostSummary, stockHost)
+                        + " pixelHost=" + summarize(hostSummary, pixelHost)
+                        + " trace=" + currentTrace
+                        + " expectedTrace=" + expectedTrace
+                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                return;
             }
             OosAodLifecycleAdapter.AodPolicyDecision decision =
                     PixelAodClockView.evaluateAodPolicy(context, source + "#restore-guard");
@@ -215,6 +226,7 @@ final class StockAodVisibilityController {
                     + " trace=" + currentTrace
                     + " expectedTrace=" + expectedTrace
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
+            restoreAdjustedStatusViews();
             restoreHiddenStockViews();
         }, delayMillis);
     }
@@ -231,6 +243,10 @@ final class StockAodVisibilityController {
         ViewGroup stockHost();
 
         ViewGroup pixelHost();
+    }
+
+    interface RestoreGuard {
+        boolean shouldDefer(ViewGroup stockHost, ViewGroup pixelHost);
     }
 
     interface HostSummary {

@@ -266,6 +266,36 @@ final class PixelClockPluginHostView extends FrameLayout {
         }
     }
 
+    /**
+     * Keeps the persistent host from exposing its last lockscreen scene while an app/desktop
+     * screen-off is still waiting for native Doze.  Deliberately keep {@link #scene} intact so
+     * the first real AOD presentation can resolve from the last committed state, while host
+     * visibility forces the controller to perform that presentation instead of stable-skip it.
+     */
+    boolean parkForNonLockscreenAod(String source) {
+        boolean needsPark = getVisibility() != View.INVISIBLE
+                || preparingAodWeight
+                || sizeTransitionLayer.hasActiveTransition();
+        if (!needsPark) {
+            return false;
+        }
+        cancelAodEntry();
+        cancelSizeTransition("non-lockscreen-pre-doze");
+        lockscreenLayer.animate().cancel();
+        aodLayer.animate().cancel();
+        if (preparingAodWeight) {
+            lockscreenLayer.cancelClockPluginWeightTransitionKeepCurrent(
+                    source + "#cancel-preparing-weight");
+        }
+        preparingAodWeight = false;
+        setVisibility(View.INVISIBLE);
+        PixelAodLog.log("parked persistent ClockPlugin before non-lockscreen AOD source="
+                + source
+                + " preservedScene=" + scene
+                + " trace=" + PixelAodClockView.currentAodTraceId());
+        return true;
+    }
+
     void hide(String source) {
         cancelAodEntry();
         cancelSizeTransition("host-hide");
