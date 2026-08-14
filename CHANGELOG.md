@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.1.329] - 2026-08-13
+### Meta
+- **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.
+- **Scope:** Rebalance Small AOD vertical stacking when media and contextual warning content are present, using the user's three 930×2048 device screenshots as the calibration reference.
+
+### Changed
+- Preserve the notification-only Small baseline unchanged: the screenshot with only notification glyphs places their visible top at about y=452 px and remains the reference lower-content anchor.
+- Move the Small media default anchor from the legacy fixed 218 dp position to the same 171 dp lower-content baseline used by the notification-only row (`SMALL_INFO_TOP_DP + COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP`). On the supplied device screenshots this removes roughly 47 dp / 124 px of empty space before the media title.
+- Keep contextual warnings/calendar rows authoritative when they actually occupy the baseline: `mediaTopAfterInfo(...)` still pushes media below the measured contextual bottom plus the existing compact information gap, preventing overlap while avoiding the old unconditional 218 dp floor.
+- Replace the hard-coded 28 dp media-to-notification gap with a named 12 dp compact gap. Notifications therefore move down only by the media row's real height plus a modest optical separation, rather than adding another large spacer after media.
+- Do not change the clock/date/weather anchors, warning-row position, horizontal painted-edge calibration, battery row, Large layout, Dynamic clock policy, FOD timeout ownership, or the 0.1.320 clock-size transition implementation.
+- Bump AOD visual profile revision to 7.3 and include the Small media anchor and media-to-notification gap in profile diagnostics.
+
+### Success
+- **Success (screenshot analysis):** supplied 930×2048 frames measure notification-only glyphs at y≈452..483; media frames at y≈575..675 with notification glyphs at y≈756..795; warning+media similarly keeps media at y≈575. These measurements isolate the regression to the old 218 dp media floor plus the 28 dp post-media gap rather than the standalone notification anchor.
+- **Success (targeted JVM tests):** 52 tests across `CouiCompactLayoutTest`, `AodInfoStackLayoutTest`, `PixelAodVisualStyleTest`, `CouiClockSizeTransitionLayerTest`, and `CouiClockSizeTransitionMathTest` pass under JDK 17 after updating the Small media baseline invariant and adding compact media→notification coverage.
+- **Success (diff hygiene):** `git diff --check` passes; only the expected CRLF conversion warnings are reported by Git on Windows.
+- **Success (debug build):** JDK 17 `:app:assembleDebug --rerun-tasks --no-daemon` completes with `BUILD SUCCESSFUL` and 39/39 tasks executed. APK badging and packaged Xposed metadata both report `0.1.329` / versionCode `339`; SHA-256 is `F95D6BFC22AED5EE6EBB163A2FAF1CF570DA14B49AEACAB3C0A1C5AC2EA28AD7`.
+- **Success (installation):** exactly one CPH2573 was online; `adb install -r` succeeded, SystemUI was restarted without uninstalling the module, returned with PID `7301`, and `dumpsys package dev.codex.pixelaod` reports `0.1.329` / `339`.
+
+### Success (device verification)
+- **Success (device visual verification):** user confirms the 0.1.329 Small AOD media/warning/notification spacing is visually correct on-device after installation; this layout is now device-validated.
+
 ## [0.1.328] - 2026-08-12
 ### Meta
 - **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.

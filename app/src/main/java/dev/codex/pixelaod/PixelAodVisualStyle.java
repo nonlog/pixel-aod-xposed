@@ -8,7 +8,7 @@ import android.util.DisplayMetrics;
 import java.util.Locale;
 
 final class PixelAodVisualStyle {
-    private static final String PROFILE_REVISION = "7.2";
+    private static final String PROFILE_REVISION = "7.3";
 
     // Clock and media use one deeper COUI-like accent rather than two near-identical tints.
     static final int CLOCK_COLOR_RED = 183;
@@ -62,6 +62,7 @@ final class PixelAodVisualStyle {
     static final int COUI_COMPACT_DATE_TO_WEATHER_TOP_OFFSET_DP = 27;
     static final int COUI_COMPACT_INFO_TO_EVENT_GAP_DP = 4;
     static final int COMPACT_CONTEXTUAL_TO_NOTIFICATION_GAP_DP = 12;
+    static final int COMPACT_MEDIA_TO_NOTIFICATION_GAP_DP = 12;
     static final int COUI_COMPACT_MEDIA_EDGE_DP = 32;
     static final int COUI_COMPACT_MEDIA_FALLBACK_HEIGHT_DP = 40;
     static final long COUI_WEIGHT_MORPH_MILLIS = 550L;
@@ -95,6 +96,8 @@ final class PixelAodVisualStyle {
                 + ",mediaTitleText=" + Aod.MEDIA_TITLE_TEXT_DP
                 + ",mediaArtistText=" + Aod.MEDIA_ARTIST_TEXT_DP
                 + ",mediaSubtitleGap=" + Aod.MEDIA_SUBTITLE_TOP_GAP_DP
+                + ",smallMediaTop=" + Aod.SMALL_MEDIA_TOP_DP
+                + ",compactMediaToNotificationGap=" + COMPACT_MEDIA_TO_NOTIFICATION_GAP_DP
                 + ",weatherIcon=" + Aod.WEATHER_ICON_SIZE_DP
                 + ",weatherPadding=" + Aod.WEATHER_ICON_PADDING_DP
                 + ",batteryText=" + Aod.BATTERY_TEXT_DP
@@ -182,7 +185,10 @@ final class PixelAodVisualStyle {
     static final class Aod {
         static final int LARGE_MEDIA_TOP_DP = 132;
         static final int LARGE_MEDIA_WITH_NOTIFICATIONS_TOP_DP = 224;
-        static final int SMALL_MEDIA_TOP_DP = 218;
+        // Small media occupies the same first lower-content baseline as a notification-only row.
+        // Contextual content can still push it down through mediaTopAfterInfo().
+        static final int SMALL_MEDIA_TOP_DP = SMALL_INFO_TOP_DP
+                + COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP;
         static final int NOTIFICATION_ICON_SIZE_DP = 14;
         static final int NOTIFICATION_ICON_SPACING_DP = 8;
         static final int MEDIA_TITLE_TEXT_DP = 18;

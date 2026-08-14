@@ -7509,7 +7509,8 @@ public final class PixelAodClockView extends FrameLayout {
                         mediaRow.getHeight(), dp(PixelAodVisualStyle.COUI_COMPACT_MEDIA_FALLBACK_HEIGHT_DP));
                 if (notificationIconRow.getVisibility() == View.VISIBLE) {
                     notificationTopPx = AodInfoStackLayout.topAfterVisibleRow(notificationTopPx,
-                            mediaBottomPx, dp(28));
+                            mediaBottomPx,
+                            dp(PixelAodVisualStyle.COMPACT_MEDIA_TO_NOTIFICATION_GAP_DP));
                 }
             }
         } else {

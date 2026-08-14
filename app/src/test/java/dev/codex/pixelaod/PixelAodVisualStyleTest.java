@@ -41,12 +41,14 @@ public final class PixelAodVisualStyleTest {
     public void balancesTheSmallSceneAwayFromTopBiometricsAndLowAodRows() {
         assertEquals(90, PixelAodVisualStyle.SMALL_CLOCK_TOP_DP);
         assertEquals(99, PixelAodVisualStyle.SMALL_INFO_TOP_DP);
-        assertEquals(218, PixelAodVisualStyle.Aod.SMALL_MEDIA_TOP_DP);
+        assertEquals(171, PixelAodVisualStyle.Aod.SMALL_MEDIA_TOP_DP);
         assertEquals(72,
                 PixelAodVisualStyle.COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP);
         assertEquals(12, PixelAodVisualStyle.COUI_COMPACT_CLOCK_TO_EVENT_GAP_DP);
         assertEquals(12,
                 PixelAodVisualStyle.COMPACT_CONTEXTUAL_TO_NOTIFICATION_GAP_DP);
+        assertEquals(12,
+                PixelAodVisualStyle.COMPACT_MEDIA_TO_NOTIFICATION_GAP_DP);
         assertEquals(85, PixelAodVisualStyle.COMPACT_DATE_TO_NOTIFICATION_TOP_OFFSET_DP);
     }
 

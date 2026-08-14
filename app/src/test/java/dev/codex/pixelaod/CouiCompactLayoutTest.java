@@ -21,7 +21,7 @@ public final class CouiCompactLayoutTest {
         assertEquals(736, CouiCompactLayout.infoLeft(1440, 400, density));
         assertEquals(396, CouiCompactLayout.infoTop(3168, density));
         assertEquals(128, CouiCompactLayout.mediaLeft(density));
-        assertEquals(872, CouiCompactLayout.mediaTopForViewport(3168, density));
+        assertEquals(684, CouiCompactLayout.mediaTopForViewport(3168, density));
     }
 
     @Test
@@ -76,10 +76,30 @@ public final class CouiCompactLayoutTest {
     }
 
     @Test
-    public void keepsMediaAtTheSmallBaselineUnlessInformationNeedsTheSpace() {
-        assertEquals(872, CouiCompactLayout.mediaTopAfterInfo(872, 810, 24));
-        assertEquals(932, CouiCompactLayout.mediaTopAfterInfo(840, 908, 24));
+    public void keepsMediaOnTheNotificationBaselineUnlessContextualInfoNeedsTheSpace() {
+        int mediaBaselinePx = CouiCompactLayout.mediaTopForViewport(3168, 4f);
+        assertEquals(684, mediaBaselinePx);
+        assertEquals(684, CouiCompactLayout.mediaTopAfterInfo(mediaBaselinePx, 650, 16));
+        assertEquals(716, CouiCompactLayout.mediaTopAfterInfo(mediaBaselinePx, 700, 16));
         assertEquals(14, PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP);
+    }
+
+    @Test
+    public void addsOnlyACompactGapBelowMediaBeforeNotificationIcons() {
+        float density = 4f;
+        int defaultNotificationTopPx = CouiCompactLayout.infoTop(3168, density)
+                + Math.round(PixelAodVisualStyle
+                .COMPACT_DATE_TO_NOTIFICATION_WITHOUT_EVENT_TOP_OFFSET_DP * density);
+        int mediaTopPx = CouiCompactLayout.mediaTopForViewport(3168, density);
+        int mediaBottomPx = AodInfoStackLayout.rowBottom(mediaTopPx, 0,
+                Math.round(PixelAodVisualStyle.COUI_COMPACT_MEDIA_FALLBACK_HEIGHT_DP * density));
+        int notificationTopPx = AodInfoStackLayout.topAfterVisibleRow(
+                defaultNotificationTopPx, mediaBottomPx,
+                Math.round(PixelAodVisualStyle.COMPACT_MEDIA_TO_NOTIFICATION_GAP_DP * density));
+
+        assertEquals(684, defaultNotificationTopPx);
+        assertEquals(684, mediaTopPx);
+        assertEquals(892, notificationTopPx);
     }
 
     @Test
@@ -120,6 +140,6 @@ public final class CouiCompactLayoutTest {
         assertEquals(360, anchors.clockTopPx);
         assertEquals(136, anchors.infoLeftPx);
         assertEquals(396, anchors.infoTopPx);
-        assertEquals(872, CouiCompactLayout.mediaTopForViewport(0, 4f));
+        assertEquals(684, CouiCompactLayout.mediaTopForViewport(0, 4f));
     }
 }
