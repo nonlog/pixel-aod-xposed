@@ -1,5 +1,89 @@
 # Changelog
 
+## [0.1.359] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/ui-refactor`; no Luna/Codex executor used.
+- **Scope:** Fix the non-immersive bottom navigation observed after the 0.1.358 three-tab shell.
+
+### Changed
+- Remove the extra `navigationBarsPadding()` applied to the Material3 `NavigationBar`; Material3 already consumes its own bottom system inset, so the duplicate outer padding had exposed the page background below the bar.
+- Make the Activity navigation bar transparent and disable the Android navigation-bar contrast scrim on API 29+, allowing the wallpaper-derived bottom-bar surface to extend continuously behind the gesture area.
+- Preserve the three-tab Home / AOD / System UI shell, dynamic wallpaper color roles, and all runtime behavior unchanged.
+
+### Evidence / Status
+- **Success (source/build):** full JVM regression is 360/360 with 0 failures, `git diff --check` passes, and `assembleDebug` passes. Final APK is 0.1.359 / 369 with SHA-256 `D88E27E4B1282CB1EFBFC4DDD582E53D2F0ED959E13777A2FB0DA5C196F12573`.
+- **Blocked (physical install):** the single controlled FRP `adb install -r` again lost the streamed APK transfer before Android PackageManager returned a result. No reconnect loop, ADB-server restart, or SystemUI reload was performed. Physical edge-to-edge visual confirmation remains pending manual/reliable installation.
+
+## [0.1.358] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/ui-refactor`; no Luna/Codex executor used.
+- **Scope:** Remove the redundant Settings top-level destination after the 0.1.357 AOD-hub restructure.
+
+### Changed
+- Remove `SettingsPage.SETTINGS` and the Settings item from the persistent bottom navigation. The primary shell now has exactly three destinations: Home, AOD, and System UI.
+- Move the existing Language choice, including its original setting key/dialog/persistence/recreate behavior, into a General section on Home.
+- Preserve the AOD hub and all real AOD child pages from 0.1.357. No Clock/AOD/UDFPS runtime source or setting-provider contract is changed.
+
+### Evidence / Status
+- **Success (source/build):** full JVM regression is 360/360 with 0 failures, `git diff --check` passes, `assembleDebug` passes, no `SettingsPage.SETTINGS`/`nav_settings` routing remains in `SettingsActivity`, and runtime hook sources have 0 diff lines in this UI-only pass.
+- **Blocked (physical install):** the first controlled FRP `adb install -r` of 0.1.358 again lost the streamed APK transfer before Android PackageManager returned a result. No ADB-server restart, reconnect loop, SystemUI reload, or runtime mutation was performed. Physical three-tab launch/navigation validation remains pending a reliable install path.
+
+## [0.1.357] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/ui-refactor`; no Luna/Codex executor used.
+- **Scope:** Apply the user's second COUI UI review: remove redundant Home actions, make AOD a real hub with child pages, replace the fixed light palette with wallpaper-derived dynamic roles, refine the COUI switch, and replace the unattractive enlarged launcher art with a dedicated dynamic hero mark.
+
+### Changed
+- Remove the three-segment Home shortcut bar. Home now exposes exactly one operational action, `Restart SystemUI`, plus the existing module master toggle.
+- Replace the Home raster/adaptive launcher artwork with `PixelAodHeroMark`, a dedicated programmatic P/clock mark rendered from `primary`, `secondaryContainer`, `tertiary`, and related dynamic roles. It scales cleanly and cannot hit the Compose adaptive-icon painter crash from the first 0.1.356 preview.
+- Stop overriding dynamic Material You neutral roles with fixed `#EDF1F0` / `#F9FDFC` / teal-adjacent colors. Android 12+ now uses the full `dynamicLightColorScheme` / `dynamicDarkColorScheme` from the current wallpaper; COUI hierarchy is expressed through surface/container role selection instead of fixed RGB values.
+- Refine the custom switch to the physical COUI reference: 58×36 outlined off track with left grey thumb/close glyph, and a filled dynamic-primary on track with a light dynamic-primary-container thumb/check glyph. All hues come from the current color scheme.
+- Implement AOD navigation option **B** from the user's review. The bottom AOD tab is now an AOD feature hub with real child pages: `Display & behavior`, `Clock Style`, `At a Glance`, and `Lockscreen`. Those child pages keep AOD selected in the bottom bar and return to the AOD hub.
+- Remove the redundant Always-on-display row from Settings that only switched to the AOD bottom tab. Settings is now reserved for app-level/general options; language remains there, while System UI keeps diagnostics.
+- Remove duplicated top-right SystemUI restart actions from Settings/AOD/child/SystemUI pages. The one Home restart action is the single explicit SystemUI restart control.
+- Keep all setting keys, ContentProvider writes, permissions, dialogs, and persistence semantics unchanged. No Clock/AOD/UDFPS runtime hook file is modified.
+
+### Evidence / Status
+- **Success (compile):** `:app:compileDebugKotlin` passes after the dynamic palette, switch, Home, and AOD-hub restructuring.
+- **Pending final gate:** full JVM regression, `git diff --check`, final `assembleDebug`, overwrite install, no-crash launch check, and physical navigation/color/switch review.
+
+## [0.1.356] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/ui-refactor`; no Luna/Codex executor used.
+- **Scope:** Rework the first UI preview against four user-supplied COUI Expressive 2.5 physical screenshots instead of merely applying generic Material 3 navigation.
+
+### Changed
+- Match the COUI Expressive light neutral hierarchy from the supplied screenshots while preserving the device Monet accent palette: light page background `#EDF1F0`, segmented-card surface `#F9FDFC`, bottom navigation surface `#E7F0EF`, and dark foreground `#283233`.
+- Replace the 0.1.355 home/category shell with a COUI-like four-tab bottom navigation: Home, Settings, AOD, and System UI. Nested Clock/Fingerprint, At a Glance, and Lockscreen pages remain reachable from the Settings tab and keep Settings selected in the bottom bar.
+- Rebuild Home around the COUI reference structure: large `Home` title, centered app icon/name/version/description, large three-segment quick-action pill, and a separate highlighted master-module card. The top-right SystemUI restart action remains available.
+- Rebuild Settings category rows as COUI-style segmented white cards with narrow gaps, uncluttered teal line icons, larger two-line text, optional current-value summary, and chevron. Remove the 0.1.355 colored icon-container treatment.
+- Replace the stock Material 3 switch visual with a COUI-style outlined 56x32 pill and animated circular thumb containing explicit check/close state glyphs.
+- Increase the large-title top breathing room and use normal-weight 32sp page titles; keep section labels in the Monet primary color. AOD becomes a top-level bottom-navigation page with `Always-on display` / `Display` hierarchy and no ordinary subpage back affordance.
+- Keep all existing setting keys, ContentProvider writes, permissions, dialogs, and persistence semantics unchanged. No Clock/AOD/UDFPS runtime source file is modified.
+
+### Evidence / Status
+- **Reference:** four user-provided physical COUI Expressive screenshots were inspected for page/card/bottom-bar colors, title spacing, segmented row structure, icon treatment, switch geometry, and persistent bottom navigation.
+- **Success (compile):** `:app:compileDebugKotlin` passes after the second-pass component/navigation rewrite.
+- **Crash found and corrected before acceptance:** the first 0.1.356 preview used `painterResource(R.mipmap.ic_launcher)` on an adaptive-icon XML and crashed on launch because Compose accepts only vector or raster painter resources. Home now uses the existing raster `ic_launcher_foreground` asset instead; fresh launch verification is required below before UI review continues.
+- **Pending:** full JVM suite, `git diff --check`, final debug build, overwrite install, and fresh physical screenshots before this UI batch is committed.
+
+## [0.1.355] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/ui-refactor`; the accepted 0.1.354 runtime remains the stable baseline.
+- **Scope:** First post-stability settings UI refinement batch. Presentation/navigation only; no Clock/AOD/UDFPS hook behavior, setting key, provider contract, or persistence semantics are changed.
+
+### Changed
+- Split the former single long settings column into a persistent category home and dedicated subpages for AOD, Clock/Fingerprint, At a Glance, Lockscreen, and System. The first visual-spec batch is the home + AOD page; the other category pages preserve the existing controls while moving them into the new navigation shell.
+- Extend `PixelAodDesignSystem` with a COUI-style category navigation row: dynamic-color icon container, two-line label hierarchy, optional current-value summary, chevron affordance, and grouped separators.
+- Extend `PixelAodPage` with an optional back affordance while keeping the restart action available. Android back now returns from a subpage to the settings home instead of closing the activity.
+- Keep the module hero toggle on the settings home, show the current AOD display mode directly on the AOD category row, and show the current language on the System category row.
+- Add localized page descriptions and navigation labels for Chinese and English.
+
+### Evidence / Status
+- **Baseline captured:** light and dark screenshots of the accepted 0.1.354 settings UI were saved under the gitignored `.local/ui_refactor_baseline_20260818/`, with the device UI mode restored to `auto` afterward.
+- **Reference checked:** the freshly decompiled anti-obfuscation COUI Expressive 2.5 `SettingsActivity` confirms Compose content, edge-to-edge window handling, localized configuration, and system/dynamic-theme behavior remain valid foundations for this refactor.
+- **Success (compile):** `:app:compileDebugKotlin` passes after the navigation-shell implementation.
+- **Pending:** full JVM regression, diff/build/package checks, overwrite install, and user-visible home/AOD screenshot review before this first UI batch is committed.
 ## [0.1.354] - 2026-08-18
 ### Meta
 - **Owner / Model:** GPT-5.6 Sol direct implementation; Luna/Codex executor remains disabled by the user's direct-execution override.

@@ -14,10 +14,12 @@ import android.widget.Toast
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,11 +47,14 @@ import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Android
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Policy
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -77,6 +82,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,6 +90,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -104,6 +111,16 @@ private enum class ClockDialTarget {
     FORECAST_END
 }
 
+private enum class SettingsPage {
+    HOME,
+    AOD,
+    AOD_DISPLAY,
+    CLOCK,
+    AT_A_GLANCE,
+    LOCKSCREEN,
+    SYSTEM
+}
+
 class SettingsActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(applyLanguage(newBase))
@@ -115,6 +132,10 @@ class SettingsActivity : ComponentActivity() {
             PixelAodSettings.refresh(this)
         }
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         val isSystemDark = resources.configuration.uiMode and
             Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
         val controller = WindowCompat.getInsetsController(window, window.decorView)
@@ -211,17 +232,8 @@ private fun android.content.SharedPreferences.schemaFloat(key: String, fallback:
 
 @Composable
 private fun PixelAodSettingsScreen(onLanguageChanged: () -> Unit) {
-    val context = LocalContext.current
     PixelAodTheme {
-        PixelAodPage(
-            title = stringResource(R.string.app_name),
-            subtitle = stringResource(R.string.module_description),
-            actionIcon = Icons.Outlined.RestartAlt,
-            actionDescription = stringResource(R.string.restart_systemui),
-            onAction = { restartSystemUi(context) }
-        ) {
-            SettingsContent(onLanguageChanged = onLanguageChanged)
-        }
+        SettingsContent(onLanguageChanged = onLanguageChanged)
     }
 }
 
@@ -403,20 +415,156 @@ private fun SettingsContent(
     var showCalendarIconAppDialog by remember { mutableStateOf(false) }
     var showDisplayModeDialog by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(PixelAodDesignSystem.spacing.sectionGap)
-    ) {
-        PixelAodHeroToggle(
-            title = stringResource(R.string.title_module_enabled),
-            subtitle = stringResource(R.string.desc_module_enabled),
-            checked = moduleEnabled.value
+    var currentPageName by rememberSaveable { mutableStateOf(SettingsPage.HOME.name) }
+    val currentPage = remember(currentPageName) { SettingsPage.valueOf(currentPageName) }
+    val navigate: (SettingsPage) -> Unit = { page -> currentPageName = page.name }
+    val navigateHome: () -> Unit = { currentPageName = SettingsPage.HOME.name }
+    val navigateAod: () -> Unit = { currentPageName = SettingsPage.AOD.name }
+    val selectedBottomPage = when (currentPage) {
+        SettingsPage.HOME -> SettingsPage.HOME
+        SettingsPage.AOD,
+        SettingsPage.AOD_DISPLAY,
+        SettingsPage.CLOCK,
+        SettingsPage.AT_A_GLANCE,
+        SettingsPage.LOCKSCREEN -> SettingsPage.AOD
+        SettingsPage.SYSTEM -> SettingsPage.SYSTEM
+    }
+    val versionName = remember(context) {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull().orEmpty()
+    }
+    val bottomItems = listOf(
+        PixelAodBottomItem(SettingsPage.HOME.name, stringResource(R.string.nav_home), Icons.Outlined.Home),
+        PixelAodBottomItem(SettingsPage.AOD.name, stringResource(R.string.nav_aod), Icons.Outlined.Schedule),
+        PixelAodBottomItem(SettingsPage.SYSTEM.name, stringResource(R.string.nav_system_ui), Icons.Outlined.Android)
+    )
+    val bottomBar: @Composable () -> Unit = {
+        PixelAodBottomBar(
+            items = bottomItems,
+            selectedValue = selectedBottomPage.name,
+            onSelected = { currentPageName = it }
+        )
+    }
+    BackHandler(enabled = currentPage != SettingsPage.HOME) {
+        currentPageName = when (currentPage) {
+            SettingsPage.AOD_DISPLAY,
+            SettingsPage.CLOCK,
+            SettingsPage.AT_A_GLANCE,
+            SettingsPage.LOCKSCREEN -> SettingsPage.AOD.name
+            else -> SettingsPage.HOME.name
+        }
+    }
+
+    when (currentPage) {
+        SettingsPage.HOME -> PixelAodPage(
+            title = stringResource(R.string.nav_home),
+            subtitle = "",
+            bottomBar = bottomBar
         ) {
-            moduleEnabled.value = it
-            updateModuleBooleanSetting(context, PixelAodSettings.KEY_MODULE_ENABLED, it)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                PixelAodHeroMark(modifier = Modifier.size(112.dp))
+                Spacer(modifier = Modifier.height(18.dp))
+                Text(
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.displaySmall.copy(fontSize = 28.sp),
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Text(
+                        text = versionName,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = stringResource(R.string.module_description),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                )
+            }
+
+            PixelAodActionCard(
+                icon = Icons.Outlined.RestartAlt,
+                title = stringResource(R.string.restart_systemui),
+                subtitle = stringResource(R.string.desc_restart_systemui)
+            ) { restartSystemUi(context) }
+
+            PixelAodHeroToggle(
+                title = stringResource(R.string.title_module_enabled),
+                subtitle = stringResource(R.string.desc_module_enabled),
+                checked = moduleEnabled.value
+            ) {
+                moduleEnabled.value = it
+                updateModuleBooleanSetting(context, PixelAodSettings.KEY_MODULE_ENABLED, it)
+            }
+
+            PixelAodSection(stringResource(R.string.section_general)) {
+                PixelAodGroup {
+                    PixelAodChoiceRow(
+                        icon = Icons.Outlined.Language,
+                        title = stringResource(R.string.title_language),
+                        valueText = languageLabel(language.value),
+                        showDivider = false
+                    ) { showLanguageDialog = true }
+                }
+            }
+        }
+        SettingsPage.AOD -> PixelAodPage(
+            title = stringResource(R.string.title_page_aod),
+            subtitle = "",
+            bottomBar = bottomBar
+        ) {
+            PixelAodSection(stringResource(R.string.section_aod_pages)) {
+                PixelAodGroup {
+                    PixelAodNavigationRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_aod_display_behavior),
+                        subtitle = stringResource(R.string.desc_aod_display_behavior),
+                        valueText = aodDisplayModeLabel(aodDisplayMode.value),
+                        showDivider = true
+                    ) { navigate(SettingsPage.AOD_DISPLAY) }
+                    PixelAodNavigationRow(
+                        icon = Icons.Outlined.Fingerprint,
+                        title = stringResource(R.string.section_clock),
+                        subtitle = stringResource(R.string.desc_page_clock),
+                        showDivider = true
+                    ) { navigate(SettingsPage.CLOCK) }
+                    PixelAodNavigationRow(
+                        icon = Icons.Outlined.Cloud,
+                        title = stringResource(R.string.section_at_a_glance),
+                        subtitle = stringResource(R.string.desc_page_at_a_glance),
+                        showDivider = true
+                    ) { navigate(SettingsPage.AT_A_GLANCE) }
+                    PixelAodNavigationRow(
+                        icon = Icons.Outlined.Policy,
+                        title = stringResource(R.string.section_lockscreen),
+                        subtitle = stringResource(R.string.desc_page_lockscreen),
+                        showDivider = false
+                    ) { navigate(SettingsPage.LOCKSCREEN) }
+                }
+            }
         }
 
-        PixelAodSection(stringResource(R.string.section_aod_behavior)) {
+        SettingsPage.AOD_DISPLAY -> PixelAodPage(
+            title = stringResource(R.string.title_aod_display_behavior),
+            subtitle = "",
+            onBack = navigateAod,
+            backDescription = stringResource(R.string.navigate_back),
+            bottomBar = bottomBar
+        ) {
+        PixelAodSection(stringResource(R.string.section_aod_display)) {
             PixelAodGroup() {
                 PixelAodChoiceRow(
                     icon = Icons.Outlined.Schedule,
@@ -464,7 +612,15 @@ private fun SettingsContent(
                 }
             }
         }
+        }
 
+        SettingsPage.CLOCK -> PixelAodPage(
+            title = stringResource(R.string.section_clock),
+            subtitle = "",
+            onBack = navigateAod,
+            backDescription = stringResource(R.string.navigate_back),
+            bottomBar = bottomBar
+        ) {
         PixelAodSection(stringResource(R.string.section_clock)) {
             PixelAodGroup() {
                 PixelAodToggleRow(
@@ -538,7 +694,15 @@ private fun SettingsContent(
                 }
             }
         }
+        }
 
+        SettingsPage.AT_A_GLANCE -> PixelAodPage(
+            title = stringResource(R.string.section_at_a_glance),
+            subtitle = "",
+            onBack = navigateAod,
+            backDescription = stringResource(R.string.navigate_back),
+            bottomBar = bottomBar
+        ) {
         PixelAodSection(stringResource(R.string.section_at_a_glance)) {
             PixelAodGroup() {
                 PixelAodToggleRow(
@@ -694,7 +858,15 @@ private fun SettingsContent(
                 }
             }
         }
+        }
 
+        SettingsPage.LOCKSCREEN -> PixelAodPage(
+            title = stringResource(R.string.section_lockscreen),
+            subtitle = "",
+            onBack = navigateAod,
+            backDescription = stringResource(R.string.navigate_back),
+            bottomBar = bottomBar
+        ) {
         PixelAodSection(stringResource(R.string.section_lockscreen)) {
             PixelAodGroup() {
                 PixelAodToggleRow(
@@ -709,7 +881,14 @@ private fun SettingsContent(
                 }
             }
         }
+        }
 
+        SettingsPage.SYSTEM -> PixelAodPage(
+            title = stringResource(R.string.nav_system_ui),
+            subtitle = "",
+            bottomBar = bottomBar
+        ) {
+        PixelAodInfoBanner(stringResource(R.string.system_ui_warning))
         PixelAodSection(stringResource(R.string.section_system)) {
             PixelAodGroup() {
                 PixelAodToggleRow(
@@ -731,6 +910,7 @@ private fun SettingsContent(
                     showLanguageDialog = true
                 }
             }
+        }
         }
     }
 
