@@ -30,6 +30,24 @@ public final class PixelAodSettings {
             PixelAodSettingsSchema.KEY_NOTIFICATION_ICONS;
     public static final String KEY_PIXEL_FINGERPRINT_ICON =
             PixelAodSettingsSchema.KEY_PIXEL_FINGERPRINT_ICON;
+    public static final String KEY_UDFPS_HDR_PRESS_EFFECT =
+            PixelAodSettingsSchema.KEY_UDFPS_HDR_PRESS_EFFECT;
+    public static final String KEY_UDFPS_SUCCESS_RIPPLE =
+            PixelAodSettingsSchema.KEY_UDFPS_SUCCESS_RIPPLE;
+    public static final String KEY_UDFPS_AOD_EXIT_ANIMATION =
+            PixelAodSettingsSchema.KEY_UDFPS_AOD_EXIT_ANIMATION;
+    public static final String KEY_UDFPS_RENDERER =
+            PixelAodSettingsSchema.KEY_UDFPS_RENDERER;
+    public static final String UDFPS_RENDERER_COUI_PORT =
+            PixelAodSettingsSchema.UDFPS_RENDERER_COUI_PORT;
+    public static final String UDFPS_RENDERER_LEGACY =
+            PixelAodSettingsSchema.UDFPS_RENDERER_LEGACY;
+    public static final String KEY_CLOCK_RENDERER =
+            PixelAodSettingsSchema.KEY_CLOCK_RENDERER;
+    public static final String CLOCK_RENDERER_COUI_PORT =
+            PixelAodSettingsSchema.CLOCK_RENDERER_COUI_PORT;
+    public static final String CLOCK_RENDERER_LEGACY =
+            PixelAodSettingsSchema.CLOCK_RENDERER_LEGACY;
     public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY =
             PixelAodSettingsSchema.KEY_LOCKSCREEN_NOTIFICATION_POLICY;
     public static final String KEY_DEBUG_LOGGING = PixelAodSettingsSchema.KEY_DEBUG_LOGGING;

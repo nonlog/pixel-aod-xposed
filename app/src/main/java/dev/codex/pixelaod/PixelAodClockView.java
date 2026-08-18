@@ -301,6 +301,8 @@ public final class PixelAodClockView extends FrameLayout {
             new HashMap<>();
     private static final Map<String, AodNotificationPipeline.LockscreenVisibilityDecision> lockscreenVisibilityDecisions =
             new HashMap<>();
+    private static final LockscreenVisibilityRefreshGate LOCKSCREEN_VISIBILITY_REFRESH_GATE =
+            new LockscreenVisibilityRefreshGate();
     private static final ProximityAuthorityGate PROXIMITY_AUTHORITY_GATE =
             new ProximityAuthorityGate();
 
@@ -1010,6 +1012,10 @@ public final class PixelAodClockView extends FrameLayout {
             signature = AodNotificationPipeline.notificationSignature(rawNotifications) + "|"
                     + AodNotificationPipeline.notificationSignature(activeNotifications) + "|media="
                     + lastMediaCandidatesSignature;
+            // This snapshot was built from the latest per-entry visibility map, so any pending
+            // coalesced visibility refresh has already been consumed even if the visual signature
+            // did not change.
+            LOCKSCREEN_VISIBILITY_REFRESH_GATE.onSnapshotPublished();
             if (TextUtils.equals(lastNotificationSnapshotSignature, signature)) {
                 return;
             }
@@ -1029,33 +1035,36 @@ public final class PixelAodClockView extends FrameLayout {
                 markNotificationPulseCandidateLocked(pulseObservation, source, trace,
                         packageSummary, rawCount, usableCount, mediaCandidateCount);
             }
-            String state = describeAodState(appContext);
-            PixelAodLog.log("updated native AOD notification snapshot raw="
-                    + rawCount
-                    + " usable=" + usableCount
-                    + " media=" + mediaCandidateCount
-                    + " packages=" + packageSummary
-                    + " trace=" + trace
-                    + " state={" + state + "}");
-            PixelAodLog.log("AOD notification snapshot direct raw="
-                    + rawCount
-                    + " usable=" + usableCount
-                    + " trace=" + trace
-                    + " state={" + state + "}");
-            OosAodLifecycleAdapter.recordNotificationPulseObservation(
-                    source,
-                    rawCount,
-                    usableCount,
-                    mediaCandidateCount,
-                    -1,
-                    packageSummary,
-                    trace,
-                    state,
-                    pulseModulePolicy,
-                    isProximityNear());
+            if (PixelAodLog.isDebugEnabled()) {
+                String state = describeAodState(appContext);
+                PixelAodLog.log("updated native AOD notification snapshot raw="
+                        + rawCount
+                        + " usable=" + usableCount
+                        + " media=" + mediaCandidateCount
+                        + " packages=" + packageSummary
+                        + " trace=" + trace
+                        + " state={" + state + "}");
+                PixelAodLog.log("AOD notification snapshot direct raw="
+                        + rawCount
+                        + " usable=" + usableCount
+                        + " trace=" + trace
+                        + " state={" + state + "}");
+                OosAodLifecycleAdapter.recordNotificationPulseObservation(
+                        source,
+                        rawCount,
+                        usableCount,
+                        mediaCandidateCount,
+                        -1,
+                        packageSummary,
+                        trace,
+                        state,
+                        pulseModulePolicy,
+                        isProximityNear());
+            }
         }
         refreshInstancesFromNotificationSnapshot(source);
         PixelLockscreenClockView.setActiveNotifications(activeNotifications);
+        ActiveClockRendererController.refreshSemanticData(source + "#COUI");
     }
 
     private static void markNotificationPulseCandidateLocked(
@@ -1087,8 +1096,9 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             rawSnapshot = rawNotifications;
         }
-        PixelAodLog.log("refreshing AOD notification filtering trace=" + currentAodTraceId()
-                + " source=" + source + " state={" + describeAodState(appContext) + "}");
+        PixelAodLog.log("refresh-aod-notification-filtering", () ->
+                "refreshing AOD notification filtering trace=" + currentAodTraceId()
+                        + " source=" + source + " state={" + describeAodState(appContext) + "}");
         setActiveNotifications(rawSnapshot, source);
     }
 
@@ -1123,14 +1133,46 @@ public final class PixelAodClockView extends FrameLayout {
             }
             lockscreenVisibilityDecisions.put(sbn.getKey(), next);
         }
-        PixelAodLog.log("updated lockscreen visibility decision pkg=" + sbn.getPackageName()
-                + " key=" + sbn.getKey()
-                + " source=" + source
-                + " stage=" + (fromFilter ? "filter" : "provider")
-                + " hidden=" + hidden
-                + " decision=" + next
-                + " trace=" + currentAodTraceId());
-        refreshNotificationFiltering("lockscreen-visibility-" + (fromFilter ? "filter" : "provider"));
+        PixelAodLog.log("lockscreen-visibility-decision", () ->
+                "updated lockscreen visibility decision pkg=" + sbn.getPackageName()
+                        + " key=" + sbn.getKey()
+                        + " source=" + source
+                        + " stage=" + (fromFilter ? "filter" : "provider")
+                        + " hidden=" + hidden
+                        + " decision=" + next
+                        + " trace=" + currentAodTraceId());
+
+        // shouldHideNotification()/shouldFilterOut() are called once per entry while SystemUI is
+        // traversing keyguard. Keep those hooks O(1): update the decision map synchronously, then
+        // rebuild the complete AOD snapshot only once after the traversal and only while AOD can
+        // consume it. Waking/interactive traversal leaves the aggregate dirty until the next AOD.
+        boolean canRefreshNow = canRefreshLockscreenVisibilitySnapshot();
+        if (LOCKSCREEN_VISIBILITY_REFRESH_GATE.markDirty(canRefreshNow)) {
+            postLockscreenVisibilityRefresh(
+                    "lockscreen-visibility-" + (fromFilter ? "filter" : "provider"));
+        }
+    }
+
+    private static boolean canRefreshLockscreenVisibilitySnapshot() {
+        Context context = appContext;
+        return context != null && isAodActive() && !isDeviceInteractive(context);
+    }
+
+    private static void requestPendingLockscreenVisibilityRefresh(String source) {
+        boolean canRefreshNow = canRefreshLockscreenVisibilitySnapshot();
+        if (LOCKSCREEN_VISIBILITY_REFRESH_GATE.requestIfDirty(canRefreshNow)) {
+            postLockscreenVisibilityRefresh(source);
+        }
+    }
+
+    private static void postLockscreenVisibilityRefresh(String source) {
+        mainHandler().post(() -> {
+            boolean canRefreshNow = canRefreshLockscreenVisibilitySnapshot();
+            if (!LOCKSCREEN_VISIBILITY_REFRESH_GATE.beginDispatch(canRefreshNow)) {
+                return;
+            }
+            refreshNotificationFiltering(source + "#coalesced");
+        });
     }
 
     private static void retainLockscreenVisibilityDecisionsLocked(
@@ -1198,8 +1240,11 @@ public final class PixelAodClockView extends FrameLayout {
         if (changed) {
             startAodTrace(source);
         }
+        if (active && changed) {
+            requestPendingLockscreenVisibilityRefresh(source + "#aod-activation");
+        }
         if (active && changed && fromInteractiveLockscreen) {
-            ClockPluginHostController.noteLockscreenToAodHandoff(source);
+            ActiveClockRendererController.noteLockscreenToAodHandoff(source);
         }
         if (active) {
             if (delayedNonLockscreenReveal) {
@@ -1239,7 +1284,7 @@ public final class PixelAodClockView extends FrameLayout {
             if (finalActive) {
                 PixelAodHook.refreshKnownAodHostVisibility(source + "#active");
             }
-            ClockPluginHostController.refreshAll(source + "#set-aod-active");
+            ActiveClockRendererController.refreshAll(source + "#set-aod-active");
         });
         if (delayedNonLockscreenReveal) {
             long delayMs = Math.max(0L,
@@ -1611,7 +1656,7 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
             PixelAodHook.refreshKnownAodHostVisibility(source);
-            ClockPluginHostController.refreshAll(source + "#policy");
+            ActiveClockRendererController.refreshAll(source + "#policy");
         });
     }
 
@@ -1660,7 +1705,7 @@ public final class PixelAodClockView extends FrameLayout {
                     + " source=" + source + " count=" + hidden
                     + " managedSkipped=" + managed
                     + " state={" + describeAodState(appContext) + "}");
-            ClockPluginHostController.refreshAll(source + "#hide-legacy-overlays");
+            ActiveClockRendererController.refreshAll(source + "#hide-legacy-overlays");
         };
         if (Looper.myLooper() == Looper.getMainLooper()) {
             task.run();
@@ -2867,6 +2912,8 @@ public final class PixelAodClockView extends FrameLayout {
                     }
                 }
                 PixelLockscreenClockView.refreshAll("weather-contextual");
+                ActiveClockRendererController.refreshInformationFromExistingAdapters(
+                        "weather-contextual");
             });
         } catch (Throwable t) {
             PixelAodLog.log("failed to handle Breezy weather payload", t);
@@ -4429,7 +4476,7 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
             PixelAodHook.refreshKnownAodHostVisibility(delayedSource);
-            ClockPluginHostController.refreshAll(delayedSource + "#policy");
+            ActiveClockRendererController.refreshAll(delayedSource + "#policy");
         }, delayMillis);
     }
 
@@ -5275,6 +5322,40 @@ public final class PixelAodClockView extends FrameLayout {
             }
         }
         return list;
+    }
+
+    /**
+     * Returns the same filtered, deduplicated notification glyph data used by the existing AOD
+     * semantic adapter, without creating or querying a module clock view.
+     */
+    static List<Drawable> currentCouiNotificationIcons(Context context) {
+        if (context == null) {
+            return Collections.emptyList();
+        }
+        List<StatusBarNotification> notifications = currentNotifications();
+        if (notifications.isEmpty()) {
+            return Collections.emptyList();
+        }
+        HashSet<String> seenIconKeys = new HashSet<>();
+        ArrayList<String> loadedIconKeys = new ArrayList<>();
+        ArrayList<Drawable> loadedIcons = new ArrayList<>();
+        for (StatusBarNotification sbn : notifications) {
+            if (sbn == null || AodNotificationPipeline.isMediaIconCandidate(sbn)) {
+                continue;
+            }
+            String dedupeKey = AodNotificationPipeline.notificationIconDedupeKey(sbn);
+            if (!seenIconKeys.add(dedupeKey)) {
+                continue;
+            }
+            Drawable drawable = loadSmallIconDrawable(context, sbn);
+            if (drawable != null) {
+                loadedIconKeys.add(dedupeKey);
+                loadedIcons.add(drawable);
+            }
+        }
+        // The COUI host owns its five-icon plus-x presentation. Keep this semantic adapter's
+        // filtered/deduplicated input complete so hidden count remains exact.
+        return new ArrayList<>(loadedIcons);
     }
 
     /**

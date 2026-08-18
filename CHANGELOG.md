@@ -1,5 +1,182 @@
 # Changelog
 
+## [0.1.354] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation; Luna/Codex executor remains disabled by the user's direct-execution override.
+- **Scope:** Remove the intermittent partial-AOD notification-row position jump observed after the 0.1.353 performance correction.
+
+### Changed
+- Match COUI 2.5 `PixelClockHostView.applyContentViewTarget()` exactly for AOD content motion: notification and media rows now commit their final `translationX/Y` before an animated transition and animate alpha only. Clock glyph geometry/weight motion remains unchanged.
+- Preserve the current notification/media row position while an animated transition is leaving partial AOD, matching the reference fade-out behavior and preventing a hidden content row from jumping back to the default anchor.
+- Add `CouiClockAodContentMotionPolicy` as a pure regression seam proving partial-AOD entry never animates content-row translation and animated exit preserves the existing position.
+
+### Evidence / Status
+- **Root cause confirmed against COUI 2.5:** the reference passes `animateTranslation=false` for both `notificationIconRow` and `mediaGroup`; the port had used a generic `applyViewTarget()` that animated X/Y and alpha together. With pre-arm at the non-dozing anchor and burn-in applied on the next AOD frame, this exposed exactly the user-observed “wrong position → downward movement → correct position” sequence.
+- **Success (focused regression):** AOD content-motion, AOD transition, unlocked-entry normalization, non-lockscreen prearm, notification overflow, and geometry tests pass.
+- **Success (physical, user-observed):** 0.1.354 was overwrite-installed and hash-verified on the physical CPH2573, SystemUI was reloaded once, and repeated visual testing confirmed notification icons now appear directly at their final AOD position without the previous visible downward correction.
+
+## [0.1.353] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation under the user-authorized direct-execution override; Luna/Codex executor was not used.
+- **Scope:** Remove shared SystemUI hot-path work that made both unlocked-desktop → AOD entry and screen-off fingerprint unlock/success ripple visibly delayed and janky.
+
+### Changed
+- Replace per-notification synchronous AOD snapshot rebuilding from `KeyguardNotificationVisibilityProvider` / notification filter callbacks with an O(1) visibility-map update plus one coalesced AOD refresh. Interactive/waking keyguard traversal only marks the aggregate dirty; the next real AOD activation consumes it once. This removes the previous O(N²) main-thread notification-policy workload from the wake/ripple window while preserving the synchronous hide/show decision returned to SystemUI.
+- In COUI UDFPS mode, stop installing PixelAodHook's legacy broad FOD after-diagnostic and duplicate async hooks. `CouiUdfpsController` remains the single UiMech/async observer, so optical wake/auth no longer executes two hook stacks or eagerly builds `describeAodState`/argument dumps for every vendor callback.
+- Match COUI 2.5's UDFPS refresh scheduling: once the fingerprint icon is attached, coalesced visual-state application runs through `postOnAnimation()` instead of unrestricted `MAIN.post()`, bounding visual/HDR work to the frame boundary.
+- Match COUI 2.5's HDR carrier setup: `prepareHdrWindow()` is now one-shot per pressed icon and no longer posts `WindowManager.updateViewLayout()` on every visual refresh. The extra pressed-icon mutation reassert path now restores only alpha/illumination and no longer submits another SurfaceControl HDR transaction; authoritative UiMech visual-state application still owns HDR state changes.
+- Make screen-off-from-unlocked COUI first-frame pre-arm idempotent. The earlier `KeyguardService#onStartedGoingToSleep` pre-arm owns the cycle; `WakefulnessLifecycle#dispatchStartedGoingToSleep` is fallback only and no longer cancels/reapplies the same SMALL/500 first frame a second time.
+- Make hot notification filtering/visibility diagnostic messages lazy and avoid building full AOD state descriptions for notification snapshot diagnostics while debug logging is disabled.
+
+### Evidence / Status
+- **Success (source/reference):** the UDFPS frame scheduling and one-shot HDR-window semantics now match the anti-obfuscated COUI 2.5 implementation; the old port's repeated HDR window setup and pressed-mutation HDR transaction were confirmed divergences.
+- **Success (focused regression):** notification refresh-gate, non-lockscreen pre-arm, AOD transition/overflow, UDFPS pressed visual/animation, and UDFPS state-machine tests pass.
+- **Success (physical, user-observed):** unlocked-desktop → AOD and screen-off fingerprint unlock/success-ripple jank were reported as largely fixed after the 0.1.353 install.
+- **Failed / carried forward:** partial-AOD notification icons can intermittently become visible at the pre-AOD anchor and then move downward to the burn-in-adjusted final position. This is corrected in 0.1.354 by porting the reference content-row alpha-only motion contract.
+
+## [0.1.352] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation; Luna/Codex remains disabled.
+- **Scope:** Remove the remaining black-frame/jank sources during the unlocked-desktop → partial-AOD SMALL weight morph without deleting COUI's intended 500→180 variable-font transition.
+
+### Changed
+- Match COUI 2.5 `PixelClockHostView.applyTargets()` ordering: every explicit target transaction now cancels any queued `scheduleApplyTargets()` runnable before calculating/applying its frame. A stale queued lockscreen/AOD target can no longer fire after the authoritative transaction and restart the clock animation.
+- Match COUI 2.5 `setLiveAodContent()` ordering: pending live retargets cancel currently running property animations before staging their pre-draw target. This prevents overlapping 550 ms target sets during notification/media updates.
+- Restore COUI's equal-content short circuit for regular AOD content updates and suppress controller-level live retargets when the semantic AOD kind + notification count is unchanged. Icon/media payload data still refreshes through the data-only adapter, but an unrelated notification/weather/policy callback no longer restarts the clock weight/geometry morph.
+- Add one-shot ROM TextAnimator prewarm scheduled/start/complete diagnostics so the physical gate can prove whether the variable-font cache is ready before the tested transition.
+
+### Evidence / Status
+- **Focused regression:** AOD transition, applied-target, unlocked-entry normalization, non-lockscreen prearm, and ClockPlugin mapping tests pass, including new coverage that identical semantic snapshots do not request a live target replay while real count/kind changes still do.
+- **Failed (physical):** user visual testing confirmed the original unlocked-desktop → screen-off AOD delay/jank remained. Screen-off fingerprint unlock and the success ripple were also visibly janky, proving the dominant problem was not duplicate 550 ms clock retargeting alone and motivating the shared hot-path correction in 0.1.353.
+
+## [0.1.351] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation; Luna/Codex remains disabled for this stage.
+- **Scope:** Close the remaining pre-Wakefulness race found during the installed 0.1.350 desktop-screen-off gate.
+
+### Changed
+- Move the non-lockscreen AOD first-frame pre-arm to the already-verified `KeyguardService$3#onStartedGoingToSleep` before-hook when it authoritatively observes `mKeyguardViewMediator.mShowing=false`. The binder event arrives before OPlus's first post-screen-off ClockPlugin render.
+- Because that hook runs off the UI thread, enqueue the one-shot COUI host pre-arm at the front of the SystemUI main queue. This prevents an already queued `UI_STATE_UNLOCKED` render from starting the old 550 ms LARGE→SMALL target animation before `WakefulnessLifecycle#dispatchStartedGoingToSleep` runs.
+- Keep the Wakefulness pre-arm as an idempotent fallback, keep stale UNLOCKED/KEYGUARD renders held until real AOD consumes the pre-arm, and keep wake-before-AOD cancellation unchanged.
+
+### Evidence / Status
+- **Failed 0.1.350 gate that motivated this correction:** on the real device the authoritative binder latch appeared at `10:00:04.674`, while OPlus produced `UI_STATE_UNLOCKED` renders at `10:00:04.742` and `.770`; the Wakefulness-only pre-arm was therefore too late to guarantee that no animation was ever created, even though later stale renders were successfully held and no LARGE target appeared after pre-arm.
+- **Pending 0.1.351 gate:** focused/full tests, build/package inspection, overwrite install, one SystemUI reload, then the exact PIN-unlock → HOME → screen-off trace must show the binder-requested pre-arm logged before the first post-screen-off ClockPlugin render and no LARGE target / LARGE→SMALL transition.
+
+## [0.1.350] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation; Luna/Codex remains disabled for this stage.
+- **Scope:** Eliminate the remaining unlocked-desktop screen-off LARGE→SMALL intermediate clock animation.
+
+### Changed
+- Treat a confirmed screen-off-from-unlocked event as an explicit COUI host pre-arm. During `WakefulnessLifecycle#dispatchStartedGoingToSleep`, the persistent host now synchronously cancels queued/running clock animations and parks on the normalized first-frame scene (`SMALL` for notification/media content, `LARGE` for no content) before OPlus can expose the keyguard/AOD root.
+- While that pre-arm is active, stale OPlus `UI_STATE_UNLOCKED` / `UI_STATE_KEYGUARD` ClockPlugin renders are semantic-data-only and cannot retarget the host. The first real AOD/panoramic-AOD render consumes the pre-arm and resumes the normal ClockPlugin presentation path. A wake before AOD clears the pre-arm.
+- Keep the 0.1.349 pre-Keyguard sleep-origin latch and first-AOD normalization unchanged. The new fix addresses the earlier stage that was still visibly animating the cached `LS_LARGE` host to `LS_SMALL` for 550 ms before the real AOD render arrived.
+
+### Evidence / Status
+- **Success (focused source regression):** tests cover pre-armed UNLOCKED/KEYGUARD holds, AOD consumption, normal routing without pre-arm, existing unlocked-entry normalization, sleep-origin resolution, mapper behavior, and applied-target deduplication.
+- **Pending physical gate:** full JVM suite/build/package inspection, overwrite install, one SystemUI reload, and a recorded PIN-unlock → HOME → screen-off trace are required before this fix is accepted.
+
+## [0.1.349] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation; Luna/Codex remained disabled by explicit user instruction.
+- **Scope:** Final anti-COUI media-callback parity correction discovered during the installed 0.1.348 physical gate.
+
+### Changed
+- Match the anti-obfuscation COUI 2.5 `AodMediaMonitor.refreshMediaState()` behavior instead of treating every `MediaController.Callback#onPlaybackStateChanged` as a semantic change. OPlus/PixelPlay emits playback callbacks roughly every three seconds as position advances even while package/title/artist and `PLAYING` state are unchanged; those callbacks no longer trigger a host/AOD content refresh.
+- Cache the current semantic media identity (`present + package + title + artist`) and notify the single COUI host only when that identity actually changes. Session destruction re-queries active sessions, matching the anti build's controller lifecycle. `snapshot()` now consumes the cached active-media record rather than reconstructing a new app icon and media record on every unrelated notification refresh.
+- Port the anti build's pre-Keyguard sleep-origin latch. `KeyguardService` binder `onStartedGoingToSleep` records `mKeyguardViewMediator.mShowing` before OPlus changes the keyguard state, so an unlocked launcher/desktop screen-off remains classified as non-lockscreen even if `KeyguardManager.isKeyguardLocked()` is already true by `WakefulnessLifecycle#dispatchStartedGoingToSleep`.
+- Normalize the special screen-off-from-unlocked partial-AOD entry exactly like the anti build: notification/media content enters `beginAodEntry()` with requested scene `SMALL` on its first frame, while content `NONE` keeps `LARGE`. The raw OPlus `LARGE` partial-AOD request is no longer allowed to become a visible intermediate frame before `visualScene()` resolves to `SMALL`.
+- Preserve all 0.1.348 clock target-dedup, stable-0.1.331 UDFPS idle-alpha ownership, adaptive media-icon extraction, M5 static scope, and M6 design-system changes unchanged.
+
+### Evidence / Status
+- **Success (redrive from installed 0.1.348 evidence):** fresh physical logs showed repeated `media-playback` callbacks every ~3 s with identical `contentKind=MEDIA`, which the readable anti-COUI `ActiveMedia` equality would suppress. New media identity tests and the existing semantic/clock-target regressions pass after the correction.
+- **Success (focused regression):** the desktop-screen-off regression now has explicit tests proving that an authoritative `unlocked=true` pre-Keyguard latch overrides a later `keyguardLocked=true` signal, and that content-bearing partial AOD is normalized to `SMALL` before `beginAodEntry()`.
+- **Pending final package/device gate:** full JVM suite, final build/package inspection, overwrite install, one SystemUI reload for 0.1.349, and fresh AOD/lockscreen/media/UDFPS runtime evidence are required below before this version is considered the final test build.
+
+## [0.1.348] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation. Luna/Codex remained disabled by explicit user instruction.
+- **Scope:** Re-derive clock/AOD/media behavior from the freshly decompiled anti-obfuscation `COUI Expressive_2.5.0.260802_anti.apk`, while replacing COUI's unreliable idle UDFPS pressed-carrier ownership with the physically stable `0.1.331` module behavior.
+
+### Changed
+- Re-decompile the supplied anti-obfuscation COUI 2.5 APK and use its readable `PixelLockscreenClockHook`, `PixelClockHostView`, and `StockUdfpsIconHook` as the runtime reference rather than relying on the older obfuscated extraction.
+- Restore COUI's per-view applied-target deduplication for clock glyphs and date/weather information. Repeated time/weather/media/notification refreshes now return before `ViewPropertyAnimator.cancel()` when their target is unchanged, so a 550 ms AOD/lockscreen displacement is no longer snapped to its endpoint while the variable-font morph continues.
+- Keep the COUI fingerprint glyph/HDR window path, but use the stable `0.1.331` pressed-layer ownership contract: capture the vendor pressed view's original alpha, force the pressed carrier and module illumination fully transparent whenever the live touch state is false, restore the original alpha only for a real touch, and reassert that state after the vendor's pressed-view visibility/brightness mutations. The illumination drawable now starts transparent to remove the construction-frame highlight.
+- Match the anti COUI media contract: only `PlaybackState.STATE_PLAYING` owns AOD media; title/artist fall back to package/app label; adaptive app icons are reduced to their monochrome or foreground layer, alpha-trimmed into a 96×96 canvas with the reference 0.98 fill factor, and only then tinted white. This prevents the entire adaptive icon background from becoming a white rounded square.
+- Revalidate M5/M6 after the runtime corrections. `staticScope=true` remains scoped only to `com.android.systemui`, the Modern entry/settings category remain present, and `PixelAodDesignSystem` still owns the complete Compose settings UI. Correct the stale `AGENTS.md` line that still described `staticScope=false` as a current build invariant.
+
+### Validation / Status
+- **Success (focused source tests):** clock applied-target/presentation/AOD/geometry tests, UDFPS pressed-animation/pressed-visual/state-machine/settings tests, and media semantic/content tests pass after their respective changes.
+- **Pending (final gate):** the full JVM suite, final `git diff --check`, `assembleDebug`, packaged-Xposed metadata inspection, installation, SystemUI reload, and fresh physical AOD/lockscreen/UDFPS/media acceptance are performed after this entry and must remain evidence-backed below; no physical fix is claimed from source changes alone.
+
+## [0.1.347] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation. Luna/Codex execution was explicitly disabled by the user for this stage.
+- **Scope:** COUI 2.5 clock/AOD and UDFPS runtime parity correction, final COUI_PORT cutover, LSPosed Modern static scope, and settings UI design-system migration.
+
+### Changed
+- Replace the module's transient ClockPlugin HIDE/continuity heuristics with the COUI Expressive 2.5 `syncHost(render)` ownership model: only real plugin load/render changes presentation, state `0` holds, every non-zero state with a known clock scene keeps the same persistent host, and animation is driven by the real render pass plus OPlus `isAnim`.
+- Make AOD Small → lockscreen Small one `CouiClockHostView.present(...)` transaction so burn-in removal / X-Y displacement and variable-font weight morph start together on the same 550 ms transition instead of jumping position before the morph.
+- Re-align UDFPS hooking with COUI 2.5: intercept the alpha spring and pressed-animation decisions on `OnScreenFingerprintUiMech`, configure the vendor pressed carrier at construction without reading stale prior touch state, and drive press/HDR visuals from live `isTouchDownNow` / OPlus AOD fields rather than a parallel module visibility state machine.
+- Finalize the M3/M4 primary-owner cutover: `coui_port` is now the clean-install and invalid/missing-value default; `legacy` remains an explicit startup-only rollback value. Notification/weather/contextual adapters remain data providers to the single COUI host. The explicit AOD notification contract remains five visible icons plus `+x` overflow.
+- Enable LSPosed Modern static scope with `staticScope=true` and a single `com.android.systemui` `scope.list`; keep `java_init.list` as the Modern API entry and expose the settings activity through the module-settings category. The APK does not package legacy `assets/xposed_init` or libxposed implementation classes.
+- Add `PixelAodDesignSystem` and migrate the complete Compose settings surface to it: dynamic wallpaper-derived Material 3 color, shared typography/shapes/spacing/motion, edge-to-edge page scaffold, grouped settings, hero/toggle/choice/slider rows, and shared selection dialogs. Existing setting keys, provider writes, permission flows, scheduling values, and language behavior are preserved.
+
+### Validation / Status
+- **Success (source/build):** the complete debug JVM suite passes (332 tests), including clock/AOD, UDFPS, renderer-routing, settings-default, semantic-adapter, notification, weather and contextual contracts; Kotlin compilation, `git diff --check`, debug assembly and packaged Xposed metadata validation pass. Final validation also corrected an old deadline-composition bug where a disabled forecast's `0` deadline could erase an active weather-alert deadline, and fixed the corresponding cross-time-zone test expectation.
+- **Success (packaging):** packaged metadata is `0.1.347` / `357`, `staticScope=true`, scope is only `com.android.systemui`, Modern `java_init.list` is present, and no legacy Xposed entry or bundled libxposed implementation is present.
+- **Pending (physical acceptance):** this direct-build source has not yet been accepted on-device after installation. AOD→lockscreen black-frame removal, synchronized Small-clock displacement/weight motion, and UDFPS idle/touch/release/auth visuals remain user-visible acceptance gates and are not claimed fixed until the new APK is tested.
+
+## [0.1.346] - 2026-08-17
+### Meta
+- **Owner / Model:** GPT-5.6 Luna max implementation, with GPT-5.6 Sol as decision-maker/reviewer.
+- **Scope:** M1 COUI UDFPS optical-press recovery and user-selectable fingerprint visual effects; no clock/AOD primary-renderer migration in this build.
+
+### Changed
+- Port the COUI 2.5 HDR optical-press carrier: 64 dp extended-sRGB illumination drawable, HDR window headroom, and SurfaceControl desired-HDR/extended-range brightness updates driven by the real OPlus touch state.
+- Stop forcing OPlus `checkHasPressedAnimation` / `getScalePressedAnim` return values, observe both `onFpTouch` and `setTouchDownNow`, and leave vendor optical sensing / HBM / highlight methods un-intercepted.
+- Add three default-on fingerprint effect controls: HDR highlight on press, successful-unlock Monet ripple, and AOD fingerprint exit animation. Disabling success ripple or AOD exit falls back to the native OPlus path; disabling HDR restores the remembered native pressed carrier before using the legacy SDR press effect.
+- Replace the settings schema's Android-only `TextUtils.isEmpty` key check with equivalent pure-Java null/empty validation so settings defaults are JVM-testable.
+
+### Evidence / Status
+- **Success (focused tests / compile):** `CouiUdfpsStateMachineTest`, `PixelAodFeatureFlagsTest`, and `PixelAodUdfpsSettingsDefaultsTest` pass (9 tests); Debug Java/Kotlin compilation and `git diff --check` pass.
+- **Deferred (manual biometric gate):** APK assembly/install, fresh HDR runtime logs, and one real enrolled-finger unlock attempt are still required before M1 can be accepted. Fingerprint recognition is not claimed fixed until that physical touch succeeds.
+- **Failed:** None in the completed source/test stage; runtime recognition remains intentionally unclaimed.
+
+## [0.1.345] - 2026-08-17
+### Meta
+- **Owner / Model:** Codex / GPT-5.
+- **Scope:** M1 COUI UDFPS physical-event diagnostics; no state, geometry, HBM, or clock ownership changes.
+
+### Changed
+- Promote COUI `onFpTouch` and press-glow show/hide diagnostics to INFO-level LSPosed records so physical validation does not depend on Debug Logging.
+
+### Evidence / Status
+- **Success:** Source-level logging path now records finger-down/up and press-glow transitions through the normal module log path.
+- **Deferred:** Real enrolled-finger press, authentication success/failure, touch/unlock, and vendor HBM/highlight still require device video plus synchronized LSPosed logs.
+- **Failed:** None in this scoped diagnostic change.
+
+## [0.1.344] - 2026-08-17
+### Meta
+- **Owner / Model:** GPT-5.6 Luna implementation, with GPT-5.6 Sol as decision-maker/reviewer.
+- **Scope:** M1 independent COUI Expressive 2.5 UDFPS port; clock/AOD primary renderer remains on the 0.1.331 legacy path.
+
+### Changed
+- Add a startup-only `udfps_renderer` selector. `coui_port` is the default; `legacy` is the explicit rollback value. The two UDFPS replacement paths are never installed together in one SystemUI process.
+- Port COUI UDFPS solid-to-dashed glyph geometry, 420 ms transition, native fade-duration clamp, press glow, success glow, live-field state refresh and asynchronous AOD-exit interception into project-native classes.
+- Reconcile refreshes from live `isTouchDownNow`/AOD fields, interpret OPlus boolean and integer visibility callbacks, keep refreshes from canceling an active custom AOD exit, and resolve update-monitor authentication callbacks to their owning UI-mech instance.
+- Keep passive-FOD suppression and structured diagnostics shared under COUI while excluding legacy Pixel drawable mutation and vendor-reclaim hooks from the COUI startup path.
+- Keep the existing `pixel_fingerprint_icon` preference as the replacement gate and leave OPlus carrier visibility, HBM/highlight and native timeout ownership intact.
+
+### Evidence / Success
+- **Success (focused JVM tests):** COUI UDFPS state/timing, live refresh, visibility-argument, callback-owner and startup renderer-selection tests pass.
+- **Success (full relevant suite/build):** 238 JVM tests ran; the only 3 failures are the pre-existing time-zone/deadline cases in `BreezyWeatherForecastTest` and `ContextualAtAGlanceSelectorTest`; `git diff --check` and `:app:assembleDebug` pass.
+- **Success (APK/install):** version `0.1.344` / code `354` packages valid Xposed metadata without bundled libxposed classes; LAN CPH2573 install SHA-256 matches local `66C11C9A84EFAD589ED93FB43E0FE0EFB4C53F7110898113616A533CFAE4B3B3`; SystemUI restarted from PID `10024` to `21645`.
+- **Success (fresh runtime):** persistent LSPosed log records `COUI_PORT` startup, 43 COUI hooks, shared FOD diagnostics, AOD show/hide, native timeout, custom exit start/intercept/end, and integer visibility HIDE; no exit cancellation or SystemUI crash-loop marker observed.
+- **Deferred (manual-only):** safe unattended biometric interaction was not performed; press glow under touch, authentication success glow, and touch/unlock remain for manual device confirmation.
+- **Failed (unrelated baseline suite):** the three time-zone/deadline failures above remain outside M1; no BreezyWeather or ContextualAtAGlance source/test was changed by M1.
+
 ## [0.1.331] - 2026-08-14
 ### Meta
 - **Owner / Model:** ChatGPT Web / GPT-5.6 Sol.

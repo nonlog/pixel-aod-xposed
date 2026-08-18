@@ -121,9 +121,69 @@ adapter 只能提供内容和语义状态，不能创建第二套布局、主时
 
 任何回滚门触发时，先保存日志、视频和触发场景，再回滚；不得用“看起来恢复”替代证据。
 
+## Phase H / M5：LSPosed 静态作用域迁移 — 已完成（2026-08-18）
+
+**状态更新：用户在 2026-08-18 明确覆盖了原 Post-stability 启动门槛，要求由 Web Sol 直接连续完成到静态作用域与 UI 重构。** 因此本阶段已实施；原“必须等待 M4 实机签收后才能开始”的条款仅保留为历史路线图背景，不再代表当前执行状态。
+
+目标是迁移到新版 LSPosed Modern API 支持的静态作用域模型，使模块安装后声明最小且确定的目标作用域，而不是要求用户在管理器中手动选择。COUI 当前模块作为行为/打包参考；真正实现前必须重新核对当时最新版 LSPosed 的官方 Modern API 契约和 COUI APK 的 `META-INF/xposed/*` 元数据，不能假定旧样例格式永远不变。
+
+实施要求：
+
+- 以实际 hook inventory 推导最小静态 scope；当前预期核心目标是 `com.android.systemui`，若届时存在其它必要进程/包，必须逐项用运行时证据证明，禁止宽泛 scope。
+- 将 `module.prop` / static-scope metadata 切换作为独立 packaging change，不与 clock/UDFPS/UI 重构混在同一个变更中。
+- 保持 Modern Xposed API 与现有 compile-only stub 边界；不得把 `io.github.libxposed.*` 实现类打包进 APK。
+- 验证 clean install、从旧 `staticScope=false` 版本升级、启用/禁用模块、SystemUI 重启后的 scope 生效情况，以及 LSPosed/Vector 兼容行为。
+- APK 验收必须检查最终 `META-INF/xposed/*`、API version、static-scope 声明和实际注入日志；不能只看管理器 UI 显示。
+- 若新版静态 scope 会破坏 Vector 或用户仍需要动态 scope 的兼容路径，必须先形成明确兼容策略再切换默认值。
+
+本轮实施结果：
+
+- `META-INF/xposed/module.prop` 已切换为 `staticScope=true`；Modern API 入口继续由 `java_init.list` 指向 `dev.codex.pixelaod.PixelAodModernEntry`。
+- 最小静态作用域已固定为单一 `com.android.systemui`；没有扩大到其它包。
+- `android:description` 已作为现代模块说明来源，设置 Activity 同时暴露 LSPosed 模块设置入口类别。
+- 最终 APK 已逐项检查：三个 `META-INF/xposed/*` 文件存在、没有 legacy `assets/xposed_init`、没有打包 `io.github.libxposed.*` 实现类。
+- Xposed `minApiVersion/targetApiVersion` 继续保持 101；本轮没有为了静态作用域无依据地升级 API 契约。
+- **源码/封包验收已完成；clean-install/upgrade 后的真实 LSPosed 注入仍需设备在线后做运行验收。** 当前 ADB transport 最终状态为 offline，因此这里不伪造运行通过结论。
+
+## Phase I / M6：设置界面 COUI / Re:X 视觉重构 — 已完成（2026-08-18）
+
+**状态更新：同样由用户在 2026-08-18 明确覆盖原启动门槛并要求连续完成。** 本轮保持 Compose + Material 3、settings schema/provider、所有现有 key 与持久化语义，仅重构 presentation 层和统一组件体系。
+
+当前 `SettingsActivity` 已使用 Jetpack Compose + Material 3，因此优先保留现有 Compose 技术栈、settings schema/provider、key 和持久化语义，只重构设计系统、信息架构和交互表现。M6 必须先抽取统一的 `PixelAodDesignSystem`（颜色/动态取色、typography、shape、spacing、surface、组件与 motion tokens），再让所有设置页面复用；禁止只做逐页 Material 3 换皮或继续产生页面私有样式。视觉来源优先级：
+
+1. COUI Expressive 2.5 自身的设置界面与资源/反编译行为，作为主要视觉规范。
+2. 1Dot 的 Re:X (`Xposed-Modules-Repo/one.dot.rex`) 公共仓库截图作为第二视觉参考；其公开仓库只提供文档/预览资产且项目明确为闭源，所以只做独立视觉复刻，不依赖、复制或假设其私有实现。
+
+目标视觉/交互至少覆盖：
+
+- COUI/Re:X 风格的系统动态取色、浅色/深色主题和 Material 语义色层级。
+- 页面背景、`surfaceContainer*` 卡片、圆角、分组间距、section header、列表行高度与留白。
+- 统一的 top app bar、返回层级、页面标题、副标题、leading/trailing icon 规则。
+- Switch、单选/多选、下拉、slider、dialog、说明文本、危险/实验选项和禁用态的统一组件规范。
+- 设置分类与导航信息架构重排；高频功能前置，调试/实验/高级项隔离，但不改变任何现有 setting key 的语义。
+- 动态颜色、字体缩放、深浅色、横竖屏/窗口尺寸变化下的可读性与状态恢复。
+- 动画和触感只作为 UI 层增强，不允许影响 hook 初始化或 SystemUI runtime。
+
+验收要求：保存 COUI/Re:X 参考截图与本模块对应 light/dark 截图做逐页视觉对照；所有现有设置值、provider 读取、重启后持久化和功能开关行为必须保持兼容。UI 重构不能成为核心 hook 的新依赖。
+
+本轮实施结果：
+
+- 新增统一 `PixelAodDesignSystem`，集中管理动态取色、typography、shape、spacing、surface、motion 与页面/分组/行/slider/dialog 组件。
+- `SettingsActivity` 已全部迁移到该设计系统；旧页面私有 `Coui*` 组件实现已删除，页面不再各自复制样式。
+- Language、AOD 模式、日历图标应用、天气图标包四类选择对话框统一到共享 selection dialog；时间选择继续使用同一 Material 3 theme 下的系统时间组件。
+- 保留 wallpaper-derived dynamic color、light/dark、edge-to-edge system bars、圆角低层级 surface、primary section label 等 COUI 视觉层级。
+- 现有设置 key、ContentProvider 写入、权限流程、AOD 定时值、语言行为与运行时 hook 初始化依赖均保持原语义。
+- Kotlin 编译、设置定向回归、完整 JVM 测试、`git diff --check` 与最终 debug build 均通过。**light/dark 真机截图逐页视觉验收仍属于安装后的用户可见验收，不在无设备连接时虚报完成。**
+
+## Post-stability TODO / 完成状态
+
+- [x] **M5 — LSPosed static scope**：Modern metadata 与最小 `com.android.systemui` 静态 scope 已实现并完成 APK 封包检查；设备恢复在线后补 clean-install/upgrade/runtime 注入验收。
+- [x] **M6 — COUI/Re:X settings UI**：`PixelAodDesignSystem` 与完整 settings UI 迁移已完成，settings schema/provider/key 兼容保持；安装后补 light/dark 真机逐页截图验收。
+- [x] M5/M6 的实现约束、回滚边界与剩余物理验收项已并入本路线图和 0.1.347 changelog；用户本轮明确要求直接连续实施，因此不再把“与 M1–M4 分开排期”作为阻塞条件。
+
 ## 非目标
 
-- 不做 broad settings redesign。
+- 历史约束：M1–M4 / Phase G 原计划不做 broad settings redesign；该延期已被 2026-08-18 用户直接执行指令覆盖，M6 现已完成。
 - 不移植 YAAP layout。
 - 不做 speculative Doze power rewrite。
 - 不直接导入 raw decompiler helper。

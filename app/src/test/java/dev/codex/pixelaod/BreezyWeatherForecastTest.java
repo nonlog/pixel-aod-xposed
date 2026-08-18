@@ -36,9 +36,11 @@ public final class BreezyWeatherForecastTest {
         BreezyWeatherForecast singaporeTomorrow = complete(LocalDate.of(2026, 8, 6), NOW);
         long instant = Instant.parse("2026-08-05T16:00:00Z").toEpochMilli();
 
-        assertFalse(singaporeTomorrow.isEligible(instant, ZoneId.of("UTC")));
-        assertTrue(singaporeTomorrow.isEligible(
-                Instant.parse("2026-08-05T10:00:00Z").toEpochMilli(), SINGAPORE));
+        // At the same instant UTC is still Aug 5 (tomorrow = Aug 6), while Singapore has
+        // crossed midnight to Aug 6 (tomorrow = Aug 7). The forecast must follow device-local
+        // calendar semantics rather than a fixed UTC date.
+        assertTrue(singaporeTomorrow.isEligible(instant, ZoneId.of("UTC")));
+        assertFalse(singaporeTomorrow.isEligible(instant, SINGAPORE));
     }
 
     @Test

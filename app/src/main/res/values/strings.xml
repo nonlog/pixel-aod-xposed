@@ -27,6 +27,13 @@
     <string name="desc_notification_icons">AOD 单色通知图标</string>
     <string name="title_pixel_fingerprint_icon">Pixel 指纹图标</string>
     <string name="desc_pixel_fingerprint_icon">替换 OOS 原生图标，保留原生位置、显隐与指纹交互</string>
+    <string name="section_fingerprint_effects">动画效果</string>
+    <string name="title_udfps_hdr_press_effect">按压时使用 HDR 高亮</string>
+    <string name="desc_udfps_hdr_press_effect">使用 COUI HDR 亮白指纹高亮，同时保留 OPlus 原生光学识别与 HBM 链路</string>
+    <string name="title_udfps_success_ripple">成功解锁涟漪</string>
+    <string name="desc_udfps_success_ripple">认证成功后，将高亮扩散为 Monet 配色的全屏涟漪</string>
+    <string name="title_udfps_aod_exit_animation">AOD 指纹退出动画</string>
+    <string name="desc_udfps_aod_exit_animation">退出 AOD 时使用 COUI 指纹淡出动画；关闭时使用 OPlus 原生退出动画</string>
     <string name="title_lockscreen_policy">锁屏通知策略</string>
     <string name="desc_lockscreen_policy">修正 OOS 锁屏显示规则</string>
     <string name="title_debug_logging">调试日志</string>

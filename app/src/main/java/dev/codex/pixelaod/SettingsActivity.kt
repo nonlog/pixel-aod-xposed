@@ -209,88 +209,18 @@ private fun android.content.SharedPreferences.schemaFloat(key: String, fallback:
     return getFloat(key, PixelAodSettings.defaultFloat(key, fallback))
 }
 
-/** Use the same unmodified Material 3 system surfaces as COUI. */
-private fun couiPageBackground(scheme: androidx.compose.material3.ColorScheme): Color {
-    return scheme.background
-}
-
-private fun couiCardColor(scheme: androidx.compose.material3.ColorScheme): Color {
-    return scheme.surfaceContainerLow
-}
-
 @Composable
 private fun PixelAodSettingsScreen(onLanguageChanged: () -> Unit) {
     val context = LocalContext.current
-    val dark = isSystemInDarkTheme()
-    // Wallpaper / system accent — never a hard-coded teal.
-    val colors = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && dark -> dynamicDarkColorScheme(context)
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> dynamicLightColorScheme(context)
-        dark -> darkColorScheme()
-        else -> lightColorScheme()
-    }
-    val pageBg = couiPageBackground(colors)
-    val cardBg = couiCardColor(colors)
-
-    MaterialTheme(colorScheme = colors) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(pageBg)
+    PixelAodTheme {
+        PixelAodPage(
+            title = stringResource(R.string.app_name),
+            subtitle = stringResource(R.string.module_description),
+            actionIcon = Icons.Outlined.RestartAlt,
+            actionDescription = stringResource(R.string.restart_systemui),
+            onAction = { restartSystemUi(context) }
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-            ) {
-                // Top action — COUI places refresh/restart top-end over the large title.
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    IconButton(onClick = { restartSystemUi(context) }) {
-                        Icon(
-                            Icons.Outlined.RestartAlt,
-                            contentDescription = stringResource(R.string.restart_systemui),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 20.dp)
-                        .padding(bottom = 28.dp)
-                ) {
-                    // Keep the page title compact so the main switch and first settings group stay visible.
-                    Text(
-                        text = stringResource(R.string.app_name),
-                        style = MaterialTheme.typography.displaySmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 30.sp,
-                            lineHeight = 36.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 6.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.module_description),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 16.dp)
-                    )
-
-                    SettingsContent(
-                        onLanguageChanged = onLanguageChanged,
-                        cardColor = cardBg
-                    )
-                }
-            }
+            SettingsContent(onLanguageChanged = onLanguageChanged)
         }
     }
 }
@@ -298,7 +228,6 @@ private fun PixelAodSettingsScreen(onLanguageChanged: () -> Unit) {
 @Composable
 private fun SettingsContent(
     onLanguageChanged: () -> Unit,
-    cardColor: Color,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -353,6 +282,15 @@ private fun SettingsContent(
     }
     val pixelFingerprintIcon = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false))
+    }
+    val udfpsHdrPressEffect = remember {
+        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_UDFPS_HDR_PRESS_EFFECT, true))
+    }
+    val udfpsSuccessRipple = remember {
+        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_UDFPS_SUCCESS_RIPPLE, true))
+    }
+    val udfpsAodExitAnimation = remember {
+        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_UDFPS_AOD_EXIT_ANIMATION, true))
     }
     val weatherIconPack = remember {
         mutableStateOf(prefs.schemaString(PixelAodSettings.KEY_WEATHER_ICON_PACK, ""))
@@ -465,18 +403,22 @@ private fun SettingsContent(
     var showCalendarIconAppDialog by remember { mutableStateOf(false) }
     var showDisplayModeDialog by remember { mutableStateOf(false) }
 
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        CouiMainToggleCard(
-            cardColor = cardColor,
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(PixelAodDesignSystem.spacing.sectionGap)
+    ) {
+        PixelAodHeroToggle(
+            title = stringResource(R.string.title_module_enabled),
+            subtitle = stringResource(R.string.desc_module_enabled),
             checked = moduleEnabled.value
         ) {
             moduleEnabled.value = it
             updateModuleBooleanSetting(context, PixelAodSettings.KEY_MODULE_ENABLED, it)
         }
 
-        CouiSection(stringResource(R.string.section_aod_behavior)) {
-            CouiGroupCard(cardColor) {
-                CouiChoiceRow(
+        PixelAodSection(stringResource(R.string.section_aod_behavior)) {
+            PixelAodGroup() {
+                PixelAodChoiceRow(
                     icon = Icons.Outlined.Schedule,
                     title = stringResource(R.string.title_aod_behavior),
                     valueText = aodDisplayModeLabel(aodDisplayMode.value),
@@ -485,7 +427,7 @@ private fun SettingsContent(
                     showDisplayModeDialog = true
                 }
                 if (aodDisplayMode.value == PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS) {
-                    CouiToggleRow(
+                    PixelAodToggleRow(
                         icon = Icons.Outlined.Schedule,
                         title = stringResource(R.string.title_continuous_schedule),
                         subtitle = stringResource(R.string.desc_continuous_schedule),
@@ -496,7 +438,7 @@ private fun SettingsContent(
                         updateModuleBooleanSetting(context, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, it)
                     }
                     if (aodScheduleEnabled.value) {
-                        CouiChoiceRow(
+                        PixelAodChoiceRow(
                             icon = Icons.Outlined.Schedule,
                             title = stringResource(R.string.title_schedule_start_time),
                             valueText = aodScheduleStartTime.value,
@@ -507,7 +449,7 @@ private fun SettingsContent(
                                 aodScheduleStartTime.value
                             )
                         }
-                        CouiChoiceRow(
+                        PixelAodChoiceRow(
                             icon = Icons.Outlined.Schedule,
                             title = stringResource(R.string.title_schedule_end_time),
                             valueText = aodScheduleEndTime.value,
@@ -523,9 +465,9 @@ private fun SettingsContent(
             }
         }
 
-        CouiSection(stringResource(R.string.section_clock)) {
-            CouiGroupCard(cardColor) {
-                CouiToggleRow(
+        PixelAodSection(stringResource(R.string.section_clock)) {
+            PixelAodGroup() {
+                PixelAodToggleRow(
                     icon = Icons.Outlined.Fingerprint,
                     title = stringResource(R.string.title_pixel_fingerprint_icon),
                     subtitle = stringResource(R.string.desc_pixel_fingerprint_icon),
@@ -535,7 +477,7 @@ private fun SettingsContent(
                     pixelFingerprintIcon.value = it
                     updateModuleBooleanSetting(context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, it)
                 }
-                CouiSliderRow(
+                PixelAodSliderRow(
                     icon = Icons.Outlined.Schedule,
                     title = stringResource(R.string.title_aod_weight),
                     valueText = aodWeight.floatValue.toInt().toString(),
@@ -546,7 +488,7 @@ private fun SettingsContent(
                     aodWeight.floatValue = it
                     prefs.edit().putFloat(PixelAodSettings.KEY_AOD_WEIGHT, it).apply()
                 }
-                CouiSliderRow(
+                PixelAodSliderRow(
                     icon = Icons.Outlined.Palette,
                     title = stringResource(R.string.title_lockscreen_weight),
                     valueText = lockscreenWeight.floatValue.toInt().toString(),
@@ -560,9 +502,46 @@ private fun SettingsContent(
             }
         }
 
-        CouiSection(stringResource(R.string.section_at_a_glance)) {
-            CouiGroupCard(cardColor) {
-                CouiToggleRow(
+        if (pixelFingerprintIcon.value) {
+            PixelAodSection(stringResource(R.string.section_fingerprint_effects)) {
+                PixelAodGroup() {
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Fingerprint,
+                        title = stringResource(R.string.title_udfps_hdr_press_effect),
+                        subtitle = stringResource(R.string.desc_udfps_hdr_press_effect),
+                        checked = udfpsHdrPressEffect.value,
+                        showDivider = true
+                    ) {
+                        udfpsHdrPressEffect.value = it
+                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_HDR_PRESS_EFFECT, it)
+                    }
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Fingerprint,
+                        title = stringResource(R.string.title_udfps_success_ripple),
+                        subtitle = stringResource(R.string.desc_udfps_success_ripple),
+                        checked = udfpsSuccessRipple.value,
+                        showDivider = true
+                    ) {
+                        udfpsSuccessRipple.value = it
+                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_SUCCESS_RIPPLE, it)
+                    }
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Fingerprint,
+                        title = stringResource(R.string.title_udfps_aod_exit_animation),
+                        subtitle = stringResource(R.string.desc_udfps_aod_exit_animation),
+                        checked = udfpsAodExitAnimation.value,
+                        showDivider = false
+                    ) {
+                        udfpsAodExitAnimation.value = it
+                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_AOD_EXIT_ANIMATION, it)
+                    }
+                }
+            }
+        }
+
+        PixelAodSection(stringResource(R.string.section_at_a_glance)) {
+            PixelAodGroup() {
+                PixelAodToggleRow(
                     icon = Icons.Outlined.Cloud,
                     title = stringResource(R.string.title_weather),
                     subtitle = stringResource(R.string.desc_weather),
@@ -572,7 +551,7 @@ private fun SettingsContent(
                     weather.value = it
                     prefs.edit().putBoolean(PixelAodSettings.KEY_WEATHER, it).apply()
                 }
-                CouiToggleRow(
+                PixelAodToggleRow(
                     icon = Icons.Outlined.Cloud,
                     title = stringResource(R.string.title_weather_forecast),
                     subtitle = stringResource(R.string.desc_weather_forecast),
@@ -604,7 +583,7 @@ private fun SettingsContent(
                     }
                 }
                 if (weatherForecast.value) {
-                    CouiChoiceRow(
+                    PixelAodChoiceRow(
                         icon = Icons.Outlined.Schedule,
                         title = stringResource(R.string.title_weather_forecast_start_time),
                         valueText = weatherForecastStartTime.value,
@@ -615,7 +594,7 @@ private fun SettingsContent(
                             weatherForecastStartTime.value
                         )
                     }
-                    CouiChoiceRow(
+                    PixelAodChoiceRow(
                         icon = Icons.Outlined.Schedule,
                         title = stringResource(R.string.title_weather_forecast_end_time),
                         valueText = weatherForecastEndTime.value,
@@ -631,7 +610,7 @@ private fun SettingsContent(
                     val availablePacks = remember { getAvailableIconPacks(context) }
                     val currentLabel = availablePacks.find { it.first == weatherIconPack.value }?.second
                         ?: stringResource(R.string.default_weather_icon_pack)
-                    CouiChoiceRow(
+                    PixelAodChoiceRow(
                         icon = Icons.Outlined.Cloud,
                         title = stringResource(R.string.title_weather_icon_pack),
                         valueText = currentLabel,
@@ -640,7 +619,7 @@ private fun SettingsContent(
                         showIconPackDialog = true
                     }
                 }
-                CouiToggleRow(
+                PixelAodToggleRow(
                     icon = Icons.Outlined.Cloud,
                     title = stringResource(R.string.title_weather_alerts),
                     subtitle = stringResource(R.string.desc_weather_alerts),
@@ -671,7 +650,7 @@ private fun SettingsContent(
                         breezyWeatherPermissionLauncher.launch(BREEZY_READ_PROVIDER_PERMISSION)
                     }
                 }
-                CouiToggleRow(
+                PixelAodToggleRow(
                     icon = Icons.Outlined.Schedule,
                     title = stringResource(R.string.title_calendar_events),
                     subtitle = stringResource(R.string.desc_calendar_events),
@@ -704,7 +683,7 @@ private fun SettingsContent(
                         .find { it.first == calendarIconPackage.value }
                         ?.second
                         ?: calendarIconPackage.value
-                    CouiChoiceRow(
+                    PixelAodChoiceRow(
                         icon = Icons.Outlined.Schedule,
                         title = stringResource(R.string.title_calendar_icon_app),
                         valueText = currentCalendarIconLabel,
@@ -716,9 +695,9 @@ private fun SettingsContent(
             }
         }
 
-        CouiSection(stringResource(R.string.section_lockscreen)) {
-            CouiGroupCard(cardColor) {
-                CouiToggleRow(
+        PixelAodSection(stringResource(R.string.section_lockscreen)) {
+            PixelAodGroup() {
+                PixelAodToggleRow(
                     icon = Icons.Outlined.Policy,
                     title = stringResource(R.string.title_lockscreen_policy),
                     subtitle = stringResource(R.string.desc_lockscreen_policy),
@@ -731,9 +710,9 @@ private fun SettingsContent(
             }
         }
 
-        CouiSection(stringResource(R.string.section_system)) {
-            CouiGroupCard(cardColor) {
-                CouiToggleRow(
+        PixelAodSection(stringResource(R.string.section_system)) {
+            PixelAodGroup() {
+                PixelAodToggleRow(
                     icon = Icons.Outlined.BugReport,
                     title = stringResource(R.string.title_debug_logging),
                     subtitle = stringResource(R.string.desc_debug_logging),
@@ -743,7 +722,7 @@ private fun SettingsContent(
                     debugLogging.value = it
                     updateModuleBooleanSetting(context, PixelAodSettings.KEY_DEBUG_LOGGING, it)
                 }
-                CouiChoiceRow(
+                PixelAodChoiceRow(
                     icon = Icons.Outlined.Language,
                     title = stringResource(R.string.title_language),
                     valueText = languageLabel(language.value),
@@ -923,45 +902,26 @@ private fun LanguageDialog(
     onDismiss: () -> Unit,
     onSelected: (String) -> Unit
 ) {
-    val options = listOf(
-        PixelAodSettings.LANGUAGE_SYSTEM to stringResource(R.string.language_system),
-        PixelAodSettings.LANGUAGE_CHINESE to stringResource(R.string.language_chinese),
-        PixelAodSettings.LANGUAGE_ENGLISH to stringResource(R.string.language_english)
-    )
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.title_language)) },
-        text = {
-            Column {
-                options.forEach { (value, label) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(
-                                selected = value == current,
-                                onClick = { onSelected(value) }
-                            )
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = value == current,
-                            onClick = { onSelected(value) },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(label, style = MaterialTheme.typography.bodyLarge)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        }
+    PixelAodSelectionDialog(
+        title = stringResource(R.string.title_language),
+        current = current,
+        options = listOf(
+            PixelAodSelectionOption(
+                PixelAodSettings.LANGUAGE_SYSTEM,
+                stringResource(R.string.language_system)
+            ),
+            PixelAodSelectionOption(
+                PixelAodSettings.LANGUAGE_CHINESE,
+                stringResource(R.string.language_chinese)
+            ),
+            PixelAodSelectionOption(
+                PixelAodSettings.LANGUAGE_ENGLISH,
+                stringResource(R.string.language_english)
+            )
+        ),
+        cancelLabel = stringResource(android.R.string.cancel),
+        onDismiss = onDismiss,
+        onSelected = onSelected
     )
 }
 
@@ -971,44 +931,22 @@ private fun AodDisplayModeDialog(
     onDismiss: () -> Unit,
     onSelected: (String) -> Unit
 ) {
-    val options = listOf(
-        PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS to stringResource(R.string.aod_behavior_continuous_trigger),
-        PixelAodSettings.AOD_DISPLAY_MODE_TRIGGER_ONLY to stringResource(R.string.aod_behavior_trigger_only)
-    )
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.title_aod_behavior)) },
-        text = {
-            Column {
-                options.forEach { (value, label) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(
-                                selected = value == current,
-                                onClick = { onSelected(value) }
-                            )
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = value == current,
-                            onClick = { onSelected(value) },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(label, style = MaterialTheme.typography.bodyLarge)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        }
+    PixelAodSelectionDialog(
+        title = stringResource(R.string.title_aod_behavior),
+        current = current,
+        options = listOf(
+            PixelAodSelectionOption(
+                PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS,
+                stringResource(R.string.aod_behavior_continuous_trigger)
+            ),
+            PixelAodSelectionOption(
+                PixelAodSettings.AOD_DISPLAY_MODE_TRIGGER_ONLY,
+                stringResource(R.string.aod_behavior_trigger_only)
+            )
+        ),
+        cancelLabel = stringResource(android.R.string.cancel),
+        onDismiss = onDismiss,
+        onSelected = onSelected
     )
 }
 
@@ -1077,44 +1015,14 @@ private fun CalendarIconAppDialog(
     onDismiss: () -> Unit,
     onSelected: (String) -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.title_calendar_icon_app)) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 420.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                options.forEach { (value, label) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(
-                                selected = value == current,
-                                onClick = { onSelected(value) }
-                            )
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = value == current,
-                            onClick = { onSelected(value) },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(label, style = MaterialTheme.typography.bodyLarge)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        }
+    PixelAodSelectionDialog(
+        title = stringResource(R.string.title_calendar_icon_app),
+        current = current,
+        options = options.map { PixelAodSelectionOption(it.first, it.second) },
+        cancelLabel = stringResource(android.R.string.cancel),
+        onDismiss = onDismiss,
+        onSelected = onSelected,
+        scrollable = true
     )
 }
 
@@ -1125,309 +1033,13 @@ private fun IconPackDialog(
     onDismiss: () -> Unit,
     onSelected: (String) -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.title_weather_icon_pack)) },
-        text = {
-            Column {
-                options.forEach { (value, label) ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(
-                                selected = value == current,
-                                onClick = { onSelected(value) }
-                            )
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = value == current,
-                            onClick = { onSelected(value) },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary
-                            )
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(label, style = MaterialTheme.typography.bodyLarge)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        }
+    PixelAodSelectionDialog(
+        title = stringResource(R.string.title_weather_icon_pack),
+        current = current,
+        options = options.map { PixelAodSelectionOption(it.first, it.second) },
+        cancelLabel = stringResource(android.R.string.cancel),
+        onDismiss = onDismiss,
+        onSelected = onSelected,
+        scrollable = options.size > 6
     )
-}
-
-// ── COUI Expressive building blocks (structure from screenshots; accent = wallpaper) ──
-
-private val CouiCardShape = RoundedCornerShape(28.dp)
-private val CouiRowPaddingH = 18.dp
-private val CouiRowPaddingV = 16.dp
-
-@Composable
-private fun CouiSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            // Wallpaper primary — same role as COUI teal section headers.
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 12.dp, end = 12.dp)
-        )
-        content()
-    }
-}
-
-@Composable
-private fun CouiGroupCard(cardColor: Color, content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        shape = CouiCardShape,
-        color = cardColor,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(content = content)
-    }
-}
-
-@Composable
-private fun CouiMainToggleCard(
-    cardColor: Color,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(26.dp),
-        color = cardColor,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onCheckedChange(!checked) }
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Bolt,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.title_module_enabled),
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = stringResource(R.string.desc_module_enabled),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Switch(
-                checked = checked,
-                onCheckedChange = null,
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = MaterialTheme.colorScheme.primary,
-                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                    checkedBorderColor = Color.Transparent,
-                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    uncheckedThumbColor = MaterialTheme.colorScheme.outline,
-                    uncheckedBorderColor = Color.Transparent
-                )
-            )
-        }
-    }
-}
-
-@Composable
-private fun CouiRowDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 56.dp, end = CouiRowPaddingH),
-        thickness = 0.5.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-    )
-}
-
-@Composable
-private fun CouiLeadingIcon(icon: ImageVector) {
-    Icon(
-        imageVector = icon,
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.size(24.dp)
-    )
-}
-
-@Composable
-private fun CouiToggleRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    showDivider: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onCheckedChange(!checked) }
-                .padding(horizontal = CouiRowPaddingH, vertical = CouiRowPaddingV),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CouiLeadingIcon(icon)
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (subtitle.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Switch(
-                checked = checked,
-                onCheckedChange = null,
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = MaterialTheme.colorScheme.primary,
-                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                    checkedBorderColor = Color.Transparent,
-                    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    uncheckedThumbColor = MaterialTheme.colorScheme.outline,
-                    uncheckedBorderColor = Color.Transparent
-                )
-            )
-        }
-        if (showDivider) {
-            CouiRowDivider()
-        }
-    }
-}
-
-@Composable
-private fun CouiChoiceRow(
-    icon: ImageVector,
-    title: String,
-    valueText: String,
-    showDivider: Boolean,
-    onClick: () -> Unit
-) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(horizontal = CouiRowPaddingH, vertical = CouiRowPaddingV),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CouiLeadingIcon(icon)
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                title,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                valueText,
-                modifier = Modifier.widthIn(max = 160.dp),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.End,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-        if (showDivider) {
-            CouiRowDivider()
-        }
-    }
-}
-
-@Composable
-private fun CouiSliderRow(
-    icon: ImageVector,
-    title: String,
-    valueText: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    showDivider: Boolean,
-    onValueChange: (Float) -> Unit
-) {
-    Column {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = CouiRowPaddingH, vertical = CouiRowPaddingV)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CouiLeadingIcon(icon)
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    title,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        valueText,
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-            Slider(
-                value = value,
-                onValueChange = onValueChange,
-                valueRange = valueRange,
-                modifier = Modifier.padding(start = 40.dp, top = 4.dp),
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                )
-            )
-        }
-        if (showDivider) {
-            CouiRowDivider()
-        }
-    }
 }

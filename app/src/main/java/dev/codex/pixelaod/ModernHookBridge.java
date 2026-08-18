@@ -1,6 +1,7 @@
 package dev.codex.pixelaod;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 
@@ -42,11 +43,11 @@ final class ModernHookBridge {
         PixelAodLog.attach(xposed);
     }
 
-    static void hookBefore(Method method, HookCallback callback) {
+    static void hookBefore(Executable method, HookCallback callback) {
         hook(method, true, callback);
     }
 
-    static void hookAfter(Method method, HookCallback callback) {
+    static void hookAfter(Executable method, HookCallback callback) {
         hook(method, false, callback);
     }
 
@@ -60,7 +61,7 @@ final class ModernHookBridge {
         hookAfter(findMethod(clazz, name, parameterTypes), callback);
     }
 
-    private static void hook(Method method, boolean before, HookCallback callback) {
+    private static void hook(Executable method, boolean before, HookCallback callback) {
         XposedInterface local = framework;
         if (local == null) {
             throw new IllegalStateException("modern Xposed framework is not attached");

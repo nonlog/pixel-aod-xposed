@@ -27,6 +27,13 @@
     <string name="desc_notification_icons">Monochrome AOD icons</string>
     <string name="title_pixel_fingerprint_icon">Pixel Fingerprint Icon</string>
     <string name="desc_pixel_fingerprint_icon">Replace the OOS visual while preserving native position, visibility, and fingerprint interaction</string>
+    <string name="section_fingerprint_effects">Animation effects</string>
+    <string name="title_udfps_hdr_press_effect">Use HDR highlight on press</string>
+    <string name="desc_udfps_hdr_press_effect">Use the COUI HDR bright-white fingerprint highlight while preserving the native OPlus optical sensing and HBM path</string>
+    <string name="title_udfps_success_ripple">Successful unlock ripple</string>
+    <string name="desc_udfps_success_ripple">After successful authentication, turn the highlight into a Monet-colored full-screen ripple</string>
+    <string name="title_udfps_aod_exit_animation">AOD fingerprint exit animation</string>
+    <string name="desc_udfps_aod_exit_animation">Use the COUI fingerprint fade-out when leaving AOD; disable to use the native OPlus exit animation</string>
     <string name="title_lockscreen_policy">Lockscreen Policy</string>
     <string name="desc_lockscreen_policy">Fix OOS lockscreen rules</string>
     <string name="title_debug_logging">Debug Logging</string>

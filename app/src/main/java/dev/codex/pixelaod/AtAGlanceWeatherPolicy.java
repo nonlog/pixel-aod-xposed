@@ -109,7 +109,13 @@ final class AtAGlanceWeatherPolicy {
     }
 
     private static long earliest(long current, long candidate) {
-        return current <= 0L ? candidate : Math.min(current, candidate);
+        if (current <= 0L) {
+            return candidate;
+        }
+        if (candidate <= 0L) {
+            return current;
+        }
+        return Math.min(current, candidate);
     }
 
     static long earlierDeadline(long first, long second) {

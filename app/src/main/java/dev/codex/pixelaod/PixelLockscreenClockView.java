@@ -1095,6 +1095,10 @@ final class PixelLockscreenClockView extends FrameLayout {
             pendingAodToLockscreenTransitionAt = android.os.SystemClock.uptimeMillis();
             pendingAodToLockscreenTransitionSource = source;
         }
+        // This method is legacy weight-transition bookkeeping only. COUI_PORT is armed by the
+        // process-global WakefulnessLifecycle#dispatchStartedWakingUp hook in PixelAodHook;
+        // keeping this seam legacy-only prevents AodRecord#onDreamingStopped from re-arming
+        // COUI late after the first ClockPlugin transition has already started.
         PixelAodLog.log("prepared Pixel lockscreen clock weight-only transition trace="
                 + PixelAodClockView.currentAodTraceId()
                 + " source=" + source
@@ -1133,9 +1137,22 @@ final class PixelLockscreenClockView extends FrameLayout {
     }
 
     static void markInteractiveLockscreenSurface(Context context, String source) {
-        if (context == null
-                || !PixelAodClockView.isDeviceInteractive(context)
-                || !isSystemKeyguardLockedRaw(context)) {
+        markInteractiveLockscreenSurface(context, source, false);
+    }
+
+    /**
+     * Arm the lockscreen-to-AOD origin stamp from the vendor ClockPlugin's explicit keyguard
+     * state. On this OPlus build KeyguardManager can already report false at screen-off even
+     * though the ClockPlugin just rendered its interactive keyguard surface.
+     */
+    static void markInteractiveLockscreenSurfaceFromClockPlugin(Context context, String source) {
+        markInteractiveLockscreenSurface(context, source, true);
+    }
+
+    private static void markInteractiveLockscreenSurface(Context context, String source,
+            boolean trustedClockPluginState) {
+        if (context == null || !PixelAodClockView.isDeviceInteractive(context)
+                || (!trustedClockPluginState && !isSystemKeyguardLockedRaw(context))) {
             return;
         }
         long now = android.os.SystemClock.uptimeMillis();
@@ -1151,6 +1168,7 @@ final class PixelLockscreenClockView extends FrameLayout {
         PixelAodClockView.noteLockscreenSessionForAodWeight(source + "#mark-interactive");
         if (started) {
             PixelAodLog.log("marked interactive Pixel lockscreen surface source=" + source
+                    + " trustedClockPluginState=" + trustedClockPluginState
                     + " trace=" + PixelAodClockView.currentAodTraceId());
         }
     }
