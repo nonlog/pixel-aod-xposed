@@ -12,7 +12,7 @@
 
 ### Evidence / Status
 - **Success (source/build):** full JVM regression is 360/360 with 0 failures, `git diff --check` passes, and `assembleDebug` passes. Final APK is 0.1.359 / 369 with SHA-256 `D88E27E4B1282CB1EFBFC4DDD582E53D2F0ED959E13777A2FB0DA5C196F12573`.
-- **Blocked (physical install):** the single controlled FRP `adb install -r` again lost the streamed APK transfer before Android PackageManager returned a result. No reconnect loop, ADB-server restart, or SystemUI reload was performed. Physical edge-to-edge visual confirmation remains pending manual/reliable installation.
+- **Success (physical, user-observed):** 0.1.359 was manually installed and visually verified on the physical CPH2573. The three-tab shell remained stable and the bottom navigation now extends continuously behind the gesture area with no separate non-immersive navigation strip.
 
 ## [0.1.358] - 2026-08-18
 ### Meta
