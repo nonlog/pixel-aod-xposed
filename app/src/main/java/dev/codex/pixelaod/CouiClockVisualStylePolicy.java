@@ -28,6 +28,11 @@ final class CouiClockVisualStylePolicy {
                 ? LOCKSCREEN_FALLBACK_CLOCK_COLOR : monetColor;
     }
 
+    /** Overflow text is part of the notification glyph row and must use its resolved accent. */
+    static int notificationOverflowColor(int notificationIconColor) {
+        return notificationIconColor;
+    }
+
     static boolean shouldApplyInformationShadow(CouiClockPresentationModel.Scene visualScene,
             boolean dozing, boolean partialAod, boolean mediaContent) {
         return visualScene != CouiClockPresentationModel.Scene.IMMERSED

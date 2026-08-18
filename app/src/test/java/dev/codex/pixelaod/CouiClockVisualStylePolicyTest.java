@@ -34,6 +34,12 @@ public final class CouiClockVisualStylePolicyTest {
     }
 
     @Test
+    public void notificationOverflowUsesTheSameResolvedAccentAsNotificationGlyphs() {
+        assertEquals(0xffa1b2c3, CouiClockVisualStylePolicy.notificationOverflowColor(0xffa1b2c3));
+        assertEquals(0xff123456, CouiClockVisualStylePolicy.notificationOverflowColor(0xff123456));
+    }
+
+    @Test
     public void informationShadowIsClearedOnlyForImmersedOrPartialMediaInputs() {
         assertFalse(CouiClockVisualStylePolicy.shouldApplyInformationShadow(
                 CouiClockPresentationModel.Scene.IMMERSED, false, false, false));

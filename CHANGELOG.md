@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.361] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on merged `agent/coui-port`; no Luna/Codex executor used.
+- **Scope:** Small COUI notification-overflow color correction before M5 static-scope physical acceptance.
+
+### Fixed
+- Make the COUI host `+x` notification overflow label use the exact same resolved Material/Monet accent source as monochrome notification glyphs instead of hard-coded white. This keeps the five-icons-plus-overflow row visually consistent when the clock and notification glyphs are wallpaper-colored.
+- Add an explicit `CouiClockVisualStylePolicy.notificationOverflowColor(...)` contract and unit coverage so later clock/information color refreshes cannot silently return the overflow label to white.
+
+### Evidence / Status
+- **Success (source/build):** full JVM regression is 361/361 with 0 failures, `git diff --check` passes, and `assembleDebug` passes. Final APK is 0.1.361 / 371 with SHA-256 `8B2C15B51EB2FD85AFAD5361161245ED2D027A68F732D0A93CD22838141B0E06`.
+- **Success (install/runtime):** overwrite install from 0.1.360 succeeded on the verified LAN transport, device base.apk hash matches, and the single SystemUI reload changed PID `5430` → `31680`. Fresh LSPosed logs show the Modern entry loading the 0.1.361 base.apk into `com.android.systemui` and COUI_PORT clock/UDFPS owners starting normally.
+- **Success (physical overflow color):** fresh AOD screenshot with more than five eligible notifications shows five icons plus `+1`; the `+1` now uses the same wallpaper-derived cyan accent as the monochrome notification glyphs/clock instead of white.
+- **Pending M5 remainder:** package-clean install, upgrade specifically from an older `staticScope=false` build, framework enable/disable behavior, and compatibility evidence remain to be exercised against the roadmap.
+
 ## [0.1.360] - 2026-08-18
 ### Meta
 - **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/ui-refactor`; no Luna/Codex executor used.

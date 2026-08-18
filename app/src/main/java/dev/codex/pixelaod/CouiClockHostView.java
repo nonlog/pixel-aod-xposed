@@ -1492,7 +1492,8 @@ final class CouiClockHostView extends FrameLayout {
         weekView.setTextColor(Color.WHITE);
         weatherView.setTextColor(Color.WHITE);
         weatherIconView.setImageTintList(ColorStateList.valueOf(Color.WHITE));
-        notificationOverflowView.setTextColor(Color.WHITE);
+        notificationOverflowView.setTextColor(CouiClockVisualStylePolicy.notificationOverflowColor(
+                PixelAodClockView.resolveMaterialInfoColor(getContext())));
         mediaTitleView.setTextColor(Color.WHITE);
         mediaArtistView.setTextColor(Color.WHITE);
         mediaAppIconView.setImageTintList(ColorStateList.valueOf(Color.WHITE));
