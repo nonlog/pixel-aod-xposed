@@ -20,6 +20,14 @@ final class ContextualAtAGlancePresentation {
     static boolean apply(Context context, LinearLayout row, ImageView icon, TextView text,
             ContextualAtAGlanceCard next, int infoColor, int clockColor, int textSizeDp,
             int infoWeight, String source) {
+        return apply(context, row, icon, text, next, infoColor, clockColor, textSizeDp,
+                infoWeight, true, source);
+    }
+
+    /** Same presentation contract with an explicit first-frame animation gate for COUI_PORT. */
+    static boolean apply(Context context, LinearLayout row, ImageView icon, TextView text,
+            ContextualAtAGlanceCard next, int infoColor, int clockColor, int textSizeDp,
+            int infoWeight, boolean animate, String source) {
         if (row == null || icon == null || text == null) {
             return false;
         }
@@ -55,6 +63,13 @@ final class ContextualAtAGlancePresentation {
             row.setVisibility(safe.isVisible() ? View.VISIBLE : View.GONE);
             row.setAlpha(safe.isVisible() ? 1f : 0f);
         };
+
+        if (!animate) {
+            applyContent.run();
+            PixelAodLog.log("updated contextual card kind=" + safe.kind
+                    + " text=" + safe.text + " source=" + source + " animate=false");
+            return true;
+        }
 
         if (!hadCard && hasCard) {
             applyContent.run();

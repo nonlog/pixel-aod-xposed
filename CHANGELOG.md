@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.1.363] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation during Phase G; no Luna/Codex executor used.
+- **Scope:** Restore real-finger UDFPS recognition with the Pixel visual enabled, make the contextual row AOD-only, and unify COUI small-AOD painted-edge/color presentation without changing the accepted LS↔AOD clock glyph transition contract.
+
+### Fixed
+- When `udfps_hdr_press_effect=false`, return ownership of `OnScreenFingerprintPressedIcon` illumination to OPlus: preserve/restore the vendor drawable/background, leave vendor pressed-animation decisions native, stop issuing module HDR SurfaceControl transactions, and remove the module pre-auth press glow. Pixel AOD now only gates the vendor pressed View alpha (idle hidden, live touch original alpha), matching the physically stable 0.1.331 optical carrier contract. Custom success ripple remains a post-auth effect.
+- Make Forecast / weather-alert / calendar contextual presentation COUI AOD-only. Lockscreen presentation now resolves to no contextual row, eliminating overlap with OPlus lockscreen notification cards and avoiding a separate lockscreen contextual Y.
+- Derive one live SMALL painted-leading-edge from the existing clock target and use it for the contextual and notification rows. The clock target calculation and glyph animation path are untouched; contextual/notification rows continue using the accepted final-geometry snap + alpha-only content motion, including AOD burn-in exactly once.
+- Make the COUI contextual glyph/text use the same active host AOD clock accent at full child alpha. Row alpha still owns contextual enter/leave fades, so Forecast no longer appears as a weaker/different color.
+
+### Evidence / Status
+- **Success (source/build):** UDFPS pressed-visual policy, compact painted-edge, contextual AOD-only/layout, COUI visual-style, selector, and AOD content-motion focused tests compile and pass. Full JVM regression is **371/371 with 0 failures/errors/skips**, `git diff --check` passes, and `assembleDebug` passes. Final APK is 0.1.363 / 373, size `19,764,215`, SHA-256 `473044784ABB6F3FDA7BD0BCEA364C1C3926990B5100A93197D0C9F282DDDF4D`; final archive retains Modern API 101, `staticScope=true`, scope exactly `com.android.systemui`, and no legacy `assets/xposed_init`.
+- **Success (install/runtime):** the verified raw USB device `4a851996` accepted the standard overwrite install and Android PackageManager returned `Success`. Device `base.apk` SHA-256 matches the final 0.1.363 APK, existing `coui_port` / `udfps_hdr_press_effect=false` / `debug_logging=false` settings were preserved, and the single SystemUI reload changed PID `31284` → `16538`. Fresh LSPosed startup confirms the current 0.1.363 base.apk loading through the Modern entry with COUI_PORT clock/UDFPS owners active.
+- **Success (physical, user-observed):** user visually accepted the full 0.1.363 correction set on the physical CPH2573: contextual Forecast is AOD-only, Forecast uses the same accent as the clock/notification glyph row, SMALL clock/Forecast/notification painted leading edges are aligned, the accepted lockscreen↔AOD clock transition remains smooth/intact, and real enrolled-finger UDFPS recognition works again. This closes the 0.1.362 UDFPS regression and the contextual geometry/color follow-up.
+
+## [0.1.362] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation during Phase G; no Luna/Codex executor used.
+- **Scope:** Close the Phase-G contextual At a Glance runtime gap in COUI_PORT without changing selector policy, setting keys, or the accepted notification/media first-frame motion contract.
+
+### Fixed
+- Add a host-owned contextual row to `CouiClockHostView` so the existing Calendar / Weather alert / Tomorrow forecast selector is actually rendered by the COUI_PORT primary owner. Before this change those policies and M6 settings existed, but their presentation wiring terminated in legacy `PixelAodClockView` / `PixelLockscreenClockView` instances that are absent under startup-exclusive COUI_PORT.
+- Reuse the existing `ContextualAtAGlanceSelector`, privacy/state-store policy, weather/calendar icon resolution, text formatting, and presentation semantics rather than creating a second business-policy stack. Weather alerts remain AOD-only; calendar and forecast keep the existing priority/fallback rules.
+- Add `CouiClockContextualLayoutPolicy` so the contextual row is placed below the actual date/current-weather group and only pushes notification/media content when its measured or fallback bottom requires additional clearance. Notification/media geometry still snaps to the final target before alpha animation, preserving the physically accepted 0.1.354 no-Y-correction invariant.
+- Add an explicit non-animated first-frame overload to `ContextualAtAGlancePresentation`; unlocked pre-arm and AOD-entry preparation can populate the row atomically instead of exposing a stale/empty contextual fade on the first visible frame.
+- Route calendar-data changes and contextual display deadlines through `ActiveClockRendererController.refreshInformationFromExistingAdapters(...)` as well as the retained legacy refresh calls, so COUI_PORT reevaluates cards when the source changes or a forecast/alert display boundary expires.
+
+### Evidence / Status
+- **Success (source/build):** Java compilation plus focused contextual/layout/content-motion tests pass; full JVM regression is **366/366 with 0 failures**, `git diff --check` passes, and `assembleDebug` passes. Final APK is 0.1.362 / 372, size `19,764,215`, SHA-256 `5B38D72EC5BFC10D00E04A8407573C67A47D9B518EF3DD436C48438DEAF31A96`; static SystemUI scope/Modern entry remain package-clean.
+- **Success (install/runtime):** raw USB serial `4a851996` was used; overwrite install returned Success and device base.apk hash matches local. Exactly one SystemUI reload changed PID `23485` → `31284`; fresh LSPosed startup shows COUI_PORT clock/UDFPS owners with no bounded startup FATAL/ANR.
+- **Success (physical contextual card):** a live AOD screenshot now shows the expected Breezy tomorrow fallback `Tmr 28° / 24°` with its weather glyph above the notification row. A 14-frame high-frequency lockscreen→AOD capture keeps the Forecast and notification rows at the same visible relative Y through transition/stable frames, with no old-position notification flash or downward correction. The Phase-G contextual runtime gap is physically closed.
+
 ## [0.1.361] - 2026-08-18
 ### Meta
 - **Owner / Model:** GPT-5.6 Sol direct implementation on merged `agent/coui-port`; no Luna/Codex executor used.

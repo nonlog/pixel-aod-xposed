@@ -25,6 +25,29 @@ final class CouiCompactLayout {
         return dp(PixelAodVisualStyle.COMPACT_PAINTED_LEADING_EDGE_DP, density);
     }
 
+    /** Painted clock edge for the current COUI glyph target, including any AOD burn-in X. */
+    static float paintedLeadingEdgeForClockTarget(float firstDigitTargetX, float density) {
+        return firstDigitTargetX
+                + PixelAodVisualStyle.COMPACT_CLOCK_GLYPH_LEADING_INSET_DP * density;
+    }
+
+    /** Layout X that makes the contextual icon paint on the supplied clock edge. */
+    static float contextualLayoutLeftForPaintedEdge(float paintedEdgePx, float density,
+            int applicationIconLeadingOffsetDp) {
+        return paintedEdgePx
+                - (PixelAodVisualStyle.COMPACT_CONTEXTUAL_ICON_LEADING_INSET_DP
+                + Math.max(0, applicationIconLeadingOffsetDp)) * density;
+    }
+
+    /**
+     * COUI host notification rows have no legacy post-layout translation. Align their first
+     * painted glyph directly to the current clock target edge.
+     */
+    static float notificationLayoutLeftForPaintedEdge(float paintedEdgePx, float density) {
+        return paintedEdgePx
+                - PixelAodVisualStyle.COMPACT_NOTIFICATION_GLYPH_LEADING_INSET_DP * density;
+    }
+
     static int contextualLayoutLeft(float density) {
         return contextualLayoutLeft(density, 0);
     }

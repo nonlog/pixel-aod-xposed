@@ -40,6 +40,15 @@ public final class CouiClockVisualStylePolicyTest {
     }
 
     @Test
+    public void contextualAodRowUsesTheExactClockAccentAtFullStrength() {
+        assertEquals(0xffa1b2c3, CouiClockVisualStylePolicy.contextualAccentColor(
+                CouiClockPresentationModel.Scene.SMALL, true,
+                0xff123456, 0xffa1b2c3));
+        assertEquals(1f, CouiClockVisualStylePolicy.contextualContentAlpha(true), 0f);
+        assertEquals(0f, CouiClockVisualStylePolicy.contextualContentAlpha(false), 0f);
+    }
+
+    @Test
     public void informationShadowIsClearedOnlyForImmersedOrPartialMediaInputs() {
         assertFalse(CouiClockVisualStylePolicy.shouldApplyInformationShadow(
                 CouiClockPresentationModel.Scene.IMMERSED, false, false, false));

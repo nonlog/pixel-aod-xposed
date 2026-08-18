@@ -218,7 +218,8 @@ final class CouiUdfpsController {
                     }
                     dispatchViewOperation(pressedIcon,
                             "OnScreenFingerprintPressedIcon#constructor", () -> {
-                                configurePressedIcon(pressedIcon);
+                                configurePressedIcon(pressedIcon,
+                                        isHdrPressEffectEnabled(context));
                                 PixelAodLog.log("COUI UDFPS pressed icon configured"
                                         + " source=OnScreenFingerprintPressedIcon#constructor"
                                         + " iconId=" + Integer.toHexString(
@@ -301,7 +302,10 @@ final class CouiUdfpsController {
                     target.setAccessible(true);
                     ModernHookBridge.hookBefore(target, param -> {
                         Context context = contextFrom(null, param.thisObject);
-                        if (isReplacementEnabled(context)) {
+                        boolean hdrEnabled = isHdrPressEffectEnabled(context);
+                        if (isReplacementEnabled(context)
+                                && CouiUdfpsPressedVisualPolicy
+                                .suppressVendorPressedAnimation(hdrEnabled)) {
                             param.setResult(Boolean.FALSE);
                         }
                     });
@@ -312,7 +316,10 @@ final class CouiUdfpsController {
                     target.setAccessible(true);
                     ModernHookBridge.hookBefore(target, param -> {
                         Context context = contextFrom(null, param.thisObject);
-                        if (isReplacementEnabled(context)) {
+                        boolean hdrEnabled = isHdrPressEffectEnabled(context);
+                        if (isReplacementEnabled(context)
+                                && CouiUdfpsPressedVisualPolicy
+                                .suppressVendorPressedAnimation(hdrEnabled)) {
                             param.setResult(Float.valueOf(1f));
                         }
                     });
@@ -712,7 +719,7 @@ final class CouiUdfpsController {
         }
         ImageView pressedIcon = findPressedIcon(uiMech);
         dispatchViewOperation(pressedIcon, source + "#pressed", () -> {
-            configurePressedIcon(pressedIcon);
+            configurePressedIcon(pressedIcon, hdrEnabled);
             synchronized (PRESSED_TOUCH_STATES) {
                 PRESSED_TOUCH_STATES.put(pressedIcon, liveTouchDown);
             }
@@ -742,17 +749,15 @@ final class CouiUdfpsController {
             }
             return;
         }
+        // Stable 0.1.331 optical contract: when module HDR is disabled, the vendor pressed
+        // carrier owns illumination/HBM. A module press overlay can alter the light reaching the
+        // optical sensor, so keep it absent and only retain the post-auth success ripple path.
         dispatchViewOperation(icon, source + "#press-glow", () -> {
             CouiUdfpsGlowOverlay overlay;
             synchronized (GLOW_OVERLAYS) {
                 overlay = GLOW_OVERLAYS.get(icon);
             }
-            if (liveTouchDown) {
-                if (overlay == null) {
-                    overlay = glowOverlay(icon);
-                }
-                overlay.showPress(glowSpec(icon));
-            } else if (overlay != null) {
+            if (overlay != null) {
                 overlay.hidePress();
             }
         });
@@ -817,11 +822,20 @@ final class CouiUdfpsController {
         }
     }
 
-    private static void configurePressedIcon(ImageView pressedIcon) {
+    private static void configurePressedIcon(ImageView pressedIcon, boolean hdrEnabled) {
         if (pressedIcon == null) {
             return;
         }
         rememberPressedOriginal(pressedIcon);
+        if (!CouiUdfpsPressedVisualPolicy.useModulePressedCarrier(hdrEnabled)) {
+            // Do not touch drawable/background/tint/animation in native optical mode. Stable
+            // 0.1.331 only gates this vendor View's alpha while idle; OPlus retains the pressed
+            // asset, HBM and optical animation needed for acquisition.
+            if (pressedIcon.getBackground() instanceof CouiUdfpsPressedIlluminationDrawable) {
+                restoreNativePressedCarrier(pressedIcon);
+            }
+            return;
+        }
         try {
             if (pressedIcon.getAnimation() != null) {
                 pressedIcon.clearAnimation();
@@ -841,12 +855,6 @@ final class CouiUdfpsController {
             }
             if (pressedIcon.getDrawable() != null) {
                 pressedIcon.setImageDrawable(null);
-            }
-            if (!isHdrPressEffectEnabled(pressedIcon.getContext())) {
-                if (pressedIcon.getBackground() != null) {
-                    pressedIcon.setBackground(null);
-                }
-                return;
             }
             if (!(pressedIcon.getBackground() instanceof CouiUdfpsPressedIlluminationDrawable)) {
                 pressedIcon.setBackground(new CouiUdfpsPressedIlluminationDrawable(
@@ -961,6 +969,12 @@ final class CouiUdfpsController {
             return;
         }
         boolean enabled = isHdrPressEffectEnabled(pressedIcon.getContext());
+        if (!enabled) {
+            // Native optical mode owns all brightness/HBM surface state. In particular, do not
+            // force desired HDR headroom back to 1 here: that transaction races OPlus optical
+            // illumination and was correlated with real-finger authentication failure.
+            return;
+        }
         boolean active = enabled && pressed;
         if (!pressedIcon.isAttachedToWindow()) {
             return;
@@ -1050,7 +1064,10 @@ final class CouiUdfpsController {
         if (Float.compare(pressedIcon.getAlpha(), targetAlpha) != 0) {
             pressedIcon.setAlpha(targetAlpha);
         }
-        setPressedIlluminationAlpha(pressedIcon, touchDown);
+        if (CouiUdfpsPressedVisualPolicy.useModulePressedCarrier(
+                isHdrPressEffectEnabled(pressedIcon.getContext()))) {
+            setPressedIlluminationAlpha(pressedIcon, touchDown);
+        }
     }
 
     private static void reassertPressedCarrierVisibility(ImageView pressedIcon, String source) {
@@ -1285,7 +1302,7 @@ final class CouiUdfpsController {
             ImageView pressedIcon = findPressedIcon(uiMech);
             boolean hdrEnabled = isHdrPressEffectEnabled(icon.getContext());
             dispatchViewOperation(pressedIcon, source + "#show-pressed", () -> {
-                configurePressedIcon(pressedIcon);
+                configurePressedIcon(pressedIcon, hdrEnabled);
                 updatePressedHdr(pressedIcon, true);
                 logPressedCarrierIfChanged(uiMech, pressedIcon, true, hdrEnabled, source);
             });
@@ -1301,11 +1318,18 @@ final class CouiUdfpsController {
             PixelAodLog.i("COUI UDFPS HDR press=show source=" + source);
             return;
         }
-        dispatchViewOperation(icon, source + "#show-primary", () -> {
-            CouiUdfpsGlowOverlay overlay = glowOverlay(icon);
-            overlay.showPress(glowSpec(icon));
+        // HDR disabled means native optical pressed illumination, matching stable 0.1.331.
+        // Do not add a module overlay before authentication.
+        dispatchViewOperation(icon, source + "#show-primary-native", () -> {
+            CouiUdfpsGlowOverlay overlay;
+            synchronized (GLOW_OVERLAYS) {
+                overlay = GLOW_OVERLAYS.get(icon);
+            }
+            if (overlay != null) {
+                overlay.hidePress();
+            }
         });
-        PixelAodLog.i("COUI UDFPS press glow=show source=" + source);
+        PixelAodLog.i("COUI UDFPS press=native-optical source=" + source);
     }
 
     private static void hidePress(Object uiMech, String source) {
@@ -1699,9 +1723,11 @@ final class CouiUdfpsController {
 
     private static void rememberPressedOriginal(ImageView icon) {
         synchronized (ORIGINAL_PRESSED_DRAWABLES) {
-            if (ORIGINAL_PRESSED_DRAWABLES.containsKey(icon)) {
-                // The stable alpha/touch maps are independent from drawable ownership below.
-            } else {
+            boolean moduleCarrier =
+                    icon.getBackground() instanceof CouiUdfpsPressedIlluminationDrawable;
+            if (!moduleCarrier) {
+                // Refresh the native snapshot while OPlus still owns the carrier. Constructors
+                // can initially expose null drawables and populate the real optical assets later.
                 ORIGINAL_PRESSED_DRAWABLES.put(icon, icon.getDrawable());
                 ORIGINAL_PRESSED_BACKGROUNDS.put(icon, icon.getBackground());
                 ORIGINAL_PRESSED_TINTS.put(icon, icon.getImageTintList());

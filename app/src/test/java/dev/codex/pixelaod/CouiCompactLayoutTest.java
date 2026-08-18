@@ -44,6 +44,31 @@ public final class CouiCompactLayoutTest {
     }
 
     @Test
+    public void couiHostRowsShareTheLiveClockTargetEdgeWithoutMovingTheClockTarget() {
+        float density = 4f;
+        float firstDigitTargetX = 117f;
+        float paintedEdge = CouiCompactLayout.paintedLeadingEdgeForClockTarget(
+                firstDigitTargetX, density);
+        float contextualLeft = CouiCompactLayout.contextualLayoutLeftForPaintedEdge(
+                paintedEdge, density, 0);
+        float notificationLeft = CouiCompactLayout.notificationLayoutLeftForPaintedEdge(
+                paintedEdge, density);
+
+        assertEquals(137f, paintedEdge, 0.001f);
+        assertEquals(paintedEdge,
+                contextualLeft
+                        + PixelAodVisualStyle.COMPACT_CONTEXTUAL_ICON_LEADING_INSET_DP * density,
+                0.001f);
+        assertEquals(paintedEdge,
+                notificationLeft
+                        + PixelAodVisualStyle.COMPACT_NOTIFICATION_GLYPH_LEADING_INSET_DP
+                        * density,
+                0.001f);
+        // Alignment helpers derive only row positions; the clock target itself is untouched.
+        assertEquals(117f, firstDigitTargetX, 0.001f);
+    }
+
+    @Test
     public void reservesClearanceAroundTheClockForLongLocalizedContent() {
         float density = 4f;
         int clockContentWidthPx = 640;

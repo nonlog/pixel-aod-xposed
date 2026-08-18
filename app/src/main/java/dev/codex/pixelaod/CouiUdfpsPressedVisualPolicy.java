@@ -19,6 +19,19 @@ final class CouiUdfpsPressedVisualPolicy {
         return primaryDrawablePressed(liveTouchDown, hdrEnabled) ? 255 : 0;
     }
 
+    /**
+     * When module HDR is disabled, stable 0.1.331 leaves the vendor optical carrier itself
+     * intact and gates only its View alpha. Vendor pressed-animation/HBM decisions must therefore
+     * remain native in that mode. The COUI replacement carrier is allowed only for HDR mode.
+     */
+    static boolean useModulePressedCarrier(boolean hdrEnabled) {
+        return hdrEnabled;
+    }
+
+    static boolean suppressVendorPressedAnimation(boolean hdrEnabled) {
+        return useModulePressedCarrier(hdrEnabled);
+    }
+
     /** Stable 0.1.331 contract: the vendor pressed carrier itself is invisible while idle. */
     static float pressedCarrierViewAlpha(boolean liveTouchDown, float originalAlpha) {
         if (!liveTouchDown) {

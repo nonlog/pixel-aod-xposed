@@ -3221,6 +3221,8 @@ public final class PixelAodClockView extends FrameLayout {
                 view.requestAodFrameRefresh("calendar-at-a-glance");
             }
         }
+        ActiveClockRendererController.refreshInformationFromExistingAdapters(
+                "calendar-at-a-glance");
     }
 
     @Override
@@ -7438,6 +7440,8 @@ public final class PixelAodClockView extends FrameLayout {
                     }
                 }
                 PixelLockscreenClockView.refreshAll("contextual-deadline");
+                ActiveClockRendererController.refreshInformationFromExistingAdapters(
+                        "contextual-deadline");
                 PixelAodLog.log("reevaluated contextual card deadline=" + deadlineMillis
                         + " source=" + source);
             };

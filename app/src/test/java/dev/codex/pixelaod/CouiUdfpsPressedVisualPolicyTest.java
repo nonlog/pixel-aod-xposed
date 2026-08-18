@@ -56,4 +56,18 @@ public final class CouiUdfpsPressedVisualPolicyTest {
         assertEquals(1f,
                 CouiUdfpsPressedVisualPolicy.pressedCarrierViewAlpha(true, 2f), 0f);
     }
+
+    @Test
+    public void hdrDisabledKeepsVendorOpticalCarrierAndPressedAnimationNative() {
+        assertFalse(CouiUdfpsPressedVisualPolicy.useModulePressedCarrier(false));
+        assertFalse(CouiUdfpsPressedVisualPolicy.suppressVendorPressedAnimation(false));
+        assertEquals(0,
+                CouiUdfpsPressedVisualPolicy.illuminationAlpha(true, false));
+    }
+
+    @Test
+    public void hdrEnabledAllowsModulePressedCarrierOwnership() {
+        assertTrue(CouiUdfpsPressedVisualPolicy.useModulePressedCarrier(true));
+        assertTrue(CouiUdfpsPressedVisualPolicy.suppressVendorPressedAnimation(true));
+    }
 }

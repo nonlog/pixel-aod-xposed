@@ -33,6 +33,17 @@ final class CouiClockVisualStylePolicy {
         return notificationIconColor;
     }
 
+    /** Contextual AOD rows use the exact same host accent as the active clock glyphs. */
+    static int contextualAccentColor(CouiClockPresentationModel.Scene scene, boolean dozing,
+            int monetColor, int aodMonetColor) {
+        return clockColor(scene, dozing, monetColor, aodMonetColor);
+    }
+
+    /** COUI contextual content is full-strength; row alpha owns enter/leave animation. */
+    static float contextualContentAlpha(boolean visible) {
+        return visible ? 1f : 0f;
+    }
+
     static boolean shouldApplyInformationShadow(CouiClockPresentationModel.Scene visualScene,
             boolean dozing, boolean partialAod, boolean mediaContent) {
         return visualScene != CouiClockPresentationModel.Scene.IMMERSED
