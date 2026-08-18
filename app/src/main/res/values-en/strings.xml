@@ -55,7 +55,7 @@
     <string name="title_schedule_start_time">Start Time</string>
     <string name="title_schedule_end_time">End Time</string>
     <string name="section_appearance">Appearance</string>
-    <string name="section_clock">Clock Style</string>
+    <string name="section_clock">Clock</string>
     <string name="section_behavior">Behavior</string>
     <string name="section_aod_behavior">AOD Behavior</string>
     <string name="title_page_aod">Always-on display</string>
@@ -81,7 +81,8 @@
     <string name="nav_system_ui">System UI</string>
     <string name="system_ui_warning">These options directly affect SystemUI. Enable debug logging only while troubleshooting; use “Restart SystemUI” on Home when the module runtime must be reloaded.</string>
     <string name="desc_page_aod">Display mode, schedule, and AOD behavior</string>
-    <string name="desc_page_clock">Clock weights and under-display fingerprint visuals</string>
+    <string name="desc_page_clock">AOD and lockscreen clock weights</string>
+    <string name="desc_page_fingerprint">Fingerprint icon, press highlight, and unlock animations</string>
     <string name="desc_page_at_a_glance">Weather, forecast, alerts, and calendar information</string>
     <string name="desc_page_lockscreen">Lockscreen notification visibility and compatibility</string>
     <string name="desc_page_system">Language, diagnostics, and app-level settings</string>

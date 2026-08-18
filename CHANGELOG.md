@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.1.365] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/coui-port`; no Luna/Codex executor used.
+- **Scope:** Dark-theme COUI card-surface correction on top of the 0.1.364 information-architecture pass. Settings presentation only; navigation structure, setting keys, providers, and SystemUI runtime hooks are unchanged.
+
+### Fixed
+- Replace ordinary settings-card use of dynamic `surfaceContainerLowest` with `surfaceContainerHighest`. On the user's current dark Monet palette the former resolves to absolute black, while COUI Expressive uses a visibly raised, wallpaper-tinted dark container above the page background.
+- Apply the same neutral-container correction to unselected choice-dialog rows and the time-picker inner surface so the settings UI does not reintroduce isolated pure-black cards in secondary surfaces.
+- Keep dynamic wallpaper color intact; no fixed gray/teal RGB values are introduced.
+
+### Evidence / Status
+- **Success (source/build):** full JVM regression is **371/371 with 0 failures/errors/skips**, `git diff --check` passes, runtime Java diff from accepted `9e31130` remains zero, and `assembleDebug` passes. Final APK is 0.1.365 / 375, size `19,764,695`, SHA-256 `6FEF618FA56B6B3DE3934293BB2A832113B07A5483D92C727F50FDD02F09CFF2`; packaged Xposed metadata remains `staticScope=true` / API 101.
+- **Success (install):** standard overwrite install on verified raw USB `4a851996` returned Android PackageManager `Success`; device reports 0.1.365 / 375 and installed base.apk SHA-256 exactly matches local. SystemUI PID remained `20884` before and after install, confirming no runtime reload occurred.
+- **Success (physical UI, user-observed):** user compared 0.1.365 against the supplied COUI Expressive dark-theme reference and reports the card-surface correction passes visually. The separate AOD Hub / Clock / Fingerprint structure also remains accepted. This closes the M6 UI information-architecture and dark-card presentation wrap-up.
+
+## [0.1.364] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/coui-port`; no Luna/Codex executor used.
+- **Scope:** Final M6 information-architecture cleanup after the physically accepted 0.1.363 Phase-G corrections. Settings UI only; runtime hooks and setting/provider contracts are unchanged.
+
+### Changed
+- Split the previous combined `Clock Style / UDFPS` AOD child destination into two real pages: `Clock` and `Fingerprint`.
+- Keep `Clock` focused on AOD and lockscreen clock-weight controls, and move the existing Pixel fingerprint icon, HDR press highlight, success ripple, and AOD exit-animation controls intact into the dedicated `Fingerprint` page.
+- Add a separate Fingerprint row to the AOD Hub, use a palette icon for Clock and a fingerprint icon for Fingerprint, and keep both child pages under the AOD bottom-tab/back-navigation hierarchy.
+- Rename the visible `Clock Style` label to `Clock` and update Chinese/English page descriptions so the hierarchy reflects user-facing concepts rather than implementation grouping.
+
+### Evidence / Status
+- **Success (source compile):** `:app:compileDebugKotlin` passes after the page split. Static inspection confirms the four UDFPS setting keys still have one state read and one existing provider write each; no runtime Java source is changed by this UI-only pass.
+- **Success (source/build):** full JVM regression is **371/371 with 0 failures/errors/skips**, `git diff --check` passes, runtime Java diff from accepted `9e31130` is zero, and `assembleDebug` passes. Final APK is 0.1.364 / 374, size `19,764,695`, SHA-256 `75A6B935FC6EB99469768FF369AEFA90D41A164D1CA1CECDBB7089351A193F1B`; packaged Xposed metadata remains `staticScope=true` / API 101.
+- **Success (install):** standard USB overwrite install on verified CPH2573 / serial `4a851996` returned `Success`; installed 0.1.364 base.apk SHA-256 matches local exactly. SystemUI PID remained `20884` before and after install, confirming no runtime reload occurred. SettingsActivity launch produced no fresh app FATAL; automated hierarchy inspection was blocked only because the device was on the secure lockscreen.
+- **Pending (physical UI only):** user visual review of the AOD Hub and separate Clock / Fingerprint child pages. Keep this UI batch uncommitted until accepted.
+
 ## [0.1.363] - 2026-08-18
 ### Meta
 - **Owner / Model:** GPT-5.6 Sol direct implementation during Phase G; no Luna/Codex executor used.

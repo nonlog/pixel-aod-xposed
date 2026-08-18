@@ -120,7 +120,10 @@ object PixelAodDesignSystem {
         extraLarge = groupShape
     )
 
-    fun groupColor(scheme: ColorScheme): Color = scheme.surfaceContainerLowest
+    // COUI dark cards sit above the page background instead of dropping to absolute black.
+    // Use the wallpaper-derived highest neutral container role so the card keeps Monet tint while
+    // preserving the visible page -> card hierarchy seen in COUI Expressive.
+    fun groupColor(scheme: ColorScheme): Color = scheme.surfaceContainerHighest
     fun pageColor(scheme: ColorScheme): Color = scheme.background
     fun bottomBarColor(scheme: ColorScheme): Color = scheme.surfaceContainer
 }
@@ -859,7 +862,7 @@ fun PixelAodSelectionDialog(
                         color = if (selected) {
                             MaterialTheme.colorScheme.secondaryContainer
                         } else {
-                            MaterialTheme.colorScheme.surfaceContainerLowest
+                            MaterialTheme.colorScheme.surfaceContainerHighest
                         },
                         tonalElevation = 0.dp,
                         shadowElevation = 0.dp
@@ -938,7 +941,7 @@ fun PixelAodTimePickerDialog(
         text = {
             Surface(
                 shape = RoundedCornerShape(22.dp),
-                color = scheme.surfaceContainerLowest,
+                color = scheme.surfaceContainerHighest,
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
                 modifier = Modifier.fillMaxWidth()

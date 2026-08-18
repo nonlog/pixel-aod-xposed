@@ -55,7 +55,7 @@
     <string name="title_schedule_start_time">开始时间</string>
     <string name="title_schedule_end_time">结束时间</string>
     <string name="section_appearance">外观</string>
-    <string name="section_clock">时钟样式</string>
+    <string name="section_clock">时钟</string>
     <string name="section_behavior">行为</string>
     <string name="section_aod_behavior">AOD 行为</string>
     <string name="title_page_aod">息屏显示</string>
@@ -81,7 +81,8 @@
     <string name="nav_system_ui">System UI</string>
     <string name="system_ui_warning">这些选项会直接影响 SystemUI。仅在需要排查问题时启用调试日志；需要重新加载模块运行时修改时，请使用主页的“重启 SystemUI”。</string>
     <string name="desc_page_aod">息屏显示模式、显示时间与 AOD 行为</string>
-    <string name="desc_page_clock">时钟字重与屏下指纹视觉效果</string>
+    <string name="desc_page_clock">AOD 与锁屏时钟字重</string>
+    <string name="desc_page_fingerprint">指纹图标、按压高亮与解锁动画</string>
     <string name="desc_page_at_a_glance">天气、预报、警报与日历信息</string>
     <string name="desc_page_lockscreen">锁屏通知显示与兼容策略</string>
     <string name="desc_page_system">语言、调试与应用级设置</string>

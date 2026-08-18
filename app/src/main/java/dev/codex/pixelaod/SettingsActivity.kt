@@ -73,6 +73,7 @@ private enum class SettingsPage {
     AOD,
     AOD_DISPLAY,
     CLOCK,
+    FINGERPRINT,
     AT_A_GLANCE,
     LOCKSCREEN,
     SYSTEM
@@ -382,6 +383,7 @@ private fun SettingsContent(
         SettingsPage.AOD,
         SettingsPage.AOD_DISPLAY,
         SettingsPage.CLOCK,
+        SettingsPage.FINGERPRINT,
         SettingsPage.AT_A_GLANCE,
         SettingsPage.LOCKSCREEN -> SettingsPage.AOD
         SettingsPage.SYSTEM -> SettingsPage.SYSTEM
@@ -410,6 +412,7 @@ private fun SettingsContent(
         currentPageName = when (currentPage) {
             SettingsPage.AOD_DISPLAY,
             SettingsPage.CLOCK,
+            SettingsPage.FINGERPRINT,
             SettingsPage.AT_A_GLANCE,
             SettingsPage.LOCKSCREEN -> SettingsPage.AOD.name
             else -> SettingsPage.HOME.name
@@ -496,11 +499,17 @@ private fun SettingsContent(
                         showDivider = true
                     ) { navigate(SettingsPage.AOD_DISPLAY) }
                     PixelAodNavigationRow(
-                        icon = Icons.Outlined.Fingerprint,
+                        icon = Icons.Outlined.Palette,
                         title = stringResource(R.string.section_clock),
                         subtitle = stringResource(R.string.desc_page_clock),
                         showDivider = true
                     ) { navigate(SettingsPage.CLOCK) }
+                    PixelAodNavigationRow(
+                        icon = Icons.Outlined.Fingerprint,
+                        title = stringResource(R.string.section_fingerprint),
+                        subtitle = stringResource(R.string.desc_page_fingerprint),
+                        showDivider = true
+                    ) { navigate(SettingsPage.FINGERPRINT) }
                     PixelAodNavigationRow(
                         icon = Icons.Outlined.Cloud,
                         title = stringResource(R.string.section_at_a_glance),
@@ -610,6 +619,15 @@ private fun SettingsContent(
                 }
             }
         }
+        }
+
+        SettingsPage.FINGERPRINT -> PixelAodPage(
+            title = stringResource(R.string.section_fingerprint),
+            subtitle = "",
+            onBack = navigateAod,
+            backDescription = stringResource(R.string.navigate_back),
+            bottomBar = bottomBar
+        ) {
 
         PixelAodSection(stringResource(R.string.section_fingerprint)) {
             PixelAodGroup() {
