@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -38,6 +37,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,19 +45,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TimePickerDefaults
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
@@ -354,7 +355,7 @@ fun PixelAodInfoBanner(text: String) {
 }
 
 @Composable
-private fun PixelAodSwitch(checked: Boolean) {
+private fun PixelAodSwitch(checked: Boolean, enabled: Boolean = true) {
     val scheme = MaterialTheme.colorScheme
     val thumbOffset by animateDpAsState(
         targetValue = if (checked) 25.dp else 3.dp,
@@ -364,14 +365,31 @@ private fun PixelAodSwitch(checked: Boolean) {
         ),
         label = "coui-switch-thumb"
     )
+    val trackColor = when {
+        !enabled && checked -> scheme.primary.copy(alpha = 0.38f)
+        !enabled -> Color.Transparent
+        checked -> scheme.primary
+        else -> Color.Transparent
+    }
+    val borderColor = when {
+        !enabled -> scheme.outline.copy(alpha = 0.38f)
+        checked -> scheme.primary
+        else -> scheme.outline
+    }
+    val thumbColor = when {
+        !enabled && checked -> scheme.primaryContainer.copy(alpha = 0.72f)
+        !enabled -> scheme.outline.copy(alpha = 0.48f)
+        checked -> scheme.primaryContainer
+        else -> scheme.outline
+    }
     Box(
         modifier = Modifier
             .size(width = 58.dp, height = 36.dp)
             .clip(CircleShape)
-            .background(if (checked) scheme.primary else Color.Transparent)
+            .background(trackColor)
             .border(
                 width = 2.5.dp,
-                color = if (checked) scheme.primary else scheme.outline,
+                color = borderColor,
                 shape = CircleShape
             )
     ) {
@@ -380,13 +398,17 @@ private fun PixelAodSwitch(checked: Boolean) {
                 .offset(x = thumbOffset, y = 3.dp)
                 .size(30.dp)
                 .clip(CircleShape)
-                .background(if (checked) scheme.primaryContainer else scheme.outline),
+                .background(thumbColor),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = if (checked) Icons.Outlined.Check else Icons.Outlined.Close,
                 contentDescription = null,
-                tint = if (checked) scheme.onPrimaryContainer else scheme.surface,
+                tint = when {
+                    !enabled -> scheme.onSurfaceVariant.copy(alpha = 0.55f)
+                    checked -> scheme.onPrimaryContainer
+                    else -> scheme.surface
+                },
                 modifier = Modifier.size(19.dp)
             )
         }
@@ -640,7 +662,7 @@ fun PixelAodToggleRow(
                 }
             }
             Spacer(modifier = Modifier.width(12.dp))
-            PixelAodSwitch(checked)
+            PixelAodSwitch(checked, enabled)
         }
     }
 }
@@ -651,6 +673,7 @@ fun PixelAodChoiceRow(
     title: String,
     valueText: String,
     showDivider: Boolean,
+    subtitle: String = "",
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
@@ -669,13 +692,25 @@ fun PixelAodChoiceRow(
         ) {
             PixelAodLeadingIcon(icon, enabled)
             Spacer(modifier = Modifier.width(PixelAodDesignSystem.spacing.leadingGap))
-            Text(
-                title,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
-                color = if (enabled) MaterialTheme.colorScheme.onSurface
-                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                )
+                if (subtitle.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 valueText,
@@ -796,41 +831,150 @@ fun PixelAodSelectionDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = MaterialTheme.shapes.extraLarge,
-        title = { Text(title, style = MaterialTheme.typography.titleLarge) },
+        shape = RoundedCornerShape(30.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        title = {
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
         text = {
             val bodyModifier = if (scrollable) {
                 Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())
             } else {
                 Modifier
             }
-            Column(modifier = bodyModifier) {
+            Column(
+                modifier = bodyModifier.clip(RoundedCornerShape(22.dp)),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 options.forEach { option ->
                     val selected = option.value == current
-                    Row(
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .selectable(
-                                selected = selected,
-                                onClick = { onSelected(option.value) }
-                            )
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .clickable { onSelected(option.value) },
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerLowest
+                        },
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp
                     ) {
-                        RadioButton(
-                            selected = selected,
-                            onClick = { onSelected(option.value) },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = MaterialTheme.colorScheme.primary
+                        Row(
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 15.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = option.label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                modifier = Modifier.weight(1f)
                             )
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(option.label, style = MaterialTheme.typography.bodyLarge)
+                            if (selected) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(30.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
         },
         confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(cancelLabel)
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PixelAodTimePickerDialog(
+    title: String,
+    initialHour: Int,
+    initialMinute: Int,
+    cancelLabel: String,
+    confirmLabel: String,
+    onDismiss: () -> Unit,
+    onConfirm: (hour: Int, minute: Int) -> Unit
+) {
+    val state = rememberTimePickerState(
+        initialHour = initialHour,
+        initialMinute = initialMinute,
+        is24Hour = true
+    )
+    val scheme = MaterialTheme.colorScheme
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(30.dp),
+        containerColor = scheme.surfaceContainerHigh,
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = scheme.onSurface
+            )
+        },
+        text = {
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = scheme.surfaceContainerLowest,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    TimePicker(
+                        state = state,
+                        colors = TimePickerDefaults.colors(
+                            clockDialColor = scheme.surfaceContainer,
+                            clockDialSelectedContentColor = scheme.onPrimary,
+                            clockDialUnselectedContentColor = scheme.onSurface,
+                            selectorColor = scheme.primary,
+                            containerColor = Color.Transparent,
+                            periodSelectorBorderColor = scheme.outlineVariant,
+                            periodSelectorSelectedContainerColor = scheme.secondaryContainer,
+                            periodSelectorUnselectedContainerColor = Color.Transparent,
+                            periodSelectorSelectedContentColor = scheme.onSecondaryContainer,
+                            periodSelectorUnselectedContentColor = scheme.onSurfaceVariant,
+                            timeSelectorSelectedContainerColor = scheme.primaryContainer,
+                            timeSelectorUnselectedContainerColor = scheme.surfaceContainer,
+                            timeSelectorSelectedContentColor = scheme.onPrimaryContainer,
+                            timeSelectorUnselectedContentColor = scheme.onSurface
+                        )
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(state.hour, state.minute) }) {
+                Text(confirmLabel)
+            }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(cancelLabel)
             }

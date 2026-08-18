@@ -27,6 +27,7 @@
     <string name="desc_notification_icons">AOD 单色通知图标</string>
     <string name="title_pixel_fingerprint_icon">Pixel 指纹图标</string>
     <string name="desc_pixel_fingerprint_icon">替换 OOS 原生图标，保留原生位置、显隐与指纹交互</string>
+    <string name="section_fingerprint">指纹</string>
     <string name="section_fingerprint_effects">动画效果</string>
     <string name="title_udfps_hdr_press_effect">按压时使用 HDR 高亮</string>
     <string name="desc_udfps_hdr_press_effect">使用 COUI HDR 亮白指纹高亮，同时保留 OPlus 原生光学识别与 HBM 链路</string>
@@ -50,6 +51,7 @@
     <string name="aod_behavior_trigger_only">Trigger-only</string>
     <string name="title_continuous_schedule">持续显示时间段</string>
     <string name="desc_continuous_schedule">只控制持续显示；时间段外仍允许轻触 / 抬起短暂显示</string>
+    <string name="desc_continuous_schedule_disabled">仅在 AOD 行为设为“持续显示 + 触发显示”时可用</string>
     <string name="title_schedule_start_time">开始时间</string>
     <string name="title_schedule_end_time">结束时间</string>
     <string name="section_appearance">外观</string>
@@ -59,8 +61,13 @@
     <string name="title_page_aod">息屏显示</string>
     <string name="section_aod_display">显示模式</string>
     <string name="section_at_a_glance">At a Glance</string>
+    <string name="section_weather">天气</string>
+    <string name="section_forecast">天气预报</string>
+    <string name="section_contextual_information">情境信息</string>
     <string name="section_lockscreen">锁屏</string>
+    <string name="section_notifications">通知</string>
     <string name="section_system">系统与诊断</string>
+    <string name="section_diagnostics">诊断</string>
     <string name="section_settings_categories">设置分类</string>
     <string name="section_settings_pages">设置页面</string>
     <string name="section_general">常规</string>

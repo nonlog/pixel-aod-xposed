@@ -17,65 +17,28 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Android
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Android
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Policy
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -86,15 +49,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -446,6 +403,9 @@ private fun SettingsContent(
             onSelected = { currentPageName = it }
         )
     }
+    val continuousAodMode =
+        aodDisplayMode.value == PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS
+    val scheduleTimesEnabled = continuousAodMode && aodScheduleEnabled.value
     BackHandler(enabled = currentPage != SettingsPage.HOME) {
         currentPageName = when (currentPage) {
             SettingsPage.AOD_DISPLAY,
@@ -570,45 +530,48 @@ private fun SettingsContent(
                     icon = Icons.Outlined.Schedule,
                     title = stringResource(R.string.title_aod_behavior),
                     valueText = aodDisplayModeLabel(aodDisplayMode.value),
-                    showDivider = aodDisplayMode.value == PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS
+                    showDivider = true
                 ) {
                     showDisplayModeDialog = true
                 }
-                if (aodDisplayMode.value == PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS) {
-                    PixelAodToggleRow(
-                        icon = Icons.Outlined.Schedule,
-                        title = stringResource(R.string.title_continuous_schedule),
-                        subtitle = stringResource(R.string.desc_continuous_schedule),
-                        checked = aodScheduleEnabled.value,
-                        showDivider = aodScheduleEnabled.value
-                    ) {
-                        aodScheduleEnabled.value = it
-                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, it)
-                    }
-                    if (aodScheduleEnabled.value) {
-                        PixelAodChoiceRow(
-                            icon = Icons.Outlined.Schedule,
-                            title = stringResource(R.string.title_schedule_start_time),
-                            valueText = aodScheduleStartTime.value,
-                            showDivider = true
-                        ) {
-                            showClockDialPicker(
-                                ClockDialTarget.AOD_START,
-                                aodScheduleStartTime.value
-                            )
-                        }
-                        PixelAodChoiceRow(
-                            icon = Icons.Outlined.Schedule,
-                            title = stringResource(R.string.title_schedule_end_time),
-                            valueText = aodScheduleEndTime.value,
-                            showDivider = false
-                        ) {
-                            showClockDialPicker(
-                                ClockDialTarget.AOD_END,
-                                aodScheduleEndTime.value
-                            )
-                        }
-                    }
+                PixelAodToggleRow(
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_continuous_schedule),
+                    subtitle = if (continuousAodMode) {
+                        stringResource(R.string.desc_continuous_schedule)
+                    } else {
+                        stringResource(R.string.desc_continuous_schedule_disabled)
+                    },
+                    checked = aodScheduleEnabled.value,
+                    showDivider = true,
+                    enabled = continuousAodMode
+                ) {
+                    aodScheduleEnabled.value = it
+                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, it)
+                }
+                PixelAodChoiceRow(
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_schedule_start_time),
+                    valueText = aodScheduleStartTime.value,
+                    showDivider = true,
+                    enabled = scheduleTimesEnabled
+                ) {
+                    showClockDialPicker(
+                        ClockDialTarget.AOD_START,
+                        aodScheduleStartTime.value
+                    )
+                }
+                PixelAodChoiceRow(
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_schedule_end_time),
+                    valueText = aodScheduleEndTime.value,
+                    showDivider = false,
+                    enabled = scheduleTimesEnabled
+                ) {
+                    showClockDialPicker(
+                        ClockDialTarget.AOD_END,
+                        aodScheduleEndTime.value
+                    )
                 }
             }
         }
@@ -621,18 +584,8 @@ private fun SettingsContent(
             backDescription = stringResource(R.string.navigate_back),
             bottomBar = bottomBar
         ) {
-        PixelAodSection(stringResource(R.string.section_clock)) {
+        PixelAodSection(stringResource(R.string.section_appearance)) {
             PixelAodGroup() {
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.Fingerprint,
-                    title = stringResource(R.string.title_pixel_fingerprint_icon),
-                    subtitle = stringResource(R.string.desc_pixel_fingerprint_icon),
-                    checked = pixelFingerprintIcon.value,
-                    showDivider = true
-                ) {
-                    pixelFingerprintIcon.value = it
-                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, it)
-                }
                 PixelAodSliderRow(
                     icon = Icons.Outlined.Schedule,
                     title = stringResource(R.string.title_aod_weight),
@@ -658,39 +611,55 @@ private fun SettingsContent(
             }
         }
 
-        if (pixelFingerprintIcon.value) {
-            PixelAodSection(stringResource(R.string.section_fingerprint_effects)) {
-                PixelAodGroup() {
-                    PixelAodToggleRow(
-                        icon = Icons.Outlined.Fingerprint,
-                        title = stringResource(R.string.title_udfps_hdr_press_effect),
-                        subtitle = stringResource(R.string.desc_udfps_hdr_press_effect),
-                        checked = udfpsHdrPressEffect.value,
-                        showDivider = true
-                    ) {
-                        udfpsHdrPressEffect.value = it
-                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_HDR_PRESS_EFFECT, it)
-                    }
-                    PixelAodToggleRow(
-                        icon = Icons.Outlined.Fingerprint,
-                        title = stringResource(R.string.title_udfps_success_ripple),
-                        subtitle = stringResource(R.string.desc_udfps_success_ripple),
-                        checked = udfpsSuccessRipple.value,
-                        showDivider = true
-                    ) {
-                        udfpsSuccessRipple.value = it
-                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_SUCCESS_RIPPLE, it)
-                    }
-                    PixelAodToggleRow(
-                        icon = Icons.Outlined.Fingerprint,
-                        title = stringResource(R.string.title_udfps_aod_exit_animation),
-                        subtitle = stringResource(R.string.desc_udfps_aod_exit_animation),
-                        checked = udfpsAodExitAnimation.value,
-                        showDivider = false
-                    ) {
-                        udfpsAodExitAnimation.value = it
-                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_AOD_EXIT_ANIMATION, it)
-                    }
+        PixelAodSection(stringResource(R.string.section_fingerprint)) {
+            PixelAodGroup() {
+                PixelAodToggleRow(
+                    icon = Icons.Outlined.Fingerprint,
+                    title = stringResource(R.string.title_pixel_fingerprint_icon),
+                    subtitle = stringResource(R.string.desc_pixel_fingerprint_icon),
+                    checked = pixelFingerprintIcon.value,
+                    showDivider = false
+                ) {
+                    pixelFingerprintIcon.value = it
+                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, it)
+                }
+            }
+        }
+
+        PixelAodSection(stringResource(R.string.section_fingerprint_effects)) {
+            PixelAodGroup() {
+                PixelAodToggleRow(
+                    icon = Icons.Outlined.Fingerprint,
+                    title = stringResource(R.string.title_udfps_hdr_press_effect),
+                    subtitle = stringResource(R.string.desc_udfps_hdr_press_effect),
+                    checked = udfpsHdrPressEffect.value,
+                    showDivider = true,
+                    enabled = pixelFingerprintIcon.value
+                ) {
+                    udfpsHdrPressEffect.value = it
+                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_HDR_PRESS_EFFECT, it)
+                }
+                PixelAodToggleRow(
+                    icon = Icons.Outlined.Fingerprint,
+                    title = stringResource(R.string.title_udfps_success_ripple),
+                    subtitle = stringResource(R.string.desc_udfps_success_ripple),
+                    checked = udfpsSuccessRipple.value,
+                    showDivider = true,
+                    enabled = pixelFingerprintIcon.value
+                ) {
+                    udfpsSuccessRipple.value = it
+                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_SUCCESS_RIPPLE, it)
+                }
+                PixelAodToggleRow(
+                    icon = Icons.Outlined.Fingerprint,
+                    title = stringResource(R.string.title_udfps_aod_exit_animation),
+                    subtitle = stringResource(R.string.desc_udfps_aod_exit_animation),
+                    checked = udfpsAodExitAnimation.value,
+                    showDivider = false,
+                    enabled = pixelFingerprintIcon.value
+                ) {
+                    udfpsAodExitAnimation.value = it
+                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_AOD_EXIT_ANIMATION, it)
                 }
             }
         }
@@ -703,7 +672,18 @@ private fun SettingsContent(
             backDescription = stringResource(R.string.navigate_back),
             bottomBar = bottomBar
         ) {
-        PixelAodSection(stringResource(R.string.section_at_a_glance)) {
+        val availablePacks = remember { getAvailableIconPacks(context) }
+        val currentWeatherIconLabel = availablePacks
+            .find { it.first == weatherIconPack.value }
+            ?.second
+            ?: stringResource(R.string.default_weather_icon_pack)
+        val calendarIconOptions = remember { getCalendarIconAppOptions(context) }
+        val currentCalendarIconLabel = calendarIconOptions
+            .find { it.first == calendarIconPackage.value }
+            ?.second
+            ?: calendarIconPackage.value
+
+        PixelAodSection(stringResource(R.string.section_weather)) {
             PixelAodGroup() {
                 PixelAodToggleRow(
                     icon = Icons.Outlined.Cloud,
@@ -715,6 +695,20 @@ private fun SettingsContent(
                     weather.value = it
                     prefs.edit().putBoolean(PixelAodSettings.KEY_WEATHER, it).apply()
                 }
+                PixelAodChoiceRow(
+                    icon = Icons.Outlined.Cloud,
+                    title = stringResource(R.string.title_weather_icon_pack),
+                    valueText = currentWeatherIconLabel,
+                    showDivider = false,
+                    enabled = weather.value
+                ) {
+                    showIconPackDialog = true
+                }
+            }
+        }
+
+        PixelAodSection(stringResource(R.string.section_forecast)) {
+            PixelAodGroup() {
                 PixelAodToggleRow(
                     icon = Icons.Outlined.Cloud,
                     title = stringResource(R.string.title_weather_forecast),
@@ -746,43 +740,35 @@ private fun SettingsContent(
                         breezyWeatherPermissionLauncher.launch(BREEZY_READ_PROVIDER_PERMISSION)
                     }
                 }
-                if (weatherForecast.value) {
-                    PixelAodChoiceRow(
-                        icon = Icons.Outlined.Schedule,
-                        title = stringResource(R.string.title_weather_forecast_start_time),
-                        valueText = weatherForecastStartTime.value,
-                        showDivider = true
-                    ) {
-                        showClockDialPicker(
-                            ClockDialTarget.FORECAST_START,
-                            weatherForecastStartTime.value
-                        )
-                    }
-                    PixelAodChoiceRow(
-                        icon = Icons.Outlined.Schedule,
-                        title = stringResource(R.string.title_weather_forecast_end_time),
-                        valueText = weatherForecastEndTime.value,
-                        showDivider = true
-                    ) {
-                        showClockDialPicker(
-                            ClockDialTarget.FORECAST_END,
-                            weatherForecastEndTime.value
-                        )
-                    }
+                PixelAodChoiceRow(
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_weather_forecast_start_time),
+                    valueText = weatherForecastStartTime.value,
+                    showDivider = true,
+                    enabled = weatherForecast.value
+                ) {
+                    showClockDialPicker(
+                        ClockDialTarget.FORECAST_START,
+                        weatherForecastStartTime.value
+                    )
                 }
-                if (weather.value) {
-                    val availablePacks = remember { getAvailableIconPacks(context) }
-                    val currentLabel = availablePacks.find { it.first == weatherIconPack.value }?.second
-                        ?: stringResource(R.string.default_weather_icon_pack)
-                    PixelAodChoiceRow(
-                        icon = Icons.Outlined.Cloud,
-                        title = stringResource(R.string.title_weather_icon_pack),
-                        valueText = currentLabel,
-                        showDivider = true
-                    ) {
-                        showIconPackDialog = true
-                    }
+                PixelAodChoiceRow(
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_weather_forecast_end_time),
+                    valueText = weatherForecastEndTime.value,
+                    showDivider = false,
+                    enabled = weatherForecast.value
+                ) {
+                    showClockDialPicker(
+                        ClockDialTarget.FORECAST_END,
+                        weatherForecastEndTime.value
+                    )
                 }
+            }
+        }
+
+        PixelAodSection(stringResource(R.string.section_contextual_information)) {
+            PixelAodGroup() {
                 PixelAodToggleRow(
                     icon = Icons.Outlined.Cloud,
                     title = stringResource(R.string.title_weather_alerts),
@@ -819,7 +805,7 @@ private fun SettingsContent(
                     title = stringResource(R.string.title_calendar_events),
                     subtitle = stringResource(R.string.desc_calendar_events),
                     checked = calendarEvents.value,
-                    showDivider = calendarEvents.value
+                    showDivider = true
                 ) { enabled ->
                     if (!enabled) {
                         calendarEvents.value = false
@@ -841,20 +827,14 @@ private fun SettingsContent(
                         calendarPermissionLauncher.launch(Manifest.permission.READ_CALENDAR)
                     }
                 }
-                if (calendarEvents.value) {
-                    val calendarIconOptions = remember { getCalendarIconAppOptions(context) }
-                    val currentCalendarIconLabel = calendarIconOptions
-                        .find { it.first == calendarIconPackage.value }
-                        ?.second
-                        ?: calendarIconPackage.value
-                    PixelAodChoiceRow(
-                        icon = Icons.Outlined.Schedule,
-                        title = stringResource(R.string.title_calendar_icon_app),
-                        valueText = currentCalendarIconLabel,
-                        showDivider = false
-                    ) {
-                        showCalendarIconAppDialog = true
-                    }
+                PixelAodChoiceRow(
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_calendar_icon_app),
+                    valueText = currentCalendarIconLabel,
+                    showDivider = false,
+                    enabled = calendarEvents.value
+                ) {
+                    showCalendarIconAppDialog = true
                 }
             }
         }
@@ -867,7 +847,7 @@ private fun SettingsContent(
             backDescription = stringResource(R.string.navigate_back),
             bottomBar = bottomBar
         ) {
-        PixelAodSection(stringResource(R.string.section_lockscreen)) {
+        PixelAodSection(stringResource(R.string.section_notifications)) {
             PixelAodGroup() {
                 PixelAodToggleRow(
                     icon = Icons.Outlined.Policy,
@@ -889,25 +869,17 @@ private fun SettingsContent(
             bottomBar = bottomBar
         ) {
         PixelAodInfoBanner(stringResource(R.string.system_ui_warning))
-        PixelAodSection(stringResource(R.string.section_system)) {
+        PixelAodSection(stringResource(R.string.section_diagnostics)) {
             PixelAodGroup() {
                 PixelAodToggleRow(
                     icon = Icons.Outlined.BugReport,
                     title = stringResource(R.string.title_debug_logging),
                     subtitle = stringResource(R.string.desc_debug_logging),
                     checked = debugLogging.value,
-                    showDivider = true
+                    showDivider = false
                 ) {
                     debugLogging.value = it
                     updateModuleBooleanSetting(context, PixelAodSettings.KEY_DEBUG_LOGGING, it)
-                }
-                PixelAodChoiceRow(
-                    icon = Icons.Outlined.Language,
-                    title = stringResource(R.string.title_language),
-                    valueText = languageLabel(language.value),
-                    showDivider = false
-                ) {
-                    showLanguageDialog = true
                 }
             }
         }
@@ -980,62 +952,51 @@ private fun SettingsContent(
     }
 
     if (showClockDial) {
-        val state = rememberTimePickerState(
+        PixelAodTimePickerDialog(
+            title = clockDialTitle,
             initialHour = clockDialHour,
             initialMinute = clockDialMinute,
-            is24Hour = true
-        )
-        AlertDialog(
-            onDismissRequest = { showClockDial = false },
-            title = { Text(clockDialTitle) },
-            text = { TimePicker(state = state) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showClockDial = false
-                    val formatted = String.format("%02d:%02d", state.hour, state.minute)
-                    when (clockDialTarget) {
-                        ClockDialTarget.AOD_START -> {
-                            aodScheduleStartTime.value = formatted
-                            updateModuleStringSetting(
-                                context,
-                                PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME,
-                                formatted
-                            )
-                        }
-                        ClockDialTarget.AOD_END -> {
-                            aodScheduleEndTime.value = formatted
-                            updateModuleStringSetting(
-                                context,
-                                PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME,
-                                formatted
-                            )
-                        }
-                        ClockDialTarget.FORECAST_START -> {
-                            weatherForecastStartTime.value = formatted
-                            updateModuleStringSetting(
-                                context,
-                                PixelAodSettings.KEY_WEATHER_FORECAST_START_TIME,
-                                formatted
-                            )
-                            requestBreezyWeatherRefresh(context)
-                        }
-                        ClockDialTarget.FORECAST_END -> {
-                            weatherForecastEndTime.value = formatted
-                            updateModuleStringSetting(
-                                context,
-                                PixelAodSettings.KEY_WEATHER_FORECAST_END_TIME,
-                                formatted
-                            )
-                            requestBreezyWeatherRefresh(context)
-                        }
+            cancelLabel = stringResource(android.R.string.cancel),
+            confirmLabel = stringResource(android.R.string.ok),
+            onDismiss = { showClockDial = false },
+            onConfirm = { hour, minute ->
+                showClockDial = false
+                val formatted = String.format("%02d:%02d", hour, minute)
+                when (clockDialTarget) {
+                    ClockDialTarget.AOD_START -> {
+                        aodScheduleStartTime.value = formatted
+                        updateModuleStringSetting(
+                            context,
+                            PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME,
+                            formatted
+                        )
                     }
-                }) {
-                    Text("OK")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClockDial = false }) {
-                    Text("Cancel")
+                    ClockDialTarget.AOD_END -> {
+                        aodScheduleEndTime.value = formatted
+                        updateModuleStringSetting(
+                            context,
+                            PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME,
+                            formatted
+                        )
+                    }
+                    ClockDialTarget.FORECAST_START -> {
+                        weatherForecastStartTime.value = formatted
+                        updateModuleStringSetting(
+                            context,
+                            PixelAodSettings.KEY_WEATHER_FORECAST_START_TIME,
+                            formatted
+                        )
+                        requestBreezyWeatherRefresh(context)
+                    }
+                    ClockDialTarget.FORECAST_END -> {
+                        weatherForecastEndTime.value = formatted
+                        updateModuleStringSetting(
+                            context,
+                            PixelAodSettings.KEY_WEATHER_FORECAST_END_TIME,
+                            formatted
+                        )
+                        requestBreezyWeatherRefresh(context)
+                    }
                 }
             }
         )

@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.360] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/ui-refactor`; no Luna/Codex executor used.
+- **Scope:** M6 second-stage COUI settings refinement across the AOD child pages. Runtime hooks, setting keys, provider contracts, and persistence semantics remain unchanged.
+
+### Changed
+- Promote `Display & behavior` into the reference child page for shared controls: AOD behavior, continuous schedule, start/end time rows, disabled states, selection dialogs, and the 24-hour time picker now share the COUI dynamic-surface language. Schedule/time rows remain visible and become disabled when their prerequisite mode is unavailable instead of changing page height by disappearing.
+- Refine the custom COUI switch with a true disabled visual state while preserving the existing animated check/close thumb and wallpaper-derived colors.
+- Replace the old radio-button selection dialog with segmented COUI-style option surfaces and a selected check carrier; all existing language/AOD/icon-source dialogs inherit the same component.
+- Add a shared `PixelAodTimePickerDialog` so AOD and forecast time selection use the same rounded dynamic container, TimePicker role mapping, and localized OK/Cancel actions.
+- Reorganize `Clock Style` into Appearance, Fingerprint, and Animation effects. UDFPS effect controls remain visible but disabled when the Pixel fingerprint visual is off, avoiding abrupt layout collapse.
+- Reorganize `At a Glance` into Weather, Forecast, and Contextual information. Weather icon source, forecast window, and calendar icon source remain visible with dependency-aware disabled states instead of conditional row removal.
+- Rename the Lockscreen child section to Notifications and reduce System UI to the actual Diagnostics surface; language remains a single Home-level setting and is no longer duplicated in System UI.
+
+### Evidence / Status
+- **Success (source/build):** full JVM regression is 360/360 with 0 failures, `git diff --check` passes, `assembleDebug` passes, and the tracked runtime Java hook diff is 0. Final APK is 0.1.360 / 370 with SHA-256 `7002CAF95560870DF2CF2077AF56345CF38B18D34F16A1A7354DB547A35B8A36`.
+- **Success (install):** the final 0.1.360 APK was overwrite-installed through the verified LAN transport `192.168.137.195:5555`; the physical device remains serial `4a851996` / CPH2573 and SystemUI PID stayed `5430`, so this UI-only pass did not reload runtime hooks.
+- **Success (physical UI review):** user visually accepted the 0.1.360 child-page/navigation/dialog/disabled-state pass on the physical device. M6 second-stage UI is approved for commit and merge; no runtime regression was reported during this UI-only pass.
+
 ## [0.1.359] - 2026-08-18
 ### Meta
 - **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/ui-refactor`; no Luna/Codex executor used.
