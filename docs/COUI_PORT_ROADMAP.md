@@ -143,7 +143,11 @@ adapter 只能提供内容和语义状态，不能创建第二套布局、主时
 - `android:description` 已作为现代模块说明来源，设置 Activity 同时暴露 LSPosed 模块设置入口类别。
 - 最终 APK 已逐项检查：三个 `META-INF/xposed/*` 文件存在、没有 legacy `assets/xposed_init`、没有打包 `io.github.libxposed.*` 实现类。
 - Xposed `minApiVersion/targetApiVersion` 继续保持 101；本轮没有为了静态作用域无依据地升级 API 契约。
-- **源码/封包验收已完成；clean-install/upgrade 后的真实 LSPosed 注入仍需设备在线后做运行验收。** 当前 ADB transport 最终状态为 offline，因此这里不伪造运行通过结论。
+- **源码、封包与真实运行验收均已完成。** 0.1.361 最终 APK 为 Modern API 101/101、`staticScope=true`、单一 `com.android.systemui` scope；设备上的 LSPosed Manager 2.1.1 / framework API 102 将模块识别为 `API 101`，详情页明确显示 `The module declared static scope`，并把唯一 `System UI / com.android.systemui` scope 标记为 `Recommended`。
+- **package-clean reinstall 已验证。** 通过 `pm uninstall -k` 移除包体并保留设置后重新安装 0.1.361，Manager 按框架语义将模块 Enable 状态置为关闭，但静态 `System UI` scope 已自动声明/勾选，无需用户手动选择 scope；在 Manager 启用后重载 SystemUI，fresh LSPosed 日志从新的 base.apk 路径加载 Modern entry 并启动 COUI_PORT clock/UDFPS owners。
+- **enable/disable 已验证。** Manager 关闭模块后重载 SystemUI，新 PID 中没有任何 Pixel AOD 注入；重新启用后再次重载，Modern entry、当前 base.apk 路径与 COUI_PORT owners 全部恢复。
+- **旧动态 scope → 新静态 scope 升级已验证。** 从 exact `a1f7e8d` 构建的 0.1.331 / versionCode 341 / `staticScope=false` APK 与当前 debug APK 签名证书一致；旧版先在真实 SystemUI PID 中成功注入，再直接覆盖升级到 0.1.361，fresh 日志确认框架切换到新的 0.1.361 base.apk 且保持单一 SystemUI 注入。
+- **Vector/LSPosed 兼容条款已按本项目定义验收。** `Vector` 在本仓库约束中指 Modern Xposed packaging/API compatibility surface，而不是要求另装第二套框架；最终 APK 的 API 101/101、Modern `java_init.list`、static scope、无 legacy `assets/xposed_init`、无打包 libxposed implementation，加上 LSPosed API 102 真机注入证据共同满足该兼容门。
 
 ## Phase I / M6：设置界面 COUI / Re:X 视觉重构 — 已完成（2026-08-18）
 
@@ -173,12 +177,12 @@ adapter 只能提供内容和语义状态，不能创建第二套布局、主时
 - Language、AOD 模式、日历图标应用、天气图标包四类选择对话框统一到共享 selection dialog；时间选择继续使用同一 Material 3 theme 下的系统时间组件。
 - 保留 wallpaper-derived dynamic color、light/dark、edge-to-edge system bars、圆角低层级 surface、primary section label 等 COUI 视觉层级。
 - 现有设置 key、ContentProvider 写入、权限流程、AOD 定时值、语言行为与运行时 hook 初始化依赖均保持原语义。
-- Kotlin 编译、设置定向回归、完整 JVM 测试、`git diff --check` 与最终 debug build 均通过。**light/dark 真机截图逐页视觉验收仍属于安装后的用户可见验收，不在无设备连接时虚报完成。**
+- Kotlin 编译、设置定向回归、完整 JVM 测试、`git diff --check` 与最终 debug build 均通过；0.1.360 的 Home/AOD/System UI 信息架构、动态取色、COUI 控件、三栏底栏与沉浸手势区已由用户完成真机视觉验收。
 
 ## Post-stability TODO / 完成状态
 
-- [x] **M5 — LSPosed static scope**：Modern metadata 与最小 `com.android.systemui` 静态 scope 已实现并完成 APK 封包检查；设备恢复在线后补 clean-install/upgrade/runtime 注入验收。
-- [x] **M6 — COUI/Re:X settings UI**：`PixelAodDesignSystem` 与完整 settings UI 迁移已完成，settings schema/provider/key 兼容保持；安装后补 light/dark 真机逐页截图验收。
+- [x] **M5 — LSPosed static scope**：Modern metadata、最小 `com.android.systemui` 静态 scope、package-clean reinstall、旧 `staticScope=false` 升级、Manager enable/disable、SystemUI fresh injection 与 Vector/LSPosed packaging/API 兼容均已完成实机验收。
+- [x] **M6 — COUI/Re:X settings UI**：`PixelAodDesignSystem`、三栏顶层信息架构、AOD 真实子页、COUI switch/dialog/time-picker/disabled-state、动态取色与沉浸底栏已完成；0.1.360 已由用户完成真机视觉验收并合并回 `agent/coui-port`。
 - [x] M5/M6 的实现约束、回滚边界与剩余物理验收项已并入本路线图和 0.1.347 changelog；用户本轮明确要求直接连续实施，因此不再把“与 M1–M4 分开排期”作为阻塞条件。
 
 ## 非目标

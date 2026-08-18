@@ -4,65 +4,68 @@ Updated: 2026-08-18
 
 ## Current Status
 
-- **Execution owner:** Web Sol direct implementation. The user explicitly disabled further Luna/Codex execution for this work; historical executor notes do not authorize resuming it.
-- **Current build:** `0.1.347`, version code `357`.
-- **Source/build gate:** PASS. The complete debug JVM suite passes **332 tests**; `git diff --check`, Kotlin/Java compilation, `:app:assembleDebug --rerun-tasks`, and final APK/Xposed metadata inspection pass.
-- **Physical gate:** OPEN. The final direct build has not been installed/accepted because the last verified ADB endpoint `127.0.0.1:15556` became `offline`. No reconnect loop, ADB-server restart, or phone reboot was performed.
-- **User-visible acceptance still required:** AOD→lockscreen black-frame behavior; Small AOD→Small lockscreen position + weight transition; lockscreen UDFPS idle/touch/release/auth highlight; LSPosed static-scope runtime injection; settings light/dark visual review.
+- **Execution owner:** Web Sol direct implementation. The user explicitly disabled further Luna/Codex execution for this work.
+- **Current accepted build:** `0.1.361`, version code `371`.
+- **Branch:** `agent/coui-port`; M6 UI work from `agent/ui-refactor` has been merged and pushed.
+- **Source/build gate:** PASS. The complete debug JVM suite passes **361 tests / 0 failures**; `git diff --check`, `:app:assembleDebug`, signing/metadata checks and final APK inspection pass.
+- **Current device state:** 0.1.361 installed on CPH2573 / OP595DL1 (`4a851996`); device base.apk SHA-256 is `8B2C15B51EB2FD85AFAD5361161245ED2D027A68F732D0A93CD22838141B0E06`.
+- **Current runtime state:** SystemUI PID `23485` is injected through the Modern entry from the current 0.1.361 base.apk; COUI_PORT clock and UDFPS owners start normally and the legacy primary clock path is blocked.
+- **M5:** PASS, including package-clean reinstall, static scope recognition, Manager enable/disable, old `staticScope=false` upgrade and fresh injection evidence.
+- **M6:** PASS. The 0.1.360 COUI settings UI was visually accepted by the user and merged into `agent/coui-port`.
+- **Next gate:** Phase G comprehensive physical regression / frame-video evidence. No new runtime feature work should start until this matrix is complete.
 
 ## COUI Clock / AOD Runtime
 
-The production path now follows the checked COUI Expressive 2.5 ClockPlugin ownership model instead of module-invented transient visibility states:
-
-- `ClockPlugin#loadPluginReal` / real `render` callbacks are the presentation owners; unrelated notification/weather/context callbacks only refresh semantic data.
-- UI state `0` holds without changing presentation; non-zero states with a known clock scene continue using the same persistent `CouiClockHostView` rather than hiding/recreating it.
-- `AOD_SMALL -> LS_SMALL` exits through one `present(...)` transaction so X/Y/burn-in removal and variable-font weight morph are scheduled together on the same 550 ms transition.
-- Partial AOD keeps COUI's requested-LARGE/content-derived-visual-SMALL model; panoramic AOD keeps last-lockscreen-scene fallback behavior.
-- `beginAodEntry(...)` is restricted to the screen-off-from-unlocked normalization path; ordinary lockscreen→AOD goes through the direct presentation transition.
-- COUI_PORT is now the missing/invalid configuration default; explicit `legacy` remains a startup-only rollback selector. Only one primary clock owner is installed for a startup.
-- Notification overflow remains the user's explicit contract: at most five visible icons plus `+x` for the remainder.
+- One persistent `CouiClockHostView` owns LS/AOD clock presentation; COUI_PORT is startup-exclusive and blocks the legacy primary clock owner.
+- ClockPlugin load/render lifecycle, screen-off origin, partial/panoramic mapping, live AOD retarget and same-host LS↔AOD transitions use the accepted COUI-derived state model.
+- The desktop-screen-off LARGE flash regression is fixed; the pre-Keyguard sleep-origin arm prevents stale unlocked renders from exposing a default LARGE host before AOD SMALL.
+- AOD/lockscreen transition performance was stabilized by removing duplicate main-thread notification recomputation, coalescing UDFPS refreshes to animation frames, and preventing repeated identical 550 ms presentation restarts.
+- Notification content rows snap to final AOD geometry and only fade, matching COUI behavior instead of visibly sliding from an old location.
+- Notification overflow contract remains five visible glyphs plus `+x`. In 0.1.361 the overflow label now uses the same resolved Material/Monet accent as the notification glyphs; a physical AOD screenshot with five icons plus `+1` confirms the correction.
 
 ## COUI UDFPS Runtime
 
-The UDFPS hook targets were corrected against COUI Expressive 2.5 and the target OPlus SystemUI classes:
+- COUI UDFPS hooks target the actual OPlus `OnScreenFingerprintUiMech`/pressed-icon ownership points while preserving vendor optical sensing/HBM behavior.
+- Idle pressed-carrier ownership follows the physically stable module contract rather than blindly copying COUI's occasional persistent-highlight behavior.
+- UDFPS visual refresh is frame-coalesced; HDR window setup is not redundantly resubmitted on every mutation.
+- Previous physical acceptance covered real-finger recognition/unlock, press highlight, release cleanup and success ripple. Phase G will re-run the final 0.1.361-visible matrix before final cutover sign-off.
 
-- `updateFpIconAlpha`, `checkHasPressedAnimation`, and `getScalePressedAnim` are hooked on `OnScreenFingerprintUiMech`, where the vendor actually owns these decisions.
-- The vendor pressed-icon constructor only configures the carrier; it no longer reads a stale previous `lastUiMech` touch state or activates HDR during construction.
-- Normal visual refresh reads live OPlus `isTouchDownNow` and AOD flags instead of maintaining a parallel module SHOW/HIDE/TOUCH visibility lifecycle.
-- HDR/non-HDR press visuals use the live vendor touch state while vendor pressed-icon visibility/HBM ownership remains intact.
-- Previous M1 real-finger optical recognition/unlock evidence remains historical proof that the sensing path can work, but it is **not** reused as acceptance for the new `0.1.347` code.
+## M5 — LSPosed Static Scope — PASS
 
-## M5 — LSPosed Static Scope
+Final package contract:
 
-Implemented and package-validated:
-
-- `META-INF/xposed/module.prop`: `staticScope=true`.
+- `META-INF/xposed/module.prop`: `staticScope=true`, `minApiVersion=101`, `targetApiVersion=101`.
 - `META-INF/xposed/scope.list`: exactly `com.android.systemui`.
 - `META-INF/xposed/java_init.list`: `dev.codex.pixelaod.PixelAodModernEntry`.
-- Android application metadata exposes `android:description`; SettingsActivity exposes the LSPosed module-settings category.
-- Xposed API target remains 101 intentionally; the build keeps the existing compile-only Modern API boundary.
-- Final APK contains no legacy `assets/xposed_init` and no bundled `io.github.libxposed.*` implementation classes.
-- Runtime clean-install/upgrade injection confirmation remains pending until the final APK is installed.
+- No legacy `assets/xposed_init` and no bundled `io.github.libxposed.*` implementation classes.
 
-## M6 — Settings UI Redesign
+Physical acceptance:
 
-Implemented:
+- **Package-clean reinstall:** `pm uninstall -k` removed the package body while preserving settings; reinstalling 0.1.361 caused LSPosed Manager to show module Enable off, while the declared static `System UI / com.android.systemui` scope remained automatically selected and marked Recommended. After enabling in Manager and reloading SystemUI, fresh logs loaded the current base.apk through the Modern entry.
+- **Disable:** Manager switch off followed by SystemUI reload changed PID `11693 -> 16024`; the new PID contained no Pixel AOD injection lines.
+- **Re-enable:** Manager switch on restored fresh Modern injection and COUI_PORT ownership on the next SystemUI instance.
+- **Old dynamic-scope upgrade:** exact rollback commit `a1f7e8d` was built as 0.1.331 / 341 / `staticScope=false`. Old and new APK signing certificates match. The old build successfully injected into SystemUI PID `22350`; direct upgrade to 0.1.361 then loaded the new base.apk into PID `23485` with COUI_PORT clock/UDFPS startup.
+- **LSPosed / Vector compatibility:** on-device LSPosed Manager is 2.1.1 with framework API 102 and recognizes Pixel AOD as API 101. In this project, Vector compatibility refers to the Modern packaging/API contract above; it does not require installing a second Xposed framework.
 
-- New shared `PixelAodDesignSystem.kt` owns dynamic Material 3 color, typography, shapes, spacing, surfaces, motion, page scaffold, sections/groups, hero/toggle/choice/slider rows, and shared selection dialogs.
-- `SettingsActivity.kt` has migrated the complete settings surface to the design system; the former page-private `Coui*` component block was removed.
-- Language, AOD display mode, calendar-icon app, and weather-icon-pack dialogs use one shared selection component; time selection remains Material 3 under the same theme.
-- Existing setting keys, ContentProvider writes, permission flows, schedule values, language behavior, and persistence semantics are preserved.
-- Real-device light/dark screenshot parity remains a visual acceptance follow-up, not a source/build blocker.
+Evidence is stored under `.local/m5_static_scope_20260818/` and includes Manager screenshots/XML, clean-reinstall records, old-331 injection logs and 331→361 upgrade injection logs.
 
-## Additional Final-Test Repair
+## M6 — Settings UI Redesign — PASS
 
-Full-suite validation exposed and fixed an older weather deadline-composition defect: a disabled forecast's `0` deadline could overwrite a positive active-alert deadline. `AtAGlanceWeatherPolicy.earliest(...)` now ignores non-positive candidates when a valid current deadline exists. The associated timezone forecast test was also corrected to compare the same instant under UTC and Singapore local-date semantics. After these corrections, all 332 debug JVM tests pass.
+- Three top-level destinations: Home / AOD / System UI; the redundant Settings tab/page was removed and Language lives on Home.
+- AOD is a true hub with real child pages for Display & behavior, Clock Style/UDFPS, At a Glance and Lockscreen.
+- `PixelAodDesignSystem` owns wallpaper-derived Material dynamic color, typography, shapes, spacing, segmented surfaces, COUI-style switch states, selection dialogs, time picker, disabled states and immersive bottom navigation.
+- Home uses one SystemUI restart action instead of redundant navigation shortcuts.
+- Existing setting keys, ContentProvider writes, permissions and persistence semantics remain unchanged.
+- 0.1.360 passed 360/360 JVM tests and was visually accepted by the user before merge into `agent/coui-port`.
 
 ## Final Artifact
 
 - Path: `app/build/outputs/apk/debug/app-debug.apk`
-- Version: `0.1.347` / `357`
-- Size: `19,718,663` bytes
-- SHA-256: `EB057DEAE2B268DCFA844594A58FD3BD8F80338FED46C76B4A683CBB2BA2ADF2`
+- Version: `0.1.361` / `371`
+- Size: `19,764,215` bytes
+- SHA-256: `8B2C15B51EB2FD85AFAD5361161245ED2D027A68F732D0A93CD22838141B0E06`
+- Signing certificate SHA-256: `02DBFA7C632AB6F67112DA0C5C3096B4B1C3B622791ED23A9167443487BEDD4F`
 
-No commit, push, reset, clean, revert, phone reboot, or ADB-server restart was performed.
+## Next Stage — Phase G
+
+Run one final physical acceptance matrix against the current 0.1.361 build, preserving fresh LSPosed logs and visual/video evidence for: empty/media/notifications/media+notifications, LS Large/Small/Immersed, LS↔AOD, live retarget, partial/panoramic, UDFPS touch/unlock/timeout, weather/forecast/alert/calendar, USB/hotspot/system-status icons, black-frame/power behavior and owner/crash regressions. Any visible regression blocks Slice 3 / media-capsule-immersed work.
