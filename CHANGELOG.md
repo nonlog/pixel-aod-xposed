@@ -1,5 +1,83 @@
 # Changelog
 
+## [0.1.370] - 2026-08-19
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/coui-port`; no Luna/Codex executor used.
+- **Scope:** Final current-weather icon-size calibration after physical 0.1.369 measurement. Preserve the 22dp COUI slot, 4dp text gap, provider colors, Forecast/media/notification geometry, UDFPS behavior, and lockscreen↔AOD clock transition contract.
+
+### Fixed
+- Increase the dedicated current-weather icon inset to `4dp` per side inside the unchanged `22dp` slot, producing about `14dp` visible provider artwork while keeping the temperature text and whole information column geometry unchanged.
+- Keep external weather artwork untinted so the configured Google provider remains multicolor.
+
+### Geometry audit
+- The compact `HH:mm` line intentionally retains COUI's optical whole-line recentering on minute changes. anti-COUI `PixelClockHostView.lineTargets()` remeasures all four glyph advances and the `0`/`1` optical corrections on every time update, then recomputes the centered start X. Therefore transitions such as `09:20 -> 09:21 -> 09:22` can produce a small X adjustment for the entire clock line even though only the last digit's text changes. COUI_PORT's `calculateLineTargets()` matches that reference behavior; no fixed-column deviation was introduced.
+
+### Evidence / Status
+- **Success (source/build):** full JVM regression is **371/371 with 0 failures/errors/skips**; `git diff --check` passes; `:app:testDebugUnitTest :app:assembleDebug` passes. APK is 0.1.370 / 380, size `19,764,695` bytes, SHA-256 `8D3FB07304E27194438F5CCB2C908432623B1677B1D4BA8A40FD7266FA4CB166`.
+- **Success (install/runtime):** standard LAN overwrite install returned `Success`; device reports 0.1.370 / 380 and `base.apk` hash matches local exactly. Settings remain preserved. Exactly one successful SystemUI reload for this build changed PID `18781 -> 23102`; fresh Modern/COUI_PORT startup is present and bounded logcat has no FATAL/ANR.
+- **Success (physical AOD calibration):** after waiting for the restarted AOD host to settle, a 1440x3168 root screenshot measures the current-weather provider artwork at `54x54 px`; the adjacent `25°` painted glyph height is also `54 px`. This meets the requested visual-size target while retaining provider color. The first immediate post-reload screencap hit an AOD host reconstruction intermediate frame and was discarded; the same PID's stable capture five seconds later is normal.
+- **Accepted (physical visual gate):** user confirmed the current-weather icon size passes physical panel testing. This closes the 0.1.370 weather-icon calibration gate and allows the accumulated COUI alignment/weather batch to be committed and pushed.
+
+## [0.1.369] - 2026-08-19
+### Meta
+- **Scope:** Intermediate current-weather icon-size probe only; superseded by 0.1.370 before acceptance.
+
+### Evidence / Status
+- 3dp-per-side inset produced about 16dp artwork. Stable 1440x3168 AOD measurement showed the provider icon at roughly `62px` high versus about `53px` for the adjacent temperature glyph, proving it was still slightly oversized and motivating the 0.1.370 4dp inset.
+## [0.1.368] - 2026-08-19
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/coui-port`; no Luna/Codex executor used.
+- **Scope:** Follow-up to the physically observed 0.1.367 current-weather icon regression. Preserve the accepted Forecast/media/notification 32dp content anchor and all clock/UDFPS transition behavior.
+
+### Fixed
+- Stop applying a blanket white `ImageView` tint to the dedicated COUI current-weather icon. External icon packs now keep their source artwork colors; the built-in fallback remains correctly color-resolved when it is constructed, so it does not require an `ImageView` tint.
+- Increase the current-weather icon inset from 1dp to 2dp per side while keeping the COUI 22dp slot and 4dp text gap unchanged. Visible artwork is therefore 18dp instead of 20dp, making the reduction measurable without moving the current-weather row or temperature text.
+- Leave the Forecast/contextual icon color contract unchanged: that AOD-only row still follows the accepted host accent, while only the right-side current-weather provider artwork preserves multicolor source pixels.
+
+### Evidence / Status
+- **Success (pre-fix physical evidence):** root AOD screenshot on 0.1.367 with PixelPlay actively PLAYING and Forecast visible showed Forecast, media and notification rows sharing the intended left anchor, but the right current-weather icon remained white and visually too large.
+- **Success (source/build):** focused `CouiClockGeometryPolicyTest` + `CouiCompactLayoutTest` pass; full JVM regression is **371/371 with 0 failures/errors/skips**; `git diff --check` passes; clean `--no-daemon --rerun-tasks :app:testDebugUnitTest :app:assembleDebug` passes. Final APK is 0.1.368 / 378, size `19,764,695` bytes, SHA-256 `DF58955DAECB73B1D53E257C8E3559572CB89EF52FC4C08F52B984392AA0DE8A`.
+- **Success (install/runtime):** standard overwrite install on verified LAN transport `192.168.137.195:5555` returned `Success`; device reports 0.1.368 / 378 and device `base.apk` hash matches local exactly. Existing settings, including Google weather icon pack and Forecast, were preserved. Exactly one SystemUI reload changed PID `12603 -> 21823`; fresh Modern/COUI_PORT startup logs are present and bounded logcat has no new FATAL/ANR.
+- **Success (automated AOD screenshot):** root `screencap` after the 0.1.368 reload captured active Forecast + media + notifications. The right current-weather icon now visibly retains provider color (blue precipitation artwork instead of forced white), while Forecast/media/notification left alignment remains intact. On the same 1440x3168 crop/threshold measurement, the current-weather artwork bounding box changed from about `77x77 px` on 0.1.367 to `70x70 px` on 0.1.368, consistent with the 20dp -> 18dp content-size change.
+- **Pending (user physical acceptance):** confirm the 18dp current-weather icon is now the desired size/color on the panel and that the Forecast row remains stationary through the lockscreen -> AOD transition. Keep the batch uncommitted until accepted.
+## [0.1.367] - 2026-08-19
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/coui-port`; no Luna/Codex executor used.
+- **Scope:** Follow-up COUI AOD geometry correction for the Forecast/contextual row reported to move after screen-off, plus a small reduction of the current-weather icon artwork. Preserve the accepted lockscreen↔AOD clock glyph animation and the existing notification/media snap-geometry + alpha-only transition contract.
+
+### Fixed
+- Make the AOD Forecast/contextual row use the same COUI partial-content X anchor as media and notification rows: `32dp + burnInX`. It no longer derives X from the live SMALL clock glyph target, so the row cannot expose a separate clock-driven horizontal correction during AOD entry.
+- Keep media and notification rows on the same `32dp + burnInX` reference anchor and retain their existing final-X/Y snap before alpha fade. Forecast clearance remains vertical-only and still prevents overlap with lower content.
+- Keep the COUI current-weather layout slot at `22dp` with the reference `4dp` text gap, but inset the drawable by `1dp` on each side so the visible weather artwork is approximately `20dp` without changing row geometry.
+
+### Evidence / Status
+- **Success (source/build):** focused `CouiCompactLayoutTest` / `CouiClockGeometryPolicyTest` pass; full JVM regression is **371/371 with 0 failures/errors/skips**; `git diff --check` passes. A clean `--no-daemon --rerun-tasks :app:assembleDebug` succeeds after one reused Gradle daemon disappeared during packaging.
+- **Success (artifact):** final 0.1.367 / 377 APK is `19,764,695` bytes, SHA-256 `0BD6ABF50057FDC149ECF0891DEF68D41A2008D144FD4086E0A492CAAEFD4C8C`. Archive contains Modern `META-INF/xposed/{java_init.list,module.prop,scope.list}` only; metadata remains API 101/101, `staticScope=true`, scope exactly `com.android.systemui`.
+- **Success (install/runtime):** connection recovery exposed LAN `192.168.137.195:5555` and FRP `127.0.0.1:15556`; both resolve to the same physical CPH2573 / `ro.serialno=4a851996`, so the higher-priority LAN transport was fixed for deployment. Standard overwrite `adb install -r` returned Android PackageManager `Success`; device reports 0.1.367 / 377 and its `base.apk` SHA-256 exactly matches `0BD6ABF50057FDC149ECF0891DEF68D41A2008D144FD4086E0A492CAAEFD4C8C`. Existing settings were preserved. Exactly one SystemUI reload changed PID `877 -> 12603`; fresh LSPosed persistent-module logs show the Modern entry loading the new base.apk with COUI_PORT clock/UDFPS owners active.
+- **Pending (physical visual acceptance):** AOD hardware-plane capture through `screencap` is black on this device, so automated screenshots cannot establish the final Forecast/media/notification alignment or screen-off motion. User visual confirmation is still required for the shared 32dp content X anchor, no Forecast correction after screen-off, the smaller current-weather icon, and preserved LS↔AOD clock animation.
+
+
+## [0.1.366] - 2026-08-18
+### Meta
+- **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/coui-port`; no Luna/Codex executor used.
+- **Scope:** Physical screenshot + anti-COUI geometry correction for the compact current-weather row and partial-AOD content X anchor. Preserve the accepted clock/date geometry, Forecast AOD-only behavior, UDFPS behavior, and lockscreen↔AOD clock animation contract.
+
+### Fixed
+- Restore the COUI current-weather composition to one dedicated `22dp` icon slot plus `4dp` gap before the weather text. COUI_PORT previously left that dedicated slot `INVISIBLE` while also adding a second leading compound drawable to the weather `TextView`, which shifted the painted weather icon roughly 43–45 px to the right in the supplied 698 px screenshots even though the row target X itself matched COUI. The dedicated icon is now `GONE` when absent and exclusively owns current-weather artwork.
+- Revert the earlier SMALL notification clock-edge override. Anti-COUI `PixelClockHostView.applyAodContentTarget()` anchors both notification and media content at independent `32dp + burnInX`; it does not derive either row from the clock's painted leading edge. COUI_PORT now follows that exact content anchor again while retaining the existing final-geometry snap + alpha-only content motion contract.
+- Keep the module-added AOD Forecast/contextual row on the live compact clock painted edge. Forecast remains an intentional Pixel AOD extension and still pushes lower notification/media content vertically when needed to avoid overlap.
+
+### Geometry audit
+- **Clock:** no change. Compact LS/AOD center X (`0.25W + 8/10dp`), Y (`0.105H + 25dp`), scale and per-digit 0/1 optical corrections match the anti-COUI implementation and the supplied physical screenshots.
+- **Date/current-info column:** no target change. Both hosts use the 75% screen-width center with LS `-36dp` / AOD `-34dp`, `max(dateWidth, weatherWidth) / 2`, and `0.118H + 33dp`; the current-weather defect was internal row composition, not the target X.
+- **Media:** no geometry/type change. COUI_PORT already matches anti-COUI's independent `32dp + burnInX` X anchor, 18dp/500 title, 15dp/450 artist, 18dp app icon + 6dp gap, 4dp subtitle gap, and 28dp media-to-notification spacing. Only Forecast clearance can intentionally move it downward.
+- **Notification icons:** horizontal parity restored to the anti-COUI independent 32dp content anchor. The module intentionally retains its previously accepted five-visible-icons + `+x` overflow policy rather than anti-COUI's raw seven-icon cap.
+
+### Evidence / Status
+- **Success (focused source gate):** `:app:compileDebugJavaWithJavac`, focused `CouiCompactLayoutTest` + `CouiClockGeometryPolicyTest`, and `git diff --check` pass. Clock target calculation and the 550ms LS↔AOD glyph transition path are unchanged.
+- **Success (source/build):** full JVM regression is **371/371 with 0 failures/errors/skips**, `git diff --check` passes, and `assembleDebug` passes. Final APK is 0.1.366 / 376, size `19,764,695`, SHA-256 `1541086B5A2F9C8F3164EE89DEF204916B450160EB96060E706B7A81DFAFBDCC`; packaged Xposed metadata remains Modern API 101, `staticScope=true`, scope exactly `com.android.systemui`, and has no legacy `assets/xposed_init`.
+- **Blocked (device transport only):** fresh enumeration exposed only FRP ADB `127.0.0.1:15556`. One controlled standard streamed `adb install -r` attempt failed after `Performing Streamed Install` without any Android PackageManager result; no retry loop, ADB server restart, alternate install path, reboot, or SystemUI reload was attempted. Physical validation remains pending until manual overwrite install or raw USB is available: current-weather X, independent notification/media 32dp X, Forecast clearance, and LS↔AOD transition.
+
 ## [0.1.365] - 2026-08-18
 ### Meta
 - **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/coui-port`; no Luna/Codex executor used.

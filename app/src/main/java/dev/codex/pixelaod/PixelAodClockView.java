@@ -6951,6 +6951,26 @@ public final class PixelAodClockView extends FrameLayout {
         applyWeatherIcon(textView, weather, color, true);
     }
 
+    /** Resolves the current-weather artwork for hosts that own a dedicated ImageView icon slot. */
+    static Drawable resolveWeatherIconDrawable(Context context, WeatherSnapshot weather,
+            int fallbackColor) {
+        if (weather == null || !weather.hasIcon()) {
+            return null;
+        }
+        Drawable drawable = getExternalWeatherIconDrawable(context, weather);
+        if (drawable == null) {
+            return new WeatherIconDrawable(weather.weatherCode, fallbackColor);
+        }
+        Drawable.ConstantState state = drawable.getConstantState();
+        if (state != null && context != null) {
+            Drawable copy = state.newDrawable(context.getResources());
+            if (copy != null) {
+                return copy.mutate();
+            }
+        }
+        return drawable.mutate();
+    }
+
     private static void applyWeatherIcon(TextView textView, WeatherSnapshot weather, int color,
             boolean leading) {
         if (textView == null) {

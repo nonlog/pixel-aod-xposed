@@ -179,10 +179,14 @@ final class CouiClockHostView extends FrameLayout {
         weatherGroup.setClipChildren(false);
         weatherIconView = new ImageView(context);
         weatherIconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        weatherIconView.setVisibility(INVISIBLE);
+        int weatherIconInset = dp(CouiClockGeometryPolicy.WEATHER_ICON_CONTENT_INSET_DP);
+        weatherIconView.setPadding(weatherIconInset, weatherIconInset, weatherIconInset,
+                weatherIconInset);
+        weatherIconView.setVisibility(GONE);
         LinearLayout.LayoutParams weatherIconParams = new LinearLayout.LayoutParams(
-                dp(22), dp(22));
-        weatherIconParams.setMarginEnd(dp(4));
+                dp(CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP),
+                dp(CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP));
+        weatherIconParams.setMarginEnd(dp(CouiClockGeometryPolicy.WEATHER_ICON_GAP_DP));
         weatherGroup.addView(weatherIconView, weatherIconParams);
         weatherView = informationText(18f, 500);
         weatherGroup.addView(weatherView);
@@ -617,8 +621,18 @@ final class CouiClockHostView extends FrameLayout {
         dateView.setText(date == null ? "" : date);
         weekView.setText(week == null ? "" : week);
         weatherView.setText(weather == null ? "" : weather);
-        weatherIconView.setImageDrawable(weatherIcon);
-        weatherIconView.setVisibility(weatherIcon == null ? INVISIBLE : VISIBLE);
+        // COUI owns a dedicated 22 dp weather icon slot. Do not reserve that slot when there is
+        // no icon, and do not also attach the icon as a TextView compound drawable; either would
+        // shift the painted current-weather row relative to the date column.
+        Drawable resolvedWeatherIcon = weatherIcon;
+        if (weatherIcon != null && weatherIcon.getConstantState() != null) {
+            resolvedWeatherIcon = weatherIcon.getConstantState()
+                    .newDrawable(getResources()).mutate();
+        }
+        weatherIconView.setImageDrawable(resolvedWeatherIcon);
+        weatherIconView.setVisibility(resolvedWeatherIcon == null ? GONE : VISIBLE);
+        weatherView.setCompoundDrawablesRelative(null, null, null, null);
+        weatherView.setCompoundDrawablePadding(0);
         dateView.setVisibility(TextUtils.isEmpty(dateView.getText()) ? GONE : VISIBLE);
         weekView.setVisibility(TextUtils.isEmpty(weekView.getText()) ? GONE : VISIBLE);
         weatherView.setVisibility(TextUtils.isEmpty(weatherView.getText()) ? GONE : VISIBLE);
@@ -636,8 +650,9 @@ final class CouiClockHostView extends FrameLayout {
                 ? PixelAodRenderModel.forAod(getContext(), compact, weather, "", false)
                 : PixelAodRenderModel.forLockscreen(getContext(), compact, weather);
         CouiClockInformationPolicy.Data data = CouiClockInformationPolicy.from(renderModel);
-        setInformation(data.dateText, "", data.weatherText, null);
-        PixelAodClockView.applyWeatherLeadingIcon(weatherView, weather, Color.WHITE);
+        Drawable weatherIcon = PixelAodClockView.resolveWeatherIconDrawable(
+                getContext(), weather, Color.WHITE);
+        setInformation(data.dateText, "", data.weatherText, weatherIcon);
         refreshContextualFromExistingAdapters(
                 (source == null ? "information-refresh" : source) + "#contextual",
                 isShown() && getVisibility() == VISIBLE && getAlpha() > 0.01f);
@@ -1167,11 +1182,6 @@ final class CouiClockHostView extends FrameLayout {
         GlyphSet activeSet = activeGlyphSet();
         CouiClockGeometryPolicy.SurfaceTarget surface = currentSurfaceTarget();
         GlyphTarget[] targets = calculateGlyphTargets(activeSet, surface);
-        float compactPaintedLeadingEdgePx = presentation.visualScene()
-                == CouiClockPresentationModel.Scene.SMALL
-                ? CouiCompactLayout.paintedLeadingEdgeForClockTarget(targets[0].x,
-                getResources().getDisplayMetrics().density)
-                : Float.NaN;
         String variation = CouiClockFontPolicy.variationFor(
                 presentation.visualScene(), presentation.dozing());
         String diagnosticSignature = presentation.visualScene() + "|"
@@ -1224,8 +1234,8 @@ final class CouiClockHostView extends FrameLayout {
                 applyGlyphSet(glyphSet, targets, alpha, animate, duration);
             }
         }
-        applyInformationTargets(animate, duration, surface, compactPaintedLeadingEdgePx);
-        applyContentTargets(animate, duration, compactPaintedLeadingEdgePx);
+        applyInformationTargets(animate, duration, surface);
+        applyContentTargets(animate, duration);
         applyBatteryTarget(animate, duration);
     }
 
@@ -1306,7 +1316,7 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     private void applyInformationTargets(boolean animate, long duration,
-            CouiClockGeometryPolicy.SurfaceTarget surface, float compactPaintedLeadingEdgePx) {
+            CouiClockGeometryPolicy.SurfaceTarget surface) {
         int dateWidth = dateGroup.getMeasuredWidth();
         int weatherWidth = weatherGroup.getMeasuredWidth();
         int maximumWidth = Math.max(dateWidth, weatherWidth);
@@ -1347,7 +1357,7 @@ final class CouiClockHostView extends FrameLayout {
             weatherX = dateX;
             weatherY = top + dateGroup.getMeasuredHeight()
                     + dp(CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP);
-            contextualX = CouiCompactLayout.contextualLayoutLeft(
+            contextualX = CouiCompactLayout.couiHostContentLeft(
                     getResources().getDisplayMetrics().density);
             contextualGapPx = dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
         }
@@ -1363,22 +1373,10 @@ final class CouiClockHostView extends FrameLayout {
         // ContextualAtAGlancePresentation owns this row's alpha. Commit geometry directly so
         // its fade cannot be cancelled by ViewPropertyAnimator and so AOD lower rows can use the
         // final coordinate in this same target transaction.
+        // SMALL contextual content follows the same COUI 32 dp + burn-in X anchor as media and
+        // notification rows. Commit it directly so screen-off entry cannot expose a clock-driven
+        // horizontal correction before the row settles.
         float contextualTargetX = contextualX + xOffset;
-        if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL
-                && !Float.isNaN(compactPaintedLeadingEdgePx)) {
-            ContextualAtAGlanceCard currentCard =
-                    ContextualAtAGlancePresentation.current(contextualGroup);
-            int applicationIconLeadingOffsetDp = currentCard.kind
-                    == ContextualAtAGlanceCard.Kind.CALENDAR_EVENT
-                    && ContextualAtAGlanceCalendarIcon.usesApplicationIcon(getContext())
-                    ? ContextualAtAGlanceCalendarIcon.APPLICATION_ICON_LEADING_OFFSET_DP : 0;
-            // The supplied painted edge already contains the current AOD burn-in X from the
-            // clock target. Do not add xOffset again.
-            contextualTargetX = CouiCompactLayout.contextualLayoutLeftForPaintedEdge(
-                    compactPaintedLeadingEdgePx,
-                    getResources().getDisplayMetrics().density,
-                    applicationIconLeadingOffsetDp);
-        }
         contextualGroup.setTranslationX(contextualTargetX);
         contextualGroup.setTranslationY(contextualTargetTopPx);
     }
@@ -1402,8 +1400,7 @@ final class CouiClockHostView extends FrameLayout {
                 .setDuration(duration).setInterpolator(motionInterpolator).start();
     }
 
-    private void applyContentTargets(boolean animate, long duration,
-            float compactPaintedLeadingEdgePx) {
+    private void applyContentTargets(boolean animate, long duration) {
         CouiClockPresentationModel.AodContent content = presentation.content();
         boolean partialAodActive = presentation.dozing() && presentation.partialAod();
         boolean mediaVisible = partialAodActive
@@ -1412,7 +1409,8 @@ final class CouiClockHostView extends FrameLayout {
                 && (content.kind() == CouiClockPresentationModel.AodContent.Kind.NOTIFICATIONS
                 || (content.kind() == CouiClockPresentationModel.AodContent.Kind.MEDIA
                 && content.notificationIconCount() > 0));
-        float x = dp(CouiClockGeometryPolicy.PARTIAL_CONTENT_X_DP) + burnInX;
+        float x = CouiCompactLayout.couiHostContentLeft(
+                getResources().getDisplayMetrics().density) + burnInX;
         float baseY = getHeight() * CouiClockGeometryPolicy.PARTIAL_CONTENT_TOP_RATIO + burnInY;
         ContextualAtAGlanceCard contextualCard =
                 ContextualAtAGlancePresentation.current(contextualGroup);
@@ -1435,15 +1433,8 @@ final class CouiClockHostView extends FrameLayout {
                 + dp(CouiClockGeometryPolicy.MEDIA_TO_NOTIFICATION_GAP_DP) : baseY;
         boolean preserveCurrentPosition =
                 CouiClockAodContentMotionPolicy.preserveCurrentPosition(partialAodActive, animate);
-        float notificationTargetX = x;
-        if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL
-                && !Float.isNaN(compactPaintedLeadingEdgePx)) {
-            notificationTargetX = CouiCompactLayout.notificationLayoutLeftForPaintedEdge(
-                    compactPaintedLeadingEdgePx,
-                    getResources().getDisplayMetrics().density);
-        }
         float notificationX = preserveCurrentPosition
-                ? notificationIconRow.getTranslationX() : notificationTargetX;
+                ? notificationIconRow.getTranslationX() : x;
         float resolvedNotificationY = preserveCurrentPosition
                 ? notificationIconRow.getTranslationY() : notificationY;
         float mediaX = preserveCurrentPosition ? mediaGroup.getTranslationX() : x;
@@ -1655,7 +1646,10 @@ final class CouiClockHostView extends FrameLayout {
         dateView.setTextColor(Color.WHITE);
         weekView.setTextColor(Color.WHITE);
         weatherView.setTextColor(Color.WHITE);
-        weatherIconView.setImageTintList(ColorStateList.valueOf(Color.WHITE));
+        // External weather-icon packs own their artwork colors. The built-in fallback drawable
+        // is already constructed with its resolved fallback color, so an ImageView tint would
+        // only destroy multicolor provider icons.
+        weatherIconView.setImageTintList(null);
         ContextualAtAGlanceCard contextualCard =
                 ContextualAtAGlancePresentation.current(contextualGroup);
         int contextualColor = CouiClockVisualStylePolicy.contextualAccentColor(

@@ -12,6 +12,7 @@ public final class CouiCompactLayoutTest {
 
         assertEquals(108, CouiCompactLayout.clockLeft(1440, 320, density));
         assertEquals(128, CouiCompactLayout.paintedLeadingEdge(density));
+        assertEquals(128, CouiCompactLayout.couiHostContentLeft(density));
         assertEquals(128, CouiCompactLayout.contextualLayoutLeft(density));
         assertEquals(104, CouiCompactLayout.contextualLayoutLeft(density,
                 ContextualAtAGlanceCalendarIcon.APPLICATION_ICON_LEADING_OFFSET_DP));
@@ -44,27 +45,20 @@ public final class CouiCompactLayoutTest {
     }
 
     @Test
-    public void couiHostRowsShareTheLiveClockTargetEdgeWithoutMovingTheClockTarget() {
+    public void couiHostContextualMediaAndNotificationsShareTheReferenceAnchor() {
         float density = 4f;
         float firstDigitTargetX = 117f;
-        float paintedEdge = CouiCompactLayout.paintedLeadingEdgeForClockTarget(
-                firstDigitTargetX, density);
-        float contextualLeft = CouiCompactLayout.contextualLayoutLeftForPaintedEdge(
-                paintedEdge, density, 0);
-        float notificationLeft = CouiCompactLayout.notificationLayoutLeftForPaintedEdge(
-                paintedEdge, density);
+        float clockPaintedEdge = firstDigitTargetX
+                + PixelAodVisualStyle.COMPACT_CLOCK_GLYPH_LEADING_INSET_DP * density;
+        int contentLeft = CouiCompactLayout.couiHostContentLeft(density);
 
-        assertEquals(137f, paintedEdge, 0.001f);
-        assertEquals(paintedEdge,
-                contextualLeft
-                        + PixelAodVisualStyle.COMPACT_CONTEXTUAL_ICON_LEADING_INSET_DP * density,
-                0.001f);
-        assertEquals(paintedEdge,
-                notificationLeft
-                        + PixelAodVisualStyle.COMPACT_NOTIFICATION_GLYPH_LEADING_INSET_DP
-                        * density,
-                0.001f);
-        // Alignment helpers derive only row positions; the clock target itself is untouched.
+        assertEquals(128, contentLeft);
+        assertEquals(CouiClockGeometryPolicy.PARTIAL_CONTENT_X_DP * density,
+                contentLeft, 0.001f);
+        assertTrue(Math.abs(contentLeft - clockPaintedEdge) > 0.001f);
+        // Forecast/contextual, media, and notifications use this same anchor. Burn-in X is
+        // applied by the host to all three rows, independently of the animated clock target.
+        assertEquals(135f, contentLeft + 7f, 0.001f);
         assertEquals(117f, firstDigitTargetX, 0.001f);
     }
 

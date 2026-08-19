@@ -25,27 +25,9 @@ final class CouiCompactLayout {
         return dp(PixelAodVisualStyle.COMPACT_PAINTED_LEADING_EDGE_DP, density);
     }
 
-    /** Painted clock edge for the current COUI glyph target, including any AOD burn-in X. */
-    static float paintedLeadingEdgeForClockTarget(float firstDigitTargetX, float density) {
-        return firstDigitTargetX
-                + PixelAodVisualStyle.COMPACT_CLOCK_GLYPH_LEADING_INSET_DP * density;
-    }
-
-    /** Layout X that makes the contextual icon paint on the supplied clock edge. */
-    static float contextualLayoutLeftForPaintedEdge(float paintedEdgePx, float density,
-            int applicationIconLeadingOffsetDp) {
-        return paintedEdgePx
-                - (PixelAodVisualStyle.COMPACT_CONTEXTUAL_ICON_LEADING_INSET_DP
-                + Math.max(0, applicationIconLeadingOffsetDp)) * density;
-    }
-
-    /**
-     * COUI host notification rows have no legacy post-layout translation. Align their first
-     * painted glyph directly to the current clock target edge.
-     */
-    static float notificationLayoutLeftForPaintedEdge(float paintedEdgePx, float density) {
-        return paintedEdgePx
-                - PixelAodVisualStyle.COMPACT_NOTIFICATION_GLYPH_LEADING_INSET_DP * density;
+    /** Active COUI contextual/media/notification rows share the reference 32 dp anchor. */
+    static int couiHostContentLeft(float density) {
+        return Math.round(CouiClockGeometryPolicy.PARTIAL_CONTENT_X_DP * density);
     }
 
     static int contextualLayoutLeft(float density) {
@@ -59,9 +41,9 @@ final class CouiCompactLayout {
     }
 
     static int notificationLayoutLeft(float density) {
-        // notificationIconRow is translated left after layout. Compensate for that translation
-        // and the measured glyph inset so the final painted icon edge lands on the same optical
-        // edge as the clock and contextual forecast icon.
+        // Legacy Pixel renderer only: its notificationIconRow is translated after layout, so
+        // preserve the historical compensation here. The active COUI host follows the reference
+        // host directly and uses PARTIAL_CONTENT_X_DP (32 dp) for notification/media content.
         return dp(PixelAodVisualStyle.COMPACT_PAINTED_LEADING_EDGE_DP
                 + PixelAodVisualStyle.NOTIFICATION_ROW_LEADING_OFFSET_DP
                 - PixelAodVisualStyle.COMPACT_NOTIFICATION_GLYPH_LEADING_INSET_DP, density);

@@ -40,10 +40,9 @@ final class PixelAodVisualStyle {
     static final int SMALL_CLOCK_TOP_DP = 90;
     static final int SMALL_INFO_TOP_DP = 99;
     static final int EDGE_DP = 34;
-    // Small AOD aligns painted content, not View layout boxes. Device screenshots show the
-    // Google Sans clock glyph starts about 5 dp inside its TextView, while forecast and
-    // notification glyphs have much smaller intrinsic insets. Keep one painted target edge and
-    // derive each row's layout compensation from it.
+    // Legacy compact helpers still describe the clock's nominal painted edge. The active COUI
+    // host keeps contextual/media/notification content on the reference 32 dp content anchor
+    // instead of deriving those rows from the animated clock glyph target.
     static final int COMPACT_PAINTED_LEADING_EDGE_DP = 32;
     static final int COMPACT_CLOCK_GLYPH_LEADING_INSET_DP = 5;
     static final int COMPACT_CONTEXTUAL_ICON_LEADING_INSET_DP = 0;

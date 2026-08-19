@@ -102,6 +102,9 @@ public final class CouiClockGeometryPolicyTest {
         assertEquals(.118f, CouiClockGeometryPolicy.INFO_Y_RATIO, EPSILON);
         assertEquals(33f, CouiClockGeometryPolicy.INFO_Y_OFFSET_DP, EPSILON);
         assertEquals(3f, CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP, EPSILON);
+        assertEquals(22f, CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP, EPSILON);
+        assertEquals(4f, CouiClockGeometryPolicy.WEATHER_ICON_CONTENT_INSET_DP, EPSILON);
+        assertEquals(4f, CouiClockGeometryPolicy.WEATHER_ICON_GAP_DP, EPSILON);
         assertEquals(.255f, CouiClockGeometryPolicy.PARTIAL_CONTENT_TOP_RATIO, EPSILON);
         assertEquals(32f, CouiClockGeometryPolicy.PARTIAL_CONTENT_X_DP, EPSILON);
         assertEquals(28f, CouiClockGeometryPolicy.MEDIA_TO_NOTIFICATION_GAP_DP, EPSILON);
