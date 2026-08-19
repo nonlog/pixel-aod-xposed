@@ -50,21 +50,21 @@
 
 ### Clock / scene
 
-- [ ] LS Large：时钟、日期、天气、通知布局和视觉。
+- [x] LS Large：用户清除可显示通知后，0.1.380 实机锁屏进入 Large；大钟、日期、当前天气与锁屏布局正常，SystemUI PID `4688` 不变。证据 `.local/m7_soak_01380_20260819/large_empty/ls_large.png`。
 - [x] LS Small：0.1.380 当前真实通知场景连续帧确认时钟、日期、天气、通知布局正常；证据 `.local/m7_matrix_01380_20260819/transitions_explicit/`。
 - [ ] LS Immersed：scene 进入、退出与布局。
-- [ ] AOD Large。
+- [x] AOD Large：无可显示 notification/media content 时稳定进入 Large；大钟、日期/当前天气与 battery row 正常，无 partial-content row。证据 `.local/m7_soak_01380_20260819/large_empty/aod_large_probe.png` 与 `empty_after_media.png`。
 - [x] AOD Small：真实 `NOTIFICATIONS` partial-content 场景稳定；运行时 mapping 为 `requestedScene=LARGE → visualScene=SMALL`，`iconCount=3/5`。
-- [x] LS → AOD：显式 `SLEEP(223)` 连续帧无 host 黑帧/错位，最终稳定 AOD Small；SystemUI PID 不变。
-- [x] AOD → LS：显式 `WAKEUP(224)` 连续帧无 host 黑帧/错位；锁屏 Small 视觉正常。
+- [x] LS → AOD：显式 `SLEEP(223)` 连续帧在 Small/content 场景无 host 黑帧/错位；本轮 empty/Large 也确认 LS Large → AOD Large 两端稳定，SystemUI PID 不变。
+- [x] AOD → LS：显式 `WAKEUP(224)` 连续帧在 Small/content 场景无 host 黑帧/错位；本轮 empty/Large 也确认 AOD Large → LS Large 两端稳定，锁屏视觉正常。
 - [x] 分钟变化：16:06→16:11 被动连续 6 帧跨 5 次自然分钟变化，时钟每分钟正常更新、无冻结；COUI 整行光学重心变化保持预期，SystemUI PID `4688` 不变。证据 `.local/m7_soak_01380_20260819/minute_ticks/minute_contact.png`。
 - [ ] burn-in 位移：本轮被动样本已确认固定 weather/info X `737→730`、notification row X `125→117`，方向/量级一致且无累计跳变；但同一 5 分钟窗口内没有同时活跃的 Forecast/media，因此完整共同锚点仍待后续自然场景补齐。
 
 ### Content
 
-- [ ] empty。
+- [x] empty：用户清除可显示通知后，AOD 无 notification/media row 并选择 Large；后台常驻 notification keys 被正确过滤，不干扰 semantic content。
 - [x] notification-only：semantic runtime `contentKind=NOTIFICATIONS`，AOD icon row 正常，STOP media 后无旧 media row 残留。
-- [ ] media-only。
+- [x] media-only：empty baseline 上启动 PixelPlay，MediaSession 为 `PLAYING` 时 AOD 显示媒体 title/artist 且无 notification icon row；`STOP` 后 MediaSession=`NONE`，立即恢复 Large/empty 且无旧媒体残留。证据 `.local/m7_soak_01380_20260819/large_empty/media_only.png`。
 - [x] media + notifications：PixelPlay PLAYING 时 AOD 显示标题/artist media row，notification icons 同时保留；截图 `.local/m7_matrix_01380_20260819/media/playing.png`。
 - [x] notification overflow / `+N`：自然通知在 16:06–16:09 触发 5 icons + `+1`，16:10 通知减少后 `+1` 自动消失并收缩回 5 icons，无需合成测试通知。
 - [x] current weather：provider-native 彩色 icon、18dp 可见图案、22dp slot / 4dp gap 与文字/日期位置正确；0.1.380 稳定 AOD 已抓图。
@@ -107,6 +107,8 @@
 ## 5. Soak gate
 
 Soak 起点：**2026-08-19 16:00 +08:00**（0.1.380 / `e737495`；最后一次 intentional M7 SystemUI restart 与 20-cycle 主动压力测试已结束；从此不再重装/重载/改生产代码，除非发现 blocker。）
+
+- 16:16 后用户清除了可显示通知并授权利用无通知窗口测试 Large；本轮只做正常 wake/sleep、screencap 与 PixelPlay media lifecycle，没有生产代码修改、APK 安装或 SystemUI restart，因此 **soak 仍从 16:00 连续计时**。Large/empty/media-only 结束后 PID 仍为 4688，FATAL=0 / ANR=0。
 
 - [ ] 冻结生产代码后正常使用至少 24 小时。
 - [ ] soak 期间不修改生产代码、不重新安装候选 APK。
