@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.376] - 2026-08-19
+### Added
+- Distinguish a completed wired/wireless charge from active charging in the COUI AOD battery line. A connected battery with Android `BATTERY_STATUS_CHARGING` keeps `Charging`; connected `BATTERY_STATUS_FULL` now shows `Charged`.
+- Add an OPlus edge fallback for a connected 100% battery reported as `BATTERY_STATUS_NOT_CHARGING`, which is also treated as `Charged`. Unplugged/full, unknown, and discharging states do not claim a charge-state suffix.
+
+### Evidence / Status
+- New `CouiBatteryStatusPolicy` is covered by five focused cases: charging, full, 100% connected/not-charging fallback, unplugged-full, and connected unknown/discharging.
+- Full JVM regression after the M7 feature exception is **377/377 with 0 failures/errors/skips**; `git diff --check` and `:app:assembleDebug` pass.
+- Candidate APK is `0.1.376 / 386`, size `19,764,695` bytes, SHA-256 `521BFC474EB1BE48E3786703C4889923FD71ED5691E2F2C185925B8F0F74B73C`.
+- USB install on CPH2573 succeeded; installed `base.apk` hash exactly matches the candidate. Exactly one SystemUI reload changed PID `7149 -> 18609`.
+- Real device state `48% / USB powered / status=CHARGING` renders `48% · Charging` on AOD. A reversible battery-service simulation with `level=100`, `USB powered`, `status=FULL` renders `100% · Charged`; screenshots are saved under `.local/m7_battery_01376_20260819/`. `dumpsys battery reset` restored the real `48% / CHARGING` state afterward, with SystemUI PID still `18609`.
+- This user-authorized M7 feature exception advances the release-hardening baseline from 0.1.375 to 0.1.376 and resets the soak clock.
 ## [0.1.375] - 2026-08-19
 ### Fixed
 - Restore OPlus ownership of OnScreenFingerprintUiMech.updateFpIconAlpha: COUI_PORT no longer short-circuits the vendor alpha lifecycle. Stable 0.1.331 observes this callback after execution and does not suppress it; blocking it is now isolated as the strongest remaining cause of panel-only local-HBM highlight.

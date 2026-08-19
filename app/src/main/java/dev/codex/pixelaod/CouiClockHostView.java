@@ -131,7 +131,7 @@ final class CouiClockHostView extends FrameLayout {
     private boolean batteryReceiverRegistered;
     private boolean timeReceiverRegistered;
     private int lastBatteryLevel = -1;
-    private Boolean lastBatteryCharging;
+    private CouiBatteryStatusPolicy.State lastBatteryState;
     private int clockBaseWidth;
     private String timeText = "0000";
     private int monetColor = Integer.MIN_VALUE;
@@ -871,11 +871,10 @@ final class CouiClockHostView extends FrameLayout {
         setBurnInTranslation((float) x, (float) y, durationMillis);
     }
 
-    void setBatteryState(int level, boolean charging) {
+    void setBatteryState(int level, CouiBatteryStatusPolicy.State state) {
         lastBatteryLevel = Math.max(0, Math.min(level, 100));
-        lastBatteryCharging = charging;
-        String suffix = charging ? " · Charging" : "";
-        batteryView.setText(lastBatteryLevel + "%" + suffix);
+        lastBatteryState = state;
+        batteryView.setText(lastBatteryLevel + "%" + CouiBatteryStatusPolicy.suffix(state));
         batteryView.requestLayout();
         scheduleApplyTargets(false);
     }
@@ -1077,11 +1076,12 @@ final class CouiClockHostView extends FrameLayout {
                     ? batteryIntent.getIntExtra(BatteryManager.EXTRA_STATUS,
                     BatteryManager.BATTERY_STATUS_UNKNOWN)
                     : BatteryManager.BATTERY_STATUS_UNKNOWN;
-            boolean charging = status == BatteryManager.BATTERY_STATUS_CHARGING
-                    || status == BatteryManager.BATTERY_STATUS_FULL;
-            if (level != lastBatteryLevel || lastBatteryCharging == null
-                    || charging != lastBatteryCharging) {
-                setBatteryState(level, charging);
+            int plugged = batteryIntent != null
+                    ? batteryIntent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) : 0;
+            CouiBatteryStatusPolicy.State batteryState = CouiBatteryStatusPolicy.resolve(
+                    level, plugged, status);
+            if (level != lastBatteryLevel || batteryState != lastBatteryState) {
+                setBatteryState(level, batteryState);
             }
         } catch (Throwable t) {
             PixelAodLog.log("COUI host battery update failed", t);
