@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.377] - 2026-08-19
+### Changed
+- Add an M7 UDFPS ownership mode for the accepted fallback strategy: with `pixel_fingerprint_icon=false`, OPlus keeps complete ownership of the primary fingerprint icon, pressed carrier, alpha/scale/animation, HDR/local-HBM, and AOD fingerprint lifecycle; Pixel AOD only observes authentication and may render the independent success ripple.
+- Decouple `udfps_success_ripple` from fingerprint-icon replacement. The settings page now allows Success ripple while the replacement icon is disabled; HDR press effect and custom AOD fingerprint-exit animation remain replacement-only controls.
+- In system-icon mode, preserve the native dwell/press ripple. Suppress the native unlock ripple only when the custom success overlay has a valid OPlus fingerprint View geometry target, preventing double success ripples without changing press/HBM behavior.
+- Make replacement-disabled visual refreshes strict no-ops unless a replacement from the same live SystemUI process is still tracked and needs one-time restoration after a settings toggle.
+
+### Evidence / Status
+- New `CouiUdfpsOwnershipPolicyTest` covers system-icon visual ownership, independent success-ripple ownership, one-time live-toggle restoration, native dwell preservation, unlock-ripple suppression, and missing-target fallback.
+- Full JVM regression is **382/382 with 0 failures/errors/skips**; `git diff --check` and `:app:assembleDebug` pass. Candidate APK is 19,764,799 bytes, SHA-256 `14EC33D5FFEA45A2ADB1BA83C47103FF693889D8FB98D9BC6035AEA0732B6569`.
+- USB overwrite install succeeded on CPH2573; device reports `0.1.377 / 387` and installed `base.apk` SHA-256 exactly matches the candidate. Settings are `pixel_fingerprint_icon=false`, `udfps_success_ripple=true`; exactly one SystemUI reload changed PID `10699 -> 22212`.
+- Six no-touch wake/sleep cycles kept SystemUI PID `22212` unchanged. In the new PID, module mutation logs were all zero for HDR-window preparation, HDR surface writes, stable pressed-carrier writes, pressed-icon configuration, native-icon restore, native-pressed restore, and module touch handling; FATAL=0. This is the runtime proof that the module is not participating in vendor FOD/HBM visuals when replacement is off.
+- **Physical PASS:** user confirmed the OPlus system fingerprint icon/press behavior remains native and the Pixel AOD success ripple appears after enrolled-finger authentication. 0.1.377 is accepted for commit/push; the next weather-icon size adjustment will be a separate version.
+
 ## [0.1.376] - 2026-08-19
 ### Added
 - Distinguish a completed wired/wireless charge from active charging in the COUI AOD battery line. A connected battery with Android `BATTERY_STATUS_CHARGING` keeps `Charging`; connected `BATTERY_STATUS_FULL` now shows `Charged`.

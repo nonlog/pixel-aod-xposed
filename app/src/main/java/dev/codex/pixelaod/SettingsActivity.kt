@@ -662,8 +662,7 @@ private fun SettingsContent(
                     title = stringResource(R.string.title_udfps_success_ripple),
                     subtitle = stringResource(R.string.desc_udfps_success_ripple),
                     checked = udfpsSuccessRipple.value,
-                    showDivider = true,
-                    enabled = pixelFingerprintIcon.value
+                    showDivider = true
                 ) {
                     udfpsSuccessRipple.value = it
                     updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_SUCCESS_RIPPLE, it)

@@ -465,10 +465,17 @@ final class CouiUdfpsController {
                 final Method target = method;
                 target.setAccessible(true);
                 ModernHookBridge.hookBefore(target, param -> {
-                    Context context = contextFrom(param, lastUiMech.get());
-                    if (isReplacementEnabled(context) && isSuccessRippleEnabled(context)) {
+                    Object uiMech = lastUiMech.get();
+                    ImageView icon = findFingerprintIcon(uiMech);
+                    Context context = icon != null ? icon.getContext() : contextFrom(param, uiMech);
+                    boolean replacementOwned = isReplacementEnabled(context);
+                    boolean unlockedRippleMethod = "showUnlockedRipple".equals(methodName);
+                    if (CouiUdfpsOwnershipPolicy.suppressStockRipple(
+                            isSuccessRippleOwned(context), icon != null,
+                            replacementOwned, unlockedRippleMethod)) {
                         param.setResult(defaultReturnValue(target.getReturnType()));
-                        PixelAodLog.log("suppressed stock UDFPS ripple method=" + methodName);
+                        PixelAodLog.log("suppressed stock UDFPS ripple method=" + methodName
+                                + " replacement=" + replacementOwned);
                     }
                 });
                 count++;
@@ -636,13 +643,20 @@ final class CouiUdfpsController {
         }
         Context resolved = context != null ? context : icon.getContext();
         if (!isReplacementEnabled(resolved)) {
+            if (!hasTrackedReplacementState(icon)) {
+                // System-icon mode: observe only. Do not mutate the primary icon, pressed carrier,
+                // HDR headroom, vendor animation, or AOD lifecycle.
+                return;
+            }
+            // A live settings toggle can leave one tracked replacement in this process. Restore
+            // that state exactly once, then all future system-icon callbacks become strict no-ops.
             ImageView pressedIcon = findPressedIcon(uiMech);
-            dispatchViewOperation(pressedIcon, source + "#disabled", () -> {
+            dispatchViewOperation(pressedIcon, source + "#restore-after-disable", () -> {
                 updatePressedHdr(pressedIcon, false);
-                restorePressed(pressedIcon, source + "#pressed-disabled");
+                restorePressed(pressedIcon, source + "#pressed-restore-after-disable");
             });
-            restoreOriginal(icon, source + "#disabled");
-            hidePress(uiMech, source + "#disabled");
+            restoreOriginal(icon, source + "#restore-after-disable");
+            hidePress(uiMech, source + "#restore-after-disable");
             return;
         }
         boolean liveTouchDown = readBooleanField(uiMech, "isTouchDownNow");
@@ -1295,6 +1309,11 @@ final class CouiUdfpsController {
         if (uiMech == null) {
             return;
         }
+        ImageView icon = findFingerprintIcon(uiMech);
+        if (icon == null || !CouiUdfpsOwnershipPolicy.mayMutateVendorVisuals(
+                isReplacementEnabled(icon.getContext()), hasTrackedReplacementState(icon))) {
+            return;
+        }
         dispatch(uiMech, CouiUdfpsStateMachine.Event.FAILURE, source);
         hidePress(uiMech, source);
         requestVisualState(null, uiMech, source, false, true);
@@ -1305,18 +1324,29 @@ final class CouiUdfpsController {
             return;
         }
         ImageView icon = findFingerprintIcon(uiMech);
-        if (icon == null || !isReplacementEnabled(icon.getContext())) {
+        if (icon == null) {
             return;
         }
-        dispatch(uiMech, CouiUdfpsStateMachine.Event.SUCCESS, source);
-        if (!isSuccessRippleEnabled(icon.getContext())) {
-            hidePress(uiMech, source + "#native-success");
-            PixelAodLog.i("COUI UDFPS success ripple=native source=" + source);
+        Context context = icon.getContext();
+        boolean replacementOwned = isReplacementEnabled(context);
+        if (replacementOwned) {
+            dispatch(uiMech, CouiUdfpsStateMachine.Event.SUCCESS, source);
+        }
+        if (!isSuccessRippleOwned(context)) {
+            if (replacementOwned) {
+                hidePress(uiMech, source + "#native-success");
+            }
+            PixelAodLog.i("COUI UDFPS success ripple=native source=" + source
+                    + " replacement=" + replacementOwned);
             return;
         }
+        // The vendor ImageView is read only as a geometry anchor. The overlay is an independent
+        // WindowManager surface and never changes the system glyph, alpha, scale, pressed carrier,
+        // HDR headroom, or AOD lifecycle.
         CouiUdfpsGlowOverlay overlay = glowOverlay(icon);
         overlay.showSuccess(glowSpec(icon));
-        PixelAodLog.i("COUI UDFPS success glow=show source=" + source);
+        PixelAodLog.i("COUI UDFPS success glow=show source=" + source
+                + " replacement=" + replacementOwned);
     }
 
     private static CouiUdfpsGlowOverlay glowOverlay(ImageView icon) {
@@ -1471,16 +1501,35 @@ final class CouiUdfpsController {
                 PixelAodSettings.KEY_UDFPS_SUCCESS_RIPPLE, true);
     }
 
+    private static boolean isSuccessRippleOwned(Context context) {
+        return CouiUdfpsOwnershipPolicy.ownsSuccessRipple(
+                PixelAodFeatureFlags.useCouiUdfps(), isSuccessRippleEnabled(context));
+    }
+
     private static boolean isAodExitAnimationEnabled(Context context) {
         return context != null && PixelAodSettings.getBoolean(context,
                 PixelAodSettings.KEY_UDFPS_AOD_EXIT_ANIMATION, true);
     }
 
     private static boolean isReplacementEnabled(Context context) {
-        return PixelAodFeatureFlags.useCouiUdfps()
-                && context != null
-                && PixelAodSettings.getBoolean(
-                        context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false);
+        return CouiUdfpsOwnershipPolicy.ownsReplacementVisuals(
+                PixelAodFeatureFlags.useCouiUdfps(),
+                context != null && PixelAodSettings.getBoolean(
+                        context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false));
+    }
+
+    private static boolean hasTrackedReplacementState(ImageView icon) {
+        if (icon == null) {
+            return false;
+        }
+        synchronized (DRAWABLES) {
+            if (DRAWABLES.containsKey(icon)) {
+                return true;
+            }
+        }
+        synchronized (ORIGINAL_DRAWABLES) {
+            return ORIGINAL_DRAWABLES.containsKey(icon);
+        }
     }
 
     private static boolean isDark(Context context) {

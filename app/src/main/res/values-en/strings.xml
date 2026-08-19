@@ -32,7 +32,7 @@
     <string name="title_udfps_hdr_press_effect">Use HDR highlight on press</string>
     <string name="desc_udfps_hdr_press_effect">Use the COUI HDR bright-white fingerprint highlight while preserving the native OPlus optical sensing and HBM path</string>
     <string name="title_udfps_success_ripple">Successful unlock ripple</string>
-    <string name="desc_udfps_success_ripple">After successful authentication, turn the highlight into a Monet-colored full-screen ripple</string>
+    <string name="desc_udfps_success_ripple">Show a Monet-colored full-screen ripple after successful authentication; works independently with the native OOS fingerprint icon</string>
     <string name="title_udfps_aod_exit_animation">AOD fingerprint exit animation</string>
     <string name="desc_udfps_aod_exit_animation">Use the COUI fingerprint fade-out when leaving AOD; disable to use the native OPlus exit animation</string>
     <string name="title_lockscreen_policy">Lockscreen Policy</string>
@@ -82,7 +82,7 @@
     <string name="system_ui_warning">These options directly affect SystemUI. Enable debug logging only while troubleshooting; use “Restart SystemUI” on Home when the module runtime must be reloaded.</string>
     <string name="desc_page_aod">Display mode, schedule, and AOD behavior</string>
     <string name="desc_page_clock">AOD and lockscreen clock weights</string>
-    <string name="desc_page_fingerprint">Fingerprint icon, press highlight, and unlock animations</string>
+    <string name="desc_page_fingerprint">Native OOS fingerprint, optional icon replacement, and successful-unlock ripple</string>
     <string name="desc_page_at_a_glance">Weather, forecast, alerts, and calendar information</string>
     <string name="desc_page_lockscreen">Lockscreen notification visibility and compatibility</string>
     <string name="desc_page_system">Language, diagnostics, and app-level settings</string>
