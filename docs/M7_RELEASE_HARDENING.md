@@ -69,7 +69,7 @@
 
 ## 3. 压力与生命周期矩阵
 
-- [ ] 至少 20 次无手指 LS ↔ AOD / wake ↔ sleep 循环，无 SystemUI restart、无 FOD 高亮残留。
+- [x] 至少 20 次无手指 LS ↔ AOD / wake ↔ sleep 循环：20/20 完成，SystemUI PID `18609` 全程不变；自动证据无异常 touch/HDR。panel highlight 的最终肉眼确认仍由 UDFPS 视觉项单独验收。
 - [ ] 连续跨至少 5 次分钟变化，时钟和 contextual content 无冻结/累计偏移。
 - [ ] media start → pause → resume → track change → stop 多轮切换。
 - [ ] 通知连续新增/移除/overflow 收缩，AOD content 不残留旧状态。
@@ -81,9 +81,9 @@
 
 每轮物理矩阵结束后检查：
 
-- [ ] 没有新的 FATAL EXCEPTION。
-- [ ] 没有 ANR。
-- [ ] 没有非预期 SystemUI PID 重启。
+- [x] 没有新的 FATAL EXCEPTION（当前 M7 runtime batch：0）。
+- [x] 没有 ANR（当前 M7 runtime batch：SystemUI ANR=0）。
+- [x] 没有非预期 SystemUI PID 重启（20-cycle batch：`18609 → 18609`）。
 - [ ] 没有重复 primary clock/UDFPS owner。
 - [ ] 无持续异常 warning/error 表明 hook 循环或 surface 泄漏。
 - [ ] AOD/锁屏切换后 Window/Surface 生命周期收敛。
