@@ -58,6 +58,15 @@ public final class CouiUdfpsPressedVisualPolicyTest {
     }
 
     @Test
+    public void hdrWindowUsesSdrHeadroomUntilThereIsARealHdrTouch() {
+        assertEquals(1f,
+                CouiUdfpsPressedVisualPolicy.desiredHdrHeadroom(false, true, 5f), 0f);
+        assertEquals(5f,
+                CouiUdfpsPressedVisualPolicy.desiredHdrHeadroom(true, true, 5f), 0f);
+        assertEquals(1f,
+                CouiUdfpsPressedVisualPolicy.desiredHdrHeadroom(true, false, 5f), 0f);
+    }
+    @Test
     public void hdrDisabledKeepsVendorOpticalCarrierAndPressedAnimationNative() {
         assertFalse(CouiUdfpsPressedVisualPolicy.useModulePressedCarrier(false));
         assertFalse(CouiUdfpsPressedVisualPolicy.suppressVendorPressedAnimation(false));

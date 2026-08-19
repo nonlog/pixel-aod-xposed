@@ -148,7 +148,6 @@ final class CouiUdfpsController {
             return;
         }
         int hooked = 0;
-        hooked += hookAlphaSpring(classLoader);
         hooked += hookVisualClass(classLoader, UI_MECH_CLASS, true);
         hooked += hookPressedIconClass(classLoader);
         hooked += hookPressedIconMutations(classLoader);
@@ -161,43 +160,6 @@ final class CouiUdfpsController {
         hooked += hookConfigurationChanges();
         PixelAodLog.i("installed independent COUI UDFPS hooks count=" + hooked
                 + " renderer=" + PixelAodFeatureFlags.startupUdfpsRenderer());
-    }
-
-    /** Mirrors COUI's dedicated BEFORE hook that suppresses the vendor fingerprint alpha spring. */
-    private static int hookAlphaSpring(ClassLoader classLoader) {
-        try {
-            Class<?> clazz = ModernHookBridge.findClass(UI_MECH_CLASS, classLoader);
-            int count = 0;
-            for (Method method : clazz.getDeclaredMethods()) {
-                if (!"updateFpIconAlpha".equals(method.getName())
-                        || Modifier.isAbstract(method.getModifiers())) {
-                    continue;
-                }
-                final Method target = method;
-                target.setAccessible(true);
-                ModernHookBridge.hookBefore(target, param -> {
-                    Context context = contextFrom(param, param.thisObject);
-                    if (!isReplacementEnabled(context)) {
-                        return;
-                    }
-                    param.setResult(defaultReturnValue(target.getReturnType()));
-                    if (!isAod(param.thisObject)) {
-                        ImageView icon = findFingerprintIcon(param.thisObject);
-                        if (icon != null) {
-                            dispatchViewOperation(icon, "updateFpIconAlpha#normalize",
-                                    () -> normalizeLockscreenAlpha(icon));
-                        }
-                    }
-                });
-                count++;
-            }
-            PixelAodLog.log("hooked COUI UDFPS alpha spring class=" + UI_MECH_CLASS
-                    + " methods=" + count);
-            return count;
-        } catch (Throwable throwable) {
-            PixelAodLog.log("failed to hook COUI UDFPS alpha spring", throwable);
-            return 0;
-        }
     }
 
     private static int hookPressedIconClass(ClassLoader classLoader) {
@@ -359,26 +321,6 @@ final class CouiUdfpsController {
                 final Method target = method;
                 final String source = simpleClassName(className) + "#" + signature(method);
                 target.setAccessible(true);
-                if ("updateFpIconAlpha".equals(target.getName())) {
-                    ModernHookBridge.hookBefore(target, param -> {
-                        Object uiMech = uiMechClass ? param.thisObject : lastUiMech.get();
-                        Context context = contextFrom(param, uiMech);
-                        if (!isReplacementEnabled(context)) {
-                            return;
-                        }
-                        param.setResult(defaultReturnValue(target.getReturnType()));
-                        if (uiMech != null && !isAod(uiMech)) {
-                            ImageView icon = findFingerprintIcon(uiMech);
-                            if (icon != null) {
-                                normalizeLockscreenAlpha(icon);
-                            }
-                        }
-                        PixelAodLog.log("COUI UDFPS alpha callback intercepted source=" + source
-                                + " aod=" + (uiMech != null && isAod(uiMech)));
-                    });
-                    count++;
-                    continue;
-                }
                 ModernHookBridge.hookAfter(target, param -> {
                     Object uiMech = uiMechClass ? param.thisObject : lastUiMech.get();
                     if (uiMech == null) {
@@ -804,22 +746,8 @@ final class CouiUdfpsController {
         } catch (Throwable throwable) {
             PixelAodLog.log("COUI UDFPS icon normalization failed", throwable);
         }
-        if (!aod) {
-            normalizeLockscreenAlpha(icon);
-        }
-    }
-
-    private static void normalizeLockscreenAlpha(ImageView icon) {
-        try {
-            icon.setAlpha(1f);
-            icon.setImageAlpha(255);
-            Method method = findCompatibleMethod(icon.getClass(), "setBrightnessAlpha", float.class);
-            if (method != null) {
-                method.invoke(icon, 1f);
-            }
-        } catch (Throwable throwable) {
-            PixelAodLog.log("COUI UDFPS lockscreen alpha normalization failed", throwable);
-        }
+        // Primary carrier alpha/brightness remains OPlus-owned. Only drawable presentation,
+        // animation cancellation, and scale normalization above are module-owned.
     }
 
     private static void configurePressedIcon(ImageView pressedIcon, boolean hdrEnabled) {
@@ -948,7 +876,10 @@ final class CouiUdfpsController {
                     return;
                 }
                 WindowManager.LayoutParams params = (WindowManager.LayoutParams) pressedIcon.getLayoutParams();
-                float headroom = maxHdrHeadroom(pressedIcon);
+                boolean liveTouchDown = isPressedTouchActive(pressedIcon);
+                boolean hdrEnabled = isHdrPressEffectEnabled(pressedIcon.getContext());
+                float headroom = CouiUdfpsPressedVisualPolicy.desiredHdrHeadroom(
+                        liveTouchDown, hdrEnabled, maxHdrHeadroom(pressedIcon));
                 params.setColorMode(ActivityInfo.COLOR_MODE_HDR);
                 params.setDesiredHdrHeadroom(headroom);
                 WindowManager manager = pressedIcon.getContext().getSystemService(WindowManager.class);
@@ -957,7 +888,12 @@ final class CouiUdfpsController {
                     return;
                 }
                 manager.updateViewLayout(pressedIcon, params);
-                PixelAodLog.i("COUI UDFPS HDR window prepared headroom=" + headroom);
+                // SurfaceControl can be recreated after updateViewLayout(); re-read live touch
+                // on the next frame so idle attach never inherits stale max HDR headroom.
+                pressedIcon.postOnAnimation(() -> updatePressedHdr(
+                        pressedIcon, isPressedTouchActive(pressedIcon)));
+                PixelAodLog.i("COUI UDFPS HDR window prepared headroom=" + headroom
+                        + " touchDown=" + liveTouchDown);
             } catch (Throwable throwable) {
                 PixelAodLog.log("COUI UDFPS HDR window preparation failed", throwable);
             }

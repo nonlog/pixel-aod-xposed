@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.1.375] - 2026-08-19
+### Fixed
+- Restore OPlus ownership of OnScreenFingerprintUiMech.updateFpIconAlpha: COUI_PORT no longer short-circuits the vendor alpha lifecycle. Stable 0.1.331 observes this callback after execution and does not suppress it; blocking it is now isolated as the strongest remaining cause of panel-only local-HBM highlight.
+- Keep the complete 0.1.374/0.1.370 COUI visual and success path unchanged: 80dp intrinsic glyph, 64dp lockscreen background circle, original fingerprint path/colors, animation/scale normalization, success ripple, and touch-gated HDR pressed carrier.
+- Keep primary View.alpha, imageAlpha, and setBrightnessAlpha writes absent, and retain the no-touch pressed-window 1.0x HDR-headroom fix.
+
+### Evidence / Status
+- **0.1.374 physical result:** enrolled-finger recognition and success ripple pass and COUI size/background are restored, but the unwanted highlight returns; the highlight is visible on the physical panel but absent from screenshots. This proves the remaining defect is below normal SystemUI composition (panel/FOD brightness path), not the drawable pixels.
+- A/B isolation: 0.1.373 had no highlight with vendor updateFpIconAlpha allowed; 0.1.374 restored the BEFORE suppression and the panel highlight returned. Stable 0.1.331 also lets updateFpIconAlpha execute normally (diagnostic hook is AFTER-only).
+- **Automated/build gate:** full JVM regression is **372/372 with 0 failures/errors/skips**; `git diff --check` passes; incremental full-source test recompilation passes and `:app:assembleDebug` passes. APK size is `19,764,691` bytes, SHA-256 `E00C35ABAE749DAB4F28F14826C7AF48689FFEE88C7C27A88CB6A03AAF322D26`.
+- **Deployment history:** the first automated transfer attempt was blocked by ADB transport loss, so the candidate was provided for manual install. A later fresh ADB check confirmed the exact tested 0.1.375 artifact is installed on the CPH2573.
+- **Physical PASS (2026-08-19):** user confirmed 0.1.375 removes the panel-only idle/wake/sleep fingerprint highlight while preserving the accepted COUI fingerprint size/background/style, enrolled-finger recognition, and success ripple.
+- **Installed artifact verification:** device reports `0.1.375 / 385`; installed `base.apk` SHA-256 is `E00C35ABAE749DAB4F28F14826C7AF48689FFEE88C7C27A88CB6A03AAF322D26`, exactly matching the tested local APK. This closes the UDFPS blocker and authorizes entry into M7 Release Hardening.
+## [0.1.374] - 2026-08-19
+### Fixed
+- Revert the 0.1.373 visual over-correction: restore the exact accepted COUI_PORT lockscreen fingerprint drawable from 0.1.370/0.1.371, including its 80dp intrinsic canvas, 64dp filled lockscreen background, fingerprint path, colors, and 420ms lockscreen-to-AOD transition.
+- Restore the 0.1.371 primary glyph animation/scale normalization and success-ripple lifecycle that had already passed enrolled-finger physical validation. This avoids the size/style and missing-ripple regressions introduced while trying to copy the broader 0.1.331 carrier boundary.
+- Keep only the safe part of the 0.1.331 brightness lesson: COUI_PORT still suppresses OPlus `updateFpIconAlpha` so the vendor alpha spring cannot fight the replacement glyph, but it no longer writes primary `View.alpha`, `imageAlpha`, or `setBrightnessAlpha(1f)` at any point. Those carrier brightness writes are the remaining HBM-risk seam.
+- Carry forward the 0.1.371 pressed HDR attach race fix: no-touch attach starts at `1.0x`; only live touch raises the pressed surface to max HDR headroom.
+
+### Evidence / Status
+- **0.1.373 physical FAIL:** user confirmed the unwanted highlight was gone, but the fingerprint size/background/style changed and the success ripple disappeared. 0.1.373 remains uncommitted/unpushed and is superseded by this narrower candidate.
+- 0.1.374 intentionally preserves the normal COUI white-circle visual. The acceptance criterion is therefore panel behavior: the circle must retain the accepted COUI appearance without the extra local-HBM brightening/stickiness seen before; success ripple must again be visible.
+- **Automated/build gate:** full JVM regression is **372/372 with 0 failures/errors/skips**; `git diff --check` passes; clean `--no-daemon --rerun-tasks :app:testDebugUnitTest :app:assembleDebug` passes. APK size is `19,764,691` bytes, SHA-256 `B4CFCBFA5C419EA7A2398B7AB45F0D80EBFB45915B04A6BA132EB973ABFC9C7A`.
+- **Install/runtime gate:** verified LAN CPH2573 install returned `Success`; device reports 0.1.374 / 384 and installed `base.apk` hash matches local. Preferences are preserved. Exactly one SystemUI reload changed PID `13504 -> 7460`; fresh COUI_PORT hooks count=35 is present.
+- **No-touch gate:** pressed window is `desiredHdrHeadroom=1.0`; actual `SurfaceControl.setExtendedRangeBrightness` is `desiredRatio=1.0` with `touchDown=false`. The observed `HBM_EN ... hbm_en 8` occurs only after OPlus `realHide`, primary FOD surface destruction, and matches historical FOD teardown logs, so it is not treated as an idle HBM enable.
+- **Visual gate:** fresh 0.1.374 lockscreen screenshot restores the same COUI filled-circle/fingerprint structure as the pre-0.1.373 implementation; the 0.1.373 no-fill visual is gone.
+- Physical validation required before commit/push: confirm no extra panel/local-HBM brightening beyond the normal COUI circle, and confirm enrolled-finger recognition plus success ripple.
+## [0.1.373] - 2026-08-19
+### Fixed
+- Remove the filled **idle lockscreen fingerprint background circle** from the COUI_PORT glyph while retaining the fingerprint strokes, 420ms solid-to-dashed lockscreen↔AOD transition, touch-gated HDR illumination, authentication, and success ripple.
+- Make the no-fill rule an explicit `CouiUdfpsIdleVisualPolicy` contract with a focused regression test. This intentionally follows the physically accepted 0.1.331 idle visual on this OPlus device rather than COUI Expressive's filled `StockFingerprintDrawable` background.
+- Carry forward 0.1.372's restoration of stable 0.1.331 primary-carrier ownership: COUI_PORT no longer intercepts `updateFpIconAlpha`, writes primary `setBrightnessAlpha`/View alpha, cancels OPlus primary-carrier animations, or forces primary carrier scale.
+
+### Evidence / Status
+- **Pixel-level root-cause proof:** using the same wallpaper and exact screenshot coordinate `(720,2370)`, the unlocked no-FOD frame is RGB `93,142,142`, the physically accepted 0.1.331 lockscreen is `94,143,143`, while 0.1.372 is `164,190,190`. Pixels outside the FOD region are identical between the 0.1.331 and current captures. Therefore the persistent visible "highlight" is directly captured as COUI_PORT's filled idle background, not only a panel/HBM effect.
+- 0.1.372 no-touch runtime still showed pressed-window `desiredHdrHeadroom=1.0`, `touchDown=false`, and no FATAL/ANR, but its screenshot retained the large filled circle; it is therefore a diagnostic intermediate rather than an accepted fix.
+- **Automated/build gate:** full JVM regression is **373/373 with 0 failures/errors/skips**; `git diff --check` passes; `:app:assembleDebug` passes. APK size is `19,764,695` bytes, SHA-256 `46351D06B62788E3D69D9C5D09B9B5022BCB2B66E47CD09CB91C576EB46E997F`.
+- **Install/runtime gate:** verified LAN CPH2573 install returned `Success`; device reports 0.1.373 / 383 and installed `base.apk` hash matches local. Exactly one SystemUI reload changed PID `2536 -> 13504`; fresh COUI_PORT startup is present with no new FATAL/ANR. No-touch pressed-surface updates remain `desiredRatio=1.0`.
+- **Post-fix screenshot proof:** on unobstructed FOD scanline `y=2450`, sampled x=`600,640,680,720,760,800,840` are pixel-identical between stable 0.1.331 and 0.1.373 (`delta=0` at every sample). At the same points 0.1.372 differed by about `142–155` summed RGB levels because of the filled circle. The large idle fill is therefore removed in the rendered frame.
+- **Pending physical gate:** user must confirm on the actual panel that idle/transition highlight is gone and one enrolled-finger unlock still has normal press illumination, recognition, and success ripple. Keep 0.1.373 uncommitted/unpushed until that acceptance.
+
+## [0.1.372] - 2026-08-19
+### Fixed
+- Restore the **stable 0.1.331 OPlus fingerprint carrier ownership boundary** for COUI_PORT. 0.1.331 is the physically verified no-highlight baseline: it replaces the primary fingerprint glyph but does not intercept `updateFpIconAlpha`, does not write the primary carrier `View.alpha` / `imageAlpha` / `setBrightnessAlpha`, and does not cancel the carrier's OPlus animation lifecycle.
+- Remove COUI_PORT's primary `updateFpIconAlpha` BEFORE hook and all primary-carrier alpha/brightness normalization. The custom COUI drawable now sanitizes only drawable presentation state (`background`, tint, color filter, scale type), matching the safe 0.1.331 replacement boundary.
+- Stop cancelling primary fingerprint carrier animations or forcing its scale to `1`. OPlus again owns temporary-show/fade/optical lifecycle state; COUI_PORT continues to own only the replacement glyph, touch-gated pressed carrier, real-touch HDR effect, and success ripple.
+- Keep the 0.1.371 pressed-window attach fix: an idle pressed HDR window starts at `1.0x` headroom and only a real fingerprint touch raises it. Device evidence showed that race was real, but user physical testing proved it was not the remaining persistent-highlight root cause.
+
+### Evidence / Status
+- **0.1.371 physical FAIL:** enrolled-finger recognition and success ripple passed, but the unwanted lockscreen highlight remained. No commit/push was made.
+- **Reference correction:** stable 0.1.331 source was re-audited and confirmed to never call primary `setBrightnessAlpha` or suppress `updateFpIconAlpha`; it gates only the pressed carrier alpha while idle. This source contract now takes precedence over anti-COUI alpha-normalization behavior on this OPlus device.
+- Physical validation of 0.1.372 is required before acceptance or commit/push.
+
+## [0.1.371] - 2026-08-19
+### Fixed
+- Gate the COUI HDR pressed-window headroom by the **live fingerprint touch state at attach time**. OPlus can attach `OnScreenFingerprintPressedIcon` during ordinary wake/doze transitions while `isTouchDownNow=false`; 0.1.370 pre-armed that window to maximum HDR headroom and only reset the SurfaceControl later, producing a deterministic screen-on/off brightness flash and leaving a race where a newly created surface could retain stale HDR headroom.
+- Idle/released HDR carriers now initialize at `1.0x` headroom and reassert the current live-touch state on the next frame after `WindowManager.updateViewLayout()`. A real touch still raises the existing HDR carrier to the device maximum and keeps the native optical/authentication path unchanged.
+- Preserve the COUI main fingerprint drawable, its normal lockscreen/AOD style transition, vendor carrier visibility, HDR color mode, and the existing `checkHasPressedAnimation` / `getScalePressedAnim` suppression contract.
+
+### Evidence / Status
+- **Root-cause evidence on 0.1.370:** no-touch wake logs showed `touchDown=false`, pressed View alpha `0`, illumination background alpha `0`, yet the newly created `OnScreenFingerprintPressedIcon` surface was first configured at HDR ratio `5.0` and only about 14 ms later reset to `1.0`. Eight additional no-touch power transitions produced no false `touchDown=true`, ruling out a touch-state latch as the observed wake/doze highlight source.
+- **Automated gates:** focused UDFPS tests and Java compilation pass; full JVM regression is **372/372 with 0 failures/errors/skips**; `git diff --check` passes; clean `--no-daemon --rerun-tasks :app:testDebugUnitTest :app:assembleDebug` passes. APK is 0.1.371 / 381, size `19,764,695` bytes, SHA-256 `A7B29CE717A0B08A7CBB7C19ACB9FE1BAEA30F9A3F0F0298EB312EBE8E1BE7F7`.
+- **Install/runtime gate:** verified LAN CPH2573 transport overwrite install returned `Success`; device reports 0.1.371 / 381 and installed `base.apk` hash matches local exactly. All fingerprint/renderer/debug preferences were preserved. Exactly one SystemUI reload changed PID `23102 -> 11459`; fresh Modern/COUI_PORT startup is present.
+- **No-touch HDR race regression:** repeated AOD/lockscreen transitions recreated `OnScreenFingerprintPressedIcon` surfaces with `touchDown=false`. 0.1.371 produced only `desiredRatio=1.0` on the pressed surface (`RATIO_5=0`), including a real `NO_SURFACE -> DRAW_PENDING -> HAS_DRAWN` recreate. An additional eight-transition no-finger stress run again produced `RATIO_5=0`, `RATIO_1=6`, and no module/vendor touch-down event.
+- **Pending physical gate:** user must confirm the real panel no longer flashes/sticks in HDR at wake/sleep, then perform one enrolled-finger unlock to confirm press illumination and recognition/ripple remain intact. Keep 0.1.371 uncommitted/unpushed until that physical acceptance.
 ## [0.1.370] - 2026-08-19
 ### Meta
 - **Owner / Model:** GPT-5.6 Sol direct implementation on `agent/coui-port`; no Luna/Codex executor used.

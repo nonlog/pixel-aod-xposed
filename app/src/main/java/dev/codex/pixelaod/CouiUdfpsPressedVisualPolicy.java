@@ -20,6 +20,20 @@ final class CouiUdfpsPressedVisualPolicy {
     }
 
     /**
+     * Keep an attached HDR-capable pressed window at SDR headroom while idle. OPlus can attach
+     * this window during ordinary wake/doze transitions even with no finger down, so pre-arming
+     * max headroom creates a visible flash and can leave the surface bright if the later reset
+     * races surface creation. Real touch raises the headroom through the normal pressed path.
+     */
+    static float desiredHdrHeadroom(boolean liveTouchDown, boolean hdrEnabled,
+            float maxHeadroom) {
+        if (!primaryDrawablePressed(liveTouchDown, hdrEnabled)) {
+            return 1f;
+        }
+        return Math.max(1f, maxHeadroom);
+    }
+
+    /**
      * When module HDR is disabled, stable 0.1.331 leaves the vendor optical carrier itself
      * intact and gates only its View alpha. Vendor pressed-animation/HBM decisions must therefore
      * remain native in that mode. The COUI replacement carrier is allowed only for HDR mode.
