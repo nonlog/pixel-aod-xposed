@@ -2,7 +2,7 @@
 
 状态：**进行中**  
 开始时间：2026-08-19  
-冻结基线：`339976e495b744352ea5408c4af40c02f4839cff` / `0.1.375` / versionCode `385`
+冻结基线：`007eb752da53679dd2a31305711646bdca318236` / `0.1.376` / versionCode `386`
 
 ## 1. Entry gate
 
@@ -14,7 +14,18 @@
 - [x] APK packaging：Modern entry `dev.codex.pixelaod.PixelAodModernEntry`；API `101/101`；`staticScope=true`；唯一 scope `com.android.systemui`；无 legacy `assets/xposed_init`。
 - [x] tracked worktree clean。
 
-说明：物理验收 APK 与提交后审计 rebuild 的 SHA-256 不同，因此分别记录用途；二者对应同一 0.1.375 生产源码。stable tag 只能在最终 release artifact 再次安装/哈希/物理确认后创建。
+说明：0.1.375 完成 M7 初始入场后，用户在 M7 内明确授权一次 battery-status 功能例外。该例外已作为 0.1.376 独立提交并重新冻结 feature scope；从此所有矩阵与 soak 以 0.1.376 为准。stable tag 只能在最终 release artifact 再次安装/哈希/物理确认后创建。
+
+### M7 feature exception — 0.1.376 Charged state
+
+- [x] 用户授权：充电完成后 AOD 电池文案从 `Charging` 切换为 `Charged`。
+- [x] 实现仅使用 Android battery broadcast 状态：连接且 `CHARGING` → `Charging`；连接且 `FULL` → `Charged`；连接、100%、`NOT_CHARGING` → `Charged` fallback；未连接/unknown/discharging 不声明状态后缀。
+- [x] 完整 JVM 回归 `377/377`，0 failures / 0 errors / 0 skipped；assemble 与 `git diff --check` PASS。
+- [x] 0.1.376 测试 APK：19,764,695 bytes，SHA-256 `521BFC474EB1BE48E3786703C4889923FD71ED5691E2F2C185925B8F0F74B73C`。
+- [x] USB 覆盖安装成功；设备 `0.1.376 / 386`，installed `base.apk` hash 与测试 APK 完全一致；仅一次 SystemUI reload `7149 → 18609`。
+- [x] AOD 真实 48% / `CHARGING` 截图显示 `48% · Charging`；可逆 battery-service `100% / FULL` 仿真截图显示 `100% · Charged`；随后 `dumpsys battery reset` 已恢复真实 48% / CHARGING，SystemUI PID 保持 `18609`。
+- [x] 功能提交已推送：`007eb752da53679dd2a31305711646bdca318236`。
+- [x] **soak clock 从 0.1.376 重新从 0 小时开始。**
 
 ## 2. 全场景功能矩阵
 
@@ -43,7 +54,7 @@
 - [ ] Forecast：只在 AOD 显示；与 media、notification icon 行使用相同内容锚点；时间窗进入/退出正确。
 - [ ] Weather Alert。
 - [ ] Calendar contextual。
-- [ ] charging / battery 文案。
+- [x] charging / battery 文案：已验证真实 `CHARGING` 与模拟 `FULL`，见 M7 feature exception 证据。
 - [ ] USB、hotspot/tethering、system-status icon retained behavior。
 
 ### UDFPS

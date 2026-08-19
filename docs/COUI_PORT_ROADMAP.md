@@ -5,7 +5,7 @@
 ## 基线与行为来源
 
 - 当前可用回滚基线是 commit `a1f7e8dcee77db73b08f785319567b50f634ecd2`，版本 `0.1.331`。
-- **M7 Release Hardening 当前冻结基线**是 commit `339976e495b744352ea5408c4af40c02f4839cff`，版本 `0.1.375 / 385`；`0.1.331` 继续保留为 emergency rollback，而不是当前功能基线。
+- **M7 Release Hardening 当前冻结基线**是 commit `007eb752da53679dd2a31305711646bdca318236`，版本 `0.1.376 / 386`；`0.1.331` 继续保留为 emergency rollback，而不是当前功能基线。
 - `0.1.329` 的 Small visual 是视觉 golden。
 - `0.1.320` 的 clock-transition 是时钟过渡 golden。
 - `6d564317` / `0.1.343` 的 regression repair line 已放弃，不得继续作为实现基线。
@@ -182,17 +182,17 @@ adapter 只能提供内容和语义状态，不能创建第二套布局、主时
 
 ## Phase J / M7：Release Hardening — 进行中（2026-08-19）
 
-M7 不增加新功能，目标是把已完成的 COUI_PORT 从“功能完成”推进为可稳定发布的冻结基线。入场基线固定为 `339976e495b744352ea5408c4af40c02f4839cff` / `0.1.375`。用户已确认该版本修复锁屏指纹面板高亮，同时保留 COUI 指纹大小/背景/样式、真实指纹识别和 success ripple。
+M7 原则上不增加新功能，目标是把已完成的 COUI_PORT 从“功能完成”推进为可稳定发布的冻结基线。初始入场基线为 `339976e495b744352ea5408c4af40c02f4839cff` / `0.1.375`；用户随后明确授权一次 battery-status 功能例外，0.1.376 增加满电 `Charged` 状态并重新通过自动/真机门，因此当前冻结基线前移到 `007eb752da53679dd2a31305711646bdca318236` / `0.1.376`。
 
 M7 的规则：
 
-- 冻结 feature scope；只允许修复回归、崩溃、功耗、生命周期或发布封包问题。
+- 0.1.376 battery-status 用户授权例外完成后重新冻结 feature scope；此后只允许修复回归、崩溃、功耗、生命周期或发布封包问题。
 - 任一生产代码修复必须升版本，重新通过完整 JVM/build/metadata gate，并重跑受影响的物理矩阵。
 - 任一会影响 SystemUI runtime 的生产代码变更都会使当前 soak 失效，修复后重新开始 soak。
 - 不在 M7 开始时创建 stable tag；只有完整矩阵与 soak 都通过后才允许标记 stable baseline。
-- `0.1.331` 继续作为 emergency rollback；正常回归比较以已验收的 COUI 0.1.375 行为为 golden。
+- `0.1.331` 继续作为 emergency rollback；正常回归比较以已验收的 COUI 0.1.376 行为为 golden。
 
-M7 的权威执行清单见 `docs/M7_RELEASE_HARDENING.md`。当前 entry gate 已完成：提交后完整 JVM 测试 `372/372`，assemble 成功，Modern Xposed metadata 为 API `101/101`、`staticScope=true`、唯一 scope `com.android.systemui`，且本地/远端 `agent/coui-port` 同步。
+M7 的权威执行清单见 `docs/M7_RELEASE_HARDENING.md`。0.1.376 例外后的 entry gate 已重新完成：完整 JVM 测试 `377/377`，assemble 成功；USB 实机安装/hash 与 `Charging` / `Charged` AOD 仿真验证通过。soak 从 0.1.376 重新计时；Modern Xposed metadata 仍保持 API `101/101`、`staticScope=true`、唯一 scope `com.android.systemui`。
 
 ## Post-stability TODO / 完成状态
 
