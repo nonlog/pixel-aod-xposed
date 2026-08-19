@@ -57,8 +57,8 @@
 - [x] AOD Small：真实 `NOTIFICATIONS` partial-content 场景稳定；运行时 mapping 为 `requestedScene=LARGE → visualScene=SMALL`，`iconCount=3/5`。
 - [x] LS → AOD：显式 `SLEEP(223)` 连续帧无 host 黑帧/错位，最终稳定 AOD Small；SystemUI PID 不变。
 - [x] AOD → LS：显式 `WAKEUP(224)` 连续帧无 host 黑帧/错位；锁屏 Small 视觉正常。
-- [ ] 分钟变化：COUI 的整行光学重心调整保持预期，无额外漂移。
-- [ ] burn-in 位移：时钟、forecast/media/notification content 的共同锚点保持正确。
+- [x] 分钟变化：16:06→16:11 被动连续 6 帧跨 5 次自然分钟变化，时钟每分钟正常更新、无冻结；COUI 整行光学重心变化保持预期，SystemUI PID `4688` 不变。证据 `.local/m7_soak_01380_20260819/minute_ticks/minute_contact.png`。
+- [ ] burn-in 位移：本轮被动样本已确认固定 weather/info X `737→730`、notification row X `125→117`，方向/量级一致且无累计跳变；但同一 5 分钟窗口内没有同时活跃的 Forecast/media，因此完整共同锚点仍待后续自然场景补齐。
 
 ### Content
 
@@ -66,7 +66,7 @@
 - [x] notification-only：semantic runtime `contentKind=NOTIFICATIONS`，AOD icon row 正常，STOP media 后无旧 media row 残留。
 - [ ] media-only。
 - [x] media + notifications：PixelPlay PLAYING 时 AOD 显示标题/artist media row，notification icons 同时保留；截图 `.local/m7_matrix_01380_20260819/media/playing.png`。
-- [ ] notification overflow / `+N`。
+- [x] notification overflow / `+N`：自然通知在 16:06–16:09 触发 5 icons + `+1`，16:10 通知减少后 `+1` 自动消失并收缩回 5 icons，无需合成测试通知。
 - [x] current weather：provider-native 彩色 icon、18dp 可见图案、22dp slot / 4dp gap 与文字/日期位置正确；0.1.380 稳定 AOD 已抓图。
 - [x] Forecast：临时将窗口从 `21:00–23:30` 扩到 `00:00–23:59` 后，AOD 出现 `Tmr 31° / 24°`，同场景 LS 不显示 Forecast；随后已恢复原 `21:00–23:30`。证据 `.local/m7_matrix_01380_20260819/contextual/forecast_contact.png`。
 - [ ] Weather Alert。
@@ -86,9 +86,9 @@
 ## 3. 压力与生命周期矩阵
 
 - [x] 至少 20 次无手指 LS ↔ AOD / wake ↔ sleep 循环：已在当前 0.1.380 baseline 重新完成 20/20；SystemUI PID `4688` 全程不变、restart=0、最终 Dozing，FATAL=0 / ANR=0。
-- [ ] 连续跨至少 5 次分钟变化，时钟和 contextual content 无冻结/累计偏移。
+- [x] 连续跨至少 5 次分钟变化：16:06→16:11 六个 AOD 样本全程 Dozing/PID `4688`，时钟无冻结；date/weather 与 notification row 仅呈连续 burn-in 小位移，没有累计偏移。
 - [x] media start → pause → resume → track change → stop：PixelPlay MediaSession 实际状态依次 `PLAYING → PAUSED → PLAYING → NEXT(active item 80→81) → NONE`；AOD media row 随 STOP 清除，PID 保持稳定。
-- [ ] 通知连续新增/移除/overflow 收缩，AOD content 不残留旧状态。
+- [x] 通知新增/移除/overflow 收缩：自然 `+1` overflow 在后续通知减少时自动消失，notification row 宽度从约 716px 收缩到约 584px，无旧 `+1`/旧图标残留。
 - [ ] Forecast/contextual 在有效时间窗边界切换时不出现双行、锁屏泄露或横移。
 - [ ] 充电插拔与电量文案刷新。
 - [x] 设置持久化：`debug_logging=true` 写入后执行一次 intentional M7 SystemUI restart `21323 → 4688`，新进程读回仍为 true；验证 fresh injection 后已实时恢复 `debug_logging=false`。
