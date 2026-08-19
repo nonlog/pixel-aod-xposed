@@ -16,7 +16,7 @@ public final class CouiClockGeometryPolicy {
     public static final float INFO_Y_OFFSET_DP = 33f;
     public static final float DATE_WEATHER_GAP_DP = 3f;
     public static final float WEATHER_ICON_SLOT_DP = 22f;
-    public static final float WEATHER_ICON_CONTENT_INSET_DP = 4f;
+    public static final float WEATHER_ICON_CONTENT_INSET_DP = 2f;
     public static final float WEATHER_ICON_GAP_DP = 4f;
     public static final float PARTIAL_CONTENT_TOP_RATIO = .255f;
     public static final float PARTIAL_CONTENT_X_DP = 32f;

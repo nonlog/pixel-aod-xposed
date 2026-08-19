@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.1.380] - 2026-08-19
+### Changed
+- Increase the visible current-weather artwork from about 17dp to 18dp at user request by reducing the internal inset in the existing 22dp weather slot from 2.5dp to 2dp.
+- Keep the 22dp slot, 4dp icon-to-temperature gap, provider-native colors, and all weather-row/alignment geometry unchanged.
+
+### Evidence / Status
+- 0.1.379 / 17dp was installed and visually much closer to the adjacent temperature glyphs; user requested one final increase to 18dp and authorized commit after validation.
+- Full JVM regression is **382/382 with 0 failures/errors/skips**; `git diff --check` and `:app:assembleDebug` pass. Candidate APK is 19,764,803 bytes, SHA-256 `AEE59B94C319FAC89B90AB8CB559566E00F51DB786DBBF963A5C9651D21143D1`.
+- USB overwrite install succeeded on CPH2573; device reports `0.1.380 / 390`, installed `base.apk` hash matches exactly, and settings remain Google weather provider + `pixel_fingerprint_icon=false` + `udfps_success_ripple=true`. Exactly one SystemUI reload changed PID `27123 -> 21323`; bounded post-reload FATAL/ANR scan is empty.
+- Stable AOD evidence is `.local\m7_weather_01380_20260819\aod_weather_18dp.png`. User explicitly requested the final 18dp size and authorized commit/push, so 0.1.380 becomes the next M7 production baseline and resets soak.
+
+## [0.1.379] - 2026-08-19
+### Changed
+- Increase the visible current-weather artwork from about 15dp to about 17dp after physical comparison against the OPlus system AOD weather row showed the module icon was still smaller than the adjacent temperature glyphs.
+- Reduce the internal inset in the existing 22dp weather slot from 3.5dp to 2.5dp while preserving the 22dp slot, 4dp icon-to-temperature gap, provider-native colors, and all row/alignment geometry.
+
+### Evidence / Status
+- 0.1.378 physical FAIL: user comparison against the native OPlus AOD weather row showed the module weather icon remained visibly smaller than the temperature digits.
+- Full JVM regression is **382/382 with 0 failures/errors/skips**; `git diff --check` and `:app:assembleDebug` pass. Candidate APK is 19,764,807 bytes, SHA-256 `31C76360CC3F602BFB4AF95E7B76A372BE562E375C13AF41F0A113999B093028`.
+- USB overwrite install succeeded on CPH2573; device reports `0.1.379 / 389`, installed `base.apk` hash matches exactly, and the system-icon UDFPS settings remain `pixel_fingerprint_icon=false`, `udfps_success_ripple=true`. Exactly one SystemUI reload changed PID `7286 -> 27123`.
+- Stable AOD evidence: `.local\m7_weather_01379_20260819\aod_weather_17dp.png`. Pending user physical visual acceptance; keep 0.1.379 uncommitted/unpushed until accepted.
+
+## [0.1.378] - 2026-08-19
+### Changed
+- Increase the visible current-weather artwork slightly from about 14dp to about 15dp by reducing the internal inset in the existing 22dp icon slot from 4dp to 3.5dp.
+- Keep the 22dp slot, 4dp icon-to-temperature gap, provider-native colors, and all row/alignment geometry unchanged.
+
+### Evidence / Status
+- Full JVM regression remains **382/382 with 0 failures/errors/skips**; `git diff --check` and `:app:assembleDebug` pass.
+- Candidate APK is 19,764,799 bytes, SHA-256 `4C6B0F574DA424033D0808E370B85B4CCEFAEDF2AB0452599734EF8F8E13C4C6`.
+- Pending physical visual acceptance; keep this weather-size change uncommitted/unpushed until accepted.
+
 ## [0.1.377] - 2026-08-19
 ### Changed
 - Add an M7 UDFPS ownership mode for the accepted fallback strategy: with `pixel_fingerprint_icon=false`, OPlus keeps complete ownership of the primary fingerprint icon, pressed carrier, alpha/scale/animation, HDR/local-HBM, and AOD fingerprint lifecycle; Pixel AOD only observes authentication and may render the independent success ripple.
