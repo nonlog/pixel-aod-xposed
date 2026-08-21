@@ -106,9 +106,13 @@
 
 ## 5. Soak gate
 
-Soak 起点：**2026-08-19 16:00 +08:00**（0.1.380 / `e737495`；最后一次 intentional M7 SystemUI restart 与 20-cycle 主动压力测试已结束；从此不再重装/重载/改生产代码，除非发现 blocker。）
+Soak 历史：2026-08-19 16:00 的首轮 soak 已失效。后续设备发生重启 / SystemUI 生命周期变化，并且排查出外部 LSPosed 模块 ColorOS Notify 在 `IconManager.getIconDescriptor` 热路径中造成 Bitmap churn 与锁屏通知 swipe jank；该问题已在独立 fork 中修复，Pixel AOD 生产代码未修改。
+
+最终 soak 起点：**2026-08-21 20:33 +08:00**（0.1.380 / `e737495`；设备 installed APK SHA-256 `AEE59B94C319FAC89B90AB8CB559566E00F51DB786DBBF963A5C9651D21143D1` 与冻结产物一致；SystemUI PID `22604` 在起点前已连续运行约 32.5 小时；当前 boot events 无 SystemUI crash/ANR；从此不再重装/重载/改 Pixel AOD 生产代码，除非发现 blocker。）
 
 - 16:16 后用户清除了可显示通知并授权利用无通知窗口测试 Large；本轮只做正常 wake/sleep、screencap 与 PixelPlay media lifecycle，没有生产代码修改、APK 安装或 SystemUI restart，因此 **soak 仍从 16:00 连续计时**。Large/empty/media-only 结束后 PID 仍为 4688，FATAL=0 / ANR=0。
+
+- 2026-08-21 通知 swipe jank 已通过 A/B 明确归因于 ColorOS Notify，而非 Pixel AOD：禁用该模块后卡顿消失；simpleperf 热点对应其 `getIconDescriptor` hook 的 Drawable→Bitmap→Icon 重处理。该外部问题已修复，Pixel AOD 0.1.380 未做生产代码变更。最终 soak 因期间设备/SystemUI 生命周期已变化，统一从 2026-08-21 20:33 重新计时。
 
 - [ ] 冻结生产代码后正常使用至少 24 小时。
 - [ ] soak 期间不修改生产代码、不重新安装候选 APK。
