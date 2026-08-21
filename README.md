@@ -14,8 +14,8 @@ leaving the platform's display, biometric, and power-management ownership intact
   and media timeout handling.
 - Schedule, continuous, and trigger-oriented AOD display policies with proximity and
   power-policy awareness.
-- Optional Pixel fingerprint icon, while preserving native OOS touch, HBM, visibility,
-  and authentication behavior.
+- OPlus-native fingerprint icon/press/HBM ownership with an optional Pixel AOD success-ripple overlay;
+  experimental icon replacement remains available but is not the release-default path.
 - Structured diagnostic logging for AOD lifecycle, native suppression, notifications,
   media, and fingerprint layers.
 
@@ -79,9 +79,8 @@ restart or exceed logcat's ring buffer.
 ## Development Branches
 
 - `master`: stable integration branch.
-- `agent/codex`: Codex development branch.
-- `agent/claude`: Claude development branch.
-- `agent/antigravity`: Antigravity development branch.
+- `agent/coui-port`: validated COUI-port development/history branch.
+- Other `agent/*` branches may be used for isolated experiments.
 
 The branches are synchronized when a validated integration is ready. Local device logs,
 screenshots, IDE files, and build outputs are intentionally ignored.

@@ -11,6 +11,11 @@
 - USB overwrite install succeeded on CPH2573; device reports `0.1.380 / 390`, installed `base.apk` hash matches exactly, and settings remain Google weather provider + `pixel_fingerprint_icon=false` + `udfps_success_ripple=true`. Exactly one SystemUI reload changed PID `27123 -> 21323`; bounded post-reload FATAL/ANR scan is empty.
 - Stable AOD evidence is `.local\m7_weather_01380_20260819\aod_weather_18dp.png`. User explicitly requested the final 18dp size and authorized commit/push, so 0.1.380 becomes the next M7 production baseline and resets soak.
 
+### Release Status
+- M7 release integration completed on 2026-08-21 with explicitly documented conditional/timed coverage exceptions; production code remains frozen at 0.1.380.
+- Forecast configuration-boundary exit, Forecast/media/notification burn-in anchoring, 3/3 LS↔AOD final smoke, Modern Xposed metadata, and Window/Surface convergence pass with SystemUI PID stable at 22604.
+- Release artifact remains the previously fully tested 19,764,803-byte APK, SHA-256 AEE59B94C319FAC89B90AB8CB559566E00F51DB786DBBF963A5C9651D21143D1, exactly matching the installed device APK. A release-time repeat build was blocked only by an external Gradle 8.7 distribution download stall; no production code changed after the frozen artifact was built.
+
 ## [0.1.379] - 2026-08-19
 ### Changed
 - Increase the visible current-weather artwork from about 15dp to about 17dp after physical comparison against the OPlus system AOD weather row showed the module icon was still smaller than the adjacent temperature glyphs.
