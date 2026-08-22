@@ -89,7 +89,7 @@
 - 对实际执行的多步骤任务，当前助手负责 Telegram 阶段通知。
 - 开始任务、完成重要阶段、遇到真实阻塞、任务结束时发送简短中文进度；不要按每条命令刷屏。
 - 每条通知只说明：完成了什么、结果如何、下一步是什么；异常时再增加阻塞/风险。
-- 优先使用现有共享 helper：`D:\Downloads\Xposed_test\pixel-aod-coui-port\.local\send-stage.ps1`。不要读取、打印或展开 helper 内部 secret。
+- 优先使用现有共享 helper：`D:\Downloads\Xposed_test\pixel-aod-shared\.local\send-stage.ps1`。不要读取、打印或展开 helper 内部 secret。
 - 如必须直接读取私密配置，优先当前 worktree `.local/secrets.env`，再使用已知共享私密配置位置；token 不得出现在命令输出、日志、diff、checkpoint 或记忆中。
 - Telegram 通知失败最多合理重试一次；仍失败则继续主任务，并在聊天说明通知失败。
 

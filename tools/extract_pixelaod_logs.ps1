@@ -2,7 +2,7 @@ param(
     [string]$Serial = "",
     [datetime]$Start = (Get-Date).AddMinutes(-10),
     [datetime]$End = (Get-Date),
-    [string]$Adb = "D:\enviroment\ADB\adb.exe",
+    [string]$Adb = "D:\Programs\Scoop\shims\adb.exe",
     [string]$Pattern = "PixelAodOPlus|dev\.codex\.pixelaod",
     [string]$Output = ""
 )
