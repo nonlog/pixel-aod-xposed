@@ -11,8 +11,16 @@ final class PixelAodLifecycleHookInstaller {
         PixelAodHook.registerSettingsObserver(context);
     }
 
+    static void installScreenOffAnimationEligibility(ClassLoader classLoader) {
+        PixelAodHook.hookVendorScreenOffAnimationEligibility(classLoader);
+    }
+
     static void installWakefulness(ClassLoader classLoader) {
         PixelAodHook.hookWakefulnessLifecycle(classLoader);
+    }
+
+    static void installKeyguardGoingAway(ClassLoader classLoader) {
+        PixelAodHook.hookKeyguardGoingAway(classLoader);
     }
 
     static void installNativeAodRefresh(ClassLoader classLoader) {
@@ -23,8 +31,8 @@ final class PixelAodLifecycleHookInstaller {
         PixelAodHook.hookAodRecord(classLoader);
     }
 
-    static void installEnergySavingGuards(ClassLoader classLoader) {
-        PixelAodHook.hookOplusEnergySavingHideGuards(classLoader);
+    static void installEnergySavingObservers(ClassLoader classLoader) {
+        PixelAodHook.hookOplusEnergySavingHideObservers(classLoader);
     }
 
     static void installAodTriggerDiagnostics(ClassLoader classLoader) {
@@ -35,7 +43,7 @@ final class PixelAodLifecycleHookInstaller {
         PixelAodHook.hookPowerManagerWakeTriggers();
     }
 
-    static void installDreamDozeState() {
-        PixelAodHook.hookDreamServiceDozeScreenState();
+    static void installDreamDozeStateObserver() {
+        PixelAodHook.hookDreamServiceDozeScreenStateObserver();
     }
 }

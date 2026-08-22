@@ -22,11 +22,6 @@ final class PixelAodNotificationHookInstaller {
         PixelAodHook.hookOplusNotificationCapsuleIcons(classLoader);
         PixelAodHook.registerTorchStateCallback(context);
         PixelAodHook.registerTorchRefreshReceiver(context);
-    }
-
-    static void installLockscreenPolicy(ClassLoader classLoader, boolean lockscreenPolicy) {
-        if (lockscreenPolicy) {
-            PixelAodHook.hookLockscreenNotificationPolicy(classLoader);
-        }
+        PixelAodHook.hookLockscreenVisibilityObservers(classLoader);
     }
 }

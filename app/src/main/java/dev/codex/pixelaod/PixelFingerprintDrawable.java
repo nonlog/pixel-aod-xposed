@@ -108,7 +108,7 @@ final class PixelFingerprintDrawable extends Drawable {
             transitionAnimator.cancel();
             transitionAnimator = null;
         }
-        if (!animate || getCallback() == null) {
+        if (!SystemAnimationScalePolicy.shouldAnimate(animate) || getCallback() == null) {
             outlineProgress = targetProgress;
             invalidateSelf();
             return;

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.9] - 2026-08-22
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Complete M9 S11 / ADR 0054 by adding one Android system animation-scale policy for module-owned presentation motion. `0x` snaps deterministic terminal state, while enabled framework Animators retain their existing baseline durations so Android applies `animator_duration_scale` exactly once rather than being double-scaled by the module.
+- Apply the disabled-animation gate to clock/weight presentation, partial-AOD/content/contextual motion, module-owned fingerprint drawable/effect motion and custom AOD-exit presentation while leaving vendor authentication/HBM/local-HBM timing untouched.
+- Move the Home-page `Restart SystemUI` action into the top-right app-bar action and remove the old large restart card, leaving one restart control.
+- Correct the pre-`0.2` visible version identity to `0.1.9`. Android `versionCode=9000` remains an internal monotonic update field and is not part of the user-visible version string; future pre-`0.2` candidates use normal human-readable versions such as `0.1.10` rather than `0.1.9001`. After all accepted Grill-derived implementation stages and final regression are complete, enter `0.2.0`.
+
+### Evidence / Status
+- JDK 17 full JVM regression: **89 suites / 414 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS; protected clock/morph/weight animation-core diff is **zero**.
+- S11 runtime behavior was validated on the 20,317,049-byte artifact, SHA-256 `231b54290bad568c630d26380fa290b780e961e5ce5117697b9cf962881de893`. That artifact mistakenly exposed the padded visible name `0.1.9000`; the user subsequently corrected the release identity to `0.1.9` while keeping internal `versionCode=9000`. A metadata-corrected rebuild is recorded below after verification.
+- The S11 Settings UI dump already proved the display contract: only `versionName` is rendered, no parenthesized build code is shown, and exactly one `Restart SystemUI` node is present at top-right bounds `[1264,224][1360,320]`. The visible text itself is corrected from the mistaken padded name to `0.1.9` in the metadata-only follow-up.
+- Real Keyguard -> Dozing validation proves `0x` is consumed in SystemUI (`scale=0.0, enabled=false`) and snaps the screen-off presentation endpoint. Additional `2x` and restored `1x` cycles remain stable on PID `16409`; the original `1.0` animator scale is restored, transition/window scales remain `1.0`, and current-PID fatal/ANR scan is empty.
+- OOS did not emit a new ClockPlugin target transaction in the enabled 2x/1x samples; no direct 1100/550 ms host-log measurement is claimed. Enabled non-default scaling relies on Android's framework Animator contract, with focused tests ensuring Pixel AOD does not multiply the scale a second time.
+- **Post-S11 version-rule correction:** source metadata now uses visible `versionName=0.1.9` with internal `versionCode=9000`; corrected rebuild/install evidence: corrected APK **19,749,423 bytes**, SHA-256 `ec535bea01f11159bbae407db09c14ea59e84b58ad7420e9a914719379692877`; `89 suites / 414 tests` pass, `git diff --check` passes, overwrite install succeeds, device package reports `versionName=0.1.9` and separate `versionCode=9000`, installed `base.apk` hash matches, and SystemUI PID remains `16409` because no runtime reload was needed. No runtime animation code changed in this correction.
+
 ## [0.1.383] - 2026-08-22
 ### Changed
 - Complete M8 architecture convergence without changing the released 0.1.380 visual contract: COUI_PORT remains the sole clock owner and the stable UDFPS mode remains OPlus system primary glyph + independent Pixel AOD success ripple.

@@ -54,6 +54,32 @@ public final class CouiClockFontPolicyTest {
     }
 
     @Test
+    public void morphRuntimeKeepsStableMetricCellsAcrossDozeWeightChanges() {
+        assertEquals(CouiClockFontPolicy.FallbackSet.LOCKSCREEN_LARGE,
+                CouiClockFontPolicy.metricSetFor(
+                        CouiClockPresentationModel.Scene.LARGE, true, true));
+        assertEquals(CouiClockFontPolicy.FallbackSet.LOCKSCREEN_SMALL,
+                CouiClockFontPolicy.metricSetFor(
+                        CouiClockPresentationModel.Scene.SMALL, true, true));
+        assertEquals(CouiClockFontPolicy.FallbackSet.LOCKSCREEN_SMALL,
+                CouiClockFontPolicy.metricSetFor(
+                        CouiClockPresentationModel.Scene.IMMERSED, true, true));
+    }
+
+    @Test
+    public void fallbackRendererStillUsesSurfaceSpecificMetricSets() {
+        assertEquals(CouiClockFontPolicy.FallbackSet.AOD_LARGE,
+                CouiClockFontPolicy.metricSetFor(
+                        CouiClockPresentationModel.Scene.LARGE, true, false));
+        assertEquals(CouiClockFontPolicy.FallbackSet.AOD_SMALL,
+                CouiClockFontPolicy.metricSetFor(
+                        CouiClockPresentationModel.Scene.SMALL, true, false));
+        assertEquals(CouiClockFontPolicy.FallbackSet.LOCKSCREEN_SMALL,
+                CouiClockFontPolicy.metricSetFor(
+                        CouiClockPresentationModel.Scene.SMALL, false, false));
+    }
+
+    @Test
     public void runtimeUnavailableUsesFourSetFallbackVisibility() {
         assertEquals(CouiClockFontPolicy.GlyphMode.FOUR_SET_CROSSFADE,
                 CouiClockFontPolicy.glyphMode(

@@ -4,6 +4,8 @@ Updated: 2026-08-22
 
 ## Current Status
 
+> This document is the stable M8/COUI-port baseline, not the live uncommitted M9 checkpoint. For current M9 implementation state and candidate evidence, use `docs/M9_IMPLEMENTATION_STATUS.md`.
+
 - **Stable release:** `v0.1.383` / versionCode `393` on `master`; annotated tag `v0.1.383` is the primary rollback point.
 - **Runtime source baseline:** `46adb50cb84ff8e680bf42f5fa8b43d26be6f137` / `0.1.383`; the release marker after it is documentation-only.
 - **Previous stable rollback:** `v0.1.380` remains the pre-M8 behavior golden and can be used for architecture-regression bisect/rollback.

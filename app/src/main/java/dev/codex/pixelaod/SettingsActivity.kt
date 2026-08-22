@@ -423,6 +423,9 @@ private fun SettingsContent(
         SettingsPage.HOME -> PixelAodPage(
             title = stringResource(R.string.nav_home),
             subtitle = "",
+            actionIcon = Icons.Outlined.RestartAlt,
+            actionDescription = stringResource(R.string.restart_systemui),
+            onAction = { restartSystemUi(context) },
             bottomBar = bottomBar
         ) {
             Column(
@@ -457,12 +460,6 @@ private fun SettingsContent(
                     modifier = Modifier.padding(horizontal = 20.dp)
                 )
             }
-
-            PixelAodActionCard(
-                icon = Icons.Outlined.RestartAlt,
-                title = stringResource(R.string.restart_systemui),
-                subtitle = stringResource(R.string.desc_restart_systemui)
-            ) { restartSystemUi(context) }
 
             PixelAodHeroToggle(
                 title = stringResource(R.string.title_module_enabled),
@@ -864,6 +861,7 @@ private fun SettingsContent(
             backDescription = stringResource(R.string.navigate_back),
             bottomBar = bottomBar
         ) {
+        PixelAodInfoBanner(stringResource(R.string.lockscreen_notifications_compatibility_note))
         PixelAodSection(stringResource(R.string.section_notifications)) {
             PixelAodGroup() {
                 PixelAodToggleRow(
@@ -874,7 +872,9 @@ private fun SettingsContent(
                     showDivider = false
                 ) {
                     lockscreenPolicy.value = it
-                    prefs.edit().putBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, it).apply()
+                    prefs.edit()
+                        .putBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, it)
+                        .apply()
                 }
             }
         }

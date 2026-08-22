@@ -31,6 +31,7 @@ final class ContextualAtAGlancePresentation {
         if (row == null || icon == null || text == null) {
             return false;
         }
+        animate = SystemAnimationScalePolicy.shouldAnimate(animate);
         ContextualAtAGlanceCard safe = next != null
                 ? next : ContextualAtAGlanceCard.none();
         ContextualAtAGlanceCard previous = current(row);
@@ -112,6 +113,11 @@ final class ContextualAtAGlancePresentation {
             return;
         }
         if (row.getVisibility() != View.VISIBLE) {
+            row.animate().cancel();
+            row.setTranslationY(0f);
+            return;
+        }
+        if (!SystemAnimationScalePolicy.animationsEnabled()) {
             row.animate().cancel();
             row.setTranslationY(0f);
             return;

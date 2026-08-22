@@ -162,7 +162,7 @@ final class CouiUdfpsDrawable extends Drawable {
             transitionAnimator.cancel();
             transitionAnimator = null;
         }
-        if (!animate || getCallback() == null) {
+        if (!SystemAnimationScalePolicy.shouldAnimate(animate) || getCallback() == null) {
             outlineProgress = targetProgress;
             backgroundColor = targetBackground;
             normalForegroundColor = targetForeground;

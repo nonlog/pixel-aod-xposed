@@ -1420,6 +1420,11 @@ final class CouiUdfpsController {
             if (icon.getDrawable() != targetDrawable) {
                 icon.setImageDrawable(targetDrawable);
             }
+            if (!SystemAnimationScalePolicy.animationsEnabled()) {
+                targetDrawable.setAlpha(0);
+                PixelAodLog.i("COUI UDFPS custom AOD exit=snap reason=system-animation-scale");
+                return;
+            }
             ValueAnimator animator = ValueAnimator.ofInt(targetDrawable.getAlpha(), 0);
             animator.setDuration(resolveAodExitDuration(uiMech));
             animator.setInterpolator(new android.view.animation.LinearInterpolator());

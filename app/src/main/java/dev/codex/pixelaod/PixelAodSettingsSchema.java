@@ -11,6 +11,7 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_MODULE_ENABLED = "module_enabled";
     public static final String KEY_CUSTOM_AOD = "custom_aod";
     public static final String KEY_LOCKSCREEN_CLOCK = "lockscreen_clock";
+    public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY = "lockscreen_notification_policy";
     public static final String KEY_AOD_DISPLAY_MODE = "module_aod_display_mode";
     public static final String KEY_WEATHER = "weather";
     public static final String KEY_WEATHER_ALERTS = "weather_alerts";
@@ -29,7 +30,6 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_UDFPS_RENDERER = "udfps_renderer";
     public static final String UDFPS_RENDERER_COUI_PORT = "coui_port";
     public static final String UDFPS_RENDERER_LEGACY = "legacy";
-    public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY = "lockscreen_notification_policy";
     public static final String KEY_DEBUG_LOGGING = "debug_logging";
     public static final String KEY_AOD_WEIGHT = "aod_weight";
     public static final String KEY_LOCKSCREEN_WEIGHT = "lockscreen_weight";
@@ -55,6 +55,8 @@ public final class PixelAodSettingsSchema {
     public static final SettingSpec MODULE_ENABLED = booleanSpec(KEY_MODULE_ENABLED, true, true);
     public static final SettingSpec CUSTOM_AOD = booleanSpec(KEY_CUSTOM_AOD, true, true);
     public static final SettingSpec LOCKSCREEN_CLOCK = booleanSpec(KEY_LOCKSCREEN_CLOCK, true, true);
+    public static final SettingSpec LOCKSCREEN_NOTIFICATION_POLICY =
+            booleanSpec(KEY_LOCKSCREEN_NOTIFICATION_POLICY, true, false);
     public static final SettingSpec AOD_DISPLAY_MODE =
             stringSpec(KEY_AOD_DISPLAY_MODE, AOD_DISPLAY_MODE_CONTINUOUS, false);
     public static final SettingSpec WEATHER = booleanSpec(KEY_WEATHER, true, false);
@@ -81,8 +83,6 @@ public final class PixelAodSettingsSchema {
             booleanSpec(KEY_UDFPS_AOD_EXIT_ANIMATION, true, false);
     public static final SettingSpec UDFPS_RENDERER = stringSpec(
             KEY_UDFPS_RENDERER, UDFPS_RENDERER_COUI_PORT, true);
-    public static final SettingSpec LOCKSCREEN_NOTIFICATION_POLICY =
-            booleanSpec(KEY_LOCKSCREEN_NOTIFICATION_POLICY, true, false);
     public static final SettingSpec DEBUG_LOGGING = booleanSpec(KEY_DEBUG_LOGGING, false, false);
     public static final SettingSpec AOD_WEIGHT =
             floatSpec(KEY_AOD_WEIGHT, DEFAULT_AOD_WEIGHT, false);

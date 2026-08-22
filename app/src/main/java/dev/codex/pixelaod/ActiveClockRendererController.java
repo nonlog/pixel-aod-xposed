@@ -52,6 +52,10 @@ final class ActiveClockRendererController {
         CouiClockPluginHostController.prepareLockscreenEntry(source);
     }
 
+    static void suppressForDirectGone(String source) {
+        CouiClockPluginHostController.suppressForDirectGone(source);
+    }
+
     static void refreshSemanticData(String source) {
         CouiClockPluginHostController.refreshSemanticData(source);
     }

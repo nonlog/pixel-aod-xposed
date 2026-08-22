@@ -13,6 +13,8 @@ public final class PixelAodSettings {
     public static final String KEY_MODULE_ENABLED = PixelAodSettingsSchema.KEY_MODULE_ENABLED;
     public static final String KEY_CUSTOM_AOD = PixelAodSettingsSchema.KEY_CUSTOM_AOD;
     public static final String KEY_LOCKSCREEN_CLOCK = PixelAodSettingsSchema.KEY_LOCKSCREEN_CLOCK;
+    public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY =
+            PixelAodSettingsSchema.KEY_LOCKSCREEN_NOTIFICATION_POLICY;
     public static final String KEY_AOD_DISPLAY_MODE = PixelAodSettingsSchema.KEY_AOD_DISPLAY_MODE;
     public static final String KEY_WEATHER = PixelAodSettingsSchema.KEY_WEATHER;
     public static final String KEY_WEATHER_ALERTS = PixelAodSettingsSchema.KEY_WEATHER_ALERTS;
@@ -42,8 +44,6 @@ public final class PixelAodSettings {
             PixelAodSettingsSchema.UDFPS_RENDERER_COUI_PORT;
     public static final String UDFPS_RENDERER_LEGACY =
             PixelAodSettingsSchema.UDFPS_RENDERER_LEGACY;
-    public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY =
-            PixelAodSettingsSchema.KEY_LOCKSCREEN_NOTIFICATION_POLICY;
     public static final String KEY_DEBUG_LOGGING = PixelAodSettingsSchema.KEY_DEBUG_LOGGING;
     public static final String KEY_AOD_WEIGHT = PixelAodSettingsSchema.KEY_AOD_WEIGHT;
     public static final String KEY_LOCKSCREEN_WEIGHT = PixelAodSettingsSchema.KEY_LOCKSCREEN_WEIGHT;
@@ -71,6 +71,7 @@ public final class PixelAodSettings {
             PixelAodSettingsSchema.DEFAULT_LOCKSCREEN_WEIGHT;
     private static final Map<String, String> CACHE = new HashMap<>();
     private static long lastLoadMillis;
+    private static int cachedUserId = Integer.MIN_VALUE;
     private static final long CACHE_TTL_MILLIS = 2_000L;
 
     private PixelAodSettings() {
@@ -150,7 +151,25 @@ public final class PixelAodSettings {
     }
 
     public static void refresh(Context context) {
-        load(context, true);
+        load(context, true, SelectedUserScope.resolveSelectedUserId());
+    }
+
+    static void onSelectedUserChanged(Context context, int userId, String source) {
+        int normalizedUserId = Math.max(0, userId);
+        synchronized (CACHE) {
+            CACHE.clear();
+            cachedUserId = normalizedUserId;
+            lastLoadMillis = 0L;
+        }
+        load(context, true, normalizedUserId);
+        PixelAodLog.i("Pixel AOD selected-user settings switched user=" + normalizedUserId
+                + " source=" + (source != null ? source : "unknown"));
+    }
+
+    static int cachedUserIdForDiagnostics() {
+        synchronized (CACHE) {
+            return cachedUserId;
+        }
     }
 
     public static SharedPreferences getSharedPreferences(Context context) {
@@ -159,26 +178,36 @@ public final class PixelAodSettings {
     }
 
     private static String getValue(Context context, String key) {
-        load(context, false);
+        load(context, false, SelectedUserScope.resolveSelectedUserId());
         synchronized (CACHE) {
             return CACHE.get(key);
         }
     }
 
-    private static void load(Context context, boolean force) {
+    private static void load(Context context, boolean force, int requestedUserId) {
         if (context == null) {
             return;
         }
+        int userId = Math.max(0, requestedUserId);
         long now = android.os.SystemClock.uptimeMillis();
         synchronized (CACHE) {
+            if (cachedUserId != userId) {
+                // Clear before querying so a temporarily unavailable target-user provider can never
+                // leak the previous user's presentation preferences through the cache.
+                CACHE.clear();
+                cachedUserId = userId;
+                lastLoadMillis = 0L;
+            }
             if (!force && now - lastLoadMillis < CACHE_TTL_MILLIS) {
                 return;
             }
             lastLoadMillis = now;
         }
         HashMap<String, String> values = new HashMap<>();
+        android.net.Uri queryUri = SelectedUserScope.settingsUriForUser(
+                context, PixelAodSettingsProvider.URI, userId);
         try (Cursor cursor = context.getContentResolver().query(
-                PixelAodSettingsProvider.URI, null, null, null, null)) {
+                queryUri, null, null, null, null)) {
             if (cursor == null) {
                 return;
             }
@@ -193,6 +222,9 @@ public final class PixelAodSettings {
             return;
         }
         synchronized (CACHE) {
+            if (cachedUserId != userId) {
+                return;
+            }
             CACHE.clear();
             CACHE.putAll(values);
         }

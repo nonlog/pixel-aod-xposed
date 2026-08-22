@@ -46,40 +46,39 @@ final class OosAodLifecycleAdapter {
     }
 
     static PowerPolicyDecision evaluatePowerPolicy(boolean powerSaveMode,
-            boolean batteryValid, boolean lowBattery, boolean charging,
-            int levelPercent, int thresholdPercent) {
+            boolean vendorLowBatterySuppressed, boolean batteryValid,
+            boolean systemLowBattery, boolean charging, int levelPercent) {
         if (powerSaveMode) {
-            return PowerPolicyRule.POWER_SAVE_HIDE.toDecision(levelPercent, thresholdPercent);
+            return PowerPolicyRule.POWER_SAVE_HIDE.toDecision(levelPercent);
         }
-        if (batteryValid && lowBattery && !charging) {
-            return PowerPolicyRule.LOW_BATTERY_HIDE.toDecision(levelPercent, thresholdPercent);
+        if (vendorLowBatterySuppressed) {
+            return PowerPolicyRule.VENDOR_LOW_BATTERY_HIDE.toDecision(levelPercent);
         }
-        if (batteryValid && lowBattery) {
+        if (batteryValid && systemLowBattery && charging) {
             return PowerPolicyRule.LOW_BATTERY_CHARGING_ALLOW.toDecision(
-                    levelPercent, thresholdPercent);
+                    levelPercent);
+        }
+        if (batteryValid && systemLowBattery) {
+            return PowerPolicyRule.LOW_BATTERY_OBSERVED_ALLOW.toDecision(levelPercent);
         }
         if (batteryValid && charging) {
-            return PowerPolicyRule.CHARGING_ALLOW.toDecision(levelPercent, thresholdPercent);
+            return PowerPolicyRule.CHARGING_ALLOW.toDecision(levelPercent);
         }
         if (!batteryValid) {
             return PowerPolicyRule.BATTERY_UNKNOWN_ALLOW.toDecision(
-                    levelPercent, thresholdPercent);
+                    levelPercent);
         }
-        return PowerPolicyRule.NORMAL_ALLOW.toDecision(levelPercent, thresholdPercent);
+        return PowerPolicyRule.NORMAL_ALLOW.toDecision(levelPercent);
     }
 
     static boolean isPowerPolicyDenial(String reason) {
-        return "power-save-mode".equals(reason) || "low-battery".equals(reason);
+        return "power-save-mode".equals(reason)
+                || "vendor-low-battery-suppressed".equals(reason);
     }
 
-    static boolean shouldReassertAodAfterPolicy(boolean interactive,
-            boolean modulePolicyAllowsDisplay, boolean shouldApplyModuleAod,
-            boolean shouldKeepNativeDozeAlive, String modulePolicyReason) {
-        return !interactive
-                && modulePolicyAllowsDisplay
-                && shouldApplyModuleAod
-                && shouldKeepNativeDozeAlive
-                && !isPowerPolicyDenial(modulePolicyReason);
+    static boolean shouldPresentVendorTransientScene(boolean armed,
+            boolean interactive, boolean displayAod) {
+        return armed && !interactive && displayAod;
     }
 
     static void recordPowerPolicyDecision(PowerPolicyDecision decision, String source,
@@ -87,7 +86,7 @@ final class OosAodLifecycleAdapter {
             Supplier<String> stateDescriptionSupplier) {
         PowerPolicyDecision safeDecision = decision != null
                 ? decision
-                : PowerPolicyRule.BATTERY_UNKNOWN_ALLOW.toDecision(-1, -1);
+                : PowerPolicyRule.BATTERY_UNKNOWN_ALLOW.toDecision(-1);
         PixelAodLog.log("OOS AOD power policy mapping", () -> {
             String batteryDescription = valueFrom(batteryDescriptionSupplier);
             String stateDescription = valueFrom(stateDescriptionSupplier);
@@ -96,7 +95,6 @@ final class OosAodLifecycleAdapter {
                 + " allowsDisplay=" + safeDecision.allowsDisplay
                 + " futureAction=" + safeDecision.futureAction
                 + " powerSave=" + powerSaveMode
-                + " threshold=" + safeDecision.thresholdPercent
                 + " level=" + safeDecision.levelPercent
                 + " source=" + normalizeSource(source)
                 + " battery={" + (TextUtils.isEmpty(batteryDescription)
@@ -182,9 +180,10 @@ final class OosAodLifecycleAdapter {
         boolean shouldDrawPixelOverlay = shouldApplyModuleAod
                 && !proximityBlocked
                 && !expandedShadeBlocked;
-        boolean shouldKeepNativeDozeAlive = policy.allowsDisplay
-                && policy.continuousAllowed
-                && (continuousSessionActive || shouldKeepDozeScreenActive(state));
+        // M9: presentation policy never grants authority to extend the vendor Doze lifecycle.
+        // Keep the field for diagnostics/compatibility while consumers migrate, but it is now
+        // intentionally always false.
+        boolean shouldKeepNativeDozeAlive = false;
         boolean nativeAodTransition = state != null
                 && (state.displayAod
                 || state.entryDelay
@@ -195,8 +194,7 @@ final class OosAodLifecycleAdapter {
                 && state != null
                 && !state.interactive
                 && (shouldApplyModuleAod || nativeAodTransition);
-        boolean shouldAllowNativeHideCallbacks = shouldAllowNativeHideCallbacks(
-                source, state, policy, shouldKeepNativeDozeAlive);
+        boolean shouldAllowNativeHideCallbacks = true;
         return new AodPolicyDecision(
                 source,
                 trace,
@@ -237,12 +235,6 @@ final class OosAodLifecycleAdapter {
                 && modulePolicy.continuousAllowed;
     }
 
-    static boolean shouldKeepDozeScreenActive(PixelAodClockView.AodLifecycleState state) {
-        return state != null
-                && !state.interactive
-                && (state.revealBlocked || state.recentOverlayVisible || shouldDrawPixelAod(state));
-    }
-
     static boolean shouldBridgeLockscreenDuringAodEntry(
             PixelAodClockView.AodLifecycleState state, long windowMillis) {
         return state != null
@@ -278,18 +270,15 @@ final class OosAodLifecycleAdapter {
     private static String keepDozeReason(boolean shouldKeepNativeDozeAlive,
             boolean lifecycleWantsPixelOverlay, ModulePolicy modulePolicy) {
         if (shouldKeepNativeDozeAlive) {
-            return "recent-pixel-aod";
+            return "deprecated-module-doze-ownership";
         }
         if (!modulePolicy.allowsDisplay) {
             return modulePolicy.reason;
         }
-        if (modulePolicy.triggerBriefAllowed) {
-            return "trigger-brief-allows-native-hide";
-        }
         if (!lifecycleWantsPixelOverlay) {
             return "lifecycle-not-ready";
         }
-        return "native-doze-not-needed";
+        return "vendor-lifecycle-authoritative";
     }
 
     private static String stockSuppressionReason(boolean shouldSuppressStockAodViews,
@@ -313,45 +302,22 @@ final class OosAodLifecycleAdapter {
         return "native-aod-transition";
     }
 
-    private static boolean shouldAllowNativeHideCallbacks(String source,
-            PixelAodClockView.AodLifecycleState state, ModulePolicy modulePolicy,
-            boolean shouldKeepNativeDozeAlive) {
-        if (!shouldKeepNativeDozeAlive) {
-            return true;
-        }
-        if (isNativeTimeoutCallback(source) && state != null && !state.interactive) {
-            return true;
-        }
-        return false;
-    }
-
-    private static boolean isNativeTimeoutCallback(String source) {
-        return sourceContains(source, "notifyHideCallback")
-                || sourceContains(source, "AodRecord#onEnergySavingNotifyHide");
-    }
-
     private static String nativeHideCallbackReason(boolean shouldAllowNativeHideCallbacks,
             boolean shouldKeepNativeDozeAlive, boolean lifecycleWantsPixelOverlay,
             ModulePolicy modulePolicy) {
         if (!shouldAllowNativeHideCallbacks) {
-            return "module-keeps-native-doze";
+            return "invalid-module-hide-block";
         }
         if (shouldKeepNativeDozeAlive) {
-            return "native-timeout-callback";
+            return "deprecated-module-doze-ownership";
         }
         if (!modulePolicy.allowsDisplay) {
             return modulePolicy.reason;
         }
-        if (modulePolicy.triggerBriefAllowed) {
-            return "trigger-brief-allows-native-hide";
-        }
         if (!lifecycleWantsPixelOverlay) {
             return "lifecycle-not-ready";
         }
-        if (!shouldKeepNativeDozeAlive) {
-            return "native-doze-not-needed";
-        }
-        return "allowed";
+        return "vendor-hide-authoritative";
     }
 
     private static Event classify(String source) {
@@ -449,9 +415,9 @@ final class OosAodLifecycleAdapter {
         Event event = classifyTrigger(combined);
         switch (event) {
             case TRIGGER_PICKUP:
-                return TriggerRule.PICKUP_BRIEF.toBehavior();
+                return TriggerRule.PICKUP_VENDOR_TRANSIENT.toBehavior();
             case TRIGGER_TAP:
-                return TriggerRule.TAP_BRIEF.toBehavior();
+                return TriggerRule.TAP_VENDOR_TRANSIENT.toBehavior();
             case TRIGGER_POCKET:
                 return TriggerRule.POCKET_HIDE.toBehavior();
             case TRIGGER_PROXIMITY:
@@ -552,7 +518,7 @@ final class OosAodLifecycleAdapter {
     }
 
     private enum DisplayMode {
-        TRIGGER_ONLY_BRIEF_DISPLAY("trigger-only-brief-display"),
+        TRIGGER_ONLY_VENDOR_TRANSIENT("trigger-only-vendor-transient"),
         SENSOR_GUARD_HIDE("sensor-guard-hide"),
         SENSOR_GUARD_RELEASE("sensor-guard-release"),
         SENSOR_GUARD_UNKNOWN("sensor-guard-unknown"),
@@ -580,8 +546,10 @@ final class OosAodLifecycleAdapter {
     private enum PowerPolicyRule {
         POWER_SAVE_HIDE("power-save-mode", "system-power-saver", false,
                 "hide-pixel-aod"),
-        LOW_BATTERY_HIDE("low-battery", "battery-low", false,
-                "hide-pixel-aod"),
+        VENDOR_LOW_BATTERY_HIDE("vendor-low-battery-suppressed", "vendor-aod-suppressor",
+                false, "hide-pixel-aod"),
+        LOW_BATTERY_OBSERVED_ALLOW("low-battery-observed", "battery-diagnostic", true,
+                "observe-only"),
         LOW_BATTERY_CHARGING_ALLOW("low-battery-while-charging", "battery-charging",
                 true, "allow-pixel-aod"),
         CHARGING_ALLOW("charging", "battery-charging", true,
@@ -604,9 +572,9 @@ final class OosAodLifecycleAdapter {
             this.futureAction = futureAction;
         }
 
-        PowerPolicyDecision toDecision(int levelPercent, int thresholdPercent) {
+        PowerPolicyDecision toDecision(int levelPercent) {
             return new PowerPolicyDecision(allowsDisplay, reason, category, futureAction,
-                    levelPercent, thresholdPercent);
+                    levelPercent);
         }
     }
 
@@ -731,12 +699,12 @@ final class OosAodLifecycleAdapter {
     }
 
     private enum TriggerRule {
-        PICKUP_BRIEF("pickup-brief", Event.TRIGGER_PICKUP,
-                TriggerCategory.DISPLAY_WAKE, DisplayMode.TRIGGER_ONLY_BRIEF_DISPLAY,
-                "brief-show-candidate", true, false, false),
-        TAP_BRIEF("tap-brief", Event.TRIGGER_TAP,
-                TriggerCategory.DISPLAY_WAKE, DisplayMode.TRIGGER_ONLY_BRIEF_DISPLAY,
-                "brief-show-candidate", true, false, false),
+        PICKUP_VENDOR_TRANSIENT("pickup-vendor-transient", Event.TRIGGER_PICKUP,
+                TriggerCategory.DISPLAY_WAKE, DisplayMode.TRIGGER_ONLY_VENDOR_TRANSIENT,
+                "observe-vendor-transient-scene", true, false, false),
+        TAP_VENDOR_TRANSIENT("tap-vendor-transient", Event.TRIGGER_TAP,
+                TriggerCategory.DISPLAY_WAKE, DisplayMode.TRIGGER_ONLY_VENDOR_TRANSIENT,
+                "observe-vendor-transient-scene", true, false, false),
         POCKET_HIDE("pocket-hide", Event.TRIGGER_POCKET,
                 TriggerCategory.SENSOR_GUARD, DisplayMode.SENSOR_GUARD_HIDE,
                 "block-brief-and-continuous-aod", false, true, false),
@@ -792,16 +760,14 @@ final class OosAodLifecycleAdapter {
         final String categoryLabel;
         final String futureAction;
         final int levelPercent;
-        final int thresholdPercent;
 
         PowerPolicyDecision(boolean allowsDisplay, String reason, String categoryLabel,
-                String futureAction, int levelPercent, int thresholdPercent) {
+                String futureAction, int levelPercent) {
             this.allowsDisplay = allowsDisplay;
             this.reason = reason;
             this.categoryLabel = categoryLabel;
             this.futureAction = futureAction;
             this.levelPercent = levelPercent;
-            this.thresholdPercent = thresholdPercent;
         }
     }
 

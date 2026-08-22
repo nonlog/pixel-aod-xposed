@@ -45,7 +45,26 @@ final class PixelAodRuntimeState {
     }
 
     static boolean shouldAnimateLockscreenToAodWeight() {
-        return PixelAodClockView.shouldAnimateLockscreenToAodWeight();
+        return PixelAodClockView.shouldAnimateLockscreenToAodWeight()
+                && PixelAodHook.shouldAnimateVendorScreenOffPresentation();
+    }
+
+    static boolean shouldAnimateScreenOffPresentation() {
+        return PixelAodHook.shouldAnimateVendorScreenOffPresentation()
+                && SystemAnimationScalePolicy.animationsEnabled();
+    }
+
+    static boolean canConsumeVendorDozeTransitionProgress() {
+        return PixelAodHook.canConsumeVendorDozeTransitionProgress()
+                && SystemAnimationScalePolicy.animationsEnabled();
+    }
+
+    static String describeSystemAnimationScale() {
+        return SystemAnimationScalePolicy.describe();
+    }
+
+    static String describeScreenOffAnimationEligibility() {
+        return PixelAodHook.describeVendorScreenOffAnimationEligibility();
     }
 
     static boolean isInAodEntryTransitionWindow(long windowMillis) {
@@ -54,6 +73,10 @@ final class PixelAodRuntimeState {
 
     static boolean shouldBridgeLockscreenDuringAodEntry(Context context, long windowMillis) {
         return PixelAodClockView.shouldBridgeLockscreenDuringAodEntry(context, windowMillis);
+    }
+
+    static boolean isDirectGoneHandoffActive() {
+        return PixelAodClockView.isDirectGoneHandoffActive();
     }
 
     static PixelAodClockView.BurnInOffset consumeRecentBurnInOffset(long windowMillis) {

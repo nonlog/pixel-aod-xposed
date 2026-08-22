@@ -209,6 +209,29 @@ final class CouiClockPluginHostController {
         refreshAll(source + "#pre-lockscreen-data");
     }
 
+    static void suppressForDirectGone(String source) {
+        runOnMain(() -> {
+            int hidden = 0;
+            for (HostRecord record : snapshotRecords()) {
+                if (record == null || record.host.getParent() != record.root) {
+                    continue;
+                }
+                record.nonLockscreenAodPrearmed = false;
+                record.prearmedAodScene = null;
+                record.aodExitHandoffPending = false;
+                // Native teardown owns the real Gone transition. Keep its AOD clock suppressed
+                // until teardown rather than restoring a stock clock that could flash for a frame.
+                record.suppressNativeDraw = true;
+                suppressNativeVisuals(record);
+                record.host.setPrimaryVisible(false, source + "#direct-gone");
+                hidden++;
+            }
+            PixelAodLog.log("COUI direct-to-Gone suppression rendererMode=COUI_PORT"
+                    + " hiddenHosts=" + hidden
+                    + " source=" + source);
+        });
+    }
+
     static void refreshSemanticData(String source) {
         refreshAll(source + "#semantic");
     }
@@ -420,6 +443,14 @@ final class CouiClockPluginHostController {
             synchronized (ROOT_UNAVAILABLE_LOGGED) {
                 ROOT_UNAVAILABLE_LOGGED.remove(plugin);
             }
+            int displayId = PrimaryDisplayPolicy.displayId(root);
+            if (!PrimaryDisplayPolicy.isPrimaryDisplayId(displayId)) {
+                PixelAodLog.log("skipped COUI ClockPlugin attach reason=non-primary-display"
+                        + " displayId=" + displayId
+                        + " rootId=" + identity(root)
+                        + " source=" + source);
+                return;
+            }
             HostRecord record = ensureHost(root, plugin, source);
             if (record == null) {
                 return;
@@ -493,6 +524,20 @@ final class CouiClockPluginHostController {
         if (context == null) {
             return;
         }
+        if (PixelAodRuntimeState.isDirectGoneHandoffActive()) {
+            record.nonLockscreenAodPrearmed = false;
+            record.prearmedAodScene = null;
+            record.aodExitHandoffPending = false;
+            record.suppressNativeDraw = true;
+            suppressNativeVisuals(record);
+            record.host.setPrimaryVisible(false, source + "#direct-gone-render-block");
+            PixelAodLog.log("blocked stale ClockPlugin render during native direct-to-Gone"
+                    + " rendererMode=COUI_PORT"
+                    + " rootId=" + identity(record.root)
+                    + " uiState=" + renderState.uiState
+                    + " source=" + source);
+            return;
+        }
 
         CouiClockSemanticAdapter.Snapshot semantic = CouiClockSemanticAdapter.snapshot(context);
         applySemanticData(record, semantic, source + "#semantic");
@@ -557,6 +602,19 @@ final class CouiClockPluginHostController {
         CouiClockPresentationModel next = mapping.presentation();
         boolean exitingAod = previous != null && previous.dozing() && !next.dozing();
         boolean enteringAod = previous != null && !previous.dozing() && next.dozing();
+        boolean presentationAnimate = mapping.animate();
+        if (enteringAod && presentationAnimate
+                && !PixelAodRuntimeState.shouldAnimateScreenOffPresentation()) {
+            presentationAnimate = false;
+            PixelAodLog.i("COUI screen-off presentation snapped to animation-policy endpoint"
+                    + " rendererMode=COUI_PORT"
+                    + " rootId=" + identity(record.root)
+                    + " eligibility={"
+                    + PixelAodRuntimeState.describeScreenOffAnimationEligibility() + "}"
+                    + " systemAnimation={"
+                    + PixelAodRuntimeState.describeSystemAnimationScale() + "}"
+                    + " source=" + source);
+        }
         boolean normalizeUnlockedAodEntry = enteringAod
                 && !PixelAodRuntimeState.wasScreenOffFromInteractiveLockscreen();
 
@@ -578,11 +636,11 @@ final class CouiClockPluginHostController {
                     + " entryScene=" + normalizedEntry.requestedScene()
                     + " contentKind=" + normalizedEntry.content().kind()
                     + " source=" + source);
-            record.host.beginAodEntry(normalizedEntry, mapping.animate(), source + "#begin-aod");
+            record.host.beginAodEntry(normalizedEntry, presentationAnimate, source + "#begin-aod");
         } else {
             // This is the important COUI exit contract: AOD_SMALL -> LS_SMALL is one present()
             // call, so X/Y/burn-in removal and variable-font weight morph start on the same frame.
-            record.host.present(next, mapping.animate(), source);
+            record.host.present(next, presentationAnimate, source);
         }
         record.generation = nextGeneration();
 

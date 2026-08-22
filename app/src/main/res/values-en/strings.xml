@@ -35,13 +35,14 @@
     <string name="desc_udfps_success_ripple">Show a Monet-colored full-screen ripple after successful authentication; works independently with the native OOS fingerprint icon</string>
     <string name="title_udfps_aod_exit_animation">AOD fingerprint exit animation</string>
     <string name="desc_udfps_aod_exit_animation">Use the COUI fingerprint fade-out when leaving AOD; disable to use the native OPlus exit animation</string>
-    <string name="title_lockscreen_policy">Lockscreen Policy</string>
-    <string name="desc_lockscreen_policy">Fix OOS lockscreen rules</string>
+    <string name="lockscreen_notifications_compatibility_note">This only fixes an OOS bug that can hide all eligible lockscreen notifications after unlocking once and turning the screen off again. System privacy, media, system-notification, and low-importance rules remain owned by SystemUI.</string>
+    <string name="title_lockscreen_policy">OOS lockscreen notification compatibility fix</string>
+    <string name="desc_lockscreen_policy">Keep otherwise eligible lockscreen notifications from being incorrectly hidden after unlock then screen-off</string>
     <string name="title_debug_logging">Debug Logging</string>
     <string name="desc_debug_logging">Output detailed diagnostic logs</string>
     <string name="title_aod_weight">AOD Weight</string>
     <string name="title_lockscreen_weight">Lockscreen Weight</string>
-    <string name="restart_systemui">Restart SystemUI (Needs Root)</string>
+    <string name="restart_systemui">Restart SystemUI</string>
     <string name="restart_systemui_success">Requested SystemUI restart</string>
     <string name="restart_systemui_failed">Failed to restart SystemUI</string>
     <string name="title_pocket_mode">Pocket Mode</string>

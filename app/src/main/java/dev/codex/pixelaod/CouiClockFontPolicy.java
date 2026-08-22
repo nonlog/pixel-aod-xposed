@@ -45,6 +45,22 @@ final class CouiClockFontPolicy {
                 ? GlyphMode.MORPHING_LARGE : GlyphMode.FOUR_SET_CROSSFADE;
     }
 
+    static FallbackSet metricSetFor(CouiClockPresentationModel.Scene scene, boolean dozing,
+            boolean morphRuntimeAvailable) {
+        CouiClockPresentationModel.Scene normalized = scene == null
+                ? CouiClockPresentationModel.Scene.LARGE : scene;
+        boolean large = normalized == CouiClockPresentationModel.Scene.LARGE;
+        if (morphRuntimeAvailable) {
+            // One persistent TextAnimator glyph set must keep stable advance cells across a
+            // weight-only LS-to-AOD handoff. Scene-size changes still select the other metric set.
+            return large ? FallbackSet.LOCKSCREEN_LARGE : FallbackSet.LOCKSCREEN_SMALL;
+        }
+        if (dozing) {
+            return large ? FallbackSet.AOD_LARGE : FallbackSet.AOD_SMALL;
+        }
+        return large ? FallbackSet.LOCKSCREEN_LARGE : FallbackSet.LOCKSCREEN_SMALL;
+    }
+
     static boolean fallbackSetVisible(FallbackSet set,
             CouiClockPresentationModel.Scene scene, boolean dozing) {
         if (set == null) {

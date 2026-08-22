@@ -15,5 +15,5 @@ local.properties
 .agents/
 screenshots/
 
-# Local supervisor checkpoints and secrets (never commit)
+# Local checkpoints, test artifacts and secrets (never commit)
 .local/

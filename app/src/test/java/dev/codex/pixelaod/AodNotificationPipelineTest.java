@@ -29,29 +29,47 @@ public final class AodNotificationPipelineTest {
     }
 
     @Test
-    public void silentDefaultImportanceRemainsEligibleButLowOrLessIsRejected() {
-        int silent = AodNotificationPipeline.NOTIFICATION_FLAG_SILENT;
-        assertFalse(AodNotificationPipeline.shouldHideForLockscreenImportance(silent, 3));
-        assertTrue(AodNotificationPipeline.shouldHideForLockscreenImportance(silent, 2));
-        assertTrue(AodNotificationPipeline.shouldHideForLockscreenImportance(silent, 1));
-        assertFalse(AodNotificationPipeline.isLowImportanceForLockscreenPolicy(
-                AodNotificationPipeline.NotificationManagerImportance.UNKNOWN));
+    public void nativeLockscreenVisibilityResultIsConsumedWithoutLocalImportancePolicy() {
+        assertTrue(AodNotificationPipeline.isVisibleFromNativeDecision(false, null));
+        assertTrue(AodNotificationPipeline.isVisibleFromNativeDecision(null, false));
+        assertFalse(AodNotificationPipeline.isVisibleFromNativeDecision(true, false));
+        assertFalse(AodNotificationPipeline.isVisibleFromNativeDecision(false, true));
+        assertFalse(AodNotificationPipeline.isVisibleFromNativeDecision(null, null));
     }
 
     @Test
-    public void preservesSystemTransportAndSecretExclusions() {
-        assertTrue(AodNotificationPipeline.isExcludedFromLockscreenPolicyOverride(
-                "com.android.systemui", null, Notification.VISIBILITY_PRIVATE, false));
-        assertTrue(AodNotificationPipeline.isExcludedFromLockscreenPolicyOverride(
-                "com.example", Notification.CATEGORY_TRANSPORT, Notification.VISIBILITY_PRIVATE, false));
-        assertTrue(AodNotificationPipeline.isExcludedFromLockscreenPolicyOverride(
-                "com.example", null, Notification.VISIBILITY_SECRET, false));
-        assertTrue(AodNotificationPipeline.isExcludedFromLockscreenPolicyOverride(
-                "com.example", null, Notification.VISIBILITY_PRIVATE, true));
-        assertTrue(AodNotificationPipeline.isExcludedFromLockscreenPolicyOverride(
-                "com.example", null, Notification.VISIBILITY_PRIVATE, false, true));
-        assertFalse(AodNotificationPipeline.isExcludedFromLockscreenPolicyOverride(
-                "com.arn.scrobble", null, Notification.VISIBILITY_PRIVATE, false));
+    public void oosLockscreenCompatibilityOnlyCorrectsOtherwiseEligibleNotifications() {
+        assertTrue(AodNotificationPipeline.isEligibleForOosLockscreenVisibilityCorrection(
+                "com.example", false, true, null,
+                Notification.VISIBILITY_PRIVATE, false, false, 3));
+        assertFalse(AodNotificationPipeline.isEligibleForOosLockscreenVisibilityCorrection(
+                "com.android.systemui", false, true, null,
+                Notification.VISIBILITY_PRIVATE, false, false, 3));
+        assertFalse(AodNotificationPipeline.isEligibleForOosLockscreenVisibilityCorrection(
+                "com.example", false, true, Notification.CATEGORY_TRANSPORT,
+                Notification.VISIBILITY_PRIVATE, false, false, 3));
+        assertFalse(AodNotificationPipeline.isEligibleForOosLockscreenVisibilityCorrection(
+                "com.example", false, true, null,
+                Notification.VISIBILITY_SECRET, false, false, 3));
+        assertFalse(AodNotificationPipeline.isEligibleForOosLockscreenVisibilityCorrection(
+                "com.example", false, true, null,
+                Notification.VISIBILITY_PRIVATE, true, false, 3));
+        assertFalse(AodNotificationPipeline.isEligibleForOosLockscreenVisibilityCorrection(
+                "com.example", false, true, null,
+                Notification.VISIBILITY_PRIVATE, false, true, 3));
+        assertFalse(AodNotificationPipeline.isEligibleForOosLockscreenVisibilityCorrection(
+                "com.example", false, true, null,
+                Notification.VISIBILITY_PRIVATE, false, false, 2));
+    }
+
+    @Test
+    public void moduleTestNotificationRemainsUsableForCompatibilityVerification() {
+        assertFalse(AodNotificationPipeline.isEligibleForOosLockscreenVisibilityCorrection(
+                AodNotificationPipeline.MODULE_PACKAGE, false, true, null,
+                Notification.VISIBILITY_PRIVATE, false, false, 3));
+        assertTrue(AodNotificationPipeline.isEligibleForOosLockscreenVisibilityCorrection(
+                AodNotificationPipeline.MODULE_PACKAGE, true, true, null,
+                Notification.VISIBILITY_PRIVATE, false, false, 2));
     }
 
     @Test

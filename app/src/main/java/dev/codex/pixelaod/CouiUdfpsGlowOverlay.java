@@ -197,6 +197,14 @@ final class CouiUdfpsGlowOverlay {
             cancelSuccessAnimator();
             cancelPressAnimator();
             spec = newSpec;
+            if (!SystemAnimationScalePolicy.animationsEnabled()) {
+                mode = MODE_NONE;
+                pressProgress = 0f;
+                successProgress = 0f;
+                setVisibility(INVISIBLE);
+                invalidate();
+                return;
+            }
             mode = MODE_SUCCESS;
             successProgress = 0f;
             setVisibility(VISIBLE);
@@ -248,6 +256,17 @@ final class CouiUdfpsGlowOverlay {
 
         private void animatePressTo(float target) {
             cancelPressAnimator();
+            if (!SystemAnimationScalePolicy.animationsEnabled()) {
+                pressProgress = target;
+                if (target <= 0f && mode == MODE_PRESS) {
+                    mode = MODE_NONE;
+                    setVisibility(INVISIBLE);
+                } else if (target > 0f) {
+                    setVisibility(VISIBLE);
+                }
+                invalidate();
+                return;
+            }
             float start = pressProgress;
             ValueAnimator animator = ValueAnimator.ofFloat(start, target);
             animator.setDuration(target > start ? PRESS_EXPAND_MS : PRESS_RETRACT_MS);

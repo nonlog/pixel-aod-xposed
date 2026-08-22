@@ -24,7 +24,7 @@ leaving the platform's display, biometric, and power-management ownership intact
 - Android API 26 or newer.
 - OPlus/OnePlus SystemUI implementation targeted by this module.
 - LSPosed or Vector with modern libxposed API version 101 support.
-- Scope the module to `com.android.systemui` in the manager application.
+- Modern metadata declares `staticScope=true` with the sole scope `com.android.systemui`; supported LSPosed/Vector builds do not require manual scope selection.
 
 This project is device- and SystemUI-version-sensitive. Treat it as experimental outside
 the OPlus environment it was developed against.
@@ -54,8 +54,8 @@ Install as an upgrade to preserve the module configuration:
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Enable the module and grant the SystemUI scope in LSPosed or Vector. Restart SystemUI
-or reboot before validating behavior.
+Enable the module in LSPosed or Vector; `staticScope=true` already targets `com.android.systemui`. Restart SystemUI
+or reboot only when a newly installed module build needs to be loaded before runtime validation.
 
 ## Diagnostics
 
@@ -77,7 +77,7 @@ restart or exceed logcat's ring buffer.
 - Hook registration is grouped by lifecycle, notification, surface/stock, and UDFPS domain installers while retaining one process-level install gate.
 - `PixelAodUdfpsRuntimePolicy` separates system-primary-glyph release ownership from optional replacement and success-ripple ownership. The release-default path does not take over OPlus primary fingerprint visuals.
 
-See `docs/M8_ARCHITECTURE_CONVERGENCE.md` for convergence gates and rationale.
+See `docs/M8_ARCHITECTURE_CONVERGENCE.md` for convergence gates and rationale. Current uncommitted Android 17 parity/M9 work is tracked in `docs/M9_IMPLEMENTATION_STATUS.md`.
 
 ## Repository Layout
 
@@ -89,6 +89,7 @@ See `docs/M8_ARCHITECTURE_CONVERGENCE.md` for convergence gates and rationale.
 ## Development Branches
 
 - `master`: stable integration branch.
+- `agent/m9-implementation`: current Android 17 parity/M9 implementation branch until integration.
 - `agent/coui-port`: validated COUI-port development/history branch.
 - Other `agent/*` branches may be used for isolated experiments.
 

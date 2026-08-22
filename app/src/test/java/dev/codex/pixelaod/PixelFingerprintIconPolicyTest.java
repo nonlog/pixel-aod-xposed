@@ -80,40 +80,51 @@ public final class PixelFingerprintIconPolicyTest {
     }
 
     @Test
-    public void powerPolicyDenialDoesNotRearmCarrierWhileScreenIsNonInteractive() {
-        OosAodLifecycleAdapter.PowerPolicyDecision automaticLowBattery =
+    public void vendorPowerPolicyDenialDoesNotRearmCarrierWhileScreenIsNonInteractive() {
+        OosAodLifecycleAdapter.PowerPolicyDecision vendorLowBattery =
                 OosAodLifecycleAdapter.evaluatePowerPolicy(
-                        false, true, true, false, 12, 15);
+                        false, true, true, true, false, 12);
         OosAodLifecycleAdapter.PowerPolicyDecision manualPowerSaver =
                 OosAodLifecycleAdapter.evaluatePowerPolicy(
-                        true, true, false, false, 98, 15);
+                        true, false, true, false, false, 98);
 
-        assertFalse(automaticLowBattery.allowsDisplay);
+        assertFalse(vendorLowBattery.allowsDisplay);
         assertFalse(manualPowerSaver.allowsDisplay);
         assertTrue(OosAodLifecycleAdapter.isPowerPolicyDenial(
-                automaticLowBattery.reason));
+                vendorLowBattery.reason));
         assertTrue(OosAodLifecycleAdapter.isPowerPolicyDenial(
                 manualPowerSaver.reason));
         assertFalse(PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
-                false, automaticLowBattery.allowsDisplay, true));
+                false, vendorLowBattery.allowsDisplay, true));
         assertFalse(PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
                 false, manualPowerSaver.allowsDisplay, true));
         assertEquals(PixelFingerprintIconPolicy.RefreshMode.STYLE_EXISTING_NATIVE,
                 PixelFingerprintIconPolicy.refreshMode(
-                        false, automaticLowBattery.allowsDisplay, true, true));
+                        false, vendorLowBattery.allowsDisplay, true, true));
         assertEquals(PixelFingerprintIconPolicy.RefreshMode.SKIP,
                 PixelFingerprintIconPolicy.refreshMode(
-                        false, automaticLowBattery.allowsDisplay, true, false));
+                        false, vendorLowBattery.allowsDisplay, true, false));
         assertEquals(PixelFingerprintIconPolicy.RefreshMode.STYLE_EXISTING_NATIVE,
                 PixelFingerprintIconPolicy.refreshMode(
                         false, manualPowerSaver.allowsDisplay, true, true));
     }
 
     @Test
+    public void rawLowBatteryObservationDoesNotSuppressAodWithoutVendorSignal() {
+        OosAodLifecycleAdapter.PowerPolicyDecision ordinaryLowBattery =
+                OosAodLifecycleAdapter.evaluatePowerPolicy(
+                        false, false, true, true, false, 12);
+
+        assertTrue(ordinaryLowBattery.allowsDisplay);
+        assertFalse(OosAodLifecycleAdapter.isPowerPolicyDenial(
+                ordinaryLowBattery.reason));
+    }
+
+    @Test
     public void allowedRecentAodOverlayStillRefreshesForProximityRecovery() {
         OosAodLifecycleAdapter.PowerPolicyDecision allowed =
                 OosAodLifecycleAdapter.evaluatePowerPolicy(
-                        false, true, false, false, 80, 15);
+                        false, false, true, false, false, 80);
 
         assertTrue(allowed.allowsDisplay);
         assertFalse(OosAodLifecycleAdapter.isPowerPolicyDenial(allowed.reason));
@@ -163,20 +174,5 @@ public final class PixelFingerprintIconPolicyTest {
         assertFalse(PixelFingerprintIconPolicy.shouldRefreshAfterAodPolicy(
                 false, decision.modulePolicyAllowsDisplay,
                 OosAodLifecycleAdapter.isPowerPolicyDenial(decision.modulePolicyReason)));
-        assertFalse(OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
-                false, decision.modulePolicyAllowsDisplay, decision.shouldApplyModuleAod,
-                decision.shouldKeepNativeDozeAlive, decision.modulePolicyReason));
-    }
-
-    @Test
-    public void allowedAodCanReassertOnlyWhileNativeDozeIsKept() {
-        assertTrue(OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
-                false, true, true, true, "power-policy-allowed"));
-        assertFalse(OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
-                false, true, true, false, "power-policy-allowed"));
-        assertFalse(OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
-                true, true, true, true, "power-policy-allowed"));
-        assertFalse(OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
-                false, false, false, false, "low-battery"));
     }
 }

@@ -57,7 +57,7 @@ final class PixelFingerprintBackgroundDrawable extends Drawable {
             animator.cancel();
             animator = null;
         }
-        if (!animate || getCallback() == null) {
+        if (!SystemAnimationScalePolicy.shouldAnimate(animate) || getCallback() == null) {
             opacity = targetOpacity;
             invalidateSelf();
             return;

@@ -18,7 +18,6 @@ import java.util.Locale;
 import java.util.Map;
 
 final class AodNotificationPipeline {
-    static final int NOTIFICATION_FLAG_SILENT = 0x00020000;
     private static final int NOTIFICATION_FLAG_GROUP_SUMMARY = 0x00000200;
     private static final int NOTIFICATION_FLAG_AUTOGROUP_SUMMARY = 0x00000400;
     static final String MODULE_PACKAGE = "dev.codex.pixelaod";
@@ -32,15 +31,13 @@ final class AodNotificationPipeline {
             StatusBarNotification[] notifications,
             Map<String, RankingSnapshot> rankings,
             Map<String, LockscreenVisibilityDecision> lockscreenDecisions,
-            boolean lockscreenPolicyEnabled,
             String trace) {
         if (notifications == null || notifications.length == 0) {
             return EMPTY_NOTIFICATIONS;
         }
         ArrayList<StatusBarNotification> list = new ArrayList<>(notifications.length);
         for (StatusBarNotification sbn : notifications) {
-            if (isLockscreenVisibleNotification(context, sbn, rankings, lockscreenDecisions,
-                    lockscreenPolicyEnabled, trace)) {
+            if (isLockscreenVisibleNotification(context, sbn, rankings, lockscreenDecisions, trace)) {
                 list.add(sbn);
             }
         }
@@ -50,7 +47,6 @@ final class AodNotificationPipeline {
     static boolean isLockscreenVisibleNotification(Context context, StatusBarNotification sbn,
             Map<String, RankingSnapshot> rankings,
             Map<String, LockscreenVisibilityDecision> lockscreenDecisions,
-            boolean lockscreenPolicyEnabled,
             String trace) {
         if (sbn == null || sbn.getNotification() == null || sbn.getNotification().getSmallIcon() == null) {
             return false;
@@ -91,22 +87,6 @@ final class AodNotificationPipeline {
         // Parity: anything still shown on the lockscreen must stay eligible for AOD icons.
         // Do not apply a stricter silent/low-importance gate than the lockscreen path.
         boolean lockscreenExplicitlyVisible = isExplicitlyVisibleOnLockscreen(lockscreenDecision);
-        boolean systemPackage = isSystemUiOrAndroidPackage(sbn.getPackageName());
-        if (!systemNotification && !oosLiveAlert && !lockscreenExplicitlyVisible) {
-            // Mirror PixelAodHook lockscreen force-hide: never importance-filter android/SystemUI
-            // status rows (hotspot NETWORK_STATUS is importance=2 but still on lockscreen).
-            if (!systemPackage) {
-                String silentHiddenReason = lockscreenPolicySilentHiddenReason(
-                        lockscreenPolicyEnabled,
-                        sbn,
-                        ranking != null ? ranking.importance
-                                : NotificationManagerImportance.UNKNOWN);
-                if (silentHiddenReason != null) {
-                    logFilteredNotification(sbn, silentHiddenReason + " ranking=" + ranking, trace);
-                    return false;
-                }
-            }
-        }
         String rankingHiddenReason = ranking != null ? ranking.hiddenReason() : null;
         if (!systemNotification && !lockscreenExplicitlyVisible
                 && rankingHiddenReason != null) {
@@ -134,19 +114,48 @@ final class AodNotificationPipeline {
 
     /** True when OOS Keyguard visibility hooks reported the row as not hidden. */
     static boolean isExplicitlyVisibleOnLockscreen(LockscreenVisibilityDecision decision) {
-        if (decision == null) {
+        return decision != null && isVisibleFromNativeDecision(
+                decision.providerHidden, decision.filterHidden);
+    }
+
+    static boolean isVisibleFromNativeDecision(Boolean providerHidden, Boolean filterHidden) {
+        if (Boolean.TRUE.equals(providerHidden) || Boolean.TRUE.equals(filterHidden)) {
             return false;
         }
-        if (Boolean.TRUE.equals(decision.providerHidden)
-                || Boolean.TRUE.equals(decision.filterHidden)) {
-            return false;
-        }
-        return Boolean.FALSE.equals(decision.providerHidden)
-                || Boolean.FALSE.equals(decision.filterHidden);
+        return Boolean.FALSE.equals(providerHidden) || Boolean.FALSE.equals(filterHidden);
     }
 
     static boolean isSystemUiOrAndroidPackage(String packageName) {
         return "android".equals(packageName) || "com.android.systemui".equals(packageName);
+    }
+
+    /**
+     * Narrow OOS compatibility guard for the regression where otherwise eligible lockscreen
+     * notifications can be hidden after unlocking once and then turning the screen off again.
+     * This does not create a replacement notification policy.
+     */
+    static boolean isEligibleForOosLockscreenVisibilityCorrection(String packageName,
+            boolean testNotification, boolean hasSmallIcon, String category, int visibility,
+            boolean rankingSecret, boolean mediaCandidate, int importance) {
+        if (!hasSmallIcon) {
+            return false;
+        }
+        if (MODULE_PACKAGE.equals(packageName) && !testNotification) {
+            return false;
+        }
+        if (isSystemUiOrAndroidPackage(packageName)
+                || Notification.CATEGORY_TRANSPORT.equals(category)
+                || visibility == Notification.VISIBILITY_SECRET
+                || rankingSecret
+                || mediaCandidate) {
+            return false;
+        }
+        return testNotification || !isLowImportanceForLockscreenCompatibility(importance);
+    }
+
+    static boolean isLowImportanceForLockscreenCompatibility(int importance) {
+        return importance != NotificationManagerImportance.UNKNOWN
+                && importance <= NotificationManagerImportance.LOW;
     }
 
     static boolean isTestNotification(StatusBarNotification sbn) {
@@ -171,57 +180,6 @@ final class AodNotificationPipeline {
                 || entryName.startsWith("ic_launcher_")
                 || entryName.equals("launcher_icon")
                 || entryName.startsWith("launcher_icon_");
-    }
-
-    static String lockscreenPolicySilentHiddenReason(boolean lockscreenPolicyEnabled,
-            StatusBarNotification sbn, int importance) {
-        if (!lockscreenPolicyEnabled) {
-            return null;
-        }
-        if (sbn == null || sbn.getNotification() == null) {
-            return null;
-        }
-        Notification notification = sbn.getNotification();
-        if (shouldHideForLockscreenImportance(notification.flags, importance)) {
-            return "lockscreen-policy-ranking-importance-low-or-less importance=" + importance;
-        }
-        return null;
-    }
-
-    /** FLAG_SILENT is intentionally not a visibility policy input; only importance is. */
-    static boolean shouldHideForLockscreenImportance(int notificationFlags, int importance) {
-        return isLowImportanceForLockscreenPolicy(importance);
-    }
-
-    static boolean isLowImportanceForLockscreenPolicy(int importance) {
-        return importance != NotificationManagerImportance.UNKNOWN
-                && importance <= NotificationManagerImportance.LOW;
-    }
-
-    static boolean isExcludedFromLockscreenPolicyOverride(String packageName, String category,
-            int visibility, boolean rankingSecret) {
-        return isExcludedFromLockscreenPolicyOverride(packageName, category, visibility,
-                rankingSecret, false);
-    }
-
-    static boolean isExcludedFromLockscreenPolicyOverride(String packageName, String category,
-            int visibility, boolean rankingSecret, boolean mediaSessionOrIcon) {
-        return isSystemUiOrAndroidPackage(packageName)
-                || Notification.CATEGORY_TRANSPORT.equals(category)
-                || visibility == Notification.VISIBILITY_SECRET
-                || rankingSecret
-                || mediaSessionOrIcon;
-    }
-
-    static boolean isExcludedFromLockscreenPolicyOverride(StatusBarNotification sbn,
-            boolean rankingSecret) {
-        if (sbn == null || sbn.getNotification() == null) {
-            return true;
-        }
-        Notification notification = sbn.getNotification();
-        return isExcludedFromLockscreenPolicyOverride(sbn.getPackageName(), notification.category,
-                notification.visibility, rankingSecret,
-                hasMediaSessionExtra(notification) || isMediaIconCandidate(sbn));
     }
 
     static boolean isOosLiveAlertCarrier(StatusBarNotification sbn) {

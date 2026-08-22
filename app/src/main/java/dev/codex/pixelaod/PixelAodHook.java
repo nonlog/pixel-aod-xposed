@@ -17,6 +17,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.service.dreams.DreamService;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
@@ -51,10 +52,14 @@ import java.util.regex.Pattern;
 final class PixelAodHook {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
     private static final AtomicBoolean SETTINGS_OBSERVER_REGISTERED = new AtomicBoolean(false);
+    private static final AtomicBoolean NATIVE_AOD_SETTINGS_OBSERVER_REGISTERED =
+            new AtomicBoolean(false);
+    private static final AtomicBoolean SELECTED_USER_RECEIVER_REGISTERED = new AtomicBoolean(false);
     private static final AtomicBoolean TORCH_CALLBACK_REGISTERED = new AtomicBoolean(false);
     private static final AtomicBoolean TORCH_REFRESH_RECEIVER_REGISTERED = new AtomicBoolean(false);
     private static final String ACTION_SWITCH_FLASHLIGHT =
             "com.android.systemui.ACTION_SWITCH_FLASHLIGHT";
+    private static final String ACTION_USER_SWITCHED = "android.intent.action.USER_SWITCHED";
     private static final String CLOCK_LAYOUT = "com.oplus.systemui.aod.aodclock.off.AodClockLayout";
     private static final String AOD_ROOT_LAYOUT = "com.oplus.systemui.aod.aodclock.off.AodRootLayout";
     private static final String AOD_RECORD = "com.oplus.systemui.aod.AodRecord";
@@ -125,6 +130,12 @@ final class PixelAodHook {
             "com.oplus.keyguard.clock.big.ui.view.ClockViewRoot";
     private static final String WAKEFULNESS_LIFECYCLE =
             "com.android.systemui.keyguard.WakefulnessLifecycle";
+    private static final String DOZE_PARAMETERS =
+            "com.android.systemui.statusbar.phone.DozeParameters";
+    private static final String SCREEN_OFF_ANIMATION_CONTROLLER =
+            "com.android.systemui.statusbar.phone.ScreenOffAnimationController";
+    private static final String KEYGUARD_STATE_CONTROLLER_IMPL =
+            "com.android.systemui.statusbar.policy.KeyguardStateControllerImpl";
     private static final String KEYGUARD_SERVICE =
             "com.android.systemui.keyguard.KeyguardService";
     private static final String[] KEYGUARD_SERVICE_BINDER_CLASSES = {
@@ -143,19 +154,13 @@ final class PixelAodHook {
             "com.android.systemui.statusbar.notification.collection.listbuilder.pluggable.NotifFilter";
     private static final String CUSTOM_TAG = "dev.codex.pixelaod.PIXEL_CLOCK";
     private static final String LOCKSCREEN_CUSTOM_TAG = "dev.codex.pixelaod.PIXEL_LOCKSCREEN_CLOCK";
-    private static final String MODULE_PACKAGE = "dev.codex.pixelaod";
     private static final int STATUS_EDGE_DP = 68;
-    private static final long AOD_ENERGY_HIDE_REASSERT_DELAY_MILLIS = 80L;
-    private static final long[] AOD_NATIVE_TIMEOUT_REASSERT_DELAYS_MILLIS = {
-            80L, 450L, 1200L
-    };
     private static final long[] SCREEN_OFF_STOCK_SUPPRESSION_REASSERT_DELAYS_MILLIS = {
             0L, 160L, 620L
     };
     private static final long NATIVE_AOD_TICK_STOCK_SUPPRESSION_DEBOUNCE_MILLIS = 250L;
     private static final long NATIVE_AOD_TICK_STOCK_SUPPRESSION_RECHECK_DELAY_MILLIS = 56L;
     private static final long NATIVE_AOD_FRAME_KICK_MIN_INTERVAL_MILLIS = 1200L;
-    private static final long FOD_ONLY_NATIVE_HIDE_SKIP_WINDOW_MILLIS = 300L;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_REAPPLY = false;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_DUMPS = false;
     private static final boolean ENABLE_NOTIFICATION_VIEW_REFLECTION_DUMP = false;
@@ -203,12 +208,17 @@ final class PixelAodHook {
     private static volatile Object[] nativeAodClockRefreshArgs = new Object[0];
     private static volatile boolean nativeAodFrameKickInProgress;
     private static volatile long lastNativeAodFrameKickAt;
-    private static volatile long lastFodOnlyNativeTimeoutHideSuppressionMs;
-    private static volatile String lastFodOnlyNativeTimeoutHideTrace;
     private static final FodNativeTimeoutHideGate FOD_NATIVE_TIMEOUT_HIDE_GATE =
             new FodNativeTimeoutHideGate();
     private static final OosProximityTransitionGate OOS_PROXIMITY_TRANSITION_GATE =
             new OosProximityTransitionGate();
+    private static final VendorScreenOffAnimationEligibility
+            VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY =
+            new VendorScreenOffAnimationEligibility();
+    private static volatile WeakReference<Object> lastDozeParameters =
+            new WeakReference<>(null);
+    private static volatile WeakReference<Object> lastScreenOffAnimationController =
+            new WeakReference<>(null);
     private static volatile long lastOosProximityFarAt;
     private static volatile String lastScreenOffStockSuppressionTrace;
     private static volatile long lastNativeAodTickStockSuppressionAt;
@@ -240,11 +250,10 @@ final class PixelAodHook {
         PixelAodFeatureFlags.initialize(appContext);
         ActiveClockRendererController.install(appContext, classLoader);
         PixelAodLifecycleHookInstaller.registerSettingsObserver(appContext);
+        registerSelectedUserReceiver(appContext);
         boolean notificationIcons = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_NOTIFICATION_ICONS, true);
         boolean pixelFingerprintIcon = PixelAodUdfpsRuntimePolicy.replacementRequested(appContext);
-        boolean lockscreenPolicy = PixelAodSettings.getBoolean(appContext,
-                PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true);
         boolean weather = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_WEATHER, true);
         String aodDisplayMode = PixelAodSettings.getString(appContext,
@@ -254,21 +263,22 @@ final class PixelAodHook {
             PixelAodContentState.ensureBreezyWeatherReceiver(appContext);
         }
         // Preserve the proven 0.1.380 registration order while making hook ownership explicit.
+        PixelAodLifecycleHookInstaller.installScreenOffAnimationEligibility(classLoader);
         PixelAodLifecycleHookInstaller.installWakefulness(classLoader);
+        PixelAodLifecycleHookInstaller.installKeyguardGoingAway(classLoader);
         PixelAodSurfaceHookInstaller.installClockLayout(appContext, classLoader);
         PixelAodLifecycleHookInstaller.installNativeAodRefresh(classLoader);
         PixelAodNotificationHookInstaller.installBaseViewHooks(classLoader);
         PixelAodLifecycleHookInstaller.installAodRecord(classLoader);
-        PixelAodLifecycleHookInstaller.installEnergySavingGuards(classLoader);
+        PixelAodLifecycleHookInstaller.installEnergySavingObservers(classLoader);
         PixelAodUdfpsHookInstaller.install(classLoader);
         PixelAodLifecycleHookInstaller.installAodTriggerDiagnostics(classLoader);
         PixelAodLifecycleHookInstaller.installPowerWakeTriggers();
-        PixelAodLifecycleHookInstaller.installDreamDozeState();
+        PixelAodLifecycleHookInstaller.installDreamDozeStateObserver();
         PixelAodSurfaceHookInstaller.installGlobalStockSuppression(
                 ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS);
         PixelAodNotificationHookInstaller.installNotificationContent(
                 appContext, classLoader, notificationIcons);
-        PixelAodNotificationHookInstaller.installLockscreenPolicy(classLoader, lockscreenPolicy);
         PixelAodSurfaceHookInstaller.installShadeAndLockscreen(appContext, classLoader);
         PixelAodLog.log("skipped global stock clock draw suppression to avoid UI jank");
         PixelAodLog.log("installed Pixel AOD hooks moduleEnabled=" + moduleEnabled
@@ -277,7 +287,6 @@ final class PixelAodHook {
                 + " pixelFingerprintIcon=" + pixelFingerprintIcon
                 + " udfpsRenderer=" + PixelAodFeatureFlags.startupUdfpsRenderer()
                 + " clockRenderer=COUI_PORT"
-                + " lockscreenPolicy=" + lockscreenPolicy
                 + " weather=" + weather);
     }
 
@@ -288,34 +297,123 @@ final class PixelAodHook {
         final Context appContext = context.getApplicationContext() != null
                 ? context.getApplicationContext() : context;
         try {
-            appContext.getContentResolver().registerContentObserver(
-                    PixelAodSettingsProvider.URI,
-                    true,
-                    new ContentObserver(MAIN) {
-                        @Override
-                        public void onChange(boolean selfChange) {
-                            onChange(selfChange, null);
-                        }
+            ContentObserver observer = new ContentObserver(MAIN) {
+                @Override
+                public void onChange(boolean selfChange) {
+                    onChange(selfChange, null);
+                }
 
-                        @Override
-                        public void onChange(boolean selfChange, android.net.Uri uri) {
-                            PixelAodSettings.refresh(appContext);
-                            PixelAodLog.log("refreshed Pixel AOD settings from provider change"
-                                    + " selfChange=" + selfChange
-                                    + " uri=" + uri);
-                            PixelAodClockView.refreshAodPolicyFromSettings("settings-provider-change");
-                            if (PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
-                                CouiUdfpsController.refreshLast(
-                                        appContext, "settings-provider-change");
-                            } else {
-                                PixelFingerprintIconController.refreshLast(
-                                        appContext, "settings-provider-change");
-                            }
-                        }
-                    });
-            PixelAodLog.log("registered Pixel AOD settings observer");
+                @Override
+                public void onChange(boolean selfChange, android.net.Uri uri) {
+                    PixelAodSettings.refresh(appContext);
+                    PixelAodLog.log("refreshed selected-user Pixel AOD settings from provider change"
+                            + " user=" + PixelAodSettings.cachedUserIdForDiagnostics()
+                            + " selfChange=" + selfChange
+                            + " uri=" + uri);
+                    PixelAodClockView.refreshAodPolicyFromSettings("settings-provider-change");
+                    if (PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
+                        CouiUdfpsController.refreshLast(appContext, "settings-provider-change");
+                    } else {
+                        PixelFingerprintIconController.refreshLast(appContext, "settings-provider-change");
+                    }
+                }
+            };
+            boolean allUsers = false;
+            try {
+                Method registerForUser = android.content.ContentResolver.class.getDeclaredMethod(
+                        "registerContentObserver", android.net.Uri.class, boolean.class,
+                        ContentObserver.class, int.class);
+                registerForUser.setAccessible(true);
+                registerForUser.invoke(appContext.getContentResolver(),
+                        PixelAodSettingsProvider.URI, true, observer, -1);
+                allUsers = true;
+            } catch (Throwable ignored) {
+                appContext.getContentResolver().registerContentObserver(
+                        PixelAodSettingsProvider.URI, true, observer);
+            }
+            PixelAodLog.i("registered Pixel AOD settings observer allUsers=" + allUsers);
         } catch (Throwable t) {
             PixelAodLog.log("failed to register Pixel AOD settings observer", t);
+        }
+        registerNativeAodSettingsObserver(appContext);
+    }
+
+    private static void registerSelectedUserReceiver(Context context) {
+        if (context == null || !SELECTED_USER_RECEIVER_REGISTERED.compareAndSet(false, true)) {
+            return;
+        }
+        final Context appContext = context.getApplicationContext() != null
+                ? context.getApplicationContext() : context;
+        try {
+            BroadcastReceiver receiver = new BroadcastReceiver() {
+                @Override
+                public void onReceive(Context receiverContext, Intent intent) {
+                    if (intent == null || !ACTION_USER_SWITCHED.equals(intent.getAction())) {
+                        return;
+                    }
+                    int userId = intent.getIntExtra("android.intent.extra.user_handle",
+                            SelectedUserScope.resolveSelectedUserId());
+                    String source = "selected-user-switch#" + Math.max(0, userId);
+                    PixelAodClockView.invalidateVendorAmbientSession(source);
+                    PixelAodClockView.endVendorTransientAodPresentation(source);
+                    PixelAodClockView.hideAllAodOverlays(source);
+                    PixelAodContentState.resetSelectedUserContentState(source);
+                    PixelAodSettings.onSelectedUserChanged(appContext, userId, source);
+                    PixelLockscreenClockView.refreshAll(source);
+                    ActiveClockRendererController.refreshSemanticData(source);
+                    PixelAodLog.i("handled Pixel AOD selected-user switch user=" + userId);
+                }
+            };
+            IntentFilter filter = new IntentFilter(ACTION_USER_SWITCHED);
+            if (Build.VERSION.SDK_INT >= 33) {
+                appContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED);
+            } else {
+                appContext.registerReceiver(receiver, filter);
+            }
+            PixelAodLog.i("registered Pixel AOD selected-user switch receiver");
+        } catch (Throwable t) {
+            SELECTED_USER_RECEIVER_REGISTERED.set(false);
+            PixelAodLog.log("failed to register Pixel AOD selected-user switch receiver", t);
+        }
+    }
+
+    private static void registerNativeAodSettingsObserver(Context context) {
+        if (context == null
+                || !NATIVE_AOD_SETTINGS_OBSERVER_REGISTERED.compareAndSet(false, true)) {
+            return;
+        }
+        final Context appContext = context.getApplicationContext() != null
+                ? context.getApplicationContext() : context;
+        try {
+            ContentObserver observer = new ContentObserver(MAIN) {
+                @Override
+                public void onChange(boolean selfChange) {
+                    onChange(selfChange, null);
+                }
+
+                @Override
+                public void onChange(boolean selfChange, android.net.Uri uri) {
+                    String source = "native-aod-setting-change#" + uri;
+                    PixelAodClockView.refreshNativeAodEligibility(source);
+                }
+            };
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(
+                            NativeAodAvailabilityAdapter.OPLUS_AOD_AVAILABLE_SETTING),
+                    false, observer);
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(
+                            NativeAodAvailabilityAdapter.OPLUS_AOD_ENABLED_SETTING),
+                    false, observer);
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor("user_setup_complete"), false, observer);
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Global.getUriFor(Settings.Global.DEVICE_PROVISIONED),
+                    false, observer);
+            PixelAodLog.log("registered native AOD availability observers");
+        } catch (Throwable t) {
+            NATIVE_AOD_SETTINGS_OBSERVER_REGISTERED.set(false);
+            PixelAodLog.log("failed to register native AOD availability observers", t);
         }
     }
 
@@ -488,6 +586,9 @@ final class PixelAodHook {
         if (containsPersistentClockPluginHost(view)) {
             return false;
         }
+        if (!PrimaryDisplayPolicy.isPrimary(view)) {
+            return false;
+        }
         Context context = view.getContext();
         if (context == null) {
             logStockSuppressionMiss("draw", view, "no-context");
@@ -572,6 +673,9 @@ final class PixelAodHook {
             return false;
         }
         if (containsPersistentClockPluginHost(view)) {
+            return false;
+        }
+        if (!PrimaryDisplayPolicy.isPrimary(view)) {
             return false;
         }
         Context context = view.getContext();
@@ -1554,16 +1658,54 @@ final class PixelAodHook {
         }
         try {
             ModernHookBridge.hookAfter(notificationViewClass, "onActiveNotifications",
-                    param -> publishNotificationsFromArg(param, 0, "onActiveNotifications/" + source),
-                    StatusBarNotification[].class);
+                    param -> {
+                        String updateSource = "onActiveNotifications/" + source;
+                        publishNotificationsFromArg(param, 0, updateSource);
+                        suppressRuntimeNotificationViewAfterUpdate(param.thisObject, updateSource);
+                    }, StatusBarNotification[].class);
             ModernHookBridge.hookAfter(notificationViewClass, "onReceiveNotification",
-                    param -> publishNotificationsFromArg(param, 0, "onReceiveNotification/" + source),
-                    StatusBarNotification[].class, StatusBarNotification.class);
+                    param -> {
+                        String updateSource = "onReceiveNotification/" + source;
+                        publishNotificationsFromArg(param, 0, updateSource);
+                        suppressRuntimeNotificationViewAfterUpdate(param.thisObject, updateSource);
+                    }, StatusBarNotification[].class, StatusBarNotification.class);
             ModernHookBridge.hookAfter(notificationViewClass, "onRemoveNotification",
-                    param -> publishNotificationsFromArg(param, 0, "onRemoveNotification/" + source),
-                    StatusBarNotification[].class, StatusBarNotification.class);
+                    param -> {
+                        String updateSource = "onRemoveNotification/" + source;
+                        publishNotificationsFromArg(param, 0, updateSource);
+                        suppressRuntimeNotificationViewAfterUpdate(param.thisObject, updateSource);
+                    }, StatusBarNotification[].class, StatusBarNotification.class);
             ModernHookBridge.hookAfter(notificationViewClass, "clearNotificationView",
                     param -> clearCachedNotifications("NotificationView#clearNotificationView"));
+            if ("com.oplus.egview.widget.NotificationView".equals(
+                    notificationViewClass.getName())) {
+                ModernHookBridge.hookBefore(notificationViewClass, "onDraw", param -> {
+                    if (!(param.thisObject instanceof View)) {
+                        return;
+                    }
+                    View notificationView = (View) param.thisObject;
+                    if (!PrimaryDisplayPolicy.isPrimary(notificationView)) {
+                        return;
+                    }
+                    Context context = notificationView.getContext();
+                    boolean interactive = context == null
+                            || PixelAodClockView.isDeviceInteractive(context);
+                    if (NativeAodNotificationDrawPolicy.shouldSuppress(
+                            true,
+                            hasAodAncestor(notificationView),
+                            interactive,
+                            PixelAodClockView.isAodActive(),
+                            PixelAodClockView.isVendorAmbientSessionActive())) {
+                        // This class is the OPlus persistent AOD icon row (mIconMap/mIconSize/
+                        // mIconSpacing). Full notification pulse/card presentation uses separate
+                        // views, so skipping only this draw prevents stock-icon leakage without
+                        // taking ownership of vendor pulse UI or the ambient lifecycle.
+                        param.setResult(null);
+                    }
+                }, Canvas.class);
+                PixelAodLog.log("hooked OPlus native AOD notification onDraw gate class="
+                        + notificationViewClass.getName());
+            }
             PixelAodLog.log("hooked OPlus NotificationView notification updates from " + source);
         } catch (Throwable t) {
             synchronized (HOOKED_NOTIFICATION_VIEW_CLASSES) {
@@ -1571,6 +1713,44 @@ final class PixelAodHook {
             }
             PixelAodLog.log("failed to hook OPlus NotificationView updates from " + source, t);
         }
+    }
+
+    private static void suppressRuntimeNotificationViewAfterUpdate(Object candidate, String source) {
+        if (!(candidate instanceof View)) {
+            return;
+        }
+        View notificationView = (View) candidate;
+        MAIN.post(() -> suppressRuntimeNotificationViewNow(
+                notificationView, source + "#post"));
+    }
+
+    private static void suppressRuntimeNotificationViewNow(View notificationView, String source) {
+        if (notificationView == null || !PrimaryDisplayPolicy.isPrimary(notificationView)) {
+            return;
+        }
+        Context context = notificationView.getContext();
+        if (context == null || PixelAodClockView.isDeviceInteractive(context)) {
+            return;
+        }
+        OosAodLifecycleAdapter.AodPolicyDecision decision =
+                PixelAodClockView.evaluateAodPolicy(context, source + "#notification-view");
+        boolean configuredEntryFallback = !decision.shouldSuppressStockAodViews
+                && hasAodAncestor(notificationView)
+                && PixelAodClockView.isContinuousAodConfiguredForEntry(
+                        context, source + "#configured-entry-fallback");
+        if (!decision.shouldSuppressStockAodViews && !configuredEntryFallback) {
+            PixelAodLog.log("kept runtime OPlus NotificationView source=" + source
+                    + " reason=stock-suppression-not-authorized"
+                    + " marker=" + markerFor(notificationView)
+                    + " trace=" + PixelAodClockView.peekAodTraceId());
+            return;
+        }
+        String marker = markerFor(notificationView);
+        hideView(notificationView, marker);
+        PixelAodLog.log("suppressed runtime OPlus NotificationView after update source=" + source
+                + " configuredEntryFallback=" + configuredEntryFallback
+                + " marker=" + marker
+                + " trace=" + PixelAodClockView.peekAodTraceId());
     }
 
     private static void publishNotificationsFromArg(ModernHookBridge.HookParam param, int index, String source) {
@@ -1663,46 +1843,105 @@ final class PixelAodHook {
     static void hookAodRecord(ClassLoader classLoader) {
         try {
             Class<?> recordClass = ModernHookBridge.findClass(AOD_RECORD, classLoader);
-            ModernHookBridge.hookAfter(recordClass, "createAndInitRootView", param -> {
-                Object result = param.getResult();
-                if (result instanceof ViewGroup) {
-                    ViewGroup root = (ViewGroup) result;
-                    PixelAodLog.log("AodRecord root=" + root.getClass().getName()
-                            + " children=" + root.getChildCount());
-                    MAIN.post(() -> handleOuterRootLayout(root, "AodRecord#createAndInitRootView"));
-                }
-            }, Context.class);
-            ModernHookBridge.hookAfter(recordClass, "onDreamingStarted", param -> MAIN.post(() -> {
-                refreshNotificationsFromLastListener("AodRecord#onDreamingStarted");
-                PixelAodClockView.setAodActive(true, "AodRecord#onDreamingStarted");
-                reassertStockAodSuppressionAfterScreenOff(
-                        "AodRecord#onDreamingStarted#after-active");
-                PixelAodClockView.tickAllInstances();
-            }), boolean.class);
-            ModernHookBridge.hookBefore(recordClass, "onDreamingStopped",
-                    param -> runAtFrontOfMain(() -> {
-                        String transitionSource = "AodRecord#onDreamingStopped";
-                        PixelLockscreenClockView.prepareAodToLockscreenTransition(transitionSource);
-                        PixelAodClockView.hideAllAodOverlays(transitionSource);
-                        String transitionTrace = PixelAodClockView.peekAodTraceId();
-                        PixelAodLog.log("AodRecord#onDreamingStopped trace=" + transitionTrace
-                                + " state={" + PixelAodClockView.describeAodState(null) + "}");
-                        PixelAodClockView.stopAllInstances();
-                        restoreAdjustedStatusViews();
-                        if (PixelLockscreenClockView.shouldShowOnKnownContext()) {
-                            applyLockscreenClockReplacementFromLastHosts(transitionSource);
-                        } else {
-                            suppressSystemAodDuringLockscreenTransition(transitionSource);
-                            restoreHiddenStockViewsAfterTransition(transitionSource, transitionTrace);
-                        }
-                    }));
-            PixelAodLog.log("hooked " + AOD_RECORD + " lifecycle/root");
+            int dispatchHooks = 0;
+            dispatchHooks += hookAodRecordDispatch(recordClass, int.class) ? 1 : 0;
+            dispatchHooks += hookAodRecordDispatch(recordClass, int.class, Object.class) ? 1 : 0;
+            PixelAodLog.log("hooked " + AOD_RECORD
+                    + " dispatch lifecycle hooks=" + dispatchHooks);
         } catch (Throwable t) {
             PixelAodLog.log("failed to hook AodRecord lifecycle", t);
         }
     }
 
-    static void hookOplusEnergySavingHideGuards(ClassLoader classLoader) {
+    private static boolean hookAodRecordDispatch(Class<?> recordClass,
+            Class<?>... parameterTypes) {
+        try {
+            Method method = ModernHookBridge.findMethod(recordClass, "dispatch", parameterTypes);
+            ModernHookBridge.hookAfter(method, param -> {
+                if (param.args == null || param.args.length == 0
+                        || !(param.args[0] instanceof Integer)) {
+                    return;
+                }
+                int event = (Integer) param.args[0];
+                String source = "AodRecord#" + methodSignature(method) + "#event=" + event;
+                handleAodRecordLifecycleEvent(event, source);
+            });
+            PixelAodLog.log("hooked AodRecord lifecycle dispatch " + methodSignature(method));
+            return true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook AodRecord lifecycle dispatch "
+                    + java.util.Arrays.toString(parameterTypes), t);
+            return false;
+        }
+    }
+
+    private static void handleAodRecordLifecycleEvent(int event, String source) {
+        if (event == 1) { // DREAM_START in current OOS AodRecord.
+            // The vendor lifecycle message was queued by dispatch() before this after-hook runs.
+            // Post behind it so Pixel activation follows vendor onDreamingStarted processing,
+            // preserving the stable transition timing instead of pre-empting it.
+            MAIN.post(() -> {
+                PixelAodClockView.beginVendorAmbientSession(source);
+                refreshNotificationsFromLastListener(source);
+                PixelAodClockView.setAodActive(true, source);
+                reassertStockAodSuppressionAfterScreenOff(source + "#after-active");
+                PixelAodClockView.tickAllInstances();
+                PixelAodLog.log("AodRecord vendor ambient DREAM_START source=" + source
+                        + " epoch=" + PixelAodClockView.currentVendorAmbientEpoch());
+            });
+            return;
+        }
+        if (event == 2) { // DREAM_STOP.
+            runAtFrontOfMain(() -> handleAodRecordDreamStop(source));
+            return;
+        }
+        if (event == 3) { // DREAM_DESTROY: terminal safety net, no transition replay.
+            runAtFrontOfMain(() -> {
+                if (PixelAodClockView.isVendorAmbientSessionActive()) {
+                    PixelAodClockView.invalidateVendorAmbientSession(source);
+                }
+                PixelAodClockView.hideAllAodOverlays(source);
+                PixelAodClockView.stopAllInstances();
+                restoreAdjustedStatusViews();
+                PixelAodLog.log("AodRecord vendor ambient DREAM_DESTROY source=" + source);
+            });
+        }
+    }
+
+    private static void handleAodRecordDreamStop(String transitionSource) {
+        long ambientEpoch = PixelAodClockView.currentVendorAmbientEpoch();
+        boolean directGone = PixelAodClockView.isDirectGoneHandoffActiveForEpoch(ambientEpoch);
+        PixelAodClockView.invalidateVendorAmbientSession(transitionSource);
+        if (directGone) {
+            PixelLockscreenClockView.suppressForDirectGone(transitionSource);
+            ActiveClockRendererController.suppressForDirectGone(transitionSource);
+            PixelAodClockView.hideAllAodOverlays(transitionSource + "#direct-gone");
+            PixelAodClockView.stopAllInstances();
+            restoreAdjustedStatusViews();
+            PixelAodLog.log("AodRecord vendor ambient DREAM_STOP direct-to-Gone"
+                    + " source=" + transitionSource
+                    + " ambientEpoch=" + ambientEpoch
+                    + " trace=" + PixelAodClockView.peekAodTraceId()
+                    + " state={" + PixelAodClockView.describeAodState(null) + "}");
+            return;
+        }
+        PixelLockscreenClockView.prepareAodToLockscreenTransition(transitionSource);
+        PixelAodClockView.hideAllAodOverlays(transitionSource);
+        String transitionTrace = PixelAodClockView.peekAodTraceId();
+        PixelAodLog.log("AodRecord vendor ambient DREAM_STOP source=" + transitionSource
+                + " trace=" + transitionTrace
+                + " state={" + PixelAodClockView.describeAodState(null) + "}");
+        PixelAodClockView.stopAllInstances();
+        restoreAdjustedStatusViews();
+        if (PixelLockscreenClockView.shouldShowOnKnownContext()) {
+            applyLockscreenClockReplacementFromLastHosts(transitionSource);
+        } else {
+            suppressSystemAodDuringLockscreenTransition(transitionSource);
+            restoreHiddenStockViewsAfterTransition(transitionSource, transitionTrace);
+        }
+    }
+
+    static void hookOplusEnergySavingHideObservers(ClassLoader classLoader) {
         boolean hooked = false;
         try {
             Class<?> recordClass = ModernHookBridge.findClass(AOD_RECORD, classLoader);
@@ -1718,20 +1957,11 @@ final class PixelAodHook {
         } catch (Throwable t) {
             PixelAodLog.log("failed to hook AodUpdateManager energy-saving hide guard", t);
         }
-        for (String className : OPLUS_WAKE_UP_CONTROLLER_CANDIDATES) {
-            try {
-                Class<?> controllerClass = ModernHookBridge.findClass(className, classLoader);
-                hooked |= hookEnergySavingHideMethods(controllerClass, "hideByTimeoutReceiver",
-                        simpleClassName(className));
-                hooked |= hookEnergySavingHideMethods(controllerClass, "notifyHideCallback",
-                        simpleClassName(className));
-            } catch (ClassNotFoundException ignored) {
-            } catch (Throwable t) {
-                PixelAodLog.log("failed to hook OPlus energy-saving hide guard class "
-                        + className, t);
-            }
-        }
-        PixelAodLog.log("installed OPlus AOD energy-saving hide guards hooked=" + hooked);
+        // OplusWakeUpController#notifyHideCallback is a local wake/sensor/timeout callback fanout,
+        // not a Dream/AOD terminal. It can fire while the display remains in DOZE_SUSPEND, so it
+        // must never invalidate the ambient session or restore stock AOD views. DREAM_STOP and
+        // DREAM_DESTROY from AodRecord are the terminal lifecycle seams.
+        PixelAodLog.log("installed OPlus AOD energy-saving hide observers hooked=" + hooked);
     }
 
     private static boolean hookEnergySavingHideMethods(Class<?> clazz, String methodName,
@@ -1743,25 +1973,17 @@ final class PixelAodHook {
                 continue;
             }
             final Method targetMethod = method;
-            final Class<?> returnType = method.getReturnType();
             final String source = sourceClass + "#" + methodSignature(method);
             try {
                 targetMethod.setAccessible(true);
                 ModernHookBridge.hookBefore(targetMethod, param -> {
                     Context context = contextFromHookParam(param);
-                    if (!shouldSuppressOplusEnergySavingHide(context, source)) {
-                        return;
-                    }
-                    param.setResult(defaultReturnValue(returnType));
-                    reassertPixelAodAfterEnergySavingHide(context, source);
+                    observeOplusEnergySavingHide(context, source);
                 });
-                ModernHookBridge.hookAfter(targetMethod, param ->
-                        maybeReassertPixelAodAfterNativeTimeoutHide(
-                                contextFromHookParam(param), source));
                 hooked = true;
-                PixelAodLog.log("hooked OPlus AOD energy-saving hide guard " + source);
+                PixelAodLog.log("hooked OPlus AOD energy-saving hide observer " + source);
             } catch (Throwable t) {
-                PixelAodLog.log("failed to hook OPlus AOD energy-saving hide guard "
+                PixelAodLog.log("failed to hook OPlus AOD energy-saving hide observer "
                         + source, t);
             }
         }
@@ -1793,11 +2015,10 @@ final class PixelAodHook {
         }
         OosAodLifecycleAdapter.AodPolicyDecision decision =
                 PixelAodClockView.evaluateAodPolicy(context, source + "#frame-kick");
-        if (!decision.shouldApplyModuleAod || !decision.shouldKeepNativeDozeAlive) {
+        if (!decision.shouldApplyModuleAod) {
             PixelAodLog.log("skipped native AOD frame kick source=" + source
                     + " reason=policy"
                     + " shouldApplyModuleAod=" + decision.shouldApplyModuleAod
-                    + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
             return;
@@ -2304,7 +2525,7 @@ final class PixelAodHook {
         PixelAodLog.log("installed PowerManager wake trigger hooks hooked=" + hooked);
     }
 
-    static void hookDreamServiceDozeScreenState() {
+    static void hookDreamServiceDozeScreenStateObserver() {
         try {
             ModernHookBridge.hookBefore(DreamService.class, "setDozeScreenState", param -> {
                 if (param.args == null || param.args.length == 0
@@ -2316,22 +2537,20 @@ final class PixelAodHook {
                     return;
                 }
                 Context context = contextFromHookParam(param);
+                // M9 vendor-delegated lifecycle: keep the proven presentation pre-arm used by
+                // the LS -> AOD animation, but never rewrite the display state requested by the
+                // vendor DreamService. OPlus/SystemUI is the display/Doze lifecycle authority.
                 PixelAodClockView.beginPanelHandoffPresentation(context,
                         "DreamService#setDozeScreenState(OFF)");
-                if (!shouldRewriteDozeScreenOffToDoze(context,
-                        "DreamService#setDozeScreenState(OFF)")) {
-                    return;
-                }
-                param.args[0] = Display.STATE_DOZE;
-                PixelAodLog.log("rewrote DreamService doze screen state"
+                PixelAodLog.log("observed DreamService doze screen state"
                         + " source=DreamService#setDozeScreenState"
-                        + " requested=OFF replacement=DOZE"
+                        + " requested=OFF action=vendor-authoritative"
                         + " trace=" + PixelAodClockView.currentAodTraceId()
                         + " state={" + PixelAodClockView.describeAodState(context) + "}");
             }, int.class);
-            PixelAodLog.log("hooked DreamService#setDozeScreenState AOD keepalive guard");
+            PixelAodLog.log("hooked DreamService#setDozeScreenState lifecycle observer");
         } catch (Throwable t) {
-            PixelAodLog.log("failed to hook DreamService#setDozeScreenState AOD keepalive guard",
+            PixelAodLog.log("failed to hook DreamService#setDozeScreenState lifecycle observer",
                     t);
         }
     }
@@ -2400,117 +2619,182 @@ final class PixelAodHook {
         return null;
     }
 
-    private static boolean shouldRewriteDozeScreenOffToDoze(Context context, String source) {
+    private static void observeOplusEnergySavingHide(Context context, String source) {
         Context checkContext = context != null ? context : systemUiContext;
-        String state = PixelAodClockView.describeAodState(checkContext);
-        if (checkContext == null) {
-            PixelAodLog.log("allowed DreamService doze OFF source=" + source
-                    + " reason=no-context state={" + state + "}");
-            return false;
-        }
-        if (PixelAodClockView.isDeviceInteractive(checkContext)) {
-            PixelAodLog.log("allowed DreamService doze OFF source=" + source
-                    + " reason=interactive state={" + state + "}");
-            return false;
-        }
-        if (PixelAodClockView.isProximityNear()) {
-            PixelAodLog.log("allowed DreamService doze OFF source=" + source
-                    + " reason=proximity-near state={" + state + "}");
-            return false;
-        }
-        OosAodLifecycleAdapter.AodPolicyDecision decision =
-                PixelAodClockView.evaluateAodPolicy(checkContext, source);
-        if (!decision.modulePolicyAllowsDisplay
-                || !decision.shouldApplyModuleAod
-                || !decision.shouldKeepNativeDozeAlive) {
-            PixelAodLog.log("allowed DreamService doze OFF source=" + source
-                    + " reason=policy"
-                    + " modulePolicyReason=" + decision.modulePolicyReason
-                    + " shouldApplyModuleAod=" + decision.shouldApplyModuleAod
-                    + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
-                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
-            return false;
-        }
-        PixelAodLog.log("blocked DreamService doze OFF source=" + source
-                + " reason=" + decision.keepNativeDozeReason
+        PixelAodClockView.invalidateVendorAmbientSession(source + "#vendor-terminal");
+        PixelAodClockView.endVendorTransientAodPresentation(source);
+        PixelAodClockView.hideAllAodOverlays(source + "#vendor-terminal");
+        restoreAdjustedStatusViews();
+        StockAodVisibilityController.restoreHiddenStockViews();
+        OosAodLifecycleAdapter.AodPolicyDecision decision = checkContext != null
+                ? PixelAodClockView.evaluateAodPolicy(
+                checkContext, source + "#energy-saving-hide-observed")
+                : null;
+        PixelAodLog.log("observed OPlus AOD energy-saving hide"
+                + " source=" + source
+                + " action=vendor-authoritative"
+                + " modulePolicyReason="
+                + (decision != null ? decision.modulePolicyReason : "no-context")
+                + " shouldApplyModuleAod="
+                + (decision != null && decision.shouldApplyModuleAod)
                 + " trace=" + PixelAodClockView.currentAodTraceId()
                 + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
-        return true;
     }
 
-    private static boolean shouldSuppressOplusEnergySavingHide(Context context, String source) {
-        Context checkContext = context != null ? context : systemUiContext;
-        String state = PixelAodClockView.describeAodState(checkContext);
-        if (checkContext == null) {
-            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
-                    + " reason=no-context state={" + state + "}");
-            return false;
-        }
-        if (PixelAodClockView.isDeviceInteractive(checkContext)) {
-            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
-                    + " reason=interactive state={" + state + "}");
-            return false;
-        }
-        if (!isAodAllowedBySystemSettings(checkContext)) {
-            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
-                    + " reason=system-settings state={" + state + "}");
-            return false;
-        }
-        OosAodLifecycleAdapter.AodPolicyDecision decision =
-                PixelAodClockView.evaluateAodPolicy(checkContext, source + "#energy-saving-hide");
-        if (!decision.modulePolicyAllowsDisplay) {
-            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
-                    + " reason=" + decision.modulePolicyReason
-                    + " shouldAllowNativeHideCallbacks="
-                    + decision.shouldAllowNativeHideCallbacks
-                    + " state={"
-                    + PixelAodClockView.describeAodState(checkContext) + "}");
-            return false;
-        }
-        if (decision.shouldAllowNativeHideCallbacks) {
-            if (shouldUseFodOnlyNativeTimeoutHide(checkContext, source, decision)
-                    && dispatchFodOnlyNativeTimeoutHide(checkContext, source)) {
-                PixelAodLog.i("suppressed OPlus AOD native-timeout hide via FOD-only path"
-                        + " source=" + source
-                        + " reason=" + decision.nativeHideCallbackReason
-                        + " keepDozeReason=" + decision.keepNativeDozeReason
-                        + " trace=" + PixelAodClockView.currentAodTraceId()
-                        + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
-                return true;
+    static void hookVendorScreenOffAnimationEligibility(ClassLoader classLoader) {
+        boolean dozeParametersHooked = false;
+        boolean screenOffControllerHooked = false;
+        try {
+            Class<?> dozeParametersClass = ModernHookBridge.findClass(DOZE_PARAMETERS, classLoader);
+            for (java.lang.reflect.Constructor<?> constructor
+                    : dozeParametersClass.getDeclaredConstructors()) {
+                ModernHookBridge.hookAfter(constructor, param -> {
+                    if (param.thisObject != null) {
+                        lastDozeParameters = new WeakReference<>(param.thisObject);
+                    }
+                });
             }
-            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
-                    + " reason=" + decision.nativeHideCallbackReason
-                    + " shouldKeepNativeDozeAlive="
-                    + decision.shouldKeepNativeDozeAlive
-                    + " state={"
-                    + PixelAodClockView.describeAodState(checkContext) + "}");
-            return false;
+            Method displayNeedsBlanking = ModernHookBridge.findMethod(
+                    dozeParametersClass, "getDisplayNeedsBlanking");
+            ModernHookBridge.hookAfter(displayNeedsBlanking, param -> {
+                if (param.thisObject != null) {
+                    lastDozeParameters = new WeakReference<>(param.thisObject);
+                }
+                if (param.getResult() instanceof Boolean) {
+                    VendorScreenOffAnimationEligibility.Snapshot snapshot =
+                            VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.observeDisplayNeedsBlanking(
+                                    (Boolean) param.getResult(),
+                                    "DozeParameters#getDisplayNeedsBlanking");
+                    PixelAodLog.log("native screen-off animation blanking " + snapshot.describe());
+                }
+            });
+            Method shouldControlScreenOff = ModernHookBridge.findMethod(
+                    dozeParametersClass, "shouldControlScreenOff");
+            ModernHookBridge.hookAfter(shouldControlScreenOff, param -> {
+                if (param.thisObject != null) {
+                    lastDozeParameters = new WeakReference<>(param.thisObject);
+                }
+                if (param.getResult() instanceof Boolean) {
+                    VendorScreenOffAnimationEligibility.Snapshot snapshot =
+                            VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.observeShouldControlScreenOff(
+                                    (Boolean) param.getResult(),
+                                    "DozeParameters#shouldControlScreenOff");
+                    PixelAodLog.log("native screen-off animation control " + snapshot.describe());
+                }
+            });
+            dozeParametersHooked = true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook native DozeParameters screen-off eligibility", t);
         }
-        if (!decision.shouldKeepNativeDozeAlive) {
-            PixelAodLog.log("allowed OPlus AOD energy-saving hide source=" + source
-                    + " reason=" + decision.keepNativeDozeReason
-                    + " shouldAllowNativeHideCallbacks="
-                    + decision.shouldAllowNativeHideCallbacks
-                    + " state={" + state + "}");
-            return false;
+        try {
+            Class<?> controllerClass = ModernHookBridge.findClass(
+                    SCREEN_OFF_ANIMATION_CONTROLLER, classLoader);
+            for (java.lang.reflect.Constructor<?> constructor
+                    : controllerClass.getDeclaredConstructors()) {
+                ModernHookBridge.hookAfter(constructor, param -> {
+                    if (param.thisObject != null) {
+                        lastScreenOffAnimationController = new WeakReference<>(param.thisObject);
+                    }
+                });
+            }
+            Method shouldAnimateDozingChange = ModernHookBridge.findMethod(
+                    controllerClass, "shouldAnimateDozingChange");
+            ModernHookBridge.hookAfter(shouldAnimateDozingChange, param -> {
+                if (param.thisObject != null) {
+                    lastScreenOffAnimationController = new WeakReference<>(param.thisObject);
+                }
+                if (param.getResult() instanceof Boolean) {
+                    VendorScreenOffAnimationEligibility.Snapshot snapshot =
+                            VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY
+                                    .observeShouldAnimateDozingChange(
+                                            (Boolean) param.getResult(),
+                                            "ScreenOffAnimationController#shouldAnimateDozingChange");
+                    PixelAodLog.log("native screen-off animation dozing-change "
+                            + snapshot.describe());
+                }
+            });
+            screenOffControllerHooked = true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook native ScreenOffAnimationController eligibility", t);
         }
-        PixelAodLog.i("suppressed OPlus AOD energy-saving hide source=" + source
-                + " reason=" + decision.nativeHideCallbackReason
-                + " keepDozeReason=" + decision.keepNativeDozeReason
-                + " trace=" + PixelAodClockView.currentAodTraceId()
-                + " state={" + state + "}");
-        return true;
+        PixelAodLog.i("installed native screen-off animation eligibility"
+                + " dozeParameters=" + dozeParametersHooked
+                + " screenOffController=" + screenOffControllerHooked);
     }
 
-    private static boolean shouldUseFodOnlyNativeTimeoutHide(Context context, String source,
-            OosAodLifecycleAdapter.AodPolicyDecision decision) {
-        return context != null
-                && decision != null
-                && decision.shouldKeepNativeDozeAlive
-                && "native-timeout-callback".equals(decision.nativeHideCallbackReason)
-                && isNativeAodTimeoutHideSource(source);
+    private static void beginVendorScreenOffAnimationTransition(String source) {
+        VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.beginTransition(source);
+        Object dozeParameters = lastDozeParameters.get();
+        Boolean displayNeedsBlanking = invokeBooleanNoArg(
+                dozeParameters, "getDisplayNeedsBlanking");
+        if (displayNeedsBlanking != null) {
+            VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.observeDisplayNeedsBlanking(
+                    displayNeedsBlanking, source + "#display-blanking-sample");
+        }
+        PixelAodLog.i("began native screen-off animation eligibility transition "
+                + VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.snapshot().describe());
     }
 
+    private static void refreshVendorScreenOffAnimationEligibility(String source) {
+        Object dozeParameters = lastDozeParameters.get();
+        Boolean displayNeedsBlanking = invokeBooleanNoArg(
+                dozeParameters, "getDisplayNeedsBlanking");
+        if (displayNeedsBlanking != null) {
+            VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.observeDisplayNeedsBlanking(
+                    displayNeedsBlanking, source + "#display-blanking");
+        }
+        Boolean shouldControlScreenOff = invokeBooleanNoArg(
+                dozeParameters, "shouldControlScreenOff");
+        if (shouldControlScreenOff != null) {
+            VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.observeShouldControlScreenOff(
+                    shouldControlScreenOff, source + "#control-screen-off");
+        }
+        Object screenOffController = lastScreenOffAnimationController.get();
+        if (screenOffController == null && dozeParameters != null) {
+            try {
+                screenOffController = ModernHookBridge.getObjectField(
+                        dozeParameters, "mScreenOffAnimationController");
+                if (screenOffController != null) {
+                    lastScreenOffAnimationController = new WeakReference<>(screenOffController);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        Boolean shouldAnimateDozingChange = invokeBooleanNoArg(
+                screenOffController, "shouldAnimateDozingChange");
+        if (shouldAnimateDozingChange != null) {
+            VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.observeShouldAnimateDozingChange(
+                    shouldAnimateDozingChange, source + "#animate-dozing-change");
+        }
+        PixelAodLog.i("refreshed native screen-off animation eligibility "
+                + VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.snapshot().describe());
+    }
+
+    private static Boolean invokeBooleanNoArg(Object target, String methodName) {
+        if (target == null || TextUtils.isEmpty(methodName)) {
+            return null;
+        }
+        try {
+            Method method = target.getClass().getMethod(methodName);
+            method.setAccessible(true);
+            Object value = method.invoke(target);
+            return value instanceof Boolean ? (Boolean) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    static boolean shouldAnimateVendorScreenOffPresentation() {
+        return VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.allowsExistingMorph();
+    }
+
+    static boolean canConsumeVendorDozeTransitionProgress() {
+        return VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.allowsVendorProgress();
+    }
+
+    static String describeVendorScreenOffAnimationEligibility() {
+        return VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.snapshot().describe();
+    }
     static void hookWakefulnessLifecycle(ClassLoader classLoader) {
         hookKeyguardSleepOrigin(classLoader);
         try {
@@ -2538,6 +2822,8 @@ final class PixelAodHook {
                     continue;
                 }
                 ModernHookBridge.hookBefore(method, param -> {
+                    String source = "WakefulnessLifecycle#dispatchStartedGoingToSleep";
+                    beginVendorScreenOffAnimationTransition(source);
                     Context context = systemUiContext;
                     boolean keyguardLocked = false;
                     boolean interactiveAtCallback = false;
@@ -2572,20 +2858,58 @@ final class PixelAodHook {
                             + " lockscreenSurfaceVisible=" + lockscreenSurfaceVisible
                             + " interactiveAtCallback=" + interactiveAtCallback
                             + " fromLockscreen=" + fromLockscreen);
-                    PixelAodClockView.noteScreenOff(
-                            "WakefulnessLifecycle#dispatchStartedGoingToSleep",
-                            fromLockscreen);
+                    PixelAodClockView.noteScreenOff(source, fromLockscreen);
                     if (!fromLockscreen) {
-                        String source = "WakefulnessLifecycle#dispatchStartedGoingToSleep";
                         suppressKnownStockAodBeforeDream(source);
                         ActiveClockRendererController.prepareNonLockscreenAodEntry(source);
                     }
                 });
+                ModernHookBridge.hookAfter(method, param ->
+                        refreshVendorScreenOffAnimationEligibility(
+                                "WakefulnessLifecycle#dispatchStartedGoingToSleep#after-observers"));
                 hooks++;
             }
             PixelAodLog.log("installed Wakefulness wake/sleep lifecycle hooks=" + hooks);
         } catch (Throwable t) {
             PixelAodLog.log("failed to hook Wakefulness wake/sleep lifecycle", t);
+        }
+    }
+
+    static void hookKeyguardGoingAway(ClassLoader classLoader) {
+        try {
+            Class<?> controllerClass = ModernHookBridge.findClass(
+                    KEYGUARD_STATE_CONTROLLER_IMPL, classLoader);
+            ModernHookBridge.hookAfter(controllerClass, "notifyKeyguardGoingAway", param -> {
+                if (param.args == null || param.args.length == 0
+                        || !(param.args[0] instanceof Boolean)) {
+                    return;
+                }
+                boolean goingAway = (Boolean) param.args[0];
+                String source = "KeyguardStateControllerImpl#notifyKeyguardGoingAway(" + goingAway + ")";
+                NativeDirectGoneHandoff.Snapshot handoff =
+                        PixelAodClockView.observeNativeKeyguardGoingAway(goingAway, source);
+                if (goingAway && handoff.active) {
+                    PixelAodLog.i("native direct-to-Gone authoritative signal"
+                            + " source=" + source
+                            + " ambientEpoch=" + handoff.ambientEpoch
+                            + " trace=" + PixelAodClockView.currentAodTraceId());
+                    PixelLockscreenClockView.suppressForDirectGone(source);
+                    ActiveClockRendererController.suppressForDirectGone(source);
+                    PixelAodClockView.endVendorTransientAodPresentation(source + "#direct-gone");
+                    PixelAodClockView.hideAllAodOverlays(source + "#direct-gone");
+                } else if (!goingAway && PixelAodClockView.isVendorAmbientSessionActive()) {
+                    // A cancelled going-away request while the same Dream remains valid returns
+                    // lifecycle eligibility to that vendor ambient session. The next native
+                    // ClockPlugin render remains authoritative for the actual visible scene.
+                    PixelAodClockView.setAodActive(true, source + "#cancelled");
+                    ActiveClockRendererController.refreshAll(source + "#cancelled");
+                    reassertStockAodSuppressionAfterScreenOff(source + "#cancelled");
+                }
+            }, boolean.class);
+            PixelAodLog.i("hooked native Keyguard going-away authority class="
+                    + KEYGUARD_STATE_CONTROLLER_IMPL);
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook native Keyguard going-away authority", t);
         }
     }
 
@@ -2700,43 +3024,6 @@ final class PixelAodHook {
         }
     }
 
-    private static boolean dispatchFodOnlyNativeTimeoutHide(Context context, String source) {
-        String trace = PixelAodClockView.peekAodTraceId();
-        long now = SystemClock.uptimeMillis();
-        boolean latched = FOD_NATIVE_TIMEOUT_HIDE_GATE.markHidden(trace, now);
-        if (latched) {
-            PixelAodLog.log("armed native FOD timeout-hide latch"
-                    + " source=" + source
-                    + " trace=" + trace
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-        }
-        Object uiMech = lastOnScreenFingerprintUiMech.get();
-        if (uiMech == null && PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
-            uiMech = CouiUdfpsController.lastUiMech();
-        }
-        boolean dispatched = invokeFirstNoArgFodMethod(uiMech, "OnScreenFingerprintUiMech",
-                source, trace,
-                "notifyHideAodIcon",
-                "hideFingerprintIconTemporarily",
-                "hideFingerprintIcon",
-                "fpIconHide");
-        if (!dispatched) {
-            if (latched) {
-                FOD_NATIVE_TIMEOUT_HIDE_GATE.clearIfTrace(trace);
-            }
-            PixelAodLog.log("allowed OPlus AOD native-timeout hide source=" + source
-                    + " reason=fod-only-unavailable"
-                    + " trace=" + trace
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-            return false;
-        }
-        lastFodOnlyNativeTimeoutHideSuppressionMs = SystemClock.uptimeMillis();
-        lastFodOnlyNativeTimeoutHideTrace = trace;
-        // This callback hides only FOD. Do not renew the generic Pixel AOD-overlay visibility
-        // window here: doing so lets later vendor animation mutations reclaim the hidden carrier.
-        return true;
-    }
-
     static boolean isFodNativeTimeoutHideLatched(Context context) {
         if (context == null) {
             return false;
@@ -2822,192 +3109,7 @@ final class PixelAodHook {
         return null;
     }
 
-    private static void reassertPixelAodAfterEnergySavingHide(Context context, String source) {
-        final Context checkContext = context != null ? context : systemUiContext;
-        MAIN.post(() -> {
-            String passSource = source + "#suppressed-hide";
-            if (!shouldContinueEnergySavingReassert(checkContext, passSource)) {
-                return;
-            }
-            PixelAodClockView.markRecentAodOverlayVisible(passSource);
-            PixelAodClockView.setAodActive(true, passSource);
-            PixelAodClockView.tickAllInstances();
-            refreshKnownAodHostVisibility(passSource);
-        });
-        MAIN.postDelayed(() -> {
-            String passSource = source + "#suppressed-hide-delayed";
-            if (!shouldContinueEnergySavingReassert(checkContext, passSource)) {
-                return;
-            }
-            PixelAodClockView.tickAllInstances();
-            refreshKnownAodHostVisibility(passSource);
-            PixelAodLog.log("reasserted Pixel AOD after OPlus energy-saving hide source="
-                    + source
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
-        }, AOD_ENERGY_HIDE_REASSERT_DELAY_MILLIS);
-    }
-
-    private static boolean shouldContinueEnergySavingReassert(Context context, String source) {
-        if (context == null) {
-            PixelAodLog.log("skipped Pixel AOD energy-saving reassert source=" + source
-                    + " reason=no-context trace=" + PixelAodClockView.currentAodTraceId());
-            return false;
-        }
-        boolean interactive = PixelAodClockView.isDeviceInteractive(context);
-        OosAodLifecycleAdapter.AodPolicyDecision decision =
-                PixelAodClockView.evaluateAodPolicy(context, source + "#policy-recheck");
-        boolean shouldReassert = OosAodLifecycleAdapter.shouldReassertAodAfterPolicy(
-                interactive, decision.modulePolicyAllowsDisplay,
-                decision.shouldApplyModuleAod, decision.shouldKeepNativeDozeAlive,
-                decision.modulePolicyReason);
-        if (!shouldReassert) {
-            PixelAodLog.log("skipped Pixel AOD energy-saving reassert source=" + source
-                    + " reason=policy-recheck"
-                    + " modulePolicyReason=" + decision.modulePolicyReason
-                    + " shouldApplyModuleAod=" + decision.shouldApplyModuleAod
-                    + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
-                    + " interactive=" + interactive
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-        }
-        return shouldReassert;
-    }
-
-    private static void maybeReassertPixelAodAfterNativeTimeoutHide(
-            Context context, String source) {
-        if (!isNativeAodTimeoutHideSource(source)) {
-            return;
-        }
-        Context checkContext = context != null ? context : systemUiContext;
-        String expectedTrace = PixelAodClockView.peekAodTraceId();
-        if (wasFodOnlyNativeTimeoutHideJustSuppressed(expectedTrace)) {
-            PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
-                    + " reason=fod-only-native-timeout-suppressed"
-                    + " expectedTrace=" + expectedTrace
-                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
-            return;
-        }
-        if (checkContext == null) {
-            PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
-                    + " reason=no-context expectedTrace=" + expectedTrace
-                    + " state={" + PixelAodClockView.describeAodState(null) + "}");
-            return;
-        }
-        if (PixelAodClockView.isDeviceInteractive(checkContext)) {
-            PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
-                    + " reason=interactive expectedTrace=" + expectedTrace
-                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
-            return;
-        }
-        if (PixelAodClockView.isProximityNear()) {
-            PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
-                    + " reason=proximity-near expectedTrace=" + expectedTrace
-                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
-            return;
-        }
-        OosAodLifecycleAdapter.AodPolicyDecision decision =
-                PixelAodClockView.evaluateAodPolicy(
-                        checkContext, source + "#native-timeout-after");
-        if (!decision.modulePolicyAllowsDisplay
-                || !decision.shouldApplyModuleAod
-                || !decision.shouldKeepNativeDozeAlive) {
-            PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
-                    + " reason=policy"
-                    + " modulePolicyReason=" + decision.modulePolicyReason
-                    + " shouldApplyModuleAod=" + decision.shouldApplyModuleAod
-                    + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
-                    + " expectedTrace=" + expectedTrace
-                    + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
-            return;
-        }
-        PixelAodLog.log("scheduling Pixel AOD native-timeout reassert source=" + source
-                + " expectedTrace=" + expectedTrace
-                + " reason=" + decision.nativeHideCallbackReason
-                + " keepDozeReason=" + decision.keepNativeDozeReason
-                + " state={" + PixelAodClockView.describeAodState(checkContext) + "}");
-        reassertPixelAodAfterNativeTimeoutHide(checkContext, source, expectedTrace);
-    }
-
-    private static boolean wasFodOnlyNativeTimeoutHideJustSuppressed(String expectedTrace) {
-        long ageMs = SystemClock.uptimeMillis() - lastFodOnlyNativeTimeoutHideSuppressionMs;
-        return ageMs >= 0
-                && ageMs <= FOD_ONLY_NATIVE_HIDE_SKIP_WINDOW_MILLIS
-                && OosAodLifecycleAdapter.matchesExpectedTrace(
-                expectedTrace, lastFodOnlyNativeTimeoutHideTrace);
-    }
-
-    private static boolean isNativeAodTimeoutHideSource(String source) {
-        return source != null
-                && (source.contains("notifyHideCallback")
-                || source.contains("AodRecord#onEnergySavingNotifyHide"));
-    }
-
-    private static void reassertPixelAodAfterNativeTimeoutHide(
-            Context context, String source, String expectedTrace) {
-        runPixelAodNativeTimeoutReassert(context, source, expectedTrace, "immediate");
-        for (long delayMillis : AOD_NATIVE_TIMEOUT_REASSERT_DELAYS_MILLIS) {
-            MAIN.postDelayed(() -> runPixelAodNativeTimeoutReassert(
-                    context, source, expectedTrace, "delayed-" + delayMillis),
-                    delayMillis);
-        }
-    }
-
-    private static void runPixelAodNativeTimeoutReassert(Context context, String source,
-            String expectedTrace, String pass) {
-        MAIN.post(() -> {
-            String currentTrace = PixelAodClockView.peekAodTraceId();
-            if (!OosAodLifecycleAdapter.matchesExpectedTrace(expectedTrace, currentTrace)) {
-                PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
-                        + " pass=" + pass
-                        + " reason=trace-mismatch expectedTrace=" + expectedTrace
-                        + " currentTrace=" + currentTrace
-                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
-                return;
-            }
-            if (PixelAodClockView.isDeviceInteractive(context)) {
-                PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
-                        + " pass=" + pass
-                        + " reason=interactive trace=" + currentTrace
-                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
-                return;
-            }
-            if (PixelAodClockView.isProximityNear()) {
-                PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
-                        + " pass=" + pass
-                        + " reason=proximity-near trace=" + currentTrace
-                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
-                return;
-            }
-            OosAodLifecycleAdapter.AodPolicyDecision decision =
-                    PixelAodClockView.evaluateAodPolicy(
-                            context, source + "#native-timeout-reassert-" + pass);
-            if (!decision.modulePolicyAllowsDisplay
-                    || !decision.shouldApplyModuleAod
-                    || !decision.shouldKeepNativeDozeAlive) {
-                PixelAodLog.log("skipped Pixel AOD native-timeout reassert source=" + source
-                        + " pass=" + pass
-                        + " reason=policy"
-                        + " modulePolicyReason=" + decision.modulePolicyReason
-                        + " shouldApplyModuleAod=" + decision.shouldApplyModuleAod
-                        + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
-                        + " trace=" + currentTrace
-                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
-                return;
-            }
-            PixelAodClockView.markRecentAodOverlayVisible(
-                    source + "#native-timeout-reassert-" + pass);
-            PixelAodClockView.setAodActive(true, source + "#native-timeout-reassert-" + pass);
-            PixelAodClockView.tickAllInstances();
-            refreshKnownAodHostVisibility(source + "#native-timeout-reassert-" + pass);
-            PixelAodLog.log("reasserted Pixel AOD after native timeout hide source=" + source
-                    + " pass=" + pass
-                    + " trace=" + currentTrace
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-        });
-    }
-
-    static void hookLockscreenNotificationPolicy(ClassLoader classLoader) {
+    static void hookLockscreenVisibilityObservers(ClassLoader classLoader) {
         hookKeyguardNotificationVisibilityProvider(classLoader);
         hookKeyguardNotifFilter(classLoader);
     }
@@ -3027,22 +3129,16 @@ final class PixelAodHook {
                 Object ranking = rankingFromEntry(param.args[0]);
                 String source = "KeyguardNotificationVisibilityProvider";
                 boolean hidden = Boolean.TRUE.equals(param.getResult());
-                if (!hidden && shouldForceHideLowImportanceNotificationOnLockscreen(
-                        sbn, ranking, source)) {
-                    param.setResult(true);
-                    hidden = true;
-                }
-                if (hidden && isEligibleForLockscreenPolicyOverride(sbn, ranking,
-                        source)) {
+                if (hidden && shouldCorrectOosLockscreenVisibility(sbn, ranking, source)) {
                     param.setResult(false);
                     hidden = false;
                 }
                 PixelAodClockView.updateLockscreenVisibilityFromProvider(
                         sbn, hidden, source);
             }, entryClass);
-            PixelAodLog.log("hooked KeyguardNotificationVisibilityProvider lockscreen policy");
+            PixelAodLog.log("hooked KeyguardNotificationVisibilityProvider OOS compatibility observer");
         } catch (Throwable t) {
-            PixelAodLog.log("failed to hook KeyguardNotificationVisibilityProvider lockscreen policy", t);
+            PixelAodLog.log("failed to hook KeyguardNotificationVisibilityProvider read-only visibility observer", t);
         }
     }
 
@@ -3056,7 +3152,7 @@ final class PixelAodHook {
                     entryClass,
                     long.class);
             if (Modifier.isAbstract(method.getModifiers())) {
-                PixelAodLog.log("skipped abstract keyguard NotifFilter lockscreen policy fallback");
+                PixelAodLog.log("skipped abstract keyguard NotifFilter visibility observer");
                 return;
             }
             ModernHookBridge.hookAfter(filterClass, "shouldFilterOut", param -> {
@@ -3069,20 +3165,15 @@ final class PixelAodHook {
                 Object ranking = rankingFromEntry(param.args[0]);
                 String source = filterName(param.thisObject);
                 boolean hidden = Boolean.TRUE.equals(param.getResult());
-                if (!hidden && shouldForceHideLowImportanceNotificationOnLockscreen(
-                        sbn, ranking, source)) {
-                    param.setResult(true);
-                    hidden = true;
-                }
-                if (hidden && isEligibleForLockscreenPolicyOverride(sbn, ranking, source)) {
+                if (hidden && shouldCorrectOosLockscreenVisibility(sbn, ranking, source)) {
                     param.setResult(false);
                     hidden = false;
                 }
                 PixelAodClockView.updateLockscreenVisibilityFromFilter(sbn, hidden, source);
             }, entryClass, long.class);
-            PixelAodLog.log("hooked keyguard NotifFilter lockscreen policy fallback");
+            PixelAodLog.log("hooked keyguard NotifFilter OOS compatibility fallback");
         } catch (Throwable t) {
-            PixelAodLog.log("failed to hook keyguard NotifFilter lockscreen policy fallback", t);
+            PixelAodLog.log("failed to hook keyguard NotifFilter read-only visibility observer", t);
         }
     }
 
@@ -3152,100 +3243,43 @@ final class PixelAodHook {
         }
     }
 
-    private static boolean isEligibleForLockscreenPolicyOverride(StatusBarNotification sbn,
+    private static boolean shouldCorrectOosLockscreenVisibility(StatusBarNotification sbn,
             Object ranking, String source) {
-        if (sbn == null || sbn.getNotification() == null
-                || sbn.getNotification().getSmallIcon() == null) {
-            return false;
-        }
-        Notification notification = sbn.getNotification();
-        String pkg = sbn.getPackageName();
-        boolean testNotification = MODULE_PACKAGE.equals(pkg)
-                && TestNotificationReceiver.TEST_TAG.equals(sbn.getTag());
-        if (MODULE_PACKAGE.equals(pkg) && !testNotification) {
-            PixelAodLog.log("blocked lockscreen policy override", () ->
-                    "blocked lockscreen policy override pkg=" + pkg
-                    + " key=" + sbn.getKey()
-                    + " source=" + source
-                    + " reason=module-package-not-test-notification"
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(null) + "}");
-            return false;
-        }
-        boolean rankingSecret = rankingVisibilitySecret(ranking);
-        if (AodNotificationPipeline.isExcludedFromLockscreenPolicyOverride(sbn, rankingSecret)) {
-            PixelAodLog.log("blocked lockscreen policy override", () ->
-                    "blocked lockscreen policy override pkg=" + pkg
-                    + " key=" + sbn.getKey()
-                    + " source=" + source
-                    + " reason=system-transport-secret-or-media"
-                    + " trace=" + PixelAodClockView.currentAodTraceId());
-            return false;
-        }
-        int importance = rankingImportance(ranking);
-        if (!testNotification
-                && AodNotificationPipeline.isLowImportanceForLockscreenPolicy(importance)) {
-            PixelAodLog.log("blocked lockscreen policy override", () ->
-                    "blocked lockscreen policy override pkg=" + pkg
-                    + " key=" + sbn.getKey()
-                    + " source=" + source
-                    + " reason=low-importance"
-                    + " importance=" + importance
-                    + " flags=0x" + Integer.toHexString(notification.flags)
-                    + " trace=" + PixelAodClockView.currentAodTraceId());
-            return false;
-        }
-        PixelAodLog.log("allowing lockscreen notification through OOS policy", () ->
-                "allowing lockscreen notification through OOS policy pkg="
-                        + pkg + " key=" + sbn.getKey() + " importance=" + importance
-                + " source=" + source
-                + " category=" + notification.category
-                + " visibility=" + notification.visibility
-                + " flags=0x" + Integer.toHexString(notification.flags)
-                + " trace=" + PixelAodClockView.currentAodTraceId()
-                + " state={" + PixelAodClockView.describeAodState(null) + "}");
-        return true;
-    }
-
-    private static boolean shouldForceHideLowImportanceNotificationOnLockscreen(
-            StatusBarNotification sbn,
-            Object ranking, String source) {
-        if (!PixelAodClockView.isLockscreenPolicyEnabled()) {
-            return false;
-        }
         Context context = systemUiContext;
-        if (context == null || !PixelLockscreenClockView.isSystemKeyguardLocked(context)) {
-            return false;
-        }
-        if (sbn == null || sbn.getNotification() == null
-                || sbn.getNotification().getSmallIcon() == null) {
+        if (context == null
+                || !PixelAodSettings.getBoolean(context,
+                        PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true)
+                || !AodNotificationPipeline.lockscreenNotificationsEnabled(context)
+                || sbn == null
+                || sbn.getNotification() == null) {
             return false;
         }
         Notification notification = sbn.getNotification();
-        String pkg = sbn.getPackageName();
-        boolean testNotification = MODULE_PACKAGE.equals(pkg)
-                && TestNotificationReceiver.TEST_TAG.equals(sbn.getTag());
-        if (MODULE_PACKAGE.equals(pkg) && !testNotification) {
-            return false;
-        }
-        if (AodNotificationPipeline.isExcludedFromLockscreenPolicyOverride(sbn,
-                rankingVisibilitySecret(ranking))) {
-            return false;
-        }
+        boolean testNotification = AodNotificationPipeline.isTestNotification(sbn);
+        boolean rankingSecret = rankingVisibilitySecret(ranking);
         int importance = rankingImportance(ranking);
-        String hiddenReason = PixelAodClockView.lockscreenPolicySilentHiddenReason(sbn, importance);
-        if (testNotification || hiddenReason == null) {
-            return false;
+        boolean mediaCandidate = AodNotificationPipeline.hasMediaSessionExtra(notification)
+                || AodNotificationPipeline.isMediaIconCandidate(sbn);
+        boolean eligible = AodNotificationPipeline.isEligibleForOosLockscreenVisibilityCorrection(
+                sbn.getPackageName(),
+                testNotification,
+                notification.getSmallIcon() != null,
+                notification.category,
+                notification.visibility,
+                rankingSecret,
+                mediaCandidate,
+                importance);
+        if (eligible) {
+            PixelAodLog.log("correcting OOS lockscreen notification visibility pkg="
+                    + sbn.getPackageName()
+                    + " key=" + sbn.getKey()
+                    + " source=" + source
+                    + " importance=" + importance
+                    + " category=" + notification.category
+                    + " visibility=" + notification.visibility
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
         }
-        PixelAodLog.log("forcing lockscreen low-importance notification hide pkg=" + pkg
-                + " key=" + sbn.getKey()
-                + " source=" + source
-                + " reason=" + hiddenReason
-                + " importance=" + importance
-                + " flags=0x" + Integer.toHexString(notification.flags)
-                + " trace=" + PixelAodClockView.currentAodTraceId()
-                + " state={" + PixelAodClockView.describeAodState(context) + "}");
-        return true;
+        return eligible;
     }
 
     private static boolean rankingVisibilitySecret(Object ranking) {
@@ -3253,7 +3287,8 @@ final class PixelAodHook {
             return false;
         }
         try {
-            Object override = ModernHookBridge.callMethod(ranking, "getLockscreenVisibilityOverride");
+            Object override = ModernHookBridge.callMethod(ranking,
+                    "getLockscreenVisibilityOverride");
             if (override instanceof Integer
                     && (Integer) override == Notification.VISIBILITY_SECRET) {
                 return true;
@@ -3276,7 +3311,7 @@ final class PixelAodHook {
 
     private static int rankingImportance(Object ranking) {
         if (ranking == null) {
-            return Integer.MIN_VALUE;
+            return AodNotificationPipeline.NotificationManagerImportance.UNKNOWN;
         }
         try {
             Object value = ModernHookBridge.callMethod(ranking, "getImportance");
@@ -3286,7 +3321,7 @@ final class PixelAodHook {
         } catch (Throwable ignored) {
             // Best-effort only.
         }
-        return Integer.MIN_VALUE;
+        return AodNotificationPipeline.NotificationManagerImportance.UNKNOWN;
     }
 
     private static void handleClockLayout(Context context, Object clockLayoutObject, String source) {
@@ -3316,6 +3351,12 @@ final class PixelAodHook {
 
     private static void handleOuterRootLayout(ViewGroup host, String source) {
         try {
+            int displayId = PrimaryDisplayPolicy.displayId(host);
+            if (!PrimaryDisplayPolicy.isPrimaryDisplayId(displayId)) {
+                PixelAodLog.log("ignored AOD outer root reason=non-primary-display"
+                        + " displayId=" + displayId + " source=" + source);
+                return;
+            }
             if (!isAodRootLayout(host)) {
                 PixelAodLog.log("ignored AOD outer root from " + source
                         + " reason=not-aod-root host=" + hostSummary(host)
@@ -3500,6 +3541,12 @@ final class PixelAodHook {
 
     private static void handleClockHost(Context context, ViewGroup host, String source) {
         try {
+            int displayId = PrimaryDisplayPolicy.displayId(host);
+            if (!PrimaryDisplayPolicy.isPrimaryDisplayId(displayId)) {
+                PixelAodLog.log("skipped Pixel AOD host reason=non-primary-display"
+                        + " displayId=" + displayId + " source=" + source);
+                return;
+            }
             ViewGroup pixelHost = findPixelClockInjectionHost(host);
             lastStockHost = new WeakReference<>(host);
             observeStockAodHostLifecycle(host, source);
@@ -3587,6 +3634,21 @@ final class PixelAodHook {
 
     private static void handleLockscreenHost(Context context, ViewGroup host, String source) {
         try {
+            int displayId = PrimaryDisplayPolicy.displayId(host);
+            if (!PrimaryDisplayPolicy.isPrimaryDisplayId(displayId)) {
+                PixelAodLog.log("skipped Pixel lockscreen host reason=non-primary-display"
+                        + " displayId=" + displayId + " source=" + source);
+                return;
+            }
+            if (PixelAodClockView.isDirectGoneHandoffActive()) {
+                PixelLockscreenClockView.suppressForDirectGone(source + "#direct-gone");
+                ActiveClockRendererController.suppressForDirectGone(source + "#direct-gone");
+                PixelAodLog.log("skipped Pixel lockscreen host during native direct-to-Gone"
+                        + " source=" + source
+                        + " host=" + hostSummary(host)
+                        + " trace=" + PixelAodClockView.currentAodTraceId());
+                return;
+            }
             lastShadeHost = new WeakReference<>(host);
             boolean interactive = PixelAodClockView.isDeviceInteractive(context);
             boolean customizeNow = PixelAodClockView.shouldCustomizeAodNow(context);
@@ -3642,6 +3704,8 @@ final class PixelAodHook {
 
     static void reassertStockAodSuppressionAfterScreenOff(String source) {
         final String expectedTrace = PixelAodClockView.peekAodTraceId();
+        final boolean epochScoped = PixelAodClockView.isVendorAmbientSessionActive();
+        final long expectedEpoch = PixelAodClockView.currentVendorAmbientEpoch();
         if (TextUtils.isEmpty(expectedTrace)
                 || TextUtils.equals(expectedTrace, lastScreenOffStockSuppressionTrace)) {
             return;
@@ -3649,8 +3713,17 @@ final class PixelAodHook {
         lastScreenOffStockSuppressionTrace = expectedTrace;
         for (long delayMillis : SCREEN_OFF_STOCK_SUPPRESSION_REASSERT_DELAYS_MILLIS) {
             String passSource = source + "#stock-suppression-reapply-" + delayMillis + "ms";
-            MAIN.postDelayed(() -> refreshKnownAodHostVisibility(passSource, expectedTrace),
-                    delayMillis);
+            MAIN.postDelayed(() -> {
+                if (epochScoped
+                        && !PixelAodClockView.isCurrentVendorAmbientEpoch(expectedEpoch)) {
+                    PixelAodLog.log("skipped stale stock AOD suppression reapply source="
+                            + passSource
+                            + " expectedEpoch=" + expectedEpoch
+                            + " currentEpoch=" + PixelAodClockView.currentVendorAmbientEpoch());
+                    return;
+                }
+                refreshKnownAodHostVisibility(passSource, expectedTrace);
+            }, delayMillis);
         }
         PixelAodLog.log("scheduled screen-off stock AOD suppression reapply source=" + source
                 + " expectedTrace=" + expectedTrace
@@ -3663,7 +3736,7 @@ final class PixelAodHook {
             ViewGroup stockHost = lastStockHost.get();
             Context context = stockHost != null ? stockHost.getContext() : systemUiContext;
             if (stockHost == null || context == null
-                    || !PixelAodClockView.isContinuousAodPolicyAllowingDisplay(
+                    || !PixelAodClockView.isContinuousAodConfiguredForEntry(
                     context, source + "#pre-dream-stock-suppression")) {
                 PixelAodLog.log("skipped pre-dream stock AOD suppression source=" + source
                         + " stockHost=" + hostSummary(stockHost)
@@ -3791,6 +3864,13 @@ final class PixelAodHook {
 
     private static void applyLockscreenClockReplacement(Context context, ViewGroup stockHost,
             ViewGroup pixelHost, String source) {
+        ViewGroup displayOwner = pixelHost != null ? pixelHost : stockHost;
+        int displayId = PrimaryDisplayPolicy.displayId(displayOwner);
+        if (!PrimaryDisplayPolicy.isPrimaryDisplayId(displayId)) {
+            PixelAodLog.log("lockscreen replacement skipped reason=non-primary-display"
+                    + " displayId=" + displayId + " source=" + source);
+            return;
+        }
         boolean surfaceVisible = isLikelyLockscreenSurfaceVisible(context, stockHost, pixelHost);
         PixelLockscreenClockView.setLockscreenSurfaceVisible(surfaceVisible, source);
         if (!surfaceVisible) {
@@ -3822,6 +3902,9 @@ final class PixelAodHook {
     }
 
     private static void adjustPluginStatusViews(Context context, ViewGroup root) {
+        if (!PrimaryDisplayPolicy.isPrimary(root)) {
+            return;
+        }
         traverse(root, view -> {
             if (isPixelClockOverlay(view)) {
                 return false;
@@ -4131,6 +4214,14 @@ final class PixelAodHook {
     }
 
     private static void applyLockscreenClockReplacementFromLastHosts(String source) {
+        if (PixelAodClockView.isDirectGoneHandoffActive()) {
+            PixelLockscreenClockView.suppressForDirectGone(source + "#direct-gone");
+            ActiveClockRendererController.suppressForDirectGone(source + "#direct-gone");
+            PixelAodLog.log("skipped remembered-host lockscreen replacement during native direct-to-Gone"
+                    + " source=" + source
+                    + " trace=" + PixelAodClockView.currentAodTraceId());
+            return;
+        }
         ViewGroup stockHost = lastStockHost.get();
         ViewGroup pixelHost = lastPixelHost.get();
         Context context = pixelHost != null ? pixelHost.getContext()
@@ -4284,6 +4375,9 @@ final class PixelAodHook {
     }
 
     private static void hideStockClockViews(ViewGroup root) {
+        if (!PrimaryDisplayPolicy.isPrimary(root)) {
+            return;
+        }
         final int[] stats = new int[2];
         traverse(root, view -> {
             if (isPixelClockOverlay(view)) {
@@ -4354,6 +4448,9 @@ final class PixelAodHook {
     }
 
     private static void hideStockKeyguardClockViews(ViewGroup root) {
+        if (!PrimaryDisplayPolicy.isPrimary(root)) {
+            return;
+        }
         final int[] stats = new int[2];
         traverse(root, view -> {
             if (isPixelClockOverlay(view)) {
@@ -5569,5 +5666,3 @@ final class PixelAodHook {
         int visitedCount;
     }
 }
-
-

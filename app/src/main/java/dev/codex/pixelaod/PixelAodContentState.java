@@ -62,4 +62,8 @@ final class PixelAodContentState {
     static List<Drawable> currentCouiNotificationIcons(Context context) {
         return PixelAodClockView.currentCouiNotificationIcons(context);
     }
+
+    static void resetSelectedUserContentState(String source) {
+        PixelAodClockView.resetSelectedUserContentState(source);
+    }
 }

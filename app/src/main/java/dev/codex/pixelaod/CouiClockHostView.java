@@ -375,7 +375,7 @@ final class CouiClockHostView extends FrameLayout {
         applyClockColors();
         applyTargets(false, 0L);
         final long token = pendingEntryToken;
-        final boolean finalAnimate = animate;
+        final boolean finalAnimate = SystemAnimationScalePolicy.shouldAnimate(animate);
         beginAodFrameRunnable = () -> {
             if (!aodEntryInProgress || !transitionGeneration.isCurrent(token)) {
                 return;
@@ -390,7 +390,8 @@ final class CouiClockHostView extends FrameLayout {
             applyTargets(finalAnimate, finalAnimate ? TARGET_TRANSITION_MS : 0L);
             finishAodEntryRunnable = () -> finishAodEntry(token);
             postDelayed(finishAodEntryRunnable,
-                    finalAnimate ? CouiClockAodTransitionPolicy.ENTRY_ANIMATION_DURATION_MS : 0L);
+                    finalAnimate ? SystemAnimationScalePolicy.scaledNonAnimatorDelayMillis(
+                            CouiClockAodTransitionPolicy.ENTRY_ANIMATION_DURATION_MS) : 0L);
         };
         postOnAnimation(beginAodFrameRunnable);
     }
@@ -439,6 +440,7 @@ final class CouiClockHostView extends FrameLayout {
     void setLiveAodContent(CouiClockPresentationModel.AodContent content, boolean animate,
             String source) {
         diagnosticSource = source == null ? "live-aod-content" : source;
+        animate = SystemAnimationScalePolicy.shouldAnimate(animate);
         CouiClockPresentationModel.AodContent normalized = normalizeContent(content);
         if (aodEntryInProgress) {
             deferAodContent(normalized);
@@ -543,6 +545,17 @@ final class CouiClockHostView extends FrameLayout {
     private void startLiveAodCrossfade(CouiClockPresentationModel.AodContent content) {
         cancelPendingLiveAodRetarget(false);
         cancelRunningPropertyAnimations();
+        if (!SystemAnimationScalePolicy.animationsEnabled()) {
+            cancelLiveAodCrossfade();
+            presentation = new CouiClockPresentationModel(CouiClockPresentationModel.Scene.LARGE,
+                    true, true, normalizeContent(content));
+            aodData = dataForContent(presentation.content());
+            updateBurnInForPresentation();
+            applyClockColors();
+            setAlpha(1f);
+            applyTargets(false, 0L);
+            return;
+        }
         long token = liveAodTransitionGeneration.begin();
         liveCrossfadeInProgress = true;
         deferredLiveAodContent = normalizeContent(content);
@@ -1089,7 +1102,7 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     private void scheduleApplyTargets(boolean animate) {
-        pendingTargetApplyAnimated |= animate;
+        pendingTargetApplyAnimated |= SystemAnimationScalePolicy.shouldAnimate(animate);
         if (pendingTargetApply) {
             return;
         }
@@ -1176,19 +1189,25 @@ final class CouiClockHostView extends FrameLayout {
         if (getWidth() <= 0 || getHeight() <= 0) {
             return;
         }
+        if (!SystemAnimationScalePolicy.shouldAnimate(animate)) {
+            animate = false;
+            duration = 0L;
+        }
         // Exact COUI 2.5 ordering: an explicit target transaction owns this frame and cancels any
         // queued scheduleApplyTargets runnable before calculating/applying the new targets.
         cancelScheduledTargetApply();
         GlyphSet activeSet = activeGlyphSet();
         CouiClockGeometryPolicy.SurfaceTarget surface = currentSurfaceTarget();
-        GlyphTarget[] targets = calculateGlyphTargets(activeSet, surface);
+        GlyphSet metricSet = metricGlyphSet();
+        GlyphTarget[] targets = calculateGlyphTargets(metricSet, surface);
         String variation = CouiClockFontPolicy.variationFor(
                 presentation.visualScene(), presentation.dozing());
+        String systemAnimation = SystemAnimationScalePolicy.describe();
         String diagnosticSignature = presentation.visualScene() + "|"
                 + presentation.dozing() + "|" + presentation.partialAod() + "|"
                 + currentSurfaceName() + "|" + variation + "|"
                 + (morphRuntime != null ? "MORPHING_LARGE" : "FOUR_SET_CROSSFADE") + "|"
-                + animate + "|" + duration + "|" + diagnosticSource;
+                + animate + "|" + duration + "|" + systemAnimation + "|" + diagnosticSource;
         if (!diagnosticSignature.equals(lastTargetDiagnosticSignature)) {
             lastTargetDiagnosticSignature = diagnosticSignature;
             PixelAodLog.log("COUI host targets rendererMode=COUI_PORT"
@@ -1202,6 +1221,7 @@ final class CouiClockHostView extends FrameLayout {
                     + " variation=" + variation
                     + " animate=" + animate
                     + " durationMs=" + duration
+                    + " systemAnimation={" + systemAnimation + "}"
                     + " transitionGeneration=" + transitionGeneration.current()
                     + " liveGeneration=" + liveAodTransitionGeneration.current()
                     + " contentKind=" + presentation.content().kind()
@@ -1588,6 +1608,28 @@ final class CouiClockHostView extends FrameLayout {
         }
         return presentation.visualScene() == CouiClockPresentationModel.Scene.LARGE
                 ? aodLargeSet : aodCompactSet;
+    }
+
+    /**
+     * ROM TextAnimator keeps one persistent glyph view alive while its variable-font style
+     * changes. Keep horizontal metric cells tied to the corresponding lockscreen scene so a
+     * weight-only LS-to-AOD handoff cannot reflow digit slots after the visible weight morph.
+     * Large-to-Small still changes metric sets normally; only the doze weight variant is frozen.
+     */
+    private GlyphSet metricGlyphSet() {
+        CouiClockFontPolicy.FallbackSet metricSet = CouiClockFontPolicy.metricSetFor(
+                presentation.visualScene(), presentation.dozing(), morphRuntime != null);
+        switch (metricSet) {
+            case AOD_LARGE:
+                return aodLargeSet;
+            case LOCKSCREEN_SMALL:
+                return compactSet;
+            case AOD_SMALL:
+                return aodCompactSet;
+            case LOCKSCREEN_LARGE:
+            default:
+                return largeSet;
+        }
     }
 
     private CouiClockGeometryPolicy.SurfaceTarget currentSurfaceTarget() {
