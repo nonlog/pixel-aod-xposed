@@ -59,6 +59,14 @@ final class PixelAodRuntimeState {
                 && SystemAnimationScalePolicy.animationsEnabled();
     }
 
+    static boolean nativeKeyguardSceneAllowsPresentation() {
+        return PixelAodHook.nativeKeyguardSceneAllowsPresentation();
+    }
+
+    static String describeNativeKeyguardSceneEligibility() {
+        return PixelAodHook.describeNativeKeyguardSceneEligibility();
+    }
+
     static String describeSystemAnimationScale() {
         return SystemAnimationScalePolicy.describe();
     }

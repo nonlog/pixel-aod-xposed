@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.10] - 2026-08-23
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Implement M9 P1-S12 / ADR 0043 as a capability-gated native Keyguard scene adapter using the current OOS `KeyguardTransitionRepositoryImpl#emitTransition(TransitionStep, boolean)` seam. Pixel presentation now follows authoritative `LOCKSCREEN`, `AOD`, and `DOZING` eligibility while Bouncer, Occluded, Gone and other known non-presentation scenes suppress the Pixel primary host.
+- Keep unknown/unsupported native scene state fail-open to the existing proven fallback rather than black-screening on ROMs without the seam.
+- When an eligible scene returns from an ineligible scene, resynchronize the host once from the current native ClockPlugin state without animation. This repairs the first S12 candidate where returning from `PRIMARY_BOUNCER` could leave the Pixel clock hidden until a later ClockPlugin render.
+- Observe native transition value/phase for diagnostics only. Current OOS still reports `shouldControlScreenOff=false`, so S10 keeps `allowsVendorProgress=false`; S12 does not feed native progress into the protected 550 ms LS-to-AOD animation engine.
+- Advance the visible candidate version to `0.1.10`; Android update ordering uses separate `versionCode=9001` and no parenthesized build code is shown.
+
+### Evidence / Status
+- Final JDK 17 regression: **90 suites / 423 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS; all seven protected clock/morph/weight animation-core files remain **zero diff**.
+- Final APK: **20,339,063 bytes**, SHA-256 `4c0c9b7300478ca72f01856863f377cfa1a7e3ed4e24ce01b9ccb8c8f3cf05f0`; overwrite install succeeds and the device `base.apk` hash matches. Package metadata reports `versionName=0.1.10`, `versionCode=9001`.
+- Current OOS runtime proves the seam with real transitions including `DOZING -> LOCKSCREEN`, `LOCKSCREEN -> PRIMARY_BOUNCER`, `PRIMARY_BOUNCER -> LOCKSCREEN`, and `LOCKSCREEN -> DOZING`.
+- Bouncer physical gate: entering `PRIMARY_BOUNCER` logs `presentationAllowed=false` and `hiddenHosts=1`; the captured PIN screen has no Pixel clock overlay. Returning to Lockscreen logs `syncedHosts=1`, and the immediate post-return capture restores the Pixel clock/date/weather/notification presentation.
+- Normal sleep gate: a strict verified `mWakefulness=Awake` Lockscreen -> `mWakefulness=Dozing` cycle stays `presentationAllowed=true` throughout the native `LOCKSCREEN -> DOZING` transition and produces a complete settled Pixel AOD. SystemUI remains PID `22776` with no current-PID fatal/ANR/signal/OOM match; all three Android animation scales remain `1.0`.
+- An early 2-second AOD screenshot captured only the fingerprint during the vendor transition; a later settled capture and a separately controlled Awake -> Sleep cycle both show the complete AOD. It is retained as timing evidence, not treated as a final-state regression.
+
 ## [0.1.9] - 2026-08-22
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

@@ -56,6 +56,14 @@ final class ActiveClockRendererController {
         CouiClockPluginHostController.suppressForDirectGone(source);
     }
 
+    static void suppressForNativeScene(String source) {
+        CouiClockPluginHostController.suppressForNativeScene(source);
+    }
+
+    static void resyncForNativeScene(String source) {
+        CouiClockPluginHostController.resyncForNativeScene(source);
+    }
+
     static void refreshSemanticData(String source) {
         CouiClockPluginHostController.refreshSemanticData(source);
     }

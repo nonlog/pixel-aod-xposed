@@ -136,6 +136,10 @@ final class PixelAodHook {
             "com.android.systemui.statusbar.phone.ScreenOffAnimationController";
     private static final String KEYGUARD_STATE_CONTROLLER_IMPL =
             "com.android.systemui.statusbar.policy.KeyguardStateControllerImpl";
+    private static final String KEYGUARD_TRANSITION_REPOSITORY_IMPL =
+            "com.android.systemui.keyguard.data.repository.KeyguardTransitionRepositoryImpl";
+    private static final String KEYGUARD_TRANSITION_STEP =
+            "com.android.systemui.keyguard.shared.model.TransitionStep";
     private static final String KEYGUARD_SERVICE =
             "com.android.systemui.keyguard.KeyguardService";
     private static final String[] KEYGUARD_SERVICE_BINDER_CLASSES = {
@@ -215,6 +219,8 @@ final class PixelAodHook {
     private static final VendorScreenOffAnimationEligibility
             VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY =
             new VendorScreenOffAnimationEligibility();
+    private static final NativeKeyguardSceneEligibility NATIVE_KEYGUARD_SCENE_ELIGIBILITY =
+            new NativeKeyguardSceneEligibility();
     private static volatile WeakReference<Object> lastDozeParameters =
             new WeakReference<>(null);
     private static volatile WeakReference<Object> lastScreenOffAnimationController =
@@ -264,6 +270,7 @@ final class PixelAodHook {
         }
         // Preserve the proven 0.1.380 registration order while making hook ownership explicit.
         PixelAodLifecycleHookInstaller.installScreenOffAnimationEligibility(classLoader);
+        PixelAodLifecycleHookInstaller.installNativeKeyguardTransitionSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installWakefulness(classLoader);
         PixelAodLifecycleHookInstaller.installKeyguardGoingAway(classLoader);
         PixelAodSurfaceHookInstaller.installClockLayout(appContext, classLoader);
@@ -2872,6 +2879,89 @@ final class PixelAodHook {
             PixelAodLog.log("installed Wakefulness wake/sleep lifecycle hooks=" + hooks);
         } catch (Throwable t) {
             PixelAodLog.log("failed to hook Wakefulness wake/sleep lifecycle", t);
+        }
+    }
+
+    static boolean nativeKeyguardSceneAllowsPresentation() {
+        return NATIVE_KEYGUARD_SCENE_ELIGIBILITY.allowsPresentationFallbackTrue();
+    }
+
+    static String describeNativeKeyguardSceneEligibility() {
+        return NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot().describe();
+    }
+
+    static void hookNativeKeyguardTransitionSemantics(ClassLoader classLoader) {
+        try {
+            Class<?> repositoryClass = ModernHookBridge.findClass(
+                    KEYGUARD_TRANSITION_REPOSITORY_IMPL, classLoader);
+            Class<?> transitionStepClass = ModernHookBridge.findClass(
+                    KEYGUARD_TRANSITION_STEP, classLoader);
+            ModernHookBridge.hookAfter(repositoryClass, "emitTransition", param -> {
+                if (param.args == null || param.args.length == 0) {
+                    return;
+                }
+                observeNativeKeyguardTransitionStep(param.args[0],
+                        "KeyguardTransitionRepositoryImpl#emitTransition");
+            }, transitionStepClass, boolean.class);
+            for (java.lang.reflect.Constructor<?> constructor
+                    : repositoryClass.getDeclaredConstructors()) {
+                ModernHookBridge.hookAfter(constructor, param -> {
+                    try {
+                        Object step = ModernHookBridge.callMethod(
+                                param.thisObject, "getCurrentTransitionStep");
+                        observeNativeKeyguardTransitionStep(step,
+                                "KeyguardTransitionRepositoryImpl#constructor");
+                    } catch (Throwable t) {
+                        PixelAodLog.log("failed to seed native Keyguard scene state", t);
+                    }
+                });
+            }
+            PixelAodLog.i("hooked native Keyguard transition semantics class="
+                    + KEYGUARD_TRANSITION_REPOSITORY_IMPL);
+        } catch (Throwable t) {
+            PixelAodLog.log("native Keyguard transition semantics unavailable; using fallback", t);
+        }
+    }
+
+    private static NativeKeyguardSceneEligibility.Snapshot observeNativeKeyguardTransitionStep(
+            Object transitionStep, String source) {
+        if (transitionStep == null) {
+            return NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot();
+        }
+        try {
+            Object from = ModernHookBridge.callMethod(transitionStep, "getFrom");
+            Object to = ModernHookBridge.callMethod(transitionStep, "getTo");
+            Object value = ModernHookBridge.callMethod(transitionStep, "getValue");
+            Object phase = ModernHookBridge.callMethod(transitionStep, "getTransitionState");
+            Object owner = ModernHookBridge.callMethod(transitionStep, "getOwnerName");
+            NativeKeyguardSceneEligibility.Snapshot before =
+                    NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot();
+            NativeKeyguardSceneEligibility.Snapshot after =
+                    NATIVE_KEYGUARD_SCENE_ELIGIBILITY.observe(
+                            String.valueOf(from),
+                            String.valueOf(to),
+                            value instanceof Number ? ((Number) value).floatValue() : Float.NaN,
+                            String.valueOf(phase),
+                            String.valueOf(owner),
+                            source);
+            if (NativeKeyguardSceneEligibility.becameIneligible(
+                    before.presentationAllowed, after.presentationAllowed)) {
+                ActiveClockRendererController.suppressForNativeScene(source + "#ineligible");
+            }
+            if (NativeKeyguardSceneEligibility.becameEligible(
+                    before.presentationAllowed, after.presentationAllowed)) {
+                ActiveClockRendererController.resyncForNativeScene(source + "#eligible");
+            }
+            if (after.phase != NativeKeyguardSceneEligibility.Phase.RUNNING) {
+                PixelAodLog.i("native Keyguard scene transition {" + after.describe() + "}"
+                        + " screenOffEligibility={"
+                        + describeVendorScreenOffAnimationEligibility() + "}"
+                        + " systemAnimation={" + SystemAnimationScalePolicy.describe() + "}");
+            }
+            return after;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to observe native Keyguard transition step source=" + source, t);
+            return NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot();
         }
     }
 

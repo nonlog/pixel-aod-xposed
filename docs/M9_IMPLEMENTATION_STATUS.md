@@ -410,8 +410,43 @@ Verification:
 - Documentation audit also corrected README static-scope/install guidance and active branch naming, marked `COUI_PORT_IMPLEMENTATION_STATUS.md` as the stable M8 baseline rather than live M9 state, removed the obsolete `supervisor` label from `.gitignore`, and replaced the stale S9 `.local/NEW_SESSION_PROMPT.md` with a handoff-driven P1 bootstrap.
 - This cleanup changes project rules/version metadata only; it does not change S11 animation behavior or the protected animation core.
 - Metadata-corrected `0.1.9` rebuild/install evidence: corrected APK **19,749,423 bytes**, SHA-256 `ec535bea01f11159bbae407db09c14ea59e84b58ad7420e9a914719379692877`; `89 suites / 414 tests` pass, `git diff --check` passes, overwrite install succeeds, device package reports `versionName=0.1.9` and separate `versionCode=9000`, installed `base.apk` hash matches, and SystemUI PID remains `16409` because no runtime reload was needed.
+## S12 — Native Keyguard scene eligibility
+
+Status: **candidate green — ADR 0043 implemented on the current OOS SystemUI; continuous Doze progress remains observed-only because S10 does not authorize consumption on this device**
+
+Goal: replace heuristic Pixel presentation permission with an authoritative native Keyguard scene boundary where the ROM exposes one, without changing panel ownership, ClockPlugin scene mapping, animation timing, or the protected morph engine.
+
+Native seam discovery:
+
+- The exact installed SystemUI exposes `com.android.systemui.keyguard.data.repository.KeyguardTransitionRepositoryImpl#emitTransition(TransitionStep, boolean)`; every STARTED/RUNNING/FINISHED/CANCELED Keyguard transition step flows through this method.
+- `TransitionStep` exposes `from`, `to`, `value`, `transitionState`, and `ownerName`. Current native states include `OFF`, `DOZING`, `DREAMING`, `AOD`, `ALTERNATE_BOUNCER`, `PRIMARY_BOUNCER`, `LOCKSCREEN`, `GLANCEABLE_HUB`, `GONE`, `UNDEFINED`, and `OCCLUDED`.
+- `KeyguardTransitionInteractor` also exposes native transition state/value flows, but no coroutine collector is needed because the repository callback is a narrower synchronous read-only seam.
+
+Implementation:
+
+- Added `NativeKeyguardSceneEligibility` as a pure adapter with fail-open UNKNOWN semantics. `LOCKSCREEN`, `AOD`, and `DOZING` permit Pixel presentation; known Bouncer/Occluded/Gone/Dreaming/Off/Hub scenes deny it. `UNDEFINED` or an absent seam does not override the existing fallback.
+- During a native transition, both endpoints must be presentation-eligible. Therefore entering a Bouncer/Occluded/Gone path suppresses Pixel at STARTED; returning from an ineligible scene waits until FINISHED before presentation becomes eligible again. CANCELED returns to the native `from` scene decision.
+- `PixelAodHook` hooks `emitTransition` only after native processing and seeds the adapter from `getCurrentTransitionStep()` after repository construction. It never modifies native transition state or return values.
+- `CouiClockPluginHostController` blocks stale attach/render while the native scene is ineligible and suppresses the already-attached Pixel primary host immediately.
+- The first physical S12 candidate exposed a real integration bug: after `PRIMARY_BOUNCER -> LOCKSCREEN FINISHED`, OOS did not necessarily emit another ClockPlugin render within the next second, so the suppressed Pixel host could remain hidden. The accepted correction performs one non-animated resync from the existing native ClockPlugin state on the false -> true scene eligibility edge. It does not synthesize a scene or invent geometry.
+- Native transition `value` is retained for diagnostics/capability discovery, but S12 does not apply it to presentation. Current OOS continues to report `displayNeedsBlanking=false`, `shouldControlScreenOff=false`, `shouldAnimateDozingChange=true`, so S10 correctly keeps `allowsVendorProgress=false`.
+
+Verification:
+
+- Focused `NativeKeyguardSceneEligibilityTest`: **9/9 PASS**, including unknown fallback, Lockscreen/AOD/Dozing eligibility, Bouncer entry/return/cancel semantics, Occluded/Gone suppression, and false -> true resync edge detection.
+- Final full JDK 17 gate: **90 suites / 423 tests / 0 failures / 0 errors / 0 skipped**, `:app:assembleDebug` PASS.
+- `git diff --check`: PASS; protected clock/morph/weight animation-core diff: **ZERO_DIFF**.
+- Final candidate is visible `0.1.10`, internal `versionCode=9001`, APK **20,339,063 bytes**, SHA-256 `4c0c9b7300478ca72f01856863f377cfa1a7e3ed4e24ce01b9ccb8c8f3cf05f0`; installed device APK matches exactly.
+- Runtime under SystemUI PID `22776` proves native `LOCKSCREEN -> PRIMARY_BOUNCER STARTED` produced `presentationAllowed=false` and `COUI native-scene suppression ... hiddenHosts=1`. Physical Bouncer capture shows no Pixel clock over the PIN surface.
+- Runtime then proves `PRIMARY_BOUNCER -> LOCKSCREEN FINISHED` produced `presentationAllowed=true` and `COUI native-scene resync ... syncedHosts=1`; the immediate post-return capture shows the Pixel large clock, date/weather and notifications restored.
+- Strict normal-path regression began from verified `mWakefulness=Awake`, slept immediately, reached `mWakefulness=Dozing`, and logged native `LOCKSCREEN -> DOZING` STARTED/FINISHED with `presentationAllowed=true` and `allowsVendorProgress=false`. The settled AOD capture is complete and SystemUI remains PID `22776`.
+- Current-PID crash scan is empty for FATAL/ANR/fatal-signal/SIGSEGV/OOM/DeadSystemException; global animator/transition/window scales are all restored/preserved at `1.0`.
+
+Remaining P1 progress work:
+
+- ADR 0016 continuous Doze progress now has a confirmed native `TransitionStep.value` source, but this device's S10 permission gate deliberately denies consumption because `shouldControlScreenOff=false`. A future small slice may formalize the progress capability adapter, but must remain fail-closed on this hardware and must not replace the proven 550 ms morph without an allowed native path.
 ## Next implementation checkpoint
 
-S11 closes P0 item 9 / ADR 0054 and therefore completes the closure-audit P0 lifecycle/animation-preserving convergence list on the current hardware, subject to the already documented hardware-only S8/S9 coverage gaps. The next slice should enter **P1 — native semantic adapters**, starting from one small capability-gated read-only native surface rather than opening Q66 or rewriting clock choreography. No P1 implementation is started in this checkpoint.
+S12 completes the first P1 native semantic slice: authoritative Keyguard scene eligibility. P0 remains complete on current hardware. The next P1 slice must remain small and capability-gated; the discovered native Doze progress value may be normalized next, but current OOS must continue to deny progress consumption while S10 reports `shouldControlScreenOff=false`.
 
-No commit or push is performed unless explicitly requested.
+Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.

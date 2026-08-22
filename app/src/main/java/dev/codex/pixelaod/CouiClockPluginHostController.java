@@ -232,6 +232,56 @@ final class CouiClockPluginHostController {
         });
     }
 
+    static void suppressForNativeScene(String source) {
+        runOnMain(() -> {
+            int hidden = 0;
+            for (HostRecord record : snapshotRecords()) {
+                if (record == null || record.host.getParent() != record.root) {
+                    continue;
+                }
+                suppressRecordForNativeScene(record, source);
+                hidden++;
+            }
+            PixelAodLog.i("COUI native-scene suppression rendererMode=COUI_PORT"
+                    + " hiddenHosts=" + hidden
+                    + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
+                    + " source=" + source);
+        });
+    }
+
+    private static void suppressRecordForNativeScene(HostRecord record, String source) {
+        record.nonLockscreenAodPrearmed = false;
+        record.prearmedAodScene = null;
+        record.aodExitHandoffPending = false;
+        record.suppressNativeDraw = true;
+        suppressNativeVisuals(record);
+        record.host.setPrimaryVisible(false, source + "#native-scene");
+    }
+
+    static void resyncForNativeScene(String source) {
+        runOnMain(() -> {
+            if (!PixelAodRuntimeState.nativeKeyguardSceneAllowsPresentation()) {
+                return;
+            }
+            int synced = 0;
+            for (HostRecord record : snapshotRecords()) {
+                if (record == null || record.host.getParent() != record.root) {
+                    continue;
+                }
+                Object plugin = record.plugin != null ? record.plugin.get() : null;
+                if (plugin == null) {
+                    continue;
+                }
+                syncHost(record, plugin, source + "#native-scene-resync", false);
+                synced++;
+            }
+            PixelAodLog.i("COUI native-scene resync rendererMode=COUI_PORT"
+                    + " syncedHosts=" + synced
+                    + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
+                    + " source=" + source);
+        });
+    }
+
     static void refreshSemanticData(String source) {
         refreshAll(source + "#semantic");
     }
@@ -451,6 +501,20 @@ final class CouiClockPluginHostController {
                         + " source=" + source);
                 return;
             }
+            if (!PixelAodRuntimeState.nativeKeyguardSceneAllowsPresentation()) {
+                HostRecord existing;
+                synchronized (HOSTS) {
+                    existing = HOSTS.get(root);
+                }
+                if (existing != null && existing.host.getParent() == root) {
+                    suppressRecordForNativeScene(existing, source + "#attach-block");
+                }
+                PixelAodLog.log("skipped COUI ClockPlugin attach/sync reason=native-scene-ineligible"
+                        + " rootId=" + identity(root)
+                        + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
+                        + " source=" + source);
+                return;
+            }
             HostRecord record = ensureHost(root, plugin, source);
             if (record == null) {
                 return;
@@ -535,6 +599,17 @@ final class CouiClockPluginHostController {
                     + " rendererMode=COUI_PORT"
                     + " rootId=" + identity(record.root)
                     + " uiState=" + renderState.uiState
+                    + " source=" + source);
+            return;
+        }
+
+        if (!PixelAodRuntimeState.nativeKeyguardSceneAllowsPresentation()) {
+            suppressRecordForNativeScene(record, source + "#render-block");
+            PixelAodLog.log("blocked stale ClockPlugin render reason=native-scene-ineligible"
+                    + " rendererMode=COUI_PORT"
+                    + " rootId=" + identity(record.root)
+                    + " uiState=" + renderState.uiState
+                    + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
                     + " source=" + source);
             return;
         }
