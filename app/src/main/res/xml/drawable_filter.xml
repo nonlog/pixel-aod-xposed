@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="weather_clear_day" value="weather_clear_day_one_ui_latest" />
+    <item name="weather_clear_night" value="weather_clear_night_one_ui_latest" />
+    <item name="weather_partly_cloudy_day" value="weather_partly_cloudy_day_one_ui_latest" />
+    <item name="weather_partly_cloudy_night" value="weather_partly_cloudy_night_one_ui_latest" />
+    <item name="weather_cloudy_day" value="weather_cloudy_one_ui_latest" />
+    <item name="weather_cloudy_night" value="weather_cloudy_one_ui_latest" />
+    <item name="weather_rain_day" value="weather_rain_one_ui_latest" />
+    <item name="weather_rain_night" value="weather_rain_one_ui_latest" />
+    <item name="weather_snow_day" value="weather_snow_one_ui_latest" />
+    <item name="weather_snow_night" value="weather_snow_one_ui_latest" />
+    <item name="weather_wind_day" value="weather_wind_one_ui_latest" />
+    <item name="weather_wind_night" value="weather_wind_one_ui_latest" />
+    <item name="weather_fog_day" value="weather_fog_one_ui_latest" />
+    <item name="weather_fog_night" value="weather_fog_one_ui_latest" />
+    <item name="weather_haze_day" value="weather_haze_one_ui_latest" />
+    <item name="weather_haze_night" value="weather_haze_one_ui_latest" />
+    <item name="weather_sleet_day" value="weather_sleet_one_ui_latest" />
+    <item name="weather_sleet_night" value="weather_sleet_one_ui_latest" />
+    <item name="weather_hail_day" value="weather_hail_one_ui_latest" />
+    <item name="weather_hail_night" value="weather_hail_one_ui_latest" />
+    <item name="weather_thunder_day" value="weather_thunder_one_ui_latest" />
+    <item name="weather_thunder_night" value="weather_thunder_one_ui_latest" />
+    <item name="weather_thunderstorm_day" value="weather_thunderstorm_one_ui_latest" />
+    <item name="weather_thunderstorm_night" value="weather_thunderstorm_one_ui_latest" />
+</resources>
