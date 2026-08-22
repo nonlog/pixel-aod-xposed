@@ -148,8 +148,7 @@ final class PixelFingerprintIconController {
         cancelDiscovery(uiMech);
         Context resolvedContext = context != null
                 ? context : iconView.getContext();
-        boolean enabled = resolvedContext != null && PixelAodSettings.getBoolean(
-                resolvedContext, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false);
+        boolean enabled = PixelAodUdfpsRuntimePolicy.replacementRequested(resolvedContext);
         if (!enabled) {
             restoreOriginalDrawable(iconView, source);
             restoreTrackedPressedIcons(source + "#pressed-disabled");
@@ -861,8 +860,7 @@ final class PixelFingerprintIconController {
             return;
         }
         Context context = iconView.getContext();
-        if (context == null || !PixelAodSettings.getBoolean(
-                context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false)) {
+        if (!PixelAodUdfpsRuntimePolicy.replacementRequested(context)) {
             return;
         }
         PixelFingerprintIconPolicy.RefreshMode refreshMode =
@@ -907,8 +905,7 @@ final class PixelFingerprintIconController {
             return;
         }
         Context context = iconView.getContext();
-        if (context == null || !PixelAodSettings.getBoolean(
-                context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false)) {
+        if (!PixelAodUdfpsRuntimePolicy.replacementRequested(context)) {
             return;
         }
         WeakReference<Object> owner;

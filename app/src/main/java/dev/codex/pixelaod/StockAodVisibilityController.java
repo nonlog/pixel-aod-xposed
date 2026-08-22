@@ -22,8 +22,8 @@ final class StockAodVisibilityController {
         }
         if (preserveSystemAodMediaView) {
             PixelAodLog.log("preserved system AOD media view " + marker
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(view.getContext()) + "}");
+                    + " trace=" + PixelAodRuntimeState.currentAodTraceId()
+                    + " state={" + PixelAodRuntimeState.describeAodState(view.getContext()) + "}");
             return;
         }
         boolean firstHide = false;
@@ -134,17 +134,17 @@ final class StockAodVisibilityController {
         main.postDelayed(() -> {
             try {
                 Context context = host != null ? host.getContext() : null;
-                String currentTrace = PixelAodClockView.peekAodTraceId();
+                String currentTrace = PixelAodRuntimeState.peekAodTraceId();
                 if (!OosAodLifecycleAdapter.matchesExpectedTrace(expectedTrace, currentTrace)) {
                     PixelAodLog.log("skipped delayed stock AOD suppression from " + source
                             + "+" + delayMillis
                             + " reason=trace-mismatch expectedTrace=" + expectedTrace
                             + " currentTrace=" + currentTrace
                             + " host=" + summarize(hostSummary, host)
-                            + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                            + " state={" + PixelAodRuntimeState.describeAodState(context) + "}");
                     return;
                 }
-                if (host == null || PixelAodClockView.isDeviceInteractive(context)) {
+                if (host == null || PixelAodRuntimeState.isDeviceInteractive(context)) {
                     return;
                 }
                 if (pass != null) {
@@ -154,7 +154,7 @@ final class StockAodVisibilityController {
                         + "+" + delayMillis + " children=" + host.getChildCount()
                         + " trace=" + currentTrace
                         + " expectedTrace=" + expectedTrace
-                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                        + " state={" + PixelAodRuntimeState.describeAodState(context) + "}");
             } catch (Throwable t) {
                 PixelAodLog.log("delayed stock AOD suppression failed", t);
             }
@@ -170,11 +170,11 @@ final class StockAodVisibilityController {
         main.postDelayed(() -> {
             ViewGroup pixelHost = hosts != null ? hosts.pixelHost() : null;
             ViewGroup stockHost = hosts != null ? hosts.stockHost() : null;
-            String currentTrace = PixelAodClockView.peekAodTraceId();
+            String currentTrace = PixelAodRuntimeState.peekAodTraceId();
             if (!OosAodLifecycleAdapter.matchesExpectedTrace(expectedTrace, currentTrace)) {
                 Context context = pixelHost != null ? pixelHost.getContext()
                         : stockHost != null ? stockHost.getContext() : null;
-                String state = context != null ? PixelAodClockView.describeAodState(context)
+                String state = context != null ? PixelAodRuntimeState.describeAodState(context)
                         : "context=null";
                 PixelAodLog.log("skipped restoring stock AOD/keyguard views after transition from "
                         + source + " reason=trace-mismatch expectedTrace=" + expectedTrace
@@ -197,7 +197,7 @@ final class StockAodVisibilityController {
                         + " pixelHost=" + summarize(hostSummary, pixelHost)
                         + " trace=" + currentTrace
                         + " expectedTrace=" + expectedTrace
-                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                        + " state={" + PixelAodRuntimeState.describeAodState(context) + "}");
                 return;
             }
             OosAodLifecycleAdapter.AodPolicyDecision decision =
@@ -217,7 +217,7 @@ final class StockAodVisibilityController {
                         + " reasons={draw=" + decision.drawReason
                         + ",stock=" + decision.stockSuppressionReason
                         + ",nativeHide=" + decision.nativeHideCallbackReason + "}"
-                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                        + " state={" + PixelAodRuntimeState.describeAodState(context) + "}");
                 return;
             }
             PixelAodLog.log("restoring stock AOD/keyguard views after transition from " + source
@@ -225,7 +225,7 @@ final class StockAodVisibilityController {
                     + " pixelHost=" + summarize(hostSummary, pixelHost)
                     + " trace=" + currentTrace
                     + " expectedTrace=" + expectedTrace
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                    + " state={" + PixelAodRuntimeState.describeAodState(context) + "}");
             restoreAdjustedStatusViews();
             restoreHiddenStockViews();
         }, delayMillis);

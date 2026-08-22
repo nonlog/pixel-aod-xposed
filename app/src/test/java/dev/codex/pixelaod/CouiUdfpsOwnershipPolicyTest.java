@@ -39,4 +39,10 @@ public class CouiUdfpsOwnershipPolicyTest {
         assertTrue(CouiUdfpsOwnershipPolicy.suppressStockRipple(true, true,
                 true, false));
     }
+
+    @Test
+    public void releasePrimaryGlyphOwnershipIsExplicit() {
+        assertTrue(PixelAodUdfpsRuntimePolicy.primaryGlyphOwnedBySystem(false));
+        assertFalse(PixelAodUdfpsRuntimePolicy.primaryGlyphOwnedBySystem(true));
+    }
 }

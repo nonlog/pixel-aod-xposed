@@ -180,7 +180,7 @@ adapter 只能提供内容和语义状态，不能创建第二套布局、主时
 - 现有设置 key、ContentProvider 写入、权限流程、AOD 定时值、语言行为与运行时 hook 初始化依赖均保持原语义。
 - Kotlin 编译、设置定向回归、完整 JVM 测试、`git diff --check` 与最终 debug build 均通过；0.1.360 的 Home/AOD/System UI 信息架构、动态取色、COUI 控件、三栏底栏与沉浸手势区已由用户完成真机视觉验收。
 
-## Phase J / M7：Release Hardening — 进行中（2026-08-19）
+## Phase J / M7：Release Hardening — 已完成（0.1.380 stable，2026-08-21）
 
 M7 原则上不增加新功能，目标是把已完成的 COUI_PORT 从“功能完成”推进为可稳定发布的冻结基线。初始入场基线为 `339976e495b744352ea5408c4af40c02f4839cff` / `0.1.375`；用户随后明确授权一次 battery-status 功能例外，0.1.376 增加满电 `Charged` 状态并重新通过自动/真机门，随后用户又明确授权两项 M7 收口：0.1.377 将 UDFPS 发布策略固定为 OPlus 系统图标 + Pixel AOD success ripple，0.1.380 将 current-weather provider artwork 最终定为 18dp；两项均通过自动/真机门，因此当前冻结基线前移到 `e7374956927f7ad8f89a870059b6218f66c1777e` / `0.1.380`。
 
@@ -194,6 +194,15 @@ M7 的规则：
 
 M7 的权威执行清单见 `docs/M7_RELEASE_HARDENING.md`。0.1.380 例外后的 entry gate 已重新完成：完整 JVM 测试 `382/382`，assemble 成功；USB 实机安装/hash、system-icon UDFPS + success ripple、`Charging` / `Charged`、18dp current-weather 验证通过。soak 从 0.1.380 重新计时；Modern Xposed metadata 仍保持 API `101/101`、`staticScope=true`、唯一 scope `com.android.systemui`。
 
+## Phase K / M8：Technical Debt & Architecture Convergence — 已完成（2026-08-22）
+
+M8 以已发布的 `v0.1.380` 为行为 golden，不继续叠加新的 runtime owner。目标是把 M1–M7 为兼容/回滚保留的双实现、巨型 utility/View 类和集中式 hook 注册逐步收敛成单一所有权与可测试 domain facade。
+
+执行顺序采用可回退的窄 slice：S1 固定 COUI clock owner → S2 删除 dead legacy primary owner → S3 从 `PixelAodClockView` 抽 shared semantic/runtime services → S4 拆分 `PixelAodHook` domain installers → S5 审计 UDFPS replacement-only debt → S6 文档/诊断/测试清理。任何 slice 都不得顺便改变 0.1.380 已验收的视觉、动画、content 或 system-icon UDFPS 行为。
+
+截至 2026-08-22：S1 / 0.1.381 与 S2 / 0.1.382 已完成并通过自动/真机 gate；S3 已建立 typography/content/runtime facade 并迁移 COUI/contextual/Modern 调用方；S4 已按 lifecycle/notification/surface/UDFPS 拆出 hook registration owner；S5 已将 system-primary-glyph / replacement / success-ripple ownership 集中到 `PixelAodUdfpsRuntimePolicy`，保留 optional legacy/replacement 能力；S6 已完成文档/测试/警告审计。最终 M8 候选 `0.1.383 / 393` 已通过 JDK 17 clean 380/380、assemble/diff/metadata/reference audit，并完成 raw-USB install/hash、单次 SystemUI reload `11051 → 2668`、3/3 LS↔AOD、Small/content、media PLAYING→NONE、AOD Large/empty、LS Large、UDFPS idle convergence 与 FATAL/ANR 健康烟测。M8 S1–S6 至此完成，下一步仅为提交并推送 `agent/m8-architecture`，尚未合并 `master`。
+
+权威 M8 清单与 slice gate 见 `docs/M8_ARCHITECTURE_CONVERGENCE.md`。
 ## Post-stability TODO / 完成状态
 
 - [x] **M5 — LSPosed static scope**：Modern metadata、最小 `com.android.systemui` 静态 scope、package-clean reinstall、旧 `staticScope=false` 升级、Manager enable/disable、SystemUI fresh injection 与 Vector/LSPosed packaging/API 兼容均已完成实机验收。

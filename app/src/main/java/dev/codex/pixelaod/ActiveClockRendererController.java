@@ -6,145 +6,89 @@ import android.graphics.drawable.Drawable;
 import java.util.List;
 
 /**
- * Startup-selected facade for the module's one primary clock owner.
+ * Facade for the module's single primary COUI clock owner.
  *
- * <p>The startup installer is intentionally the only place that names both concrete controller
- * implementations. Runtime callers use this facade so a COUI_PORT process cannot accidentally
- * call the legacy controller or create a legacy primary view.</p>
+ * <p>M8 removes the historical runtime legacy/COUI selector. Keeping one facade lets semantic and
+ * lifecycle producers remain decoupled from the concrete host controller while guaranteeing that
+ * SystemUI can install only the validated COUI owner.</p>
  */
 final class ActiveClockRendererController {
-    private static final ClockRendererStartupRouter.Installer PRODUCTION_INSTALLER =
-            new ClockRendererStartupRouter.Installer() {
-                @Override
-                public void installLegacy(Context context, ClassLoader classLoader) {
-                    ClockPluginHostController.install(context, classLoader);
-                }
-
-                @Override
-                public void installCoui(Context context, ClassLoader classLoader) {
-                    CouiClockPluginHostController.install(context, classLoader);
-                }
-            };
-
     private ActiveClockRendererController() {
     }
 
-    static ClockRendererStartupRouter.Installer productionInstaller() {
-        return PRODUCTION_INSTALLER;
-    }
-
-    static boolean isCouiPort() {
-        return PixelAodFeatureFlags.useCouiClockRenderer();
+    static void install(Context context, ClassLoader classLoader) {
+        CouiClockPluginHostController.install(context, classLoader);
     }
 
     static boolean blocksLegacyPrimaryOwner() {
-        return isCouiPort();
+        return true;
     }
 
     static boolean hasValidatedHost() {
-        return isCouiPort()
-                ? CouiClockPluginHostController.hasValidatedHost()
-                : ClockPluginHostController.hasValidatedHost();
+        return CouiClockPluginHostController.hasValidatedHost();
     }
 
     static void noteLockscreenToAodHandoff(String source) {
-        if (!isCouiPort()) {
-            ClockPluginHostController.noteLockscreenToAodHandoff(source);
-        }
+        // Legacy-only handoff hook retained as a no-op until S2 removes the old caller surface.
     }
 
     static void refreshAll(String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.refreshAll(source);
-        } else {
-            ClockPluginHostController.refreshAll(source);
-        }
+        CouiClockPluginHostController.refreshAll(source);
     }
 
     static void prepareAodToLockscreenTransition(String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.prepareAodToLockscreenTransition(source);
-        }
+        CouiClockPluginHostController.prepareAodToLockscreenTransition(source);
     }
 
     static void prepareNonLockscreenAodEntry(String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.prepareNonLockscreenAodEntry(source);
-        } else {
-            ClockPluginHostController.prepareNonLockscreenAodEntry(source);
-        }
+        CouiClockPluginHostController.prepareNonLockscreenAodEntry(source);
     }
 
     static void prepareNonLockscreenAodEntryEarly(String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.prepareNonLockscreenAodEntryEarly(source);
-        }
+        CouiClockPluginHostController.prepareNonLockscreenAodEntryEarly(source);
     }
 
     static void prepareLockscreenEntry(String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.prepareLockscreenEntry(source);
-        } else {
-            ClockPluginHostController.refreshAll(source + "#legacy-lockscreen");
-        }
+        CouiClockPluginHostController.prepareLockscreenEntry(source);
     }
 
     static void refreshSemanticData(String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.refreshSemanticData(source);
-        }
+        CouiClockPluginHostController.refreshSemanticData(source);
     }
 
     static void setAodContent(CouiClockPresentationModel.AodContent content, boolean animate,
             String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.setAodContent(content, animate, source);
-        }
-        // Legacy content remains owned by the existing semantic/visual path until Slice 3.
+        CouiClockPluginHostController.setAodContent(content, animate, source);
     }
 
     static void setLiveAodContent(CouiClockPresentationModel.AodContent content, boolean animate,
             String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.setLiveAodContent(content, animate, source);
-        }
+        CouiClockPluginHostController.setLiveAodContent(content, animate, source);
     }
 
     static void setInformation(CharSequence date, CharSequence week, CharSequence weather,
             Drawable weatherIcon, String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.setInformation(date, week, weather, weatherIcon, source);
-        }
+        CouiClockPluginHostController.setInformation(date, week, weather, weatherIcon, source);
     }
 
     static void refreshInformationFromExistingAdapters(String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.refreshInformationFromExistingAdapters(source);
-        }
+        CouiClockPluginHostController.refreshInformationFromExistingAdapters(source);
     }
 
     static void setNotificationIcons(List<? extends Drawable> icons, String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.setNotificationIcons(icons, source);
-        }
+        CouiClockPluginHostController.setNotificationIcons(icons, source);
     }
 
     static void setMediaData(CharSequence title, CharSequence artist, Drawable appIcon,
             String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.setMediaData(title, artist, appIcon, source);
-        }
+        CouiClockPluginHostController.setMediaData(title, artist, appIcon, source);
     }
 
     static void setBurnInTranslation(float x, float y, long durationMillis, String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.setBurnInTranslation(x, y, durationMillis, source);
-        }
+        CouiClockPluginHostController.setBurnInTranslation(x, y, durationMillis, source);
     }
 
     static void onTimeTick(String source) {
-        if (isCouiPort()) {
-            CouiClockPluginHostController.onTimeTick(source);
-        }
+        CouiClockPluginHostController.onTimeTick(source);
     }
 }

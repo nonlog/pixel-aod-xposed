@@ -84,7 +84,7 @@ final class CouiClockSemanticAdapter {
 
     static Snapshot snapshot(Context context) {
         Context effectiveContext = context != null ? context : applicationContext;
-        List<Drawable> icons = PixelAodClockView.currentCouiNotificationIcons(effectiveContext);
+        List<Drawable> icons = PixelAodContentState.currentCouiNotificationIcons(effectiveContext);
         MediaData media;
         synchronized (LOCK) {
             media = activeMedia;

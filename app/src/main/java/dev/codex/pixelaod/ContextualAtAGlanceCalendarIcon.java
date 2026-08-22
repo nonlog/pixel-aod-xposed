@@ -27,7 +27,7 @@ final class ContextualAtAGlanceCalendarIcon {
     }
 
     static boolean usesApplicationIcon(Context context) {
-        return PixelAodClockView.hasSelectedCalendarApplicationIcon(context);
+        return PixelAodContentState.hasSelectedCalendarApplicationIcon(context);
     }
 
     static void applyGeometry(ImageView icon, Context context, int textSizeDp,

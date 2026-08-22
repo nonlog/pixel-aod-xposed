@@ -644,13 +644,13 @@ final class CouiClockHostView extends FrameLayout {
     /** Refreshes only the existing semantic data; this host remains the sole visual owner. */
     void refreshInformationFromExistingAdapters(String source) {
         PixelAodClockView.WeatherSnapshot weather =
-                PixelAodClockView.currentFreshWeather(getContext());
+                PixelAodContentState.currentFreshWeather(getContext());
         boolean compact = presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL;
         PixelAodRenderModel renderModel = presentation.dozing()
                 ? PixelAodRenderModel.forAod(getContext(), compact, weather, "", false)
                 : PixelAodRenderModel.forLockscreen(getContext(), compact, weather);
         CouiClockInformationPolicy.Data data = CouiClockInformationPolicy.from(renderModel);
-        Drawable weatherIcon = PixelAodClockView.resolveWeatherIconDrawable(
+        Drawable weatherIcon = PixelAodContentState.resolveWeatherIconDrawable(
                 getContext(), weather, Color.WHITE);
         setInformation(data.dateText, "", data.weatherText, weatherIcon);
         refreshContextualFromExistingAdapters(
@@ -667,7 +667,7 @@ final class CouiClockHostView extends FrameLayout {
         ContextualAtAGlanceCard card = ContextualAtAGlanceCard.none();
         if (CouiClockContextualLayoutPolicy.contextualSurfaceEnabled(presentation.dozing())) {
             ContextualAtAGlanceSelector.Selection selection =
-                    PixelAodClockView.selectContextualCard(
+                    PixelAodContentState.selectContextualCard(
                             getContext(), surfaceVisible, true,
                             source == null ? "coui-contextual" : source);
             card = selection != null ? selection.card : ContextualAtAGlanceCard.none();
@@ -896,7 +896,7 @@ final class CouiClockHostView extends FrameLayout {
     void setPrimaryVisible(boolean visible, String source) {
         if (visible) {
             if (!contextualSurfaceActive) {
-                PixelAodClockView.beginContextualSurfaceEntry(
+                PixelAodContentState.beginContextualSurfaceEntry(
                         (source == null ? "primary-visible" : source) + "#COUI-visible");
                 contextualSurfaceActive = true;
             }
@@ -1661,7 +1661,7 @@ final class CouiClockHostView extends FrameLayout {
         contextualView.setAlpha(contextualAlpha);
         contextualIconView.setAlpha(contextualAlpha);
         notificationOverflowView.setTextColor(CouiClockVisualStylePolicy.notificationOverflowColor(
-                PixelAodClockView.resolveMaterialInfoColor(getContext())));
+                PixelAodTypography.resolveMaterialInfoColor(getContext())));
         mediaTitleView.setTextColor(Color.WHITE);
         mediaArtistView.setTextColor(Color.WHITE);
         mediaAppIconView.setImageTintList(ColorStateList.valueOf(Color.WHITE));

@@ -52,9 +52,9 @@ final class ContextualAtAGlancePresentation {
                     ? clockColor : infoColor;
             text.setTextColor(color);
             text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, textSizeDp);
-            PixelAodClockView.applySharedClockTypeface(text, context, infoWeight);
-            PixelAodClockView.applySharedInfoText(text, context, safe.text);
-            Drawable drawable = PixelAodClockView.contextualCardIcon(context, safe, color);
+            PixelAodTypography.applySharedClockTypeface(text, context, infoWeight);
+            PixelAodTypography.applySharedInfoText(text, context, safe.text);
+            Drawable drawable = PixelAodContentState.contextualCardIcon(context, safe, color);
             icon.setImageDrawable(drawable);
             icon.setColorFilter(color, PorterDuff.Mode.SRC_IN);
             float alpha = safe.isVisible() ? safe.alpha : 0f;

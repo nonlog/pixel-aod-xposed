@@ -29,10 +29,6 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_UDFPS_RENDERER = "udfps_renderer";
     public static final String UDFPS_RENDERER_COUI_PORT = "coui_port";
     public static final String UDFPS_RENDERER_LEGACY = "legacy";
-    /** Startup-only selector for the primary clock owner. */
-    public static final String KEY_CLOCK_RENDERER = "clock_renderer";
-    public static final String CLOCK_RENDERER_COUI_PORT = "coui_port";
-    public static final String CLOCK_RENDERER_LEGACY = "legacy";
     public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY = "lockscreen_notification_policy";
     public static final String KEY_DEBUG_LOGGING = "debug_logging";
     public static final String KEY_AOD_WEIGHT = "aod_weight";
@@ -85,8 +81,6 @@ public final class PixelAodSettingsSchema {
             booleanSpec(KEY_UDFPS_AOD_EXIT_ANIMATION, true, false);
     public static final SettingSpec UDFPS_RENDERER = stringSpec(
             KEY_UDFPS_RENDERER, UDFPS_RENDERER_COUI_PORT, true);
-    public static final SettingSpec CLOCK_RENDERER = stringSpec(
-            KEY_CLOCK_RENDERER, CLOCK_RENDERER_COUI_PORT, true);
     public static final SettingSpec LOCKSCREEN_NOTIFICATION_POLICY =
             booleanSpec(KEY_LOCKSCREEN_NOTIFICATION_POLICY, true, false);
     public static final SettingSpec DEBUG_LOGGING = booleanSpec(KEY_DEBUG_LOGGING, false, false);

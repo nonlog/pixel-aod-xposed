@@ -42,12 +42,6 @@ public final class PixelAodSettings {
             PixelAodSettingsSchema.UDFPS_RENDERER_COUI_PORT;
     public static final String UDFPS_RENDERER_LEGACY =
             PixelAodSettingsSchema.UDFPS_RENDERER_LEGACY;
-    public static final String KEY_CLOCK_RENDERER =
-            PixelAodSettingsSchema.KEY_CLOCK_RENDERER;
-    public static final String CLOCK_RENDERER_COUI_PORT =
-            PixelAodSettingsSchema.CLOCK_RENDERER_COUI_PORT;
-    public static final String CLOCK_RENDERER_LEGACY =
-            PixelAodSettingsSchema.CLOCK_RENDERER_LEGACY;
     public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY =
             PixelAodSettingsSchema.KEY_LOCKSCREEN_NOTIFICATION_POLICY;
     public static final String KEY_DEBUG_LOGGING = PixelAodSettingsSchema.KEY_DEBUG_LOGGING;

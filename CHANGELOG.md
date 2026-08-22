@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.1.383] - 2026-08-22
+### Changed
+- Complete M8 architecture convergence without changing the released 0.1.380 visual contract: COUI_PORT remains the sole clock owner and the stable UDFPS mode remains OPlus system primary glyph + independent Pixel AOD success ripple.
+- Add `PixelAodTypography`, `PixelAodContentState`, and `PixelAodRuntimeState` facades so COUI/contextual/Modern presentation code no longer calls `PixelAodClockView.*` utility methods directly; keep the proven implementation behind those facades instead of moving the lifecycle state machine in a risky big-bang rewrite.
+- Split hook-registration ownership into lifecycle, notification, surface/stock and UDFPS domain installers while preserving the accepted registration order and leaving mature reflection-hook implementations in place.
+- Add `PixelAodUdfpsRuntimePolicy` to centralize replacement/system-primary-glyph/success-ripple ownership. Optional legacy renderer and replacement capabilities remain available; M8 does not remove them simply because the stable configuration uses the system glyph.
+- Consolidate M8 docs/tests and audit remaining deprecation/build warnings. Edge-to-edge and native-library-packaging warnings are deliberately deferred rather than changed inside an architecture-only release.
+
+### Evidence / Status
+- Incremental gates pass: S3 **377/377**, S4 **379/379**, S5 **380/380**; the final JDK 17 clean gate also passes **380/380** with 0 failures/errors/skips, clean assemble and `git diff --check` PASS.
+- Removed legacy clock-owner classes/selectors remain absent. COUI presentation has no direct `PixelAodClockView.*(...)` utility calls, and direct primary-glyph/success-ripple runtime setting reads are centralized in `PixelAodUdfpsRuntimePolicy`.
+- Final APK is **19,748,415 bytes**, SHA-256 `7C117B0398A8556F60390581383CE386AE9FAA51FE12F70412F7F80F681A0081`; Modern Xposed metadata remains API 101/101, `staticScope=true`, SystemUI-only scope, Modern Java init only, with no legacy `assets/xposed_init`.
+- Raw-USB overwrite install on CPH2573 succeeds; device reports `0.1.383 / 393`, installed `base.apk` hash matches exactly, and release UDFPS/debug/Forecast settings persist. Exactly one final-candidate SystemUI reload changes PID `11051 -> 2668`; fresh logs report fixed COUI clock ownership and 34 COUI UDFPS hooks.
+- Physical final smoke passes 3/3 LS↔AOD cycles, Small notification/weather/Charging presentation, PixelPlay PLAYING -> NONE with clean media-row removal, genuine AOD Large/empty and LS Large endpoints, and stable PID `2668`. Evidence is under `.local/m8_final_01383/`.
+- UDFPS remains system-primary: native main/pressed/dim windows are present, while idle `COUIExpressiveUdfpsGlow` is `GONE` with `mHasSurface=false` / `NO_SURFACE` / not visible. No new enrolled-finger authentication was synthesized during M8; the already accepted M7 real-auth contract and the unchanged policy tests cover this physical-only action.
+- Post-reload current PID has no FATAL/ANR/crash; the only relevant recent SystemUI death is PID `11051` from the intentional reload. M8 S1-S6 is complete and ready for branch commit/push.
+
+## [0.1.382] - 2026-08-22
+### Changed
+- Complete M8-S2 clock-owner convergence by deleting the now-unreachable `ClockPluginHostController` and `PixelClockPluginHostView` legacy primary-owner implementation.
+- Remove constant-dead legacy AOD/lockscreen overlay injection, delayed reapply/fallback branches, and the obsolete runtime selector surface while preserving the persistent COUI ClockPlugin host behavior already accepted in 0.1.381.
+- Keep `PixelAodClockView` / `PixelLockscreenClockView` shared static semantic/state utilities intact for staged extraction in M8-S3; no clock geometry, content, weather, animation or UDFPS product behavior is intentionally changed.
+
+### Evidence / Status
+- Source audit reports zero references under `app/src` to the removed legacy owner classes, startup router/policy, hidden `clock_renderer` selector, or retired injection helpers.
+- Full JVM regression is **377/377 with 0 failures/errors/skips**; clean assemble and `git diff --check` pass.
+- Candidate APK is 19,732,031 bytes, SHA-256 `2231197054F0F9DFFF6A1D62BAFC4E8F6EC9B50B1BF843422AEFAFED9FEDD1D6`; Modern Xposed metadata remains API 101/101, `staticScope=true`, SystemUI-only scope, no legacy `assets/xposed_init`.
+- Overwrite install/hash on CPH2573 succeeds and settings persist. Exactly one S2 SystemUI reload changes PID `9591 -> 18063`; fresh logs load the new base.apk and report `COUI clock startup owner=COUI_PORT fixed=true`. Three explicit LS↔AOD cycles plus an LS endpoint capture keep PID `18063`; current PID has no FATAL/ANR.
+- Physical evidence: `.local/m8_s2_01382/aod.png` and `.local/m8_s2_01382/ls.png`.
+
+## [0.1.381] - 2026-08-21
+### Changed
+- Start M8 architecture convergence by making the validated COUI ClockPlugin host the only primary clock owner installed in SystemUI.
+- Remove the hidden `clock_renderer` runtime rollback selector, `ClockRendererPolicy`, `ClockRendererStartupRouter`, and their legacy-vs-COUI selection tests. Version-level rollback remains available through the stable release/tag history instead of keeping two primary clock architectures live in one process.
+- Keep `ActiveClockRendererController` as a behavior-neutral facade for semantic/lifecycle producers, but route every operation directly to `CouiClockPluginHostController`. Legacy owner implementation classes are intentionally retained for one slice so S1 can be validated independently before dead-code deletion in M8-S2.
+
+### Evidence / Status
+- No visual/layout/content/UDFPS behavior change is intended. The 0.1.380 M7 behavior is the golden contract.
+- Retired clock-selector references under `app/src` are zero after S1.
+- Focused ownership/feature-flag tests and full JVM regression pass **376/376 with 0 failures/errors/skips**; clean build and `git diff --check` pass.
+- 0.1.381 APK is 19,764,803 bytes, SHA-256 `6D981493BCDB198EE58ED41A8002A8CA605EE7EF31D3AA20F73C1950876DD21C`; overwrite install/hash and settings persistence pass. Exactly one S1 SystemUI reload changes PID `17052 -> 9591`; fresh logs report fixed COUI owner, 3/3 LS↔AOD cycles remain on PID `9591`, and the current PID has no FATAL/ANR.
+
 ## [0.1.380] - 2026-08-19
 ### Changed
 - Increase the visible current-weather artwork from about 17dp to 18dp at user request by reducing the internal inset in the existing 22dp weather slot from 2.5dp to 2dp.

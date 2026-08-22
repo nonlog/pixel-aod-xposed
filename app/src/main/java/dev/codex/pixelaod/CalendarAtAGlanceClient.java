@@ -145,7 +145,7 @@ final class CalendarAtAGlanceClient {
             }
             scheduleBoundaryRefresh(snapshot.nextRefreshAtMillis, source);
             if (changed) {
-                PixelAodClockView.setCalendarAtAGlanceExtra(normalized, source);
+                PixelAodContentState.setCalendarAtAGlanceExtra(normalized, source);
             }
         });
     }

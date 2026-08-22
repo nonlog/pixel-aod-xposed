@@ -69,6 +69,16 @@ adb shell su -c 'grep -E "PixelAodOPlus|dev.codex.pixelaod" /data/adb/lspd/log/m
 The persistent LSPosed module log is required for investigations that span a SystemUI
 restart or exceed logcat's ring buffer.
 
+## Runtime Architecture
+
+- `PixelAodModernEntry` is the sole modern libxposed process entry; scope remains only `com.android.systemui`.
+- `CouiClockPluginHostController` / `CouiClockHostView` are the sole primary clock presentation owner. Historical legacy primary clock hosts were removed during M8.
+- `PixelAodTypography`, `PixelAodContentState`, and `PixelAodRuntimeState` are the narrow shared-service boundaries used by COUI/contextual presentation code; the proven state implementation can evolve behind those facades without multiplying presentation owners.
+- Hook registration is grouped by lifecycle, notification, surface/stock, and UDFPS domain installers while retaining one process-level install gate.
+- `PixelAodUdfpsRuntimePolicy` separates system-primary-glyph release ownership from optional replacement and success-ripple ownership. The release-default path does not take over OPlus primary fingerprint visuals.
+
+See `docs/M8_ARCHITECTURE_CONVERGENCE.md` for convergence gates and rationale.
+
 ## Repository Layout
 
 - `app/`: Android module source, resources, and tests.

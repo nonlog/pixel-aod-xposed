@@ -158,7 +158,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
                 + " fromCompact=" + source.compact
                 + " clockWeight=" + source.clockWeight
                 + " infoWeight=" + source.infoWeight
-                + " trace=" + PixelAodClockView.currentAodTraceId());
+                + " trace=" + PixelAodRuntimeState.currentAodTraceId());
         return true;
     }
 
@@ -181,7 +181,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
                     + (sourceTag != null ? sourceTag : transitionSource)
                     + " fromCompact=" + from.compact
                     + " toCompact=" + to.compact
-                    + " trace=" + PixelAodClockView.currentAodTraceId());
+                    + " trace=" + PixelAodRuntimeState.currentAodTraceId());
             cancelAndRestore("actual-size-no-op");
             return false;
         }
@@ -307,7 +307,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
                 + " fromCompact=" + from.compact
                 + " toCompact=" + to.compact
                 + " durationMs=" + durationMs
-                + " trace=" + PixelAodClockView.currentAodTraceId());
+                + " trace=" + PixelAodRuntimeState.currentAodTraceId());
         return true;
     }
 
@@ -353,7 +353,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
                 + " requestedCompact=" + requestedCompact
                 + " reverse=" + reverse
                 + " finishingAtSource=" + finishingAtSource
-                + " trace=" + PixelAodClockView.currentAodTraceId());
+                + " trace=" + PixelAodRuntimeState.currentAodTraceId());
         return true;
     }
 
@@ -806,7 +806,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
     }
 
     /**
-     * The current-weather track contains one {@link PixelAodClockView.FixedAdvanceSpan} per
+     * The current-weather track contains one fixed-advance span per
      * character.  Calling {@code setTextSize()} every frame makes Android round every cell again,
      * so the 3, 1, and degree mark visibly shake even though the row centre is correct.  Keep the
      * captured source cells and scale only that text clone around its painted centre.  The weather
@@ -958,7 +958,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         // Date, current weather, and contextual cards use FixedAdvanceSpan.  Measuring the raw
         // String here loses the stable cells, causing the clone to be centred differently from
         // the real TextView and then to snap at hand-off.
-        float advance = Math.max(0f, PixelAodClockView.measuredTextAdvancePx(view));
+        float advance = Math.max(0f, PixelAodTypography.measuredTextAdvancePx(view));
         Paint.FontMetrics metrics = paint.getFontMetrics();
         if (textBounds.width() <= 0 || textBounds.height() <= 0) {
             textBounds.set(0, Math.round(metrics.ascent), Math.max(1, Math.round(advance)),
@@ -1108,15 +1108,15 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         if (lastAppliedClockWeight != appliedClockWeight) {
             lastAppliedClockWeight = appliedClockWeight;
             for (TextView digit : digitViews) {
-                PixelAodClockView.applySharedClockTypeface(digit, getContext(), appliedClockWeight);
+                PixelAodTypography.applySharedClockTypeface(digit, getContext(), appliedClockWeight);
             }
-            PixelAodClockView.applySharedClockTypeface(colonView, getContext(), appliedClockWeight);
+            PixelAodTypography.applySharedClockTypeface(colonView, getContext(), appliedClockWeight);
         }
         if (lastAppliedInfoWeight != appliedInfoWeight) {
             lastAppliedInfoWeight = appliedInfoWeight;
-            PixelAodClockView.applySharedClockTypeface(dateView, getContext(), appliedInfoWeight);
-            PixelAodClockView.applySharedClockTypeface(weatherView, getContext(), appliedInfoWeight);
-            PixelAodClockView.applySharedClockTypeface(contextualView, getContext(), appliedInfoWeight);
+            PixelAodTypography.applySharedClockTypeface(dateView, getContext(), appliedInfoWeight);
+            PixelAodTypography.applySharedClockTypeface(weatherView, getContext(), appliedInfoWeight);
+            PixelAodTypography.applySharedClockTypeface(contextualView, getContext(), appliedInfoWeight);
         }
     }
 
@@ -1200,7 +1200,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         if (target == null) {
             return;
         }
-        PixelAodClockView.applySharedClockTypeface(target, getContext(), weight);
+        PixelAodTypography.applySharedClockTypeface(target, getContext(), weight);
         target.requestLayout();
     }
 
@@ -1253,7 +1253,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         setVisibility(View.INVISIBLE);
         PixelAodLog.log("ended COUI per-glyph size transaction source=" + transitionSource
                 + " reason=" + reason
-                + " trace=" + PixelAodClockView.currentAodTraceId());
+                + " trace=" + PixelAodRuntimeState.currentAodTraceId());
         transitionSource = "";
     }
 
@@ -1311,7 +1311,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         float trailing = layout.getPrimaryHorizontal(Math.min(text.length(), offset + 1));
         float cellStart = Math.min(leading, trailing);
         Paint paint = clock.getPaint();
-        float referenceAdvance = PixelAodClockView.fixedClockGlyphReferenceAdvancePx(
+        float referenceAdvance = PixelAodTypography.fixedClockGlyphReferenceAdvancePx(
                 clock, value);
         float animatedAdvance = paint.measureText(text, offset, offset + 1);
         Rect paintedBounds = new Rect();
@@ -1379,7 +1379,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         Rect textBounds = new Rect();
         paint.getTextBounds(value, 0, value.length(), textBounds);
         Paint.FontMetrics metrics = paint.getFontMetrics();
-        float advance = Math.max(0f, PixelAodClockView.measuredTextAdvancePx(view));
+        float advance = Math.max(0f, PixelAodTypography.measuredTextAdvancePx(view));
         if (textBounds.width() <= 0 || textBounds.height() <= 0) {
             textBounds.set(0, Math.round(metrics.ascent), Math.max(1, Math.round(advance)),
                     Math.round(metrics.descent));
@@ -1419,7 +1419,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
         float startWidth = drawables[0] != null ? bounds.width() : 0f;
         float endWidth = drawables[2] != null ? bounds.width() : 0f;
         String value = view.getText() != null ? view.getText().toString() : "";
-        float advance = Math.max(0f, PixelAodClockView.measuredTextAdvancePx(view));
+        float advance = Math.max(0f, PixelAodTypography.measuredTextAdvancePx(view));
         float padding = view.getCompoundDrawablePadding();
         float contentWidth = startWidth + advance + endWidth
                 + (drawables[0] != null && !value.isEmpty() ? padding : 0f)
@@ -1587,7 +1587,7 @@ final class CouiClockSizeTransitionLayer extends FrameLayout {
                 + " rootScale=" + root.getScaleX() + "x" + root.getScaleY()
                 + " rootTranslation=" + Math.round(root.getTranslationX()) + ","
                 + Math.round(root.getTranslationY())
-                + " trace=" + PixelAodClockView.currentAodTraceId());
+                + " trace=" + PixelAodRuntimeState.currentAodTraceId());
     }
 
     static final class SceneSnapshot {

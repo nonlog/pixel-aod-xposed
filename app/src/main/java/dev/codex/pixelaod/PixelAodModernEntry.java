@@ -83,7 +83,7 @@ public final class PixelAodModernEntry extends XposedModule {
                             + " process=" + Application.getProcessName()
                             + " loader=" + classLoader);
                     resolveModulePath(context);
-                    PixelAodClockView.prewarmGoogleSansFlex(context);
+                    PixelAodTypography.prewarmGoogleSansFlex(context);
                     PixelAodHook.install(context, classLoader);
                     showToastOnce(context, "Pixel AOD modern injected: " + context.getPackageName());
                     return result;
@@ -94,7 +94,7 @@ public final class PixelAodModernEntry extends XposedModule {
     private void resolveModulePath(Context context) {
         try {
             ApplicationInfo info = context.getPackageManager().getApplicationInfo(MODULE_PACKAGE, 0);
-            PixelAodClockView.setModulePath(info.sourceDir);
+            PixelAodTypography.setModulePath(info.sourceDir);
             logInfo("modulePath=" + info.sourceDir);
         } catch (Throwable t) {
             logError("failed to resolve module APK path", t);

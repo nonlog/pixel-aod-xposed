@@ -1497,13 +1497,11 @@ final class CouiUdfpsController {
     }
 
     private static boolean isSuccessRippleEnabled(Context context) {
-        return context != null && PixelAodSettings.getBoolean(context,
-                PixelAodSettings.KEY_UDFPS_SUCCESS_RIPPLE, true);
+        return PixelAodUdfpsRuntimePolicy.successRippleEnabled(context);
     }
 
     private static boolean isSuccessRippleOwned(Context context) {
-        return CouiUdfpsOwnershipPolicy.ownsSuccessRipple(
-                PixelAodFeatureFlags.useCouiUdfps(), isSuccessRippleEnabled(context));
+        return PixelAodUdfpsRuntimePolicy.couiOwnsSuccessRipple(context);
     }
 
     private static boolean isAodExitAnimationEnabled(Context context) {
@@ -1512,10 +1510,7 @@ final class CouiUdfpsController {
     }
 
     private static boolean isReplacementEnabled(Context context) {
-        return CouiUdfpsOwnershipPolicy.ownsReplacementVisuals(
-                PixelAodFeatureFlags.useCouiUdfps(),
-                context != null && PixelAodSettings.getBoolean(
-                        context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false));
+        return PixelAodUdfpsRuntimePolicy.couiOwnsReplacement(context);
     }
 
     private static boolean hasTrackedReplacementState(ImageView icon) {

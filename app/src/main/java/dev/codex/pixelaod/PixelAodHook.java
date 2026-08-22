@@ -217,69 +217,10 @@ final class PixelAodHook {
     private PixelAodHook() {
     }
 
-    static void removeLegacyClockOverlays(String source) {
-        if (ActiveClockRendererController.blocksLegacyPrimaryOwner()
-                || !ActiveClockRendererController.hasValidatedHost()) {
-            return;
-        }
-        removeLegacyClockOverlay(lastStockHost.get(), CUSTOM_TAG, PixelAodClockView.class, source);
-        removeLegacyClockOverlay(lastStockHost.get(), LOCKSCREEN_CUSTOM_TAG,
-                PixelLockscreenClockView.class, source);
-        removeLegacyClockOverlay(lastPixelHost.get(), CUSTOM_TAG, PixelAodClockView.class, source);
-        removeLegacyClockOverlay(lastPixelHost.get(), LOCKSCREEN_CUSTOM_TAG,
-                PixelLockscreenClockView.class, source);
-        removeLegacyClockOverlay(lastShadeHost.get(), CUSTOM_TAG, PixelAodClockView.class, source);
-        removeLegacyClockOverlay(lastShadeHost.get(), LOCKSCREEN_CUSTOM_TAG,
-                PixelLockscreenClockView.class, source);
-    }
-
-    /**
-     * Returns whether the startup-selected ClockPlugin owner has taken responsibility for the
-     * module clock path. COUI_PORT is exclusive from process startup, so it blocks legacy primary
-     * creation even before its first vendor render callback attaches a host.
-     */
-    private static boolean refreshPersistentClockPluginHost(String source) {
-        if (ActiveClockRendererController.blocksLegacyPrimaryOwner()) {
-            PixelAodLog.log("COUI clock startup owner blocks legacy primary path source=" + source
-                    + " rendererMode=COUI_PORT");
-            return true;
-        }
-        if (!ActiveClockRendererController.hasValidatedHost()) {
-            return false;
-        }
-        removeLegacyClockOverlays(source + "#remove-legacy");
-        return true;
-    }
-
-    private static void removeLegacyClockOverlay(ViewGroup host, String tag,
-            Class<?> expectedType, String source) {
-        if (host == null) {
-            return;
-        }
-        View overlay = host.findViewWithTag(tag);
-        if (overlay == null || !expectedType.isInstance(overlay)
-                || !(overlay.getParent() instanceof ViewGroup)) {
-            return;
-        }
-        ((ViewGroup) overlay.getParent()).removeView(overlay);
-        PixelAodLog.log("removed legacy Pixel clock overlay source=" + source
-                + " tag=" + tag + " host=" + hostSummary(host));
-    }
-
     private static boolean isPixelClockOverlay(View view) {
-        return view instanceof PixelClockPluginHostView
-                || view instanceof PixelAodClockView
+        return view instanceof PixelAodClockView
                 || view instanceof PixelLockscreenClockView
                 || view instanceof CouiClockHostView;
-    }
-
-    private static boolean blockLegacyPrimaryCreation(String source) {
-        if (!ActiveClockRendererController.blocksLegacyPrimaryOwner()) {
-            return false;
-        }
-        PixelAodLog.log("blocked legacy primary clock creation source=" + source
-                + " rendererMode=COUI_PORT");
-        return true;
     }
 
     static void install(Context context, ClassLoader classLoader) {
@@ -297,16 +238,11 @@ final class PixelAodHook {
             return;
         }
         PixelAodFeatureFlags.initialize(appContext);
-        ClockRendererStartupRouter.install(
-                PixelAodFeatureFlags.startupClockRenderer(),
-                appContext,
-                classLoader,
-                ActiveClockRendererController.productionInstaller());
-        registerSettingsObserver(appContext);
+        ActiveClockRendererController.install(appContext, classLoader);
+        PixelAodLifecycleHookInstaller.registerSettingsObserver(appContext);
         boolean notificationIcons = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_NOTIFICATION_ICONS, true);
-        boolean pixelFingerprintIcon = PixelAodSettings.getBoolean(appContext,
-                PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, false);
+        boolean pixelFingerprintIcon = PixelAodUdfpsRuntimePolicy.replacementRequested(appContext);
         boolean lockscreenPolicy = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, true);
         boolean weather = PixelAodSettings.getBoolean(appContext,
@@ -315,48 +251,37 @@ final class PixelAodHook {
                 PixelAodSettings.KEY_AOD_DISPLAY_MODE,
                 PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS);
         if (weather) {
-            PixelAodClockView.ensureBreezyWeatherReceiver(appContext);
+            PixelAodContentState.ensureBreezyWeatherReceiver(appContext);
         }
-        hookWakefulnessLifecycle(classLoader);
-        hookClockLayout(appContext, classLoader);
-        hookNativeAodRefreshCallbacks(classLoader);
-        hookNotificationView(classLoader);
-        hookAodRecord(classLoader);
-        hookOplusEnergySavingHideGuards(classLoader);
-        hookOplusFingerprintAodDiagnostics(classLoader);
-        hookOplusAodTriggerDiagnostics(classLoader);
-        hookPowerManagerWakeTriggers();
-        hookDreamServiceDozeScreenState();
-        if (ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS) {
-            hookStockClockVisibilityAndAlphaSuppression();
-        } else {
-            PixelAodLog.log("skipped global stock View visibility/alpha hooks");
-        }
-        if (notificationIcons) {
-            hookNotificationListenerService();
-            hookSystemUiNotificationListener(classLoader);
-            hookStatusBarNotificationIconCapture(classLoader);
-            hookOplusNotificationCapsuleIcons(classLoader);
-            registerTorchStateCallback(appContext);
-            registerTorchRefreshReceiver(appContext);
-        }
-        if (lockscreenPolicy) {
-            hookLockscreenNotificationPolicy(classLoader);
-        }
-        hookShadeWindowView(appContext, classLoader);
-        hookLockscreenClockProbe(classLoader);
+        // Preserve the proven 0.1.380 registration order while making hook ownership explicit.
+        PixelAodLifecycleHookInstaller.installWakefulness(classLoader);
+        PixelAodSurfaceHookInstaller.installClockLayout(appContext, classLoader);
+        PixelAodLifecycleHookInstaller.installNativeAodRefresh(classLoader);
+        PixelAodNotificationHookInstaller.installBaseViewHooks(classLoader);
+        PixelAodLifecycleHookInstaller.installAodRecord(classLoader);
+        PixelAodLifecycleHookInstaller.installEnergySavingGuards(classLoader);
+        PixelAodUdfpsHookInstaller.install(classLoader);
+        PixelAodLifecycleHookInstaller.installAodTriggerDiagnostics(classLoader);
+        PixelAodLifecycleHookInstaller.installPowerWakeTriggers();
+        PixelAodLifecycleHookInstaller.installDreamDozeState();
+        PixelAodSurfaceHookInstaller.installGlobalStockSuppression(
+                ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS);
+        PixelAodNotificationHookInstaller.installNotificationContent(
+                appContext, classLoader, notificationIcons);
+        PixelAodNotificationHookInstaller.installLockscreenPolicy(classLoader, lockscreenPolicy);
+        PixelAodSurfaceHookInstaller.installShadeAndLockscreen(appContext, classLoader);
         PixelAodLog.log("skipped global stock clock draw suppression to avoid UI jank");
         PixelAodLog.log("installed Pixel AOD hooks moduleEnabled=" + moduleEnabled
                 + " aodDisplayMode=" + aodDisplayMode
                 + " notificationIcons=" + notificationIcons
                 + " pixelFingerprintIcon=" + pixelFingerprintIcon
                 + " udfpsRenderer=" + PixelAodFeatureFlags.startupUdfpsRenderer()
-                + " clockRenderer=" + PixelAodFeatureFlags.startupClockRenderer().mode()
+                + " clockRenderer=COUI_PORT"
                 + " lockscreenPolicy=" + lockscreenPolicy
                 + " weather=" + weather);
     }
 
-    private static void registerSettingsObserver(Context context) {
+    static void registerSettingsObserver(Context context) {
         if (context == null || !SETTINGS_OBSERVER_REGISTERED.compareAndSet(false, true)) {
             return;
         }
@@ -379,7 +304,7 @@ final class PixelAodHook {
                                     + " selfChange=" + selfChange
                                     + " uri=" + uri);
                             PixelAodClockView.refreshAodPolicyFromSettings("settings-provider-change");
-                            if (PixelAodFeatureFlags.useCouiUdfps()) {
+                            if (PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
                                 CouiUdfpsController.refreshLast(
                                         appContext, "settings-provider-change");
                             } else {
@@ -394,7 +319,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void registerTorchStateCallback(Context context) {
+    static void registerTorchStateCallback(Context context) {
         if (context == null || !TORCH_CALLBACK_REGISTERED.compareAndSet(false, true)) {
             return;
         }
@@ -422,7 +347,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void registerTorchRefreshReceiver(Context context) {
+    static void registerTorchRefreshReceiver(Context context) {
         if (context == null || !TORCH_REFRESH_RECEIVER_REGISTERED.compareAndSet(false, true)) {
             return;
         }
@@ -600,7 +525,7 @@ final class PixelAodHook {
         return true;
     }
 
-    private static void hookStockClockVisibilityAndAlphaSuppression() {
+    static void hookStockClockVisibilityAndAlphaSuppression() {
         try {
             ModernHookBridge.hookBefore(View.class, "setVisibility", param -> {
                 if (!(param.thisObject instanceof View)) {
@@ -738,8 +663,7 @@ final class PixelAodHook {
         ViewParent parent = view.getParent();
         int depth = 0;
         while (parent instanceof View && depth < 8) {
-            if (parent instanceof PixelClockPluginHostView
-                    || parent instanceof PixelAodClockView
+            if (parent instanceof PixelAodClockView
                     || parent instanceof PixelLockscreenClockView
                     || parent instanceof CouiClockHostView) {
                 return true;
@@ -773,7 +697,7 @@ final class PixelAodHook {
         return looksLikeStockAodClockLeaf(marker);
     }
 
-    private static void hookLockscreenClockProbe(ClassLoader classLoader) {
+    static void hookLockscreenClockProbe(ClassLoader classLoader) {
         PixelAodLog.log("skipped global lockscreen/shade View probe to avoid UI jank");
         hookLockscreenClockProbeClass(classLoader, KEYGUARD_STYLE_CLOCK);
         hookLockscreenClockProbeClass(classLoader, KEYGUARD_CLOCK_VIEW_ROOT);
@@ -835,7 +759,7 @@ final class PixelAodHook {
                 || className.contains("ClockViewRoot");
     }
 
-    private static void hookLockscreenClockProbeClass(ClassLoader classLoader, String className) {
+    static void hookLockscreenClockProbeClass(ClassLoader classLoader, String className) {
         try {
             Class<?> clazz = ModernHookBridge.findClass(className, classLoader);
             ModernHookBridge.hookAfter(clazz, "onAttachedToWindow",
@@ -846,7 +770,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void hookClockLayout(Context context, ClassLoader classLoader) {
+    static void hookClockLayout(Context context, ClassLoader classLoader) {
         try {
             Class<?> clockLayoutClass = ModernHookBridge.findClass(CLOCK_LAYOUT, classLoader);
             ModernHookBridge.hookAfter(clockLayoutClass, "initForAodApk",
@@ -859,7 +783,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void hookNativeAodRefreshCallbacks(ClassLoader classLoader) {
+    static void hookNativeAodRefreshCallbacks(ClassLoader classLoader) {
         boolean hooked = false;
         try {
             Class<?> clockLayoutClass = ModernHookBridge.findClass(CLOCK_LAYOUT, classLoader);
@@ -960,7 +884,7 @@ final class PixelAodHook {
                 + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
     }
 
-    private static void hookShadeWindowView(Context context, ClassLoader classLoader) {
+    static void hookShadeWindowView(Context context, ClassLoader classLoader) {
         try {
             Class<?> shadeClass = ModernHookBridge.findClass(SHADE_WINDOW_VIEW, classLoader);
             ModernHookBridge.hookAfter(shadeClass, "onAttachedToWindow", param -> {
@@ -993,7 +917,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void hookNotificationView(ClassLoader classLoader) {
+    static void hookNotificationView(ClassLoader classLoader) {
         try {
             Class<?> notificationViewClass = ModernHookBridge.findClass(
                     "com.oplus.egview.widget.NotificationView", classLoader);
@@ -1003,7 +927,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void hookNotificationListenerService() {
+    static void hookNotificationListenerService() {
         try {
             ModernHookBridge.hookAfter(NotificationListenerService.class,
                     "onListenerConnected", param -> {
@@ -1041,7 +965,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void hookSystemUiNotificationListener(ClassLoader classLoader) {
+    static void hookSystemUiNotificationListener(ClassLoader classLoader) {
         try {
             Class<?> listenerClass = ModernHookBridge.findClass(
                     "com.android.systemui.statusbar.NotificationListener", classLoader);
@@ -1322,7 +1246,7 @@ final class PixelAodHook {
      * StatusBarIconView.setNotification() stores mNotification and synchronously updates the
      * ImageView drawable; pre-draw additionally waits for all work queued for that frame.
      */
-    private static void hookStatusBarNotificationIconCapture(ClassLoader classLoader) {
+    static void hookStatusBarNotificationIconCapture(ClassLoader classLoader) {
         try {
             Class<?> statusBarIconViewClass = ModernHookBridge.findClass(STATUS_BAR_ICON_VIEW,
                     classLoader);
@@ -1428,7 +1352,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void hookOplusNotificationCapsuleIcons(ClassLoader classLoader) {
+    static void hookOplusNotificationCapsuleIcons(ClassLoader classLoader) {
         try {
             Class<?> cardViewClass = ModernHookBridge.findClass(
                     OPLUS_CAPSULE_NOTIFICATION_CARD_VIEW, classLoader);
@@ -1618,7 +1542,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void hookNotificationViewClass(Class<?> notificationViewClass, String source) {
+    static void hookNotificationViewClass(Class<?> notificationViewClass, String source) {
         if (notificationViewClass == null) {
             return;
         }
@@ -1736,7 +1660,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void hookAodRecord(ClassLoader classLoader) {
+    static void hookAodRecord(ClassLoader classLoader) {
         try {
             Class<?> recordClass = ModernHookBridge.findClass(AOD_RECORD, classLoader);
             ModernHookBridge.hookAfter(recordClass, "createAndInitRootView", param -> {
@@ -1778,7 +1702,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void hookOplusEnergySavingHideGuards(ClassLoader classLoader) {
+    static void hookOplusEnergySavingHideGuards(ClassLoader classLoader) {
         boolean hooked = false;
         try {
             Class<?> recordClass = ModernHookBridge.findClass(AOD_RECORD, classLoader);
@@ -2013,8 +1937,8 @@ final class PixelAodHook {
         return new Object[] { Boolean.TRUE };
     }
 
-    private static void hookOplusFingerprintAodDiagnostics(ClassLoader classLoader) {
-        boolean couiRenderer = PixelAodFeatureFlags.useCouiUdfps();
+    static void hookOplusFingerprintAodDiagnostics(ClassLoader classLoader) {
+        boolean couiRenderer = PixelAodUdfpsRuntimePolicy.usesCouiRenderer();
         if (couiRenderer) {
             // Startup-exclusive: COUI owns both the replacement drawable and its UiMech/async
             // lifecycle observation. Do not layer the legacy broad FOD diagnostic hooks on top:
@@ -2063,7 +1987,7 @@ final class PixelAodHook {
                         return;
                     }
                     rememberFingerprintAodInstance("OnScreenFingerprintUiMech", uiMech);
-                    if (!PixelAodFeatureFlags.useCouiUdfps()) {
+                    if (!PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
                         PixelFingerprintIconController.refresh(
                                 systemUiContext, uiMech, source, false);
                     }
@@ -2133,12 +2057,12 @@ final class PixelAodHook {
                             // Explicit fingerprint interaction owns a new visible FOD cycle.
                             // Release the native-timeout latch before any carrier refresh runs.
                             clearFodNativeTimeoutHide(source + "#explicit-fp-touch");
-                            if (!PixelAodFeatureFlags.useCouiUdfps()) {
+                            if (!PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
                                 PixelFingerprintIconController.onFingerprintTouch(
                                         param.thisObject, param.args, source);
                             }
                         }
-                        if (!PixelAodFeatureFlags.useCouiUdfps()) {
+                        if (!PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
                             PixelFingerprintIconController.refresh(
                                     context, param.thisObject, source, true);
                         }
@@ -2192,7 +2116,7 @@ final class PixelAodHook {
         Object uiMech = sourceInstance != null
                 && OPLUS_ON_SCREEN_FINGERPRINT_UI_MECH.equals(sourceInstance.getClass().getName())
                 ? sourceInstance : lastOnScreenFingerprintUiMech.get();
-        if (uiMech == null && PixelAodFeatureFlags.useCouiUdfps()) {
+        if (uiMech == null && PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
             uiMech = CouiUdfpsController.lastUiMech();
         }
         boolean dismissed = invokeFirstNoArgFodMethod(uiMech, "OnScreenFingerprintUiMech",
@@ -2237,7 +2161,7 @@ final class PixelAodHook {
         }
     }
 
-    private static void hookOplusAodTriggerDiagnostics(ClassLoader classLoader) {
+    static void hookOplusAodTriggerDiagnostics(ClassLoader classLoader) {
         boolean hooked = false;
         for (String className : OPLUS_WAKE_UP_CONTROLLER_CANDIDATES) {
             try {
@@ -2346,7 +2270,7 @@ final class PixelAodHook {
                 || !TextUtils.isEmpty(methodTriggerType);
     }
 
-    private static void hookPowerManagerWakeTriggers() {
+    static void hookPowerManagerWakeTriggers() {
         boolean hooked = false;
         try {
             for (Method method : android.os.PowerManager.class.getDeclaredMethods()) {
@@ -2380,7 +2304,7 @@ final class PixelAodHook {
         PixelAodLog.log("installed PowerManager wake trigger hooks hooked=" + hooked);
     }
 
-    private static void hookDreamServiceDozeScreenState() {
+    static void hookDreamServiceDozeScreenState() {
         try {
             ModernHookBridge.hookBefore(DreamService.class, "setDozeScreenState", param -> {
                 if (param.args == null || param.args.length == 0
@@ -2587,7 +2511,7 @@ final class PixelAodHook {
                 && isNativeAodTimeoutHideSource(source);
     }
 
-    private static void hookWakefulnessLifecycle(ClassLoader classLoader) {
+    static void hookWakefulnessLifecycle(ClassLoader classLoader) {
         hookKeyguardSleepOrigin(classLoader);
         try {
             Class<?> lifecycleClass = ModernHookBridge.findClass(
@@ -2787,7 +2711,7 @@ final class PixelAodHook {
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
         }
         Object uiMech = lastOnScreenFingerprintUiMech.get();
-        if (uiMech == null && PixelAodFeatureFlags.useCouiUdfps()) {
+        if (uiMech == null && PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
             uiMech = CouiUdfpsController.lastUiMech();
         }
         boolean dispatched = invokeFirstNoArgFodMethod(uiMech, "OnScreenFingerprintUiMech",
@@ -3083,7 +3007,7 @@ final class PixelAodHook {
         });
     }
 
-    private static void hookLockscreenNotificationPolicy(ClassLoader classLoader) {
+    static void hookLockscreenNotificationPolicy(ClassLoader classLoader) {
         hookKeyguardNotificationVisibilityProvider(classLoader);
         hookKeyguardNotifFilter(classLoader);
     }
@@ -3580,11 +3504,6 @@ final class PixelAodHook {
             lastStockHost = new WeakReference<>(host);
             observeStockAodHostLifecycle(host, source);
             lastPixelHost = new WeakReference<>(pixelHost);
-            boolean persistentHost = refreshPersistentClockPluginHost(source);
-            if (!persistentHost) {
-                injectPixelClock(context, pixelHost);
-                injectPixelLockscreenClock(context, pixelHost);
-            }
             PixelLockscreenClockView.refreshAll(source);
             boolean screenOff = !PixelAodClockView.isDeviceInteractive(context);
             boolean lockscreenVisible = isLikelyLockscreenSurfaceVisible(context, host, pixelHost);
@@ -3654,16 +3573,9 @@ final class PixelAodHook {
                     scheduleParentDebugDumps(host, source);
                 }
             } else if (lockscreenVisible) {
-                if (persistentHost) {
-                    hideStockKeyguardClockViews(highestParentGroup(host));
-                } else {
-                    applyLockscreenClockReplacement(context, host, pixelHost, source);
-                }
+                hideStockKeyguardClockViews(highestParentGroup(host));
             } else {
                 restoreStockViews(source + "#host-interactive-exit");
-            }
-            if (!persistentHost && ENABLE_EXPENSIVE_DEBUG_REAPPLY && PixelAodLog.isDebugEnabled()) {
-                scheduleReapply(context, host, pixelHost, source);
             }
             PixelAodLog.log("customized AOD clock host from " + source + " host="
                     + host.getClass().getName() + " pixelHost=" + markerFor(pixelHost)
@@ -3704,34 +3616,19 @@ final class PixelAodHook {
             if (lastStockHost.get() == null) {
                 lastStockHost = new WeakReference<>(host);
             }
-            if (refreshPersistentClockPluginHost(source)) {
-                boolean surfaceVisible = isLikelyLockscreenSurfaceVisible(context, host, host);
-                PixelLockscreenClockView.setLockscreenSurfaceVisible(surfaceVisible,
+            boolean surfaceVisible = isLikelyLockscreenSurfaceVisible(context, host, host);
+            PixelLockscreenClockView.setLockscreenSurfaceVisible(surfaceVisible,
+                    source + "#persistent-host");
+            if (surfaceVisible) {
+                ActiveClockRendererController.prepareLockscreenEntry(
                         source + "#persistent-host");
-                if (surfaceVisible) {
-                    ActiveClockRendererController.prepareLockscreenEntry(
-                            source + "#persistent-host");
-                    PixelLockscreenClockView.markInteractiveLockscreenSurface(context,
-                            source + "#persistent-host");
-                    hideStockKeyguardClockViews(highestParentGroup(host));
-                }
-                PixelAodLog.log("prepared persistent ClockPlugin lockscreen host from " + source
-                        + " surfaceVisible=" + surfaceVisible
-                        + " host=" + markerFor(host)
-                        + " trace=" + PixelAodClockView.currentAodTraceId()
-                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
-                return;
+                PixelLockscreenClockView.markInteractiveLockscreenSurface(context,
+                        source + "#persistent-host");
+                hideStockKeyguardClockViews(highestParentGroup(host));
             }
-            disableClippingUpwards(host);
-            injectPixelClock(context, host);
-            injectPixelLockscreenClock(context, host);
-            applyLockscreenClockReplacement(context, host, host, source);
-            if (ENABLE_EXPENSIVE_DEBUG_REAPPLY && PixelAodLog.isDebugEnabled()) {
-                scheduleLockscreenReapply(context, host);
-            }
-            PixelAodLog.log("prepared Pixel lockscreen host from " + source
+            PixelAodLog.log("prepared persistent COUI ClockPlugin lockscreen host from " + source
+                    + " surfaceVisible=" + surfaceVisible
                     + " host=" + markerFor(host)
-                    + " children=" + host.getChildCount()
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(context) + "}");
         } catch (Throwable t) {
@@ -3740,40 +3637,7 @@ final class PixelAodHook {
     }
 
     static void reapplyLockscreenClockFromKnownHost(String source) {
-        if (refreshPersistentClockPluginHost("known-host-" + source)) {
-            return;
-        }
-        if (!ENABLE_EXPENSIVE_DEBUG_REAPPLY) {
-            PixelLockscreenClockView.refreshAll("known-host-" + source);
-            return;
-        }
-        MAIN.post(() -> {
-            try {
-                ViewGroup pixelHost = lastPixelHost.get();
-                ViewGroup stockHost = lastStockHost.get();
-                ViewGroup shadeHost = lastShadeHost.get();
-                ViewGroup host = pixelHost != null ? pixelHost : stockHost != null ? stockHost : shadeHost;
-                if (host == null) {
-                    return;
-                }
-                Context context = host.getContext();
-                if (context == null
-                        || PixelAodClockView.shouldApplyModuleAodNow(
-                        context, "known-host-" + source)
-                        || !PixelLockscreenClockView.isSystemKeyguardLocked(context)) {
-                    return;
-                }
-                if (pixelHost == null && shadeHost != null) {
-                    pixelHost = shadeHost;
-                }
-                applyLockscreenClockReplacement(context,
-                        stockHost != null ? stockHost : host,
-                        pixelHost != null ? pixelHost : host,
-                        "known-host-" + source);
-            } catch (Throwable t) {
-                PixelAodLog.log("failed to reapply Pixel lockscreen clock from known host " + source, t);
-            }
-        });
+        // COUI owns the persistent lockscreen host; legacy overlay reapply is retired.
     }
 
     static void reassertStockAodSuppressionAfterScreenOff(String source) {
@@ -3849,8 +3713,6 @@ final class PixelAodHook {
             if (host == null || context == null) {
                 return;
             }
-            boolean persistentHost = refreshPersistentClockPluginHost(
-                    source + "#refresh-known-aod-host");
             OosAodLifecycleAdapter.AodPolicyDecision decision =
                     PixelAodClockView.evaluateAodPolicy(context, source + "#known-host");
             if (!decision.shouldSuppressStockAodViews) {
@@ -3869,7 +3731,7 @@ final class PixelAodHook {
             adjustPluginStatusViews(context, host);
             PixelAodLog.log("refreshed known AOD host visibility source=" + source
                     + " host=" + hostSummary(host)
-                    + " persistentHost=" + persistentHost
+                    + " owner=COUI_PORT"
                     + " stockReason=" + decision.stockSuppressionReason
                     + " trace=" + currentTrace
                     + " state={" + state + "}");
@@ -3907,70 +3769,6 @@ final class PixelAodHook {
         return best;
     }
 
-    private static void injectPixelClock(Context context, ViewGroup host) {
-        if (blockLegacyPrimaryCreation("inject-aod-clock")) {
-            return;
-        }
-        if (refreshPersistentClockPluginHost("inject-aod-clock")) {
-            return;
-        }
-        View existing = host.findViewWithTag(CUSTOM_TAG);
-        if (existing instanceof PixelAodClockView) {
-            existing.bringToFront();
-            ((PixelAodClockView) existing).start();
-            PixelAodLog.log("reused PixelAodClockView in " + host.getClass().getName()
-                    + " visibility=" + existing.getVisibility());
-            return;
-        }
-
-        PixelAodClockView clockView = new PixelAodClockView(context);
-        clockView.setTag(CUSTOM_TAG);
-        clockView.setPadding(0, 0, 0, 0);
-        clockView.setElevation(dp(context, 24));
-        clockView.setTranslationZ(dp(context, 24));
-        disableClippingUpwards(host);
-        host.addView(clockView, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
-        clockView.bringToFront();
-        clockView.start();
-        PixelAodLog.log("injected PixelAodClockView into " + host.getClass().getName());
-    }
-
-    private static void injectPixelLockscreenClock(Context context, ViewGroup host) {
-        if (blockLegacyPrimaryCreation("inject-lockscreen-clock")) {
-            return;
-        }
-        if (refreshPersistentClockPluginHost("inject-lockscreen-clock")) {
-            return;
-        }
-        View existing = host.findViewWithTag(LOCKSCREEN_CUSTOM_TAG);
-        if (existing instanceof PixelLockscreenClockView) {
-            existing.bringToFront();
-            ((PixelLockscreenClockView) existing).start();
-            return;
-        }
-
-        PixelLockscreenClockView clockView = new PixelLockscreenClockView(context);
-        clockView.setTag(LOCKSCREEN_CUSTOM_TAG);
-        clockView.setPadding(0, 0, 0, 0);
-        clockView.setElevation(dp(context, 28));
-        clockView.setTranslationZ(dp(context, 28));
-        disableClippingUpwards(host);
-        host.addView(clockView, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
-        clockView.bringToFront();
-        clockView.start();
-        PixelAodLog.log("injected PixelLockscreenClockView into " + host.getClass().getName());
-    }
-
-    private static void scheduleReapply(Context context, ViewGroup stockHost, ViewGroup pixelHost,
-            String source) {
-        reapplyLater(context, stockHost, pixelHost, source, 650L);
-        reapplyLater(context, stockHost, pixelHost, source, 2500L);
-    }
-
     private static void scheduleStockSuppressionReapply(ViewGroup host, String source) {
         stockSuppressionReapplyLater(host, source, 1800L,
                 PixelAodClockView.peekAodTraceId());
@@ -3991,118 +3789,6 @@ final class PixelAodHook {
                 PixelAodHook::hostSummary);
     }
 
-    private static void scheduleLockscreenReapply(Context context, ViewGroup host) {
-        lockscreenReapplyLater(context, host, 650L);
-        lockscreenReapplyLater(context, host, 2000L);
-    }
-
-    private static void lockscreenReapplyLater(Context context, ViewGroup host, long delayMillis) {
-        MAIN.postDelayed(() -> {
-            try {
-                if (PixelAodClockView.shouldApplyModuleAodNow(
-                        context, "NotificationShadeWindowView#delayed-" + delayMillis)
-                        || !PixelAodClockView.isDeviceInteractive(context)) {
-                    return;
-                }
-                applyLockscreenClockReplacement(context, host, host,
-                        "NotificationShadeWindowView#delayed-" + delayMillis);
-            } catch (Throwable t) {
-                PixelAodLog.log("delayed lockscreen reapply failed", t);
-            }
-        }, delayMillis);
-    }
-
-    private static void reapplyLater(Context context, ViewGroup stockHost, ViewGroup pixelHost,
-            String source, long delayMillis) {
-        MAIN.postDelayed(() -> {
-            try {
-                boolean screenOff = !PixelAodClockView.isDeviceInteractive(context);
-                boolean lockscreenVisible = isLikelyLockscreenSurfaceVisible(context, stockHost, pixelHost);
-                OosAodLifecycleAdapter.AodPolicyDecision decision =
-                        PixelAodClockView.evaluateAodPolicy(context, source + "#delayed-reapply");
-                boolean lifecycleCustomizeNow = decision.lifecycleWantsPixelOverlay;
-                boolean moduleAodPolicyAllows = !screenOff || decision.modulePolicyAllowsDisplay;
-                boolean customizeNow = lifecycleCustomizeNow && moduleAodPolicyAllows;
-                PixelAodLog.log("delayed AOD reapply source=" + source
-                        + " delayMillis=" + delayMillis
-                        + " screenOff=" + screenOff
-                        + " lockscreenVisible=" + lockscreenVisible
-                        + " customizeNow=" + customizeNow
-                        + " lifecycleCustomizeNow=" + lifecycleCustomizeNow
-                        + " moduleAodPolicyAllows=" + moduleAodPolicyAllows
-                        + " shouldDrawPixelOverlay=" + decision.shouldDrawPixelOverlay
-                        + " shouldKeepNativeDozeAlive=" + decision.shouldKeepNativeDozeAlive
-                        + " shouldSuppressStockAodViews=" + decision.shouldSuppressStockAodViews
-                        + " shouldAllowNativeHideCallbacks="
-                        + decision.shouldAllowNativeHideCallbacks
-                        + " reasons={draw=" + decision.drawReason
-                        + ",stock=" + decision.stockSuppressionReason
-                        + ",nativeHide=" + decision.nativeHideCallbackReason + "}"
-                        + " stockHost=" + hostSummary(stockHost)
-                        + " pixelHost=" + hostSummary(pixelHost)
-                        + " state={" + PixelAodClockView.describeAodState(context) + "}");
-                PixelLockscreenClockView.refreshAll("delayed-reapply");
-                if (refreshPersistentClockPluginHost(source + "#delayed-reapply")) {
-                    if (screenOff) {
-                        if (stockHost != null) {
-                            hideStockClockViews(stockHost);
-                            hideStockKeyguardClockViews(highestParentGroup(stockHost));
-                            adjustPluginStatusViews(context, stockHost);
-                        }
-                    } else if (lockscreenVisible) {
-                        if (stockHost != null) {
-                            hideStockKeyguardClockViews(highestParentGroup(stockHost));
-                        }
-                        if (pixelHost != null) {
-                            hideStockKeyguardClockViews(highestParentGroup(pixelHost));
-                        }
-                    } else {
-                        restoreStockViews(source + "#persistent-host-interactive-exit");
-                    }
-                    return;
-                }
-                if (screenOff && !moduleAodPolicyAllows) {
-                    restoreAdjustedStatusViews();
-                    hideStockClockViews(stockHost);
-                    if (stockHost != null) {
-                        hideStockKeyguardClockViews(highestParentGroup(stockHost));
-                        scheduleStockSuppressionReapply(stockHost, source + "#module-aod-policy");
-                    }
-                    PixelAodLog.log("kept stock AOD suppressed during delayed reapply source=" + source
-                            + " reason=" + decision.stockSuppressionReason
-                            + " delayMillis=" + delayMillis
-                            + " stockHost=" + hostSummary(stockHost)
-                            + " pixelHost=" + hostSummary(pixelHost)
-                            + " state={" + PixelAodClockView.describeAodState(context) + "}");
-                    return;
-                }
-                if (screenOff && moduleAodPolicyAllows && !lifecycleCustomizeNow) {
-                    PixelAodClockView.setAodActive(true, "delayed-host-ready");
-                }
-                if (!screenOff && !lockscreenVisible && !customizeNow) {
-                    PixelLockscreenClockView.setLockscreenSurfaceVisible(false, "delayed-reapply");
-                    restoreStockViews(source + "#delayed-interactive-exit");
-                    return;
-                }
-                if (lockscreenVisible && !screenOff) {
-                    applyLockscreenClockReplacement(context, stockHost, pixelHost, "delayed-reapply");
-                    return;
-                }
-                hideStockClockViews(stockHost);
-                adjustPluginStatusViews(context, stockHost);
-                View custom = pixelHost.findViewWithTag(CUSTOM_TAG);
-                if (custom instanceof PixelAodClockView) {
-                    custom.bringToFront();
-                    ((PixelAodClockView) custom).start();
-                } else {
-                    injectPixelClock(context, pixelHost);
-                }
-            } catch (Throwable t) {
-                PixelAodLog.log("delayed AOD reapply failed", t);
-            }
-        }, delayMillis);
-    }
-
     private static void applyLockscreenClockReplacement(Context context, ViewGroup stockHost,
             ViewGroup pixelHost, String source) {
         boolean surfaceVisible = isLikelyLockscreenSurfaceVisible(context, stockHost, pixelHost);
@@ -4116,47 +3802,18 @@ final class PixelAodHook {
             restoreStockViews(source + "#lockscreen-surface-hidden");
             return;
         }
-        if (refreshPersistentClockPluginHost(source + "#lockscreen-replacement")) {
-            if (stockHost != null) {
-                hideStockKeyguardClockViews(highestParentGroup(stockHost));
-            }
-            if (pixelHost != null) {
-                hideStockKeyguardClockViews(highestParentGroup(pixelHost));
-            }
-            PixelAodLog.log("lockscreen replacement delegated to persistent ClockPlugin host from "
-                    + source
-                    + " stockHost=" + hostSummary(stockHost)
-                    + " pixelHost=" + hostSummary(pixelHost)
-                    + " trace=" + PixelAodClockView.currentAodTraceId()
-                    + " state={" + PixelAodClockView.describeAodState(context) + "}");
-            return;
-        }
-        boolean hasNotificationCards = false;
         if (stockHost != null) {
-            ViewGroup root = highestParentGroup(stockHost);
-            hideStockKeyguardClockViews(root);
-            hasNotificationCards |= hasVisibleLockscreenNotificationCards(root);
+            hideStockKeyguardClockViews(highestParentGroup(stockHost));
         }
         if (pixelHost != null) {
-            ViewGroup root = highestParentGroup(pixelHost);
-            hideStockKeyguardClockViews(root);
-            hasNotificationCards |= hasVisibleLockscreenNotificationCards(root);
-            View custom = pixelHost.findViewWithTag(LOCKSCREEN_CUSTOM_TAG);
-            if (custom instanceof PixelLockscreenClockView) {
-                custom.bringToFront();
-                ((PixelLockscreenClockView) custom).start();
-            } else {
-                injectPixelLockscreenClock(context, pixelHost);
-            }
+            hideStockKeyguardClockViews(highestParentGroup(pixelHost));
         }
-        PixelAodLog.log("lockscreen replacement applied from " + source
-                + " surfaceVisible=" + surfaceVisible
-                + " hasNotificationCards=" + hasNotificationCards
+        PixelAodLog.log("lockscreen replacement delegated to persistent COUI ClockPlugin host from "
+                + source
                 + " stockHost=" + hostSummary(stockHost)
                 + " pixelHost=" + hostSummary(pixelHost)
                 + " trace=" + PixelAodClockView.currentAodTraceId()
                 + " state={" + PixelAodClockView.describeAodState(context) + "}");
-        PixelLockscreenClockView.setVisibleLockscreenNotificationCards(hasNotificationCards, source);
     }
 
     private static boolean isLikelyLockscreenSurfaceVisible(Context context, ViewGroup stockHost,
@@ -5049,7 +4706,7 @@ final class PixelAodHook {
      * alpha, or short-circuit draw on that root, otherwise the replacement child is hidden too.
      */
     private static boolean containsPersistentClockPluginHost(View view) {
-        if (view instanceof PixelClockPluginHostView || view instanceof CouiClockHostView) {
+        if (view instanceof CouiClockHostView) {
             return true;
         }
         if (!(view instanceof ViewGroup)) {
@@ -5059,7 +4716,7 @@ final class PixelAodHook {
     }
 
     private static boolean containsPersistentClockPluginHost(ViewGroup root, int depth) {
-        if (root instanceof PixelClockPluginHostView || root instanceof CouiClockHostView) {
+        if (root instanceof CouiClockHostView) {
             return true;
         }
         if (depth >= 12) {
@@ -5068,7 +4725,7 @@ final class PixelAodHook {
         int childCount = Math.min(root.getChildCount(), 120);
         for (int i = 0; i < childCount; i++) {
             View child = root.getChildAt(i);
-            if (child instanceof PixelClockPluginHostView || child instanceof CouiClockHostView) {
+            if (child instanceof CouiClockHostView) {
                 return true;
             }
             if (child instanceof ViewGroup

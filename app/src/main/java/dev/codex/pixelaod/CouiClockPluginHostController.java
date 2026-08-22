@@ -558,7 +558,7 @@ final class CouiClockPluginHostController {
         boolean exitingAod = previous != null && previous.dozing() && !next.dozing();
         boolean enteringAod = previous != null && !previous.dozing() && next.dozing();
         boolean normalizeUnlockedAodEntry = enteringAod
-                && !PixelAodClockView.wasScreenOffFromInteractiveLockscreen();
+                && !PixelAodRuntimeState.wasScreenOffFromInteractiveLockscreen();
 
         record.suppressNativeDraw = true;
         record.aodExitHandoffPending = false;
@@ -586,7 +586,7 @@ final class CouiClockPluginHostController {
         }
         record.generation = nextGeneration();
 
-        if (!next.dozing() && PixelAodClockView.isDeviceInteractive(context)) {
+        if (!next.dozing() && PixelAodRuntimeState.isDeviceInteractive(context)) {
             PixelLockscreenClockView.markInteractiveLockscreenSurfaceFromClockPlugin(
                     context, source + "#COUI-lockscreen-state");
         }
