@@ -4,14 +4,14 @@ Updated: 2026-08-22
 
 ## Current Status
 
-- **Stable release:** `v0.1.380`, release commit `a67ea2e0e42927a037980515661da0e267bacaa6` on `master`.
-- **Runtime source baseline:** `e7374956927f7ad8f89a870059b6218f66c1777e` / `0.1.380` / versionCode `390`.
+- **Stable release:** `v0.1.383` / versionCode `393` on `master`; annotated tag `v0.1.383` is the primary rollback point.
+- **Runtime source baseline:** `46adb50cb84ff8e680bf42f5fa8b43d26be6f137` / `0.1.383`; the release marker after it is documentation-only.
+- **Previous stable rollback:** `v0.1.380` remains the pre-M8 behavior golden and can be used for architecture-regression bisect/rollback.
 - **M7:** completed and released. Modern Xposed API `101/101`, `staticScope=true`, sole scope `com.android.systemui`; M7 clock/content/weather/system-icon-UDFPS + success-ripple matrix accepted with documented conditional-scene exceptions.
-- **M8 branch:** `agent/m8-architecture`, created from the stable release commit. No M8 work is merged to `master` yet.
-- **Current M8 candidate:** `0.1.383 / 393`. S1 fixed COUI_PORT as the only startup clock owner; S2 removed the dead legacy ClockPlugin owner; S3 added presentation-facing typography/content/runtime facades; S4 separated hook registration by lifecycle/notification/surface/UDFPS domain; S5 centralized UDFPS runtime ownership; S6 consolidated docs/tests and audited non-blocking build/UI warnings.
-- **M8 S1-S6:** complete and physically verified on candidate `0.1.383 / 393`. Incremental gates: S1 **376/376**, S2/S3 **377/377**, S4 **379/379**, S5/final **380/380**, all with zero failures/errors/skips and `git diff --check` PASS.
-- **Final M8 artifact/device gate:** clean APK 19,748,415 bytes, SHA-256 `7C117B0398A8556F60390581383CE386AE9FAA51FE12F70412F7F80F681A0081`; install/hash/settings PASS; exactly one final reload `11051 -> 2668`; 3/3 LS↔AOD, Small/content, media PLAYING→NONE, AOD Large/empty, LS Large, UDFPS idle convergence and current-PID FATAL/ANR health all PASS. M8 is ready for commit/push on `agent/m8-architecture`; it is not yet merged to `master`.
-- **Behavior invariant:** no visual/layout/content/UDFPS changes are intended. Released 0.1.380 is the golden comparison.
+- **M8:** S1-S6 completed on `agent/m8-architecture`, fully verified, then fast-forward integrated into `master` without altering the accepted 0.1.380 visual/runtime contract.
+- **M8 architecture result:** COUI_PORT is the sole primary clock owner; presentation-facing typography/content/runtime facades are explicit; hook registration is split by lifecycle/notification/surface/UDFPS domain; UDFPS runtime ownership is centralized while optional replacement capability is retained.
+- **M8 verification:** S1 **376/376**, S2/S3 **377/377**, S4 **379/379**, S5/final **380/380**, all zero failures/errors/skips with `git diff --check` PASS. Final APK 19,748,415 bytes, SHA-256 `7C117B0398A8556F60390581383CE386AE9FAA51FE12F70412F7F80F681A0081`; install/hash/settings, one final reload `11051 -> 2668`, 3/3 LS↔AOD, Small/content, media PLAYING→NONE, AOD Large/empty, LS Large, UDFPS idle convergence and current-PID FATAL/ANR health all PASS.
+- **Behavior invariant:** no visual/layout/content/UDFPS behavior was intentionally changed by M8; `v0.1.380` is the comparison golden and `v0.1.383` is the post-convergence stable release.
 
 ## Stable Runtime Ownership
 

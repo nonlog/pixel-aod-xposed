@@ -2,9 +2,16 @@
 
 Status: **complete — 0.1.383 verified**  
 Started: 2026-08-21  
-Stable golden: `v0.1.380` / release commit `a67ea2e0e42927a037980515661da0e267bacaa6`  
-Current M8 candidate: `0.1.383 / 393`  
-Working branch: `agent/m8-architecture`
+Input behavior golden: `v0.1.380` / release commit `a67ea2e0e42927a037980515661da0e267bacaa6`
+Stable output: `v0.1.383 / 393` on `master`; annotated tag `v0.1.383` is the post-M8 rollback point
+Runtime convergence commit: `46adb50cb84ff8e680bf42f5fa8b43d26be6f137`
+Implementation branch: `agent/m8-architecture` (integrated)
+
+## Stable rollback points
+
+- `v0.1.383`: current post-M8 stable baseline. Use this tag for normal rollback/rebuild of the converged architecture.
+- `v0.1.380`: pre-M8 behavior golden. Use this when diagnosing whether a regression was introduced by architecture convergence itself.
+- Source rollback is tag-based (`git switch --detach v0.1.383` or `v0.1.380`); the stable APK should be rebuilt from the selected tag and installed with the normal overwrite path rather than reverting individual M8 slices in-place.
 
 ## Contract
 
