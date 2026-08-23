@@ -16,6 +16,8 @@ public final class PixelAodSettings {
     public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY =
             PixelAodSettingsSchema.KEY_LOCKSCREEN_NOTIFICATION_POLICY;
     public static final String KEY_AOD_DISPLAY_MODE = PixelAodSettingsSchema.KEY_AOD_DISPLAY_MODE;
+    public static final String KEY_NON_LOCKSCREEN_AOD_TRANSITION =
+            PixelAodSettingsSchema.KEY_NON_LOCKSCREEN_AOD_TRANSITION;
     public static final String KEY_WEATHER = PixelAodSettingsSchema.KEY_WEATHER;
     public static final String KEY_WEATHER_ALERTS = PixelAodSettingsSchema.KEY_WEATHER_ALERTS;
     public static final String KEY_WEATHER_FORECAST =
@@ -63,6 +65,10 @@ public final class PixelAodSettings {
             PixelAodSettingsSchema.AOD_DISPLAY_MODE_CONTINUOUS;
     public static final String AOD_DISPLAY_MODE_TRIGGER_ONLY =
             PixelAodSettingsSchema.AOD_DISPLAY_MODE_TRIGGER_ONLY;
+    public static final String NON_LOCKSCREEN_AOD_TRANSITION_ANIMATED =
+            PixelAodSettingsSchema.NON_LOCKSCREEN_AOD_TRANSITION_ANIMATED;
+    public static final String NON_LOCKSCREEN_AOD_TRANSITION_DIRECT_FINAL =
+            PixelAodSettingsSchema.NON_LOCKSCREEN_AOD_TRANSITION_DIRECT_FINAL;
     public static final String LANGUAGE_SYSTEM = PixelAodSettingsSchema.LANGUAGE_SYSTEM;
     public static final String LANGUAGE_CHINESE = PixelAodSettingsSchema.LANGUAGE_CHINESE;
     public static final String LANGUAGE_ENGLISH = PixelAodSettingsSchema.LANGUAGE_ENGLISH;

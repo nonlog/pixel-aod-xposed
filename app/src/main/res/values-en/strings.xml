@@ -40,6 +40,11 @@
     <string name="desc_lockscreen_policy">Keep otherwise eligible lockscreen notifications from being incorrectly hidden after unlock then screen-off</string>
     <string name="title_debug_logging">Debug Logging</string>
     <string name="desc_debug_logging">Output detailed diagnostic logs</string>
+    <string name="section_transitions">Transitions</string>
+    <string name="title_non_lockscreen_aod_transition">Screen-off after unlock</string>
+    <string name="desc_non_lockscreen_aod_transition">Choose how the AOD clock reaches its final state when the screen turns off after unlock</string>
+    <string name="non_lockscreen_aod_transition_animated">Animated transition (recommended)</string>
+    <string name="non_lockscreen_aod_transition_direct_final">Show final state directly</string>
     <string name="title_aod_weight">AOD Weight</string>
     <string name="title_lockscreen_weight">Lockscreen Weight</string>
     <string name="restart_systemui">Restart SystemUI</string>

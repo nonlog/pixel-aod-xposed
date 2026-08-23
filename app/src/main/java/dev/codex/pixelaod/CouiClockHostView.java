@@ -352,6 +352,30 @@ final class CouiClockHostView extends FrameLayout {
         applyTargets(false, 0L);
     }
 
+    /**
+     * Direct-final variant of the non-lockscreen pre-arm. The first drawable frame is already the
+     * normalized AOD endpoint, so the subsequent vendor AOD render must not replay a position or
+     * variable-font weight morph.
+     */
+    void prearmNonLockscreenAodFinalEntry(CouiClockPresentationModel next, String source) {
+        if (next == null || !next.dozing()) {
+            return;
+        }
+        diagnosticSource = source == null ? "prearm-non-lockscreen-aod-final" : source;
+        cancelAodEntryTransaction();
+        cancelPendingLiveAodRetarget(true);
+        cancelLiveAodCrossfade();
+        cancelScheduledTargetApply();
+        cancelRunningPropertyAnimations();
+        CouiClockPresentationModel.AodContent entryContent = normalizeContent(next.content());
+        presentation = new CouiClockPresentationModel(next.requestedScene(), true,
+                next.partialAod(), entryContent);
+        refreshContextualFromExistingAdapters(diagnosticSource + "#prearm-final", false);
+        applyDataForContent(entryContent);
+        updateBurnInForPresentation();
+        applyClockColors();
+        applyTargets(false, 0L);
+    }
     /** Begins an AOD entry with one deferred finalization frame, as in the reference host. */
     void beginAodEntry(CouiClockPresentationModel next, boolean animate, String source) {
         if (next == null || !next.dozing()) {

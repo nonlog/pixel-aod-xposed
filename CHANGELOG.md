@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.11] - 2026-08-23
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Repair the S12 regression on the **unlocked -> screen-off -> AOD** path. Native Keyguard scene eligibility remains authoritative for Bouncer/Occluded/Gone suppression, but a newly pre-armed non-lockscreen AOD session now receives one narrowly scoped bypass while native SystemUI still reports `GONE` / `GONE -> DOZING|AOD`. The bypass is released when the native transition becomes eligible; that edge deliberately skips the generic non-animated ClockPlugin resync that caused the accepted S11 entry choreography to be overwritten.
+- Add a user-facing Clock setting, **Screen-off after unlock**, with **Animated transition (recommended)** and **Show final state directly**. The preference is live and does not require a SystemUI restart.
+- `Animated` preserves the user-validated S11 behavior: park the normalized non-dozing first frame, then use the existing position + variable-font weight morph into AOD. `Direct final` starts the same session on the normalized final AOD presentation and keeps the first real AOD render non-animated. Normal Lockscreen <-> AOD behavior is unchanged by this preference.
+- Keep the bypass capability fail-closed to the exact non-lockscreen handoff seam. Bouncer and Occluded transitions never qualify, and ordinary ineligible native scenes still suppress the Pixel host immediately.
+- Advance the visible candidate version to `0.1.11`; Android update ordering uses independent `versionCode=9002`.
+
+### Evidence / Status
+- The user physically accepted both isolated S11-based behaviors before integration: the original animated position/weight transition and the direct-final variant.
+- Final merged gate: **91 suites / 429 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS; all seven protected clock/morph/weight animation-core files remain **ZERO_DIFF**.
+- Final APK: **19,768,335 bytes**, SHA-256 `c93f1ce8e92d964002fa49b34631146725da158524bb311071ee60c6cfbccd1d`; overwrite/downgrade install succeeds and the device `base.apk` hash matches. Package metadata reports visible `versionName=0.1.11`, internal `versionCode=9002`.
+- Animated merged-path runtime shows the pre-armed session crossing the otherwise-ineligible native `GONE -> DOZING` window and, at native FINISHED, `releasedNonLockscreenBypasses=1` with `syncedHosts=0`; the S12 terminal resync no longer overwrites that entry.
+- Direct-final merged-path runtime logs `COUI non-lockscreen AOD direct-final render kept animation disabled`, followed by the same `releasedNonLockscreenBypasses=1 / syncedHosts=0` native FINISHED edge.
+- Bouncer authority remains intact: `LOCKSCREEN -> PRIMARY_BOUNCER` logs `hiddenHosts=1`; `PRIMARY_BOUNCER -> LOCKSCREEN` restores through the normal scene resync with `syncedHosts=1` and `releasedNonLockscreenBypasses=0`.
+
 ## [0.1.10] - 2026-08-23
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

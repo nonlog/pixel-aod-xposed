@@ -113,4 +113,35 @@ public final class NativeKeyguardSceneEligibilityTest {
         assertFalse(NativeKeyguardSceneEligibility.becameEligible(true, true));
     }
 
+    @Test
+    public void finishedGoneStateAllowsOnlyScopedNonLockscreenPrearmBypass() {
+        NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
+
+        NativeKeyguardSceneEligibility.Snapshot gone = gate.observe(
+                "LOCKSCREEN", "GONE", 1.0f, "FINISHED", "owner", "gone");
+
+        assertFalse(gone.presentationAllowed);
+        assertTrue(gone.supportsNonLockscreenAodBypass());
+    }
+
+    @Test
+    public void goneToDozingAllowsScopedBypassWhileNativePresentationIsStillIneligible() {
+        NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
+
+        NativeKeyguardSceneEligibility.Snapshot running = gate.observe(
+                "GONE", "DOZING", 0.45f, "RUNNING", "owner", "sleep");
+
+        assertFalse(running.presentationAllowed);
+        assertTrue(running.supportsNonLockscreenAodBypass());
+    }
+
+    @Test
+    public void bouncerAndOccludedNeverQualifyForNonLockscreenBypass() {
+        NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
+
+        assertFalse(gate.observe("LOCKSCREEN", "PRIMARY_BOUNCER", 0.2f,
+                "RUNNING", "owner", "bouncer").supportsNonLockscreenAodBypass());
+        assertFalse(gate.observe("GONE", "OCCLUDED", 0.2f,
+                "RUNNING", "owner", "occluded").supportsNonLockscreenAodBypass());
+    }
 }

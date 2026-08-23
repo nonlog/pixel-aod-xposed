@@ -128,8 +128,12 @@ final class CouiClockPluginHostController {
         runOnMain(() -> {
             int cleared = 0;
             for (HostRecord record : snapshotRecords()) {
-                if (record != null && record.nonLockscreenAodPrearmed) {
+                if (record != null && (record.nonLockscreenAodPrearmed
+                        || record.nonLockscreenAodSceneGateBypass)) {
                     record.nonLockscreenAodPrearmed = false;
+                    record.nonLockscreenAodSceneGateBypass = false;
+                    record.nonLockscreenAodTransitionMode =
+                            NonLockscreenAodTransitionPolicy.Mode.ANIMATED;
                     record.prearmedAodScene = null;
                     cleared++;
                 }
@@ -191,15 +195,26 @@ final class CouiClockPluginHostController {
                                     true,
                                     true,
                                     content));
-            record.host.prearmNonLockscreenAodEntry(
-                    normalizedEntry, source + "#prearm-first-frame");
+            NonLockscreenAodTransitionPolicy.Mode transitionMode =
+                    NonLockscreenAodTransitionPolicy.resolve(context);
+            if (NonLockscreenAodTransitionPolicy.isDirectFinal(transitionMode)) {
+                record.host.prearmNonLockscreenAodFinalEntry(
+                        normalizedEntry, source + "#prearm-final-frame");
+            } else {
+                record.host.prearmNonLockscreenAodEntry(
+                        normalizedEntry, source + "#prearm-first-frame");
+            }
             record.nonLockscreenAodPrearmed = true;
+            record.nonLockscreenAodSceneGateBypass = true;
+            record.nonLockscreenAodTransitionMode = transitionMode;
             record.prearmedAodScene = normalizedEntry.requestedScene();
             PixelAodLog.log("COUI non-lockscreen AOD first frame pre-armed"
                     + " rendererMode=COUI_PORT"
                     + " rootId=" + identity(record.root)
                     + " scene=" + normalizedEntry.requestedScene()
                     + " contentKind=" + normalizedEntry.content().kind()
+                    + " transitionMode=" + transitionMode
+                    + " sceneGateBypass=true"
                     + " source=" + source);
         }
     }
@@ -217,6 +232,9 @@ final class CouiClockPluginHostController {
                     continue;
                 }
                 record.nonLockscreenAodPrearmed = false;
+                record.nonLockscreenAodSceneGateBypass = false;
+                record.nonLockscreenAodTransitionMode =
+                        NonLockscreenAodTransitionPolicy.Mode.ANIMATED;
                 record.prearmedAodScene = null;
                 record.aodExitHandoffPending = false;
                 // Native teardown owns the real Gone transition. Keep its AOD clock suppressed
@@ -251,11 +269,22 @@ final class CouiClockPluginHostController {
 
     private static void suppressRecordForNativeScene(HostRecord record, String source) {
         record.nonLockscreenAodPrearmed = false;
+        record.nonLockscreenAodSceneGateBypass = false;
+        record.nonLockscreenAodTransitionMode = NonLockscreenAodTransitionPolicy.Mode.ANIMATED;
         record.prearmedAodScene = null;
         record.aodExitHandoffPending = false;
         record.suppressNativeDraw = true;
         suppressNativeVisuals(record);
         record.host.setPrimaryVisible(false, source + "#native-scene");
+    }
+
+    private static boolean nativeSceneAllowsRecord(HostRecord record) {
+        if (PixelAodRuntimeState.nativeKeyguardSceneAllowsPresentation()) {
+            return true;
+        }
+        return record != null
+                && record.nonLockscreenAodSceneGateBypass
+                && PixelAodRuntimeState.nativeKeyguardSceneSupportsNonLockscreenAodBypass();
     }
 
     static void resyncForNativeScene(String source) {
@@ -264,8 +293,14 @@ final class CouiClockPluginHostController {
                 return;
             }
             int synced = 0;
+            int releasedNonLockscreenBypasses = 0;
             for (HostRecord record : snapshotRecords()) {
                 if (record == null || record.host.getParent() != record.root) {
+                    continue;
+                }
+                if (record.nonLockscreenAodSceneGateBypass) {
+                    record.nonLockscreenAodSceneGateBypass = false;
+                    releasedNonLockscreenBypasses++;
                     continue;
                 }
                 Object plugin = record.plugin != null ? record.plugin.get() : null;
@@ -277,6 +312,7 @@ final class CouiClockPluginHostController {
             }
             PixelAodLog.i("COUI native-scene resync rendererMode=COUI_PORT"
                     + " syncedHosts=" + synced
+                    + " releasedNonLockscreenBypasses=" + releasedNonLockscreenBypasses
                     + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
                     + " source=" + source);
         });
@@ -501,11 +537,11 @@ final class CouiClockPluginHostController {
                         + " source=" + source);
                 return;
             }
-            if (!PixelAodRuntimeState.nativeKeyguardSceneAllowsPresentation()) {
-                HostRecord existing;
-                synchronized (HOSTS) {
-                    existing = HOSTS.get(root);
-                }
+            HostRecord existing;
+            synchronized (HOSTS) {
+                existing = HOSTS.get(root);
+            }
+            if (!nativeSceneAllowsRecord(existing)) {
                 if (existing != null && existing.host.getParent() == root) {
                     suppressRecordForNativeScene(existing, source + "#attach-block");
                 }
@@ -514,6 +550,13 @@ final class CouiClockPluginHostController {
                         + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
                         + " source=" + source);
                 return;
+            }
+            if (!PixelAodRuntimeState.nativeKeyguardSceneAllowsPresentation()
+                    && existing != null && existing.nonLockscreenAodSceneGateBypass) {
+                PixelAodLog.log("COUI non-lockscreen AOD bypassed native-scene attach gate"
+                        + " rootId=" + identity(root)
+                        + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
+                        + " source=" + source);
             }
             HostRecord record = ensureHost(root, plugin, source);
             if (record == null) {
@@ -590,6 +633,8 @@ final class CouiClockPluginHostController {
         }
         if (PixelAodRuntimeState.isDirectGoneHandoffActive()) {
             record.nonLockscreenAodPrearmed = false;
+            record.nonLockscreenAodSceneGateBypass = false;
+            record.nonLockscreenAodTransitionMode = NonLockscreenAodTransitionPolicy.Mode.ANIMATED;
             record.prearmedAodScene = null;
             record.aodExitHandoffPending = false;
             record.suppressNativeDraw = true;
@@ -603,7 +648,7 @@ final class CouiClockPluginHostController {
             return;
         }
 
-        if (!PixelAodRuntimeState.nativeKeyguardSceneAllowsPresentation()) {
+        if (!nativeSceneAllowsRecord(record)) {
             suppressRecordForNativeScene(record, source + "#render-block");
             PixelAodLog.log("blocked stale ClockPlugin render reason=native-scene-ineligible"
                     + " rendererMode=COUI_PORT"
@@ -612,6 +657,15 @@ final class CouiClockPluginHostController {
                     + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
                     + " source=" + source);
             return;
+        }
+        if (!PixelAodRuntimeState.nativeKeyguardSceneAllowsPresentation()
+                && record.nonLockscreenAodSceneGateBypass) {
+            PixelAodLog.log("COUI non-lockscreen AOD bypassed native-scene render gate"
+                    + " rendererMode=COUI_PORT"
+                    + " rootId=" + identity(record.root)
+                    + " uiState=" + renderState.uiState
+                    + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
+                    + " source=" + source);
         }
 
         CouiClockSemanticAdapter.Snapshot semantic = CouiClockSemanticAdapter.snapshot(context);
@@ -637,15 +691,21 @@ final class CouiClockPluginHostController {
                     + " source=" + source);
             return;
         }
-        if (prearmDecision
-                == CouiClockNonLockscreenAodPrearmPolicy.Decision.CONSUME_AOD) {
+        boolean consumedNonLockscreenPrearm = prearmDecision
+                == CouiClockNonLockscreenAodPrearmPolicy.Decision.CONSUME_AOD;
+        boolean directFinalNonLockscreenEntry = consumedNonLockscreenPrearm
+                && NonLockscreenAodTransitionPolicy.isDirectFinal(
+                        record.nonLockscreenAodTransitionMode);
+        if (consumedNonLockscreenPrearm) {
             PixelAodLog.log("COUI consumed non-lockscreen AOD first-frame pre-arm"
                     + " rendererMode=COUI_PORT"
                     + " rootId=" + identity(record.root)
                     + " uiState=" + renderState.uiState
                     + " parkedScene=" + record.prearmedAodScene
+                    + " transitionMode=" + record.nonLockscreenAodTransitionMode
                     + " source=" + source);
             record.nonLockscreenAodPrearmed = false;
+            record.nonLockscreenAodTransitionMode = NonLockscreenAodTransitionPolicy.Mode.ANIMATED;
             record.prearmedAodScene = null;
         }
 
@@ -677,7 +737,13 @@ final class CouiClockPluginHostController {
         CouiClockPresentationModel next = mapping.presentation();
         boolean exitingAod = previous != null && previous.dozing() && !next.dozing();
         boolean enteringAod = previous != null && !previous.dozing() && next.dozing();
-        boolean presentationAnimate = mapping.animate();
+        boolean presentationAnimate = mapping.animate() && !directFinalNonLockscreenEntry;
+        if (directFinalNonLockscreenEntry) {
+            PixelAodLog.i("COUI non-lockscreen AOD direct-final render kept animation disabled"
+                    + " rendererMode=COUI_PORT"
+                    + " rootId=" + identity(record.root)
+                    + " source=" + source);
+        }
         if (enteringAod && presentationAnimate
                 && !PixelAodRuntimeState.shouldAnimateScreenOffPresentation()) {
             presentationAnimate = false;
@@ -1139,6 +1205,9 @@ final class CouiClockPluginHostController {
         boolean suppressNativeDraw;
         boolean aodExitHandoffPending;
         boolean nonLockscreenAodPrearmed;
+        boolean nonLockscreenAodSceneGateBypass;
+        NonLockscreenAodTransitionPolicy.Mode nonLockscreenAodTransitionMode =
+                NonLockscreenAodTransitionPolicy.Mode.ANIMATED;
         CouiClockPresentationModel.Scene prearmedAodScene;
         CouiClockPresentationModel.Scene lastLockscreenScene;
 

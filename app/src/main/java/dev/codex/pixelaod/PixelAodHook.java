@@ -2886,6 +2886,10 @@ final class PixelAodHook {
         return NATIVE_KEYGUARD_SCENE_ELIGIBILITY.allowsPresentationFallbackTrue();
     }
 
+    static boolean nativeKeyguardSceneSupportsNonLockscreenAodBypass() {
+        return NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot().supportsNonLockscreenAodBypass();
+    }
+
     static String describeNativeKeyguardSceneEligibility() {
         return NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot().describe();
     }

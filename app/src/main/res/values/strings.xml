@@ -40,6 +40,11 @@
     <string name="desc_lockscreen_policy">防止解锁后再次熄屏时，原本可显示的锁屏通知被 OOS 错误全部隐藏</string>
     <string name="title_debug_logging">调试日志</string>
     <string name="desc_debug_logging">输出详细诊断日志</string>
+    <string name="section_transitions">过渡动画</string>
+    <string name="title_non_lockscreen_aod_transition">解锁后熄屏过渡</string>
+    <string name="desc_non_lockscreen_aod_transition">选择已解锁后再次熄屏时，AOD 时钟如何进入最终形态</string>
+    <string name="non_lockscreen_aod_transition_animated">动画过渡（推荐）</string>
+    <string name="non_lockscreen_aod_transition_direct_final">直接显示最终形态</string>
     <string name="title_aod_weight">AOD 字重</string>
     <string name="title_lockscreen_weight">锁屏字重</string>
     <string name="restart_systemui">重启 SystemUI</string>

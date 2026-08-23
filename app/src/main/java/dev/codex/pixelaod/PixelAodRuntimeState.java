@@ -63,6 +63,10 @@ final class PixelAodRuntimeState {
         return PixelAodHook.nativeKeyguardSceneAllowsPresentation();
     }
 
+    static boolean nativeKeyguardSceneSupportsNonLockscreenAodBypass() {
+        return PixelAodHook.nativeKeyguardSceneSupportsNonLockscreenAodBypass();
+    }
+
     static String describeNativeKeyguardSceneEligibility() {
         return PixelAodHook.describeNativeKeyguardSceneEligibility();
     }

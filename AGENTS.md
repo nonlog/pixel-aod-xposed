@@ -73,6 +73,8 @@
 
 ## 设备连接与私密信息
 
+- 设备解锁等敏感凭据不得以明文写入 `AGENTS.md`、Git、项目文档、日志、命令输出、Telegram 或聊天回复。Pixel AOD 测试设备的解锁凭据已存入本机加密 private note `notes/services/pixel-aod-test-device-unlock-credential.md`；仅在实机验证确有需要时读取并使用，使用时不得回显。
+- 自动化实机验证需要解锁时，先从上述 private note 读取凭据，再通过不回显的输入路径使用；不得把凭据拼入可持久化脚本、测试产物、handoff 或项目文件。
 - 安装、抓日志、录屏或其它可能改变设备状态的 adb 操作前，先运行 `adb devices -l`。
 - 用户显式指定 serial 时，本任务所有 adb 命令都固定使用 `-s <serial>`。
 - 用户未指定时：

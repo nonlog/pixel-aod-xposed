@@ -412,7 +412,7 @@ Verification:
 - Metadata-corrected `0.1.9` rebuild/install evidence: corrected APK **19,749,423 bytes**, SHA-256 `ec535bea01f11159bbae407db09c14ea59e84b58ad7420e9a914719379692877`; `89 suites / 414 tests` pass, `git diff --check` passes, overwrite install succeeds, device package reports `versionName=0.1.9` and separate `versionCode=9000`, installed `base.apk` hash matches, and SystemUI PID remains `16409` because no runtime reload was needed.
 ## S12 — Native Keyguard scene eligibility
 
-Status: **candidate green — ADR 0043 implemented on the current OOS SystemUI; continuous Doze progress remains observed-only because S10 does not authorize consumption on this device**
+Status: **green after 0.1.11 non-lockscreen entry repair — ADR 0043 remains authoritative for Bouncer/Occluded/Gone, while unlocked -> screen-off uses the proven S11 handoff inside one scoped native-scene bypass**
 
 Goal: replace heuristic Pixel presentation permission with an authoritative native Keyguard scene boundary where the ROM exposes one, without changing panel ownership, ClockPlugin scene mapping, animation timing, or the protected morph engine.
 
@@ -442,11 +442,35 @@ Verification:
 - Strict normal-path regression began from verified `mWakefulness=Awake`, slept immediately, reached `mWakefulness=Dozing`, and logged native `LOCKSCREEN -> DOZING` STARTED/FINISHED with `presentationAllowed=true` and `allowsVendorProgress=false`. The settled AOD capture is complete and SystemUI remains PID `22776`.
 - Current-PID crash scan is empty for FATAL/ANR/fatal-signal/SIGSEGV/OOM/DeadSystemException; global animator/transition/window scales are all restored/preserved at `1.0`.
 
+### 0.1.11 regression repair and user-selectable non-lockscreen entry
+
+The original 0.1.10 S12 candidate was later rejected for the unlock -> screen-off path. The user observed that after unlocking once, the next screen-off no longer preserved the previously stable S11 clock handoff: the clock could jump to its endpoint, disappear before the vendor blank frame, or fail to render in the attempted animation repair. Frame-level diagnostics proved that the OPlus parent clock tree could become transparent while Pixel's own host still reported visible, so policy-level "host visible" logs were not sufficient evidence of actual on-screen continuity.
+
+A direct A/B against the S11 checkpoint established the correct baseline: **S11 + diagnostics restored the original position + weight transition and was physically accepted by the user.** A second S11-derived candidate that started directly at the final AOD presentation was also physically accepted. 0.1.11 integrates those two accepted behaviors instead of keeping separate APKs.
+
+Final 0.1.11 boundary:
+
+- `NativeKeyguardSceneEligibility` still denies ordinary GONE/Bouncer/Occluded presentation exactly as S12 intended.
+- A `prepareNonLockscreenAodEntry()` call creates one explicit session capability. Only that pre-armed session may pass the native-scene gate while the native transition is the finished `GONE` state or `GONE -> DOZING/AOD`; Bouncer and Occluded never qualify.
+- When that native transition becomes presentation-eligible, the controller releases the scoped bypass and **does not run the generic non-animated ClockPlugin resync**. Normal false -> true recovery such as `PRIMARY_BOUNCER -> LOCKSCREEN` still performs the S12 resync.
+- A new setting, `non_lockscreen_aod_transition`, is exposed under the Clock page with `animated` as the default/recommended mode and `direct_final` as the alternative. The setting is live and is snapshotted once per new screen-off session.
+- `animated` uses the unchanged S11 non-dozing pre-arm followed by the proven AOD entry morph. `direct_final` uses a separate pre-arm seam whose first drawable presentation is already the normalized Doze/AOD endpoint, and the first real AOD render for that session is kept non-animated.
+- Normal Lockscreen -> AOD and AOD -> Lockscreen transitions do not read this preference and retain their existing choreography.
+
+0.1.11 verification:
+
+- User physically accepted both isolated S11-based modes before integration.
+- Final full JDK 17 gate: **91 suites / 429 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS; protected animation core remains **ZERO_DIFF**.
+- Installed candidate is visible `0.1.11`, internal `versionCode=9002`, APK **19,768,335 bytes**, SHA-256 `c93f1ce8e92d964002fa49b34631146725da158524bb311071ee60c6cfbccd1d`; installed `base.apk` matches.
+- Merged animated runtime reaches native `GONE -> DOZING FINISHED` with `releasedNonLockscreenBypasses=1` and `syncedHosts=0`, proving the problematic terminal resync is skipped for the pre-armed session.
+- Merged direct-final runtime logs `COUI non-lockscreen AOD direct-final render kept animation disabled`, then releases the same bypass with `syncedHosts=0`.
+- Bouncer regression remains green: entry logs `hiddenHosts=1`; `PRIMARY_BOUNCER -> LOCKSCREEN` returns with `syncedHosts=1` and `releasedNonLockscreenBypasses=0`.
+
 Remaining P1 progress work:
 
 - ADR 0016 continuous Doze progress now has a confirmed native `TransitionStep.value` source, but this device's S10 permission gate deliberately denies consumption because `shouldControlScreenOff=false`. A future small slice may formalize the progress capability adapter, but must remain fail-closed on this hardware and must not replace the proven 550 ms morph without an allowed native path.
 ## Next implementation checkpoint
 
-S12 completes the first P1 native semantic slice: authoritative Keyguard scene eligibility. P0 remains complete on current hardware. The next P1 slice must remain small and capability-gated; the discovered native Doze progress value may be normalized next, but current OOS must continue to deny progress consumption while S10 reports `shouldControlScreenOff=false`.
+S12 remains the first P1 native semantic slice after the 0.1.11 non-lockscreen entry repair. Authoritative scene eligibility is preserved for ordinary native scenes, while the proven unlocked -> screen-off presentation handoff now has an explicit, session-scoped compatibility boundary. P0 remains complete on current hardware. The next P1 slice must remain small and capability-gated; the discovered native Doze progress value may be normalized next, but current OOS must continue to deny progress consumption while S10 reports `shouldControlScreenOff=false`.
 
 Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.

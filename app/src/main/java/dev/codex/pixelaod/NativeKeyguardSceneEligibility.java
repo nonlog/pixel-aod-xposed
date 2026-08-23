@@ -87,6 +87,15 @@ final class NativeKeyguardSceneEligibility {
         return null;
     }
 
+    static boolean supportsNonLockscreenAodBypass(Scene from, Scene to, Phase phase) {
+        if (phase == null || phase == Phase.UNKNOWN || phase == Phase.CANCELED) {
+            return false;
+        }
+        if (phase == Phase.FINISHED && to == Scene.GONE) {
+            return true;
+        }
+        return from == Scene.GONE && (to == Scene.DOZING || to == Scene.AOD);
+    }
     static boolean becameIneligible(Boolean before, Boolean after) {
         return !Boolean.FALSE.equals(before) && Boolean.FALSE.equals(after);
     }
@@ -199,6 +208,10 @@ final class NativeKeyguardSceneEligibility {
 
         boolean isDozePresentationTransition() {
             return NativeKeyguardSceneEligibility.isDozePresentationTransition(from, to);
+        }
+
+        boolean supportsNonLockscreenAodBypass() {
+            return NativeKeyguardSceneEligibility.supportsNonLockscreenAodBypass(from, to, phase);
         }
 
         String describe() {

@@ -216,6 +216,14 @@ private fun SettingsContent(
             )
         )
     }
+    val nonLockscreenAodTransition = remember {
+        mutableStateOf(
+            prefs.schemaString(
+                PixelAodSettings.KEY_NON_LOCKSCREEN_AOD_TRANSITION,
+                PixelAodSettings.NON_LOCKSCREEN_AOD_TRANSITION_ANIMATED
+            )
+        )
+    }
     val weather = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_WEATHER, true))
     }
@@ -372,6 +380,7 @@ private fun SettingsContent(
     var showIconPackDialog by remember { mutableStateOf(false) }
     var showCalendarIconAppDialog by remember { mutableStateOf(false) }
     var showDisplayModeDialog by remember { mutableStateOf(false) }
+    var showNonLockscreenTransitionDialog by remember { mutableStateOf(false) }
 
     var currentPageName by rememberSaveable { mutableStateOf(SettingsPage.HOME.name) }
     val currentPage = remember(currentPageName) { SettingsPage.valueOf(currentPageName) }
@@ -613,6 +622,19 @@ private fun SettingsContent(
                 ) {
                     lockscreenWeight.floatValue = it
                     prefs.edit().putFloat(PixelAodSettings.KEY_LOCKSCREEN_WEIGHT, it).apply()
+                }
+            }
+        }
+        PixelAodSection(stringResource(R.string.section_transitions)) {
+            PixelAodGroup {
+                PixelAodChoiceRow(
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_non_lockscreen_aod_transition),
+                    subtitle = stringResource(R.string.desc_non_lockscreen_aod_transition),
+                    valueText = nonLockscreenAodTransitionLabel(nonLockscreenAodTransition.value),
+                    showDivider = false
+                ) {
+                    showNonLockscreenTransitionDialog = true
                 }
             }
         }
@@ -968,6 +990,23 @@ private fun SettingsContent(
         )
     }
 
+    if (showNonLockscreenTransitionDialog) {
+        NonLockscreenAodTransitionDialog(
+            current = nonLockscreenAodTransition.value,
+            onDismiss = { showNonLockscreenTransitionDialog = false },
+            onSelected = { selected ->
+                showNonLockscreenTransitionDialog = false
+                if (selected != nonLockscreenAodTransition.value) {
+                    nonLockscreenAodTransition.value = selected
+                    updateModuleStringSetting(
+                        context,
+                        PixelAodSettings.KEY_NON_LOCKSCREEN_AOD_TRANSITION,
+                        selected
+                    )
+                }
+            }
+        )
+    }
     if (showClockDial) {
         PixelAodTimePickerDialog(
             title = clockDialTitle,
@@ -1055,6 +1094,12 @@ private fun aodDisplayModeLabel(value: String): String = when (value) {
 }
 
 @Composable
+private fun nonLockscreenAodTransitionLabel(value: String): String = when (value) {
+    PixelAodSettings.NON_LOCKSCREEN_AOD_TRANSITION_DIRECT_FINAL ->
+        stringResource(R.string.non_lockscreen_aod_transition_direct_final)
+    else -> stringResource(R.string.non_lockscreen_aod_transition_animated)
+}
+@Composable
 private fun LanguageDialog(
     current: String,
     onDismiss: () -> Unit,
@@ -1108,6 +1153,30 @@ private fun AodDisplayModeDialog(
     )
 }
 
+@Composable
+private fun NonLockscreenAodTransitionDialog(
+    current: String,
+    onDismiss: () -> Unit,
+    onSelected: (String) -> Unit
+) {
+    PixelAodSelectionDialog(
+        title = stringResource(R.string.title_non_lockscreen_aod_transition),
+        current = current,
+        options = listOf(
+            PixelAodSelectionOption(
+                PixelAodSettings.NON_LOCKSCREEN_AOD_TRANSITION_ANIMATED,
+                stringResource(R.string.non_lockscreen_aod_transition_animated)
+            ),
+            PixelAodSelectionOption(
+                PixelAodSettings.NON_LOCKSCREEN_AOD_TRANSITION_DIRECT_FINAL,
+                stringResource(R.string.non_lockscreen_aod_transition_direct_final)
+            )
+        ),
+        cancelLabel = stringResource(android.R.string.cancel),
+        onDismiss = onDismiss,
+        onSelected = onSelected
+    )
+}
 private fun getAvailableIconPacks(context: Context): List<Pair<String, String>> {
     val packs = mutableListOf<Pair<String, String>>()
     packs.add("" to context.getString(R.string.default_weather_icon_pack))
