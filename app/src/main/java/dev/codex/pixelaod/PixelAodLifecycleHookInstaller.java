@@ -43,6 +43,10 @@ final class PixelAodLifecycleHookInstaller {
         PixelAodHook.hookOplusEnergySavingHideObservers(classLoader);
     }
 
+    static void installVendorProximityPauseSemantics(ClassLoader classLoader) {
+        PixelAodHook.hookOplusVendorProximityPauseSemantics(classLoader);
+    }
+
     static void installAodTriggerDiagnostics(ClassLoader classLoader) {
         PixelAodHook.hookOplusAodTriggerDiagnostics(classLoader);
     }

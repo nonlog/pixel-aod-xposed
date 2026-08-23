@@ -111,3 +111,11 @@ Native base-AOD suppression only removes eligibility for continuous Pixel AOD; c
 A reversible physical Battery Saver A/B produced the expected typed `baseAod=DENY / notificationPulse=DENY` while enabled and restored `baseAod=ALLOW / notificationPulse=UNKNOWN` afterward. Battery Saver was returned to its original off state, a normal Awake -> Dozing -> Awake smoke passed on the same SystemUI PID, and the protected seven-file animation core remains **ZERO_DIFF**.
 
 Final S14 gate: **94 suites / 447 tests / 0 failures / 0 errors / 0 skipped**, debug build PASS, `git diff --check` PASS. Installed 0.1.13 APK SHA-256 is `cfc6c6e1b88b5749f44dbad1bf998f7ef11a57f10c8ea57bad1b1e46991e4383`; SystemUI PID `17877` is healthy and Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`.
+
+## S15 gate evidence — vendor proximity pause remains outside animation ownership
+
+S15 implements ADR 0004 around OPlus's existing `OplusWakeUpController.ProximityTask` dwell and does not touch the clock/morph/weight animation engine. The module registers no second proximity sensor and creates no second timer: raw vendor `NEAR` becomes presentation `PAUSING`, while only the completed vendor task can commit `PAUSED`. Raw `FAR` retains OPlus's own pending-task cancellation and immediate resume semantics.
+
+`PAUSING` intentionally leaves the already-visible Pixel AOD surface untouched, so a brief sensor obstruction cannot create a new clock hide/show animation. Notification pulse eligibility may block during `PAUSING`, but that policy does not retime the 550 ms clock transition, rewrite geometry/weight interpolation, change glyph/colon staging, or modify the accepted `direct_final` non-lockscreen entry preference. Wake-trigger/authentication semantics remain outside S15.
+
+Final S15 gate: **95 suites / 453 tests / 0 failures / 0 errors / 0 skipped**, debug build PASS, `git diff --check` PASS, and the protected animation core remains **ZERO_DIFF**. Installed 0.1.14 APK SHA-256 is `a36892ad048b6907cf85a21ae93f0c9575c171354dfd3b06a7323ac5c4aeaae2`; a controlled Awake -> Dozing -> Awake smoke kept SystemUI PID `8366` unchanged, with current-PID crash/ANR/fatal scan empty and Android animator/transition/window scales at `1.0 / 1.0 / 1.0`.

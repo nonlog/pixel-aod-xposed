@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.14] - 2026-08-23
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Implement M9 P1-S15 / ADR 0004 as a presentation-only `VendorProximityPauseAdapter` over the exact OPlus `OplusWakeUpController.ProximityTask` seam; the module does not register another proximity sensor or create a second dwell timer.
+- Treat the vendor raw `ProximityTask#setNear(true)` request as `PAUSING`, keeping the current Pixel AOD surface visible while blocking new notification-pulse candidates. Only the vendor-delayed `ProximityTask#run()` commit can enter `PAUSED` and hide Pixel AOD presentation.
+- Preserve OPlus cancellation semantics: `FAR` removes any pending vendor NEAR task and commits immediately, so a brief hand/pocket edge returns to `ACTIVE` without a visible hide/show cycle. A committed `FAR` resumes only through the current vendor lifecycle; Pixel AOD never forces panel/doze power state.
+- Reuse the same normalized pause state for notification-pulse eligibility. `PAUSING` and `PAUSED` block a new pulse, while the established committed proximity gate remains the presentation/wake fallback so S15 does not redefine later ADR 0007 wake-trigger semantics.
+- Reset normalized proximity state when OPlus unregisters its proximity sensor. Unknown/unsupported seams fail open to the existing committed `getProxNear()` path.
+- Advance the visible candidate version to `0.1.14`; Android update ordering uses independent `versionCode=9005`.
+
+### Evidence / Status
+- Exact current OOS binary evidence shows OPlus already owns the dwell: raw NEAR schedules `ProximityTask` after **1000 ms in LCD-AOD mode or 1500 ms otherwise**; raw FAR cancels the pending task and runs it immediately; `ProximityTask#run()` writes committed `proximityNear` and notifies callbacks. Stacking another module dwell is therefore explicitly avoided.
+- Final JDK 17 regression: **95 suites / 453 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS; protected clock/morph/weight animation core remains **ZERO_DIFF**.
+- Final APK: **20,355,847 bytes**, SHA-256 `a36892ad048b6907cf85a21ae93f0c9575c171354dfd3b06a7323ac5c4aeaae2`; installed device `base.apk` matches exactly and reports visible `versionName=0.1.14`.
+- Final SystemUI PID `8366` kept the same PID across a controlled Awake -> Dozing -> Awake smoke, emitted real OPlus proximity unregister/reset lifecycle events from the S15 hook path, and has no current crash/ANR/fatal match.
+- Real uncovered-device runtime captured `ProximityTask#setNear(false)` and proximity unregister/reset on the final PID. No synthetic NEAR sensor state was injected; the physical hand-cover PAUSING -> PAUSED edge remains a non-blocking manual hardware interaction check.
+- Current-PID crash/ANR/fatal scan is empty; Battery Saver remains off, Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`, and the existing `non_lockscreen_aod_transition=direct_final` user preference is unchanged.
+
 ## [0.1.13] - 2026-08-23
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

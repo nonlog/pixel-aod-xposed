@@ -305,6 +305,29 @@ public final class PixelAodClockView extends FrameLayout {
             new LockscreenVisibilityRefreshGate();
     private static final ProximityAuthorityGate PROXIMITY_AUTHORITY_GATE =
             new ProximityAuthorityGate();
+    private static final VendorProximityPauseAdapter VENDOR_PROXIMITY_PAUSE =
+            new VendorProximityPauseAdapter();
+
+    static void observeRawProximityFromOos(boolean near, String source, String detail) {
+        String normalizedSource = TextUtils.isEmpty(source) ? "unknown" : source;
+        String normalizedDetail = TextUtils.isEmpty(detail) ? "" : detail;
+        boolean pocketModeEnabled = appContext != null
+                && PixelAodSettings.getBoolean(
+                appContext, PixelAodSettings.KEY_POCKET_MODE, true);
+        VendorProximityPauseAdapter.Snapshot snapshot;
+        if (pocketModeEnabled) {
+            snapshot = VENDOR_PROXIMITY_PAUSE.observeRawNear(near, normalizedSource);
+        } else {
+            PROXIMITY_AUTHORITY_GATE.reset();
+            snapshot = VENDOR_PROXIMITY_PAUSE.reset(normalizedSource + "#pocket-mode-disabled");
+        }
+        if (snapshot.phaseChanged()) {
+            PixelAodLog.i("OOS proximity pause raw edge near=" + near
+                    + " pocketModeEnabled=" + pocketModeEnabled
+                    + " state={" + snapshot.describe() + "}"
+                    + " detail={" + normalizedDetail + "}");
+        }
+    }
 
     static void updateProximityFromOos(boolean near, String source, String detail) {
         String normalizedSource = TextUtils.isEmpty(source) ? "unknown" : source;
@@ -312,22 +335,31 @@ public final class PixelAodClockView extends FrameLayout {
         boolean pocketModeEnabled = appContext != null
                 && PixelAodSettings.getBoolean(
                 appContext, PixelAodSettings.KEY_POCKET_MODE, true);
-        boolean changed = pocketModeEnabled
-                ? PROXIMITY_AUTHORITY_GATE.update(
-                ProximityAuthorityGate.Source.OOS_NATIVE, near)
-                : PROXIMITY_AUTHORITY_GATE.reset();
+        boolean changed;
+        VendorProximityPauseAdapter.Snapshot pauseSnapshot;
+        if (pocketModeEnabled) {
+            changed = PROXIMITY_AUTHORITY_GATE.update(
+                    ProximityAuthorityGate.Source.OOS_NATIVE, near);
+            pauseSnapshot = VENDOR_PROXIMITY_PAUSE.observeCommittedNear(
+                    near, normalizedSource);
+        } else {
+            changed = PROXIMITY_AUTHORITY_GATE.reset();
+            pauseSnapshot = VENDOR_PROXIMITY_PAUSE.reset(
+                    normalizedSource + "#pocket-mode-disabled");
+        }
         noteNativeTrigger(near ? "proximity-near" : "proximity-far",
                 normalizedSource, normalizedDetail);
-        if (!changed) {
+        if (!changed && !pauseSnapshot.phaseChanged()) {
             return;
         }
-        if (near) {
+        if (pauseSnapshot.blocksPresentation()) {
             cancelPanelHandoffPresentation("oos-proximity-near", false);
         }
         PixelAodLog.i("OOS proximity state changed: near=" + near
                 + " appliedNear=" + isProximityNear()
                 + " pocketModeEnabled=" + pocketModeEnabled
                 + " source=" + normalizedSource
+                + " pause={" + pauseSnapshot.describe() + "}"
                 + " detail={" + normalizedDetail + "}");
         mainHandler().post(() -> {
             for (PixelAodClockView view : INSTANCES) {
@@ -340,10 +372,37 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static void clearProximityState() {
         PROXIMITY_AUTHORITY_GATE.reset();
+        VENDOR_PROXIMITY_PAUSE.reset("lifecycle-clear");
+    }
+
+    static void resetProximityFromOos(String source) {
+        boolean wasBlocked = isProximityNear();
+        PROXIMITY_AUTHORITY_GATE.reset();
+        VendorProximityPauseAdapter.Snapshot snapshot =
+                VENDOR_PROXIMITY_PAUSE.reset(source);
+        PixelAodLog.i("OOS proximity pause reset source=" + source
+                + " state={" + snapshot.describe() + "}");
+        if (wasBlocked || snapshot.phaseChanged()) {
+            mainHandler().post(() -> {
+                for (PixelAodClockView view : INSTANCES) {
+                    if (view != null) {
+                        view.updateAodVisibility("oos-proximity-reset");
+                    }
+                }
+            });
+        }
     }
 
     static boolean isProximityNear() {
         return PROXIMITY_AUTHORITY_GATE.isNear();
+    }
+
+    static boolean isNotificationPulseProximityBlocked() {
+        return VENDOR_PROXIMITY_PAUSE.blocksNotificationPulse();
+    }
+
+    static VendorProximityPauseAdapter.Snapshot vendorProximityPauseSnapshot() {
+        return VENDOR_PROXIMITY_PAUSE.snapshot();
     }
 
     private static final BroadcastReceiver BREEZY_WEATHER_RECEIVER = new BroadcastReceiver() {
@@ -1031,7 +1090,8 @@ public final class PixelAodClockView extends FrameLayout {
             OosAodLifecycleAdapter.NotificationPulseObservation pulseObservation =
                     OosAodLifecycleAdapter.evaluateNotificationPulseObservation(
                             source, rawCount, usableCount, -1,
-                            pulseModulePolicy, isProximityNear(), vendorPulseSuppressed);
+                            pulseModulePolicy, isNotificationPulseProximityBlocked(),
+                            vendorPulseSuppressed);
             if (pulseObservation.isPulseCandidate()) {
                 markNotificationPulseCandidateLocked(pulseObservation, source, trace,
                         packageSummary, rawCount, usableCount, mediaCandidateCount);
@@ -1060,7 +1120,7 @@ public final class PixelAodClockView extends FrameLayout {
                         trace,
                         state,
                         pulseModulePolicy,
-                        isProximityNear());
+                        isNotificationPulseProximityBlocked());
             }
         }
         refreshInstancesFromNotificationSnapshot(source);

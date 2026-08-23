@@ -524,7 +524,39 @@ Verification:
 - After restoration, a normal Awake -> Dozing -> Awake smoke kept SystemUI PID `17877` stable. Current-PID crash/ANR/fatal-signal/SIGSEGV/OOM/DeadSystemException scan is empty; Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`.
 - Evidence is retained under `.local/m9_s14_0.1.13/`; exact decompiled SystemUI classes remain under `D:\Downloads\Xposed_test\pixel-aod-shared\systemui-analysis\s14-classes`.
 
+## S15 — Vendor proximity pause capability
+
+Status: **candidate green — exact current-OOS vendor dwell seam, full source/build gate, final hook installation, real FAR/reset lifecycle evidence, and normal AOD smoke verified; sustained physical NEAR remains a manual hardware-interaction check**
+
+Goal: implement ADR 0004 without creating a second proximity sensor, timer, or panel/doze power owner. Pixel AOD should retain the current presentation during a brief obstruction, hide only after the vendor proximity dwell commits, and reuse the same normalized gate for notification-pulse eligibility.
+
+Native seam discovery on the exact current OOS SystemUI:
+
+- `OplusWakeUpController` maintains both raw `proximityNearEvent` and committed `proximityNear` state. Its sensor callback removes the previous pending `ProximityTask`, calls `ProximityTask#setNear(...)`, and lets OPlus own the dwell.
+- Raw `NEAR` is posted to the vendor handler after **1000 ms when LCD-AOD mode is supported or 1500 ms otherwise**. Raw `FAR` removes the pending task and executes it immediately, so a short obstruction is canceled before committed near state is published.
+- `ProximityTask#run()` writes committed `proximityNear` and calls `notifyProxCallback()`. `getProxNear()` exposes this committed state; `getProxNearForLuxAod()` exposes the raw event state. `unregisterProximitySensor()` cancels pending work and clears the vendor state.
+- Because the current ROM already owns the required dwell/cancel behavior, adding the ADR's own second 1.5-second timer after `getProxNear()` would approximately double the OLED path. S15 therefore observes the vendor timer instead of duplicating it.
+
+Implementation:
+
+- Added pure `VendorProximityPauseAdapter` with `ACTIVE`, `PAUSING`, and `PAUSED` presentation phases. It owns no sensor, handler, timer, wake lock, or display power transition.
+- Hooked `ProximityTask#setNear(boolean)` as the raw request edge. Raw `NEAR` enters `PAUSING`; raw `FAR` cancels `PAUSING` unless a previously committed near state is still authoritative.
+- Hooked `ProximityTask#run()` **after** the OPlus method completes, so the normalized commit follows rather than precedes vendor state ownership. A committed `NEAR` enters `PAUSED`; committed `FAR` returns to `ACTIVE`.
+- Hooked `OplusWakeUpController#unregisterProximitySensor()` to reset normalized state fail-open. Existing committed `getProxNear()` observation remains as the fallback path if the dedicated task seam is absent on another ROM.
+- Current Pixel AOD presentation still reads the committed proximity authority, so `PAUSING` keeps already-visible AOD pixels on screen and only `PAUSED` hides them. Notification-posted pulse candidates use the stricter normalized gate and are blocked during both `PAUSING` and `PAUSED`.
+- Wake-trigger and authentication behavior are deliberately not redefined by S15. Those consumers keep their existing committed/native behavior for the later ADR 0007 wake-trigger slice.
+
+Verification:
+
+- Final full JDK 17 gate: **95 suites / 453 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS; protected animation core **ZERO_DIFF**.
+- Final visible candidate is `0.1.14`, internal `versionCode=9005`, APK **20,355,847 bytes**, SHA-256 `a36892ad048b6907cf85a21ae93f0c9575c171354dfd3b06a7323ac5c4aeaae2`; installed device `base.apk` matches exactly.
+- Final SystemUI PID `8366` emits the S15 proximity unregister/reset lifecycle path with no matching task/reset hook failure and no current crash/ANR/fatal match.
+- A controlled Awake -> Dozing -> Awake cycle kept PID `8366` unchanged. Real uncovered-device runtime captured OPlus proximity FAR/unregister/reset activity; no synthetic NEAR state was injected.
+- No synthetic NEAR state was injected. The exact binary proves the sustained-NEAR delay/commit path and unit tests cover NEAR -> PAUSING, early FAR cancellation, delayed PAUSED commit, FAR resume, stale-raw protection, and lifecycle reset; physical hand-cover NEAR remains a non-blocking manual check.
+- Current-PID crash/ANR/fatal scan is empty. Android `low_power=0`, animator/transition/window scales remain `1.0 / 1.0 / 1.0`, and the existing `non_lockscreen_aod_transition=direct_final` preference remains unchanged.
+- Evidence is retained under `.local/m9_s15_0.1.14/`; exact decompiled proximity classes remain under `D:\Downloads\Xposed_test\pixel-aod-shared\systemui-analysis\s15-classes`.
+
 ## Next implementation checkpoint
 
-S14 completes the first unified typed suppressor slice without reimplementing AOSP DozeSuppressor. The next recommended small P1 slice is **S15 — vendor proximity pause capability / ADR 0004**: identify one reliable OPlus/SystemUI proximity authority, preserve native pause/resume ownership, and keep wake-trigger semantics separate for a later ADR 0007 slice.
+S15 now preserves the current OPlus proximity dwell as the presentation pause authority without duplicating vendor timing. The next recommended small P1 slice is **S16 — vendor wake-trigger adapter / ADR 0007**: classify reliable pickup/tap/wake trigger sources and their native suppression boundaries while keeping proximity pause, authentication, and display-power ownership independent.
 Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.

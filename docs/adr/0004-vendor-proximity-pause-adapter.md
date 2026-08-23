@@ -20,6 +20,20 @@ Implement a **vendor proximity pause adapter** at the Pixel AOD presentation lay
 5. On `FAR` after `PAUSED`, resume presentation using the current vendor lifecycle state rather than forcing panel power state.
 6. Reuse the same normalized proximity gate for notification pulse eligibility.
 
+## Current OOS implementation note (S15)
+
+The exact CPH2573/OOS SystemUI already owns the required dwell inside
+`OplusWakeUpController.ProximityTask`. A raw sensor `NEAR` removes the prior pending task,
+records the requested near state, and posts the vendor task after **1000 ms on LCD-AOD mode or
+1500 ms otherwise**. `FAR` removes the pending task and runs it immediately. The task commit then
+writes `proximityNear` and notifies the OPlus proximity callbacks.
+
+For this validated seam, decision item 2 is implemented by **observing the vendor-owned dwell**, not
+by stacking a second module timer on top of it. `ProximityTask#setNear(true)` is the presentation
+`PAUSING` edge; completion of `ProximityTask#run()` is the `PAUSED`/resumed commit edge. A second
+module dwell would approximately double the current OLED path and is therefore prohibited while
+this vendor seam remains available.
+
 ## Consequences
 
 - Short hand/pocket sensor edges should no longer cause immediate AOD flicker.

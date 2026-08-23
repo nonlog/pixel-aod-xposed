@@ -72,6 +72,8 @@ final class PixelAodHook {
             "com.oplus.systemui.keyguard.OplusWakeUpController",
             "com.oplus.keyguard.OplusWakeUpController"
     };
+    private static final String OPLUS_WAKE_UP_PROXIMITY_TASK =
+            "com.oplus.systemui.aod.display.OplusWakeUpController$ProximityTask";
     private static final String[] OPLUS_WAKE_CALLBACK_CANDIDATES = {
             "com.oplus.systemui.aod.display.OplusWakeUpController$AodSingleClickWakeUpCallback",
             "com.oplus.systemui.aod.scene.AodViewSingleClickWakeUpHolder$AodSingleClickWakeUpCallback",
@@ -290,6 +292,7 @@ final class PixelAodHook {
         PixelAodLifecycleHookInstaller.installAodRecord(classLoader);
         PixelAodLifecycleHookInstaller.installEnergySavingObservers(classLoader);
         PixelAodUdfpsHookInstaller.install(classLoader);
+        PixelAodLifecycleHookInstaller.installVendorProximityPauseSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installAodTriggerDiagnostics(classLoader);
         PixelAodLifecycleHookInstaller.installPowerWakeTriggers();
         PixelAodLifecycleHookInstaller.installDreamDozeStateObserver();
@@ -2400,6 +2403,58 @@ final class PixelAodHook {
         }
     }
 
+    static void hookOplusVendorProximityPauseSemantics(ClassLoader classLoader) {
+        boolean taskHooked = false;
+        boolean unregisterHooked = false;
+        try {
+            Class<?> taskClass = ModernHookBridge.findClass(
+                    OPLUS_WAKE_UP_PROXIMITY_TASK, classLoader);
+            Method setNear = ModernHookBridge.findMethod(taskClass, "setNear", boolean.class);
+            ModernHookBridge.hookAfter(setNear, param -> {
+                if (param.args == null || param.args.length == 0
+                        || !(param.args[0] instanceof Boolean)) {
+                    return;
+                }
+                PixelAodClockView.observeRawProximityFromOos(
+                        (Boolean) param.args[0],
+                        "OplusWakeUpController$ProximityTask#setNear(boolean)",
+                        "authority=vendor-dwell-request");
+            });
+            Method run = ModernHookBridge.findMethod(taskClass, "run");
+            ModernHookBridge.hookAfter(run, param -> {
+                Boolean near = invokeBooleanNoArg(param.thisObject, "getNear");
+                if (near != null) {
+                    observeCommittedOosProximity(
+                            near,
+                            "OplusWakeUpController$ProximityTask#run()",
+                            "authority=vendor-dwell-commit");
+                }
+            });
+            taskHooked = true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook OPlus vendor proximity dwell task", t);
+        }
+        try {
+            Class<?> controllerClass = ModernHookBridge.findClass(
+                    OPLUS_WAKE_UP_CONTROLLER_CANDIDATES[0], classLoader);
+            Method unregister = ModernHookBridge.findMethod(
+                    controllerClass, "unregisterProximitySensor");
+            ModernHookBridge.hookAfter(unregister, param -> {
+                OOS_PROXIMITY_TRANSITION_GATE.reset();
+                lastOosProximityFarAt = 0L;
+                PixelAodClockView.resetProximityFromOos(
+                        "OplusWakeUpController#unregisterProximitySensor()");
+            });
+            unregisterHooked = true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook OPlus proximity lifecycle reset", t);
+        }
+        PixelAodLog.i("installed OPlus vendor proximity pause semantics"
+                + " task=" + taskHooked
+                + " unregister=" + unregisterHooked
+                + " dwellOwner=OplusWakeUpController$ProximityTask");
+    }
+
     static void hookOplusAodTriggerDiagnostics(ClassLoader classLoader) {
         boolean hooked = false;
         for (String className : OPLUS_WAKE_UP_CONTROLLER_CANDIDATES) {
@@ -2458,22 +2513,12 @@ final class PixelAodHook {
                             + ",result=" + summarizeValue(param.getResult());
                     if ("getProxNear".equals(targetMethod.getName())
                             && param.getResult() instanceof Boolean) {
-                        boolean near = (Boolean) param.getResult();
-                        OosProximityTransitionGate.Transition transition =
-                                OOS_PROXIMITY_TRANSITION_GATE.update(near);
-                        if (transition == OosProximityTransitionGate.Transition.NEAR) {
-                            lastOosProximityFarAt = 0L;
-                        } else if (transition == OosProximityTransitionGate.Transition.FAR) {
-                            lastOosProximityFarAt = SystemClock.uptimeMillis();
-                        }
-                        if (transition != OosProximityTransitionGate.Transition.NONE) {
-                            PixelAodLog.log("OOS proximity suppression edge"
-                                    + " transition=" + transition
-                                    + " near=" + near
-                                    + " source=" + source);
-                        }
-                        PixelAodClockView.updateProximityFromOos(
-                                near, source, detail);
+                        observeCommittedOosProximity(
+                                (Boolean) param.getResult(), source, detail);
+                    } else if ("getProxNearForLuxAod".equals(targetMethod.getName())
+                            && param.getResult() instanceof Boolean) {
+                        PixelAodClockView.observeRawProximityFromOos(
+                                (Boolean) param.getResult(), source, detail);
                     } else {
                         PixelAodClockView.noteNativeTrigger(triggerType, source, detail);
                     }
@@ -2489,6 +2534,23 @@ final class PixelAodHook {
                 + " hooked=" + hooked
                 + " methods=" + (candidates.length() > 0 ? candidates : "none"));
         return hooked;
+    }
+
+    private static void observeCommittedOosProximity(boolean near, String source, String detail) {
+        OosProximityTransitionGate.Transition transition =
+                OOS_PROXIMITY_TRANSITION_GATE.update(near);
+        if (transition == OosProximityTransitionGate.Transition.NEAR) {
+            lastOosProximityFarAt = 0L;
+        } else if (transition == OosProximityTransitionGate.Transition.FAR) {
+            lastOosProximityFarAt = SystemClock.uptimeMillis();
+        }
+        if (transition != OosProximityTransitionGate.Transition.NONE) {
+            PixelAodLog.log("OOS proximity suppression edge"
+                    + " transition=" + transition
+                    + " near=" + near
+                    + " source=" + source);
+        }
+        PixelAodClockView.updateProximityFromOos(near, source, detail);
     }
 
     private static boolean isAodTriggerDiagnosticMethod(Method method) {
