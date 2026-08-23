@@ -118,8 +118,20 @@ final class VendorAmbientSuppressionCapabilities {
             return notificationPulse == Decision.DENY;
         }
 
+        boolean contextualPresentationDenied() {
+            return contextualPresentation == Decision.DENY;
+        }
+
         boolean wakeGesturesDenied() {
             return wakeGestures == Decision.DENY;
+        }
+
+        String contextualPresentationReasonLabel() {
+            return contextualPresentation == Decision.DENY
+                    ? "vendor-contextual-presentation-suppressed"
+                    : (contextualPresentation == Decision.UNKNOWN
+                    ? "vendor-contextual-presentation-suppression-unknown"
+                    : "vendor-contextual-presentation-unsuppressed");
         }
 
         String wakeGesturesReasonLabel() {

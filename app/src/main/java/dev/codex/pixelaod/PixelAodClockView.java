@@ -281,6 +281,7 @@ public final class PixelAodClockView extends FrameLayout {
     private static String lastNotificationSnapshotSignature = "";
     private static String lastRankingSignature = "";
     private static String lastMediaCandidatesSignature = "";
+    private static String lastContextualArbitrationSignature = "";
     private static String atAGlanceExtra = "";
     private static String calendarAtAGlanceExtra = "";
     private static WeatherSnapshot breezyWeather = WeatherSnapshot.empty();
@@ -883,12 +884,45 @@ public final class PixelAodClockView extends FrameLayout {
         // AOD-allowed selector actually evaluates the alert.
         boolean nextSurfaceEntry = allowWeatherAlerts
                 && noteContextualSurfaceSelection(surfaceEntryId, surfaceVisible);
+        VendorAmbientSuppressionCapabilities.Snapshot vendorSuppression =
+                PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
+        boolean contextualPresentationAllowed = vendorSuppression == null
+                || !vendorSuppression.contextualPresentationDenied();
         ContextualAtAGlanceSelector.Selection selection = ContextualAtAGlanceSelector.select(
                 snapshot, calendar, alertsEnabled, calendarEnabled, forecastEnabled,
                 contextualStateStore, System.currentTimeMillis(), ZoneId.systemDefault(),
                 surfaceEntryId, nextSurfaceEntry, surfaceVisible, allowWeatherAlerts,
-                ContextualAtAGlancePrivacy.isSensitiveContentHidden(resolved), genericAlert,
-                tomorrow, forecastStartTime, forecastEndTime);
+                ContextualAtAGlancePrivacy.isSensitiveContentHidden(resolved),
+                contextualPresentationAllowed, genericAlert, tomorrow,
+                forecastStartTime, forecastEndTime);
+        String selectedSource = selection.target != null
+                ? selection.target.source.name() : "NONE";
+        String contextualSuppression = vendorSuppression != null
+                ? vendorSuppression.contextualPresentation.name() : "UNKNOWN";
+        String contextualSuppressionReason = vendorSuppression != null
+                ? vendorSuppression.contextualPresentationReasonLabel()
+                : "vendor-contextual-presentation-suppression-unknown";
+        String arbitrationSignature = selectedSource + "|" + selection.card.kind.name()
+                + "|" + selection.eligibleTargetCount + "|" + selection.dedupedTargetCount
+                + "|" + contextualSuppression;
+        boolean arbitrationChanged;
+        synchronized (PixelAodClockView.class) {
+            arbitrationChanged = !TextUtils.equals(lastContextualArbitrationSignature,
+                    arbitrationSignature);
+            lastContextualArbitrationSignature = arbitrationSignature;
+        }
+        if (arbitrationChanged) {
+            // State changes are intentionally low-frequency and contain no contextual body text.
+            // Keep this outside the debug-pressure gate so one startup burst cannot hide the only
+            // runtime proof that the unified arbiter actually ran for the current scene.
+            PixelAodLog.i("contextual arbitration source=" + source
+                    + " selectedSource=" + selectedSource
+                    + " selectedKind=" + selection.card.kind
+                    + " eligible=" + selection.eligibleTargetCount
+                    + " deduped=" + selection.dedupedTargetCount
+                    + " suppression=" + contextualSuppression
+                    + " suppressionReason=" + contextualSuppressionReason);
+        }
         if (surfaceVisible) {
             scheduleContextualDeadline(selection.nextDeadlineMillis, source);
         }
@@ -2995,6 +3029,7 @@ public final class PixelAodClockView extends FrameLayout {
             lastNotificationSnapshotSignature = "";
             lastRankingSignature = "";
             lastMediaCandidatesSignature = "";
+            lastContextualArbitrationSignature = "";
             atAGlanceExtra = "";
             calendarAtAGlanceExtra = "";
             breezyWeather = WeatherSnapshot.empty();

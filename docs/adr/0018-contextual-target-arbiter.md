@@ -28,3 +28,12 @@ Introduce one **contextual target arbiter** before contextual content reaches th
 
 - Stack every eligible source until the screen is full: violates low-power density goals and produces unstable layouts.
 - Let each adapter decide visibility independently: creates competing owners, duplicate content, and difficult-to-test priority behavior.
+
+## M9 P1-S18 implementation note — 2026-08-23
+
+- The common model is now `ContextualTarget`; the single policy owner is `ContextualTargetArbiter`.
+- Existing module Weather Alert, Calendar and Forecast inputs are the first producers. They retain the prior visible priority while sharing one eligibility/deduplication/budget path.
+- Deduplication intentionally follows eligibility so an invalid/suppressed native equivalent cannot remove a valid module fallback.
+- Weather Alert visibility history is committed only after the alert wins arbitration and is actually visible.
+- The S14 typed `contextualPresentation` slot is consumed only as its own capability; current-ROM `UNKNOWN` remains fail-open.
+- Native Smartspace, Live Update and Ambient Indication source kinds are model seams only in S18. No native target is created until a stable current-OOS source surface is proven.

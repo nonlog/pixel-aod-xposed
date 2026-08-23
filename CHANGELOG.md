@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.17] - 2026-08-23
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Implement M9 P1-S18 / ADR 0018 by introducing a normalized `ContextualTarget` input and one `ContextualTargetArbiter` before contextual data reaches the COUI scene owner.
+- Route existing module Weather Alert, Calendar, and Weather Forecast candidates through the same deterministic eligibility, TTL, suppression, deduplication, urgency ranking, and one-row low-power visual-budget boundary while preserving the established alert > calendar > forecast product order.
+- Consume only the typed `contextualPresentation` suppression capability from S14; explicit `DENY` blocks contextual candidates, while the current-ROM `UNKNOWN` value remains fail-open and does not borrow base-AOD/notification-pulse suppression semantics.
+- Move durable Weather Alert `markVisible(...)` after arbitration so a future valid native Smartspace/Live Update equivalent can win without consuming the module fallback display/repeat window before that fallback is actually rendered.
+- Define native Smartspace, Live Update, and native ambient-indication source classes in the normalized target model for later evidence-backed adapters, but S18 does not fabricate or hook an unproven native contextual seam.
+- Advance the visible candidate version to `0.1.17`; Android update ordering uses independent `versionCode=9008`.
+
+### Evidence / Status
+- Focused JVM coverage for the new arbiter, existing At-a-Glance selector, and typed suppression adapter passes. The new tests cover validity/TTL, selected-user/privacy/suppression/presentation filtering, equivalent-target native preference with module fallback, deterministic urgency/expiry ordering, the one-row visual budget, and the no-consume-on-suppression Weather Alert rule.
+- Final JDK 17 regression: **98 suites / 470 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS; protected seven-file clock/morph/weight animation core remains **ZERO_DIFF**.
+- Final APK: **20,381,430 bytes**, SHA-256 `c47174e8726f678becd33f97a96114fa278768d3462809eb52d5d18765cd4928`; installed device `base.apk` matches exactly and reports visible `versionName=0.1.17`, internal `versionCode=9008`.
+- Real Dozing SystemUI runtime under PID `31776` executes `contextual arbitration` from `ClockPlugin#render#presentation`. The sampled state correctly reports `selectedSource=NONE / selectedKind=NONE / eligible=0 / deduped=0 / contextualPresentation=UNKNOWN` because no contextual candidate was active; no synthetic Smartspace/Live Update input was injected to manufacture a non-empty result.
+- A controlled `Awake + isKeyguardShowing=true -> Dozing` smoke retained PID `31776`; `.local/m9_s18_0.1.17/aod.png` shows the complete normal AOD scene and the current-PID crash/ANR/fatal scan is empty. Battery Saver remains off, Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`, and `non_lockscreen_aod_transition=direct_final` plus `debug_logging=true` are unchanged.
+- Deferred by design: S18 defines normalized native Smartspace / Live Update / Ambient Indication source classes but installs no unproven native contextual hook. The next slice must first prove a stable current-OOS source surface.
+
 ## [0.1.16] - 2026-08-23
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

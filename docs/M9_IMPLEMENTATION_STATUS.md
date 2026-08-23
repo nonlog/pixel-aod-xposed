@@ -613,7 +613,33 @@ Verification:
 - A controlled Awake -> Dozing -> Awake cycle kept PID `9781` unchanged and `.local/m9_s17_0.1.16/aod.png` shows a complete normal Pixel AOD scene. Current-PID crash/ANR/fatal scan is empty; the broader logcat SIGABRT hit is historical at 15:02 under old PID `18968`.
 - ADB touchscreen injection at the fingerprint location did not reach the fingerprint HAL and was not counted as biometric validation. No internal `requestPulse`, biometric callback, or UDFPS method was invoked to manufacture a passing auth edge.
 - `low_power=0`; animator/transition/window scales remain `1.0 / 1.0 / 1.0`; `non_lockscreen_aod_transition=direct_final` remains unchanged.
+## S18 — Contextual target arbiter
+
+Status: **green candidate — existing module contextual sources centralized behind one deterministic ADR 0018 arbitration boundary; 0.1.17 installed/hash-verified and real SystemUI AOD execution proven**
+
+Goal: implement the common contextual owner before adding any new native Smartspace or Live Update adapter. S18 must preserve current Weather Alert / Calendar / Forecast behavior while creating one place for future native inputs to compete by validity, privacy, suppression, deduplication and low-power budget.
+
+Implementation:
+
+- Added immutable `ContextualTarget` inputs with source, urgency, semantic identity, validity/TTL, selected-user/privacy eligibility, typed contextual suppression eligibility, presentation eligibility and visual-budget cost.
+- Added one pure `ContextualTargetArbiter`. It filters invalid/ineligible inputs first, then deduplicates semantic equivalents, ranks deterministically, and commits at most the current one-row contextual budget to the existing `ContextualAtAGlanceCard` scene owner.
+- Existing module Weather Alert, Calendar and Weather Forecast now produce candidates instead of independently short-circuiting the selector. Their established visible order remains Weather Alert > Calendar > Forecast.
+- Equivalent native-vs-module deduplication prefers the valid native representation, but deduplication runs **after** eligibility. A stale, privacy-blocked, suppressed or otherwise ineligible future native target therefore cannot suppress the explicit module fallback.
+- S14's typed `contextualPresentation` capability now has a single consumer. Only explicit `DENY` blocks contextual candidates; the current ROM still reports `UNKNOWN`, which remains fail-open to the established vendor lifecycle and does not borrow base-AOD or notification-pulse suppression semantics.
+- Weather Alert durable `markVisible(...)` moved after arbitration. Only a Weather Alert that actually wins and is on a visible surface consumes its display/repeat window, preventing a future native equivalent from burning the module fallback before the fallback is ever rendered.
+- `NATIVE_SMARTSPACE`, `LIVE_UPDATE`, and `NATIVE_AMBIENT_INDICATION` exist only as normalized source classes for later adapters. S18 does **not** fabricate a SystemUI Smartspace target seam, classify ordinary notifications as Live Updates, or clone a native Ambient Indication surface without current-ROM evidence.
+- Added one low-frequency diagnostic containing only selected source/kind/counts and typed suppression state, never contextual body text or semantic identity. This gives runtime proof of arbiter execution without exposing calendar/weather content.
+
+Verification:
+
+- Final JDK 17 gate: **98 suites / 470 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS; protected seven-file clock/morph/weight animation core **ZERO_DIFF**.
+- Focused arbiter coverage verifies validity/TTL, privacy/suppression/presentation filtering, native-equivalent preference with module fallback, deterministic urgency/expiry ordering, the one-row visual budget, and the rule that a suppressed Weather Alert does not consume its visible window.
+- Final visible candidate is `0.1.17`, internal `versionCode=9008`, APK **20,381,430 bytes**, SHA-256 `c47174e8726f678becd33f97a96114fa278768d3462809eb52d5d18765cd4928`; installed device `base.apk` matches exactly.
+- Final SystemUI PID `31776` emits real `contextual arbitration ... selectedSource=NONE selectedKind=NONE eligible=0 deduped=0 suppression=UNKNOWN` from `ClockPlugin#render#presentation` while the device is genuinely Dozing. No contextual candidate existed in that sample, so the correct output is an empty contextual row rather than fabricated content.
+- Controlled final `Awake + isKeyguardShowing=true -> Dozing` kept PID `31776` unchanged. `.local/m9_s18_0.1.17/aod.png` shows a complete normal AOD with clock, date/weather, notification icons, fingerprint and battery; current-PID crash/ANR/fatal scan is empty.
+- `low_power=0`; animator/transition/window scales remain `1.0 / 1.0 / 1.0`; `non_lockscreen_aod_transition=direct_final` and `debug_logging=true` remain unchanged.
+
 ## Next implementation checkpoint
 
-S17 completes the current-ROM selective biometric presentation slice without taking authentication or optical/display ownership. The next recommended small P1 slice is **S18 — contextual target arbiter / ADR 0018**: centralize the already-existing module contextual rows first, then admit only proven native Smartspace/Live Update inputs under one deterministic privacy/TTL/visual-budget owner.
+S18 establishes the common contextual owner without inventing new native content. The next recommended small P1 slice is **S19 — current-OOS native contextual/Smartspace source adapter / ADR 0003 + ADR 0011**: first identify a stable target surface in the exact installed SystemUI, then map only proven read-only target identity/text/TTL/privacy metadata into `ContextualTarget`. If the current ROM exposes no reliable Smartspace target seam, leave it absent rather than recreating a private provider and move to the next evidence-backed contextual source such as ADR 0013 Live Updates.
 Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.

@@ -187,4 +187,25 @@ public final class ContextualAtAGlanceSelectorTest {
         assertEquals(sourceAt + BreezyWeatherSnapshot.MAX_ALERT_SOURCE_AGE_MILLIS,
                 selection.nextDeadlineMillis);
     }
+
+    @Test
+    public void contextualSuppressionFiltersAllCandidatesWithoutConsumingAlertWindow() {
+        BreezyWeatherAlert alert = BreezyWeatherAlert.forFields("blocked", "loc", "Storm",
+                NOW - 1_000L, NOW + 86_400_000L, 3);
+        BreezyWeatherForecast forecast = BreezyWeatherForecast.forFields("loc",
+                LocalDate.of(2025, 8, 6), 800, "Clear", 31, 25, NOW);
+        BreezyWeatherSnapshot snapshot = BreezyWeatherSnapshot.queried("loc",
+                Collections.singletonList(alert), Collections.singletonList(forecast), NOW);
+        ContextualAtAGlanceStateStore store = new ContextualAtAGlanceStateStore();
+
+        ContextualAtAGlanceSelector.Selection selection = ContextualAtAGlanceSelector.select(
+                snapshot, "10:00 Meeting", true, true, true, store, NOW, ZONE,
+                7L, true, true, true, false, false, "Weather alert", "Tomorrow",
+                ForecastDisplayWindow.DEFAULT_START_TIME, ForecastDisplayWindow.DEFAULT_END_TIME);
+
+        assertEquals(ContextualAtAGlanceCard.Kind.NONE, selection.card.kind);
+        assertEquals(0, selection.eligibleTargetCount);
+        assertTrue(store.history(alert.presentationKey) == null
+                || store.history(alert.presentationKey).firstVisibleAtMillis == 0L);
+    }
 }
