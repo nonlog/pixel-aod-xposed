@@ -639,7 +639,28 @@ Verification:
 - Controlled final `Awake + isKeyguardShowing=true -> Dozing` kept PID `31776` unchanged. `.local/m9_s18_0.1.17/aod.png` shows a complete normal AOD with clock, date/weather, notification icons, fingerprint and battery; current-PID crash/ANR/fatal scan is empty.
 - `low_power=0`; animator/transition/window scales remain `1.0 / 1.0 / 1.0`; `non_lockscreen_aod_transition=direct_final` and `debug_logging=true` remain unchanged.
 
+## S18.1 — Rounded date/weather typography polish
+
+Status: **green visual polish — date and current-weather rows now share the clock's `ROND=100` shape language; 0.1.18 installed/hash-verified on Lockscreen and AOD**
+
+Goal: answer the user-requested visual mismatch before S19 without broadening the change to every auxiliary text surface.
+
+Implementation:
+
+- `CouiClockFontPolicy.informationVariation(weight, rounded)` now owns the information-row font recipe. The default path remains `ROND=0`; the explicit rounded path uses `ROND=100` with the same `wdth=100`, `GRAD=0`, and `opsz=18`.
+- Only `weekView`, `dateView`, and `weatherView` opt into the rounded path. Contextual rows, notification overflow, media title/artist and battery text keep their prior information style.
+- The legacy/shared info renderer already resolves through Google Sans Flex clock variation; S18.1 specifically repairs the active COUI host mismatch that hard-coded `ROND=0` for these three rows.
+- No font size, info weight, geometry constant, weather alignment, contextual/notification anchor, clock endpoint variation, transition duration, interpolation, glyph/colon staging or scene-selection policy changes.
+
+Verification:
+
+- Final JDK 17 gate: **98 suites / 471 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS. Exact clock variation/morph policy tests remain green, plus the new information-variation test covers `ROND=0` vs `ROND=100` explicitly.
+- Final visible candidate is `0.1.18`, internal `versionCode=9009`, APK **19,784,719 bytes**, SHA-256 `f3d28f7061729fce54aad9fa5b5b9dcd28f5c04e618f28f25c049c01edc29979`; installed device `base.apk` matches exactly.
+- `.local/m9_s18_1_0.1.18/keyguard.png` and `.local/m9_s18_1_0.1.18/aod.png` visually confirm the rounder `Sun, Aug 23` / weather glyphs while clock/date/weather geometry remains stable against the earlier 0.1.15/0.1.17 captures.
+- Controlled Dozing -> Keyguard Awake -> Dozing retained SystemUI PID `542`; current-PID fatal/ANR/signal scan is empty.
+- Device state remains `low_power=0`, animator/transition/window scales `1.0 / 1.0 / 1.0`, `non_lockscreen_aod_transition=direct_final`, and `debug_logging=true`.
+
 ## Next implementation checkpoint
 
-S18 establishes the common contextual owner without inventing new native content. The next recommended small P1 slice is **S19 — current-OOS native contextual/Smartspace source adapter / ADR 0003 + ADR 0011**: first identify a stable target surface in the exact installed SystemUI, then map only proven read-only target identity/text/TTL/privacy metadata into `ContextualTarget`. If the current ROM exposes no reliable Smartspace target seam, leave it absent rather than recreating a private provider and move to the next evidence-backed contextual source such as ADR 0013 Live Updates.
+S18.1 closes the requested typography polish without changing the S19 architecture plan. The next recommended small P1 slice remains **S19 — current-OOS native contextual/Smartspace source adapter / ADR 0003 + ADR 0011**: first identify a stable target surface in the exact installed SystemUI, then map only proven read-only target identity/text/TTL/privacy metadata into `ContextualTarget`. If the current ROM exposes no reliable Smartspace target seam, leave it absent rather than recreating a private provider and move to the next evidence-backed contextual source such as ADR 0013 Live Updates.
 Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.

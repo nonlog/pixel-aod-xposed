@@ -168,8 +168,8 @@ final class CouiClockHostView extends FrameLayout {
         dateGroup.setOrientation(LinearLayout.HORIZONTAL);
         dateGroup.setGravity(android.view.Gravity.CENTER_VERTICAL);
         dateGroup.setClipChildren(false);
-        weekView = informationText(18f, 500);
-        dateView = informationText(18f, 500);
+        weekView = informationText(18f, 500, true);
+        dateView = informationText(18f, 500, true);
         dateGroup.addView(dateView);
         dateGroup.addView(weekView);
 
@@ -188,7 +188,7 @@ final class CouiClockHostView extends FrameLayout {
                 dp(CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP));
         weatherIconParams.setMarginEnd(dp(CouiClockGeometryPolicy.WEATHER_ICON_GAP_DP));
         weatherGroup.addView(weatherIconView, weatherIconParams);
-        weatherView = informationText(18f, 500);
+        weatherView = informationText(18f, 500, true);
         weatherGroup.addView(weatherView);
 
         contextualGroup = new LinearLayout(context);
@@ -1854,14 +1854,17 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     private TextView informationText(float sizeSp, int weight) {
+        return informationText(sizeSp, weight, false);
+    }
+
+    private TextView informationText(float sizeSp, int weight, boolean rounded) {
         TextView view = new TextView(getContext());
         view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, sizeSp);
         view.setTextColor(INFORMATION_COLOR);
         view.setGravity(android.view.Gravity.CENTER_VERTICAL);
         view.setIncludeFontPadding(false);
         view.setMaxLines(1);
-        String variation = "'wght' " + weight
-                + ", 'wdth' 100, 'ROND' 0, 'GRAD' 0, 'opsz' 18";
+        String variation = CouiClockFontPolicy.informationVariation(weight, rounded);
         Typeface typeface = CouiClockFontLoader.buildCustomFont(getContext(), variation);
         view.setTypeface(typeface != null ? typeface : Typeface.DEFAULT);
         view.setFontVariationSettings(variation);

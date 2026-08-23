@@ -28,6 +28,12 @@ final class CouiClockFontPolicy {
     private CouiClockFontPolicy() {
     }
 
+    static String informationVariation(int weight, boolean rounded) {
+        int rond = rounded ? 100 : 0;
+        return "'wght' " + weight
+                + ", 'wdth' 100, 'ROND' " + rond + ", 'GRAD' 0, 'opsz' 18";
+    }
+
     static String variationFor(CouiClockPresentationModel.Scene scene, boolean dozing) {
         CouiClockPresentationModel.Scene normalized = scene == null
                 ? CouiClockPresentationModel.Scene.LARGE : scene;

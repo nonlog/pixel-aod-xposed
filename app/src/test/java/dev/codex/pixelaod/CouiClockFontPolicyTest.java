@@ -24,6 +24,14 @@ public final class CouiClockFontPolicyTest {
     }
 
     @Test
+    public void informationVariationKeepsDefaultTextSquareButAllowsRoundedDateWeather() {
+        assertEquals("'wght' 500, 'wdth' 100, 'ROND' 0, 'GRAD' 0, 'opsz' 18",
+                CouiClockFontPolicy.informationVariation(500, false));
+        assertEquals("'wght' 500, 'wdth' 100, 'ROND' 100, 'GRAD' 0, 'opsz' 18",
+                CouiClockFontPolicy.informationVariation(500, true));
+    }
+
+    @Test
     public void morphStyleCarriesVariationColorAnimationAndDuration() {
         CouiClockFontPolicy.MorphStyleSpec style = CouiClockFontPolicy.morphStyle(
                 CouiClockPresentationModel.Scene.LARGE, false, 0x00112233, true, 550L);

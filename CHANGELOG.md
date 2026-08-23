@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.18] - 2026-08-23
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Add the same Google Sans Flex rounded-shape treatment used by the clock to the COUI date and current-weather text by selecting `ROND=100` for `weekView`, `dateView`, and `weatherView`.
+- Keep the change intentionally scoped: contextual text, notification overflow, media title/artist, and battery text continue to use the existing `ROND=0` information style.
+- Centralize the COUI information variation string in `CouiClockFontPolicy.informationVariation(...)` so rounded and non-rounded information rows share the same weight/width/grade/optical-size axes without duplicating the font recipe.
+- Do not change font size, text weight, date/weather geometry, clock variation endpoints, 550 ms morph timing, weight interpolation, glyph/colon staging, or the `direct_final` non-lockscreen transition setting.
+- Advance the visible candidate version to `0.1.18`; Android update ordering uses independent `versionCode=9009`.
+
+### Evidence / Status
+- Final JDK 17 regression: **98 suites / 471 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS. Existing exact clock-variation tests still pass unchanged; the new focused test proves default information text remains `ROND=0` while rounded date/weather uses `ROND=100`.
+- Final APK: **19,784,719 bytes**, SHA-256 `f3d28f7061729fce54aad9fa5b5b9dcd28f5c04e618f28f25c049c01edc29979`; installed device `base.apk` matches exactly and reports `versionName=0.1.18`, `versionCode=9009`.
+- Real-device captures `.local/m9_s18_1_0.1.18/keyguard.png` and `.local/m9_s18_1_0.1.18/aod.png` show the rounded date/weather glyphs on both surfaces with no visible layout displacement. The before/after comparison uses the previously accepted 0.1.15/0.1.17 captures.
+- Controlled Dozing -> Keyguard Awake -> Dozing verification retained SystemUI PID `542`; current-PID crash/ANR/fatal scan is empty. Battery Saver remains off, Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`, and `non_lockscreen_aod_transition=direct_final` plus `debug_logging=true` are unchanged.
+
 ## [0.1.17] - 2026-08-23
 ### Changed
 - Modification model: **GPT-5.6 Sol**.
