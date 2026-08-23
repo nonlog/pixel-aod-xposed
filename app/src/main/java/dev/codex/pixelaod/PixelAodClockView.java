@@ -1662,6 +1662,17 @@ public final class PixelAodClockView extends FrameLayout {
                     + " state={" + describeAodState(context) + "}");
             return false;
         }
+        SelectiveBiometricPulseAdapter.Snapshot selectivePulse =
+                PixelAodRuntimeState.selectiveBiometricPulseSnapshot();
+        if (selectivePulse.blocksPixelContent()) {
+            PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
+                    + " source=" + source
+                    + " reason=" + selectivePulse.blockReason()
+                    + " selectivePulse={" + selectivePulse.describe() + "}"
+                    + " trace=" + trace
+                    + " state={" + describeAodState(context) + "}");
+            return false;
+        }
         VendorAmbientSuppressionCapabilities.Snapshot vendorSuppression =
                 PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
         if (vendorSuppression.wakeGesturesDenied()) {
@@ -1805,6 +1816,10 @@ public final class PixelAodClockView extends FrameLayout {
 
     static void onVendorAmbientSuppressionChanged(String source) {
         refreshAodPolicyConsumers(source + "#vendor-ambient-suppression");
+    }
+
+    static void onSelectiveBiometricPulseChanged(String source) {
+        refreshAodPolicyConsumers(source + "#selective-biometric-pulse");
     }
 
     static void refreshAodPolicyFromSettings(String source) {
@@ -2221,6 +2236,19 @@ public final class PixelAodClockView extends FrameLayout {
             return new OosAodLifecycleAdapter.ModulePolicy(false, false, false, false,
                     "module-disabled", displayMode, withinSchedule, triggerBriefActive);
         }
+        SelectiveBiometricPulseAdapter.Snapshot selectivePulse =
+                PixelAodRuntimeState.selectiveBiometricPulseSnapshot();
+        if (selectivePulse.blocksPixelContent()) {
+            PixelAodLog.log("AOD module policy blocked source=" + source
+                    + " reason=" + selectivePulse.blockReason()
+                    + " displayMode=" + displayMode
+                    + " selectivePulse={" + selectivePulse.describe() + "}"
+                    + " trace=" + trace
+                    + " state={" + describeAodState(context) + "}");
+            return new OosAodLifecycleAdapter.ModulePolicy(false, moduleEnabled, false, false,
+                    selectivePulse.blockReason(), displayMode, withinSchedule,
+                    triggerBriefActive);
+        }
         OosAodLifecycleAdapter.PowerPolicyDecision powerPolicy =
                 evaluateAndLogPowerPolicy(context, source, trace, false);
         if (!powerPolicy.allowsDisplay) {
@@ -2301,6 +2329,9 @@ public final class PixelAodClockView extends FrameLayout {
     private static boolean maybeStartNativeShortWakeTrigger(Context context, String source,
             String trace, AodLifecycleState state) {
         if (context == null || state == null || state.interactive || state.triggerBriefActive) {
+            return false;
+        }
+        if (PixelAodRuntimeState.selectiveBiometricPulseSnapshot().blocksPixelContent()) {
             return false;
         }
         String displayMode = aodDisplayMode(context);

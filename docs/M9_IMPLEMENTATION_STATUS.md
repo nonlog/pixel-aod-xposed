@@ -585,7 +585,35 @@ Verification:
 - `.local/m9_s16_0.1.15/keyguard.png` physically confirms the current-weather row moved upward and is visually bottom-aligned with the clock while the date/notification/card geometry stayed stable.
 - Current PID crash/ANR/fatal scan is empty; `low_power=0`; animator/transition/window scales are `1.0 / 1.0 / 1.0`; `non_lockscreen_aod_transition=direct_final` and `debug_logging=true` remain unchanged.
 
+## S17 — Selective biometric/auth presentation adapter
+
+Status: **green candidate — exact current-OOS UDFPS TouchDown authority integrated without taking biometric/HBM/panel ownership; 0.1.16 installed and hash-verified**
+
+Goal: implement ADR 0017 using one reliable current-ROM biometric presentation signal, while keeping S15 proximity, S16 wake triggers, notification pulses, continuous AOD, UDFPS optical/HBM, and display power independent.
+
+Native seam discovery and correction:
+
+- AOSP `DozeSensors`/`DozeMachine` classes exist in the exact SystemUI and expose Android 17 pulse-reason semantics, but physical Awake -> Dozing transitions on this OPlus build did not traverse the hooked `DozeMachine#transitionTo(...)`. S17 rejected that initially plausible seam instead of treating class presence as runtime authority.
+- The active OPlus path is `OplusBiometricAuthController#showUdfpsOverlay(int)`. Exact decompilation maps reason `8` to `OnScreenFingerprintUiMech.onFpTouch(true)` plus `DreamPolicy.onFpTouchDown()`, and reasons `9/10` to matching TouchUp callbacks.
+- Physical device runtime independently captured `fingerprint trigger Down -> SensorOverlays showUdfpsOverlay : 1, 8 -> OnScreenFingerprintUiMech showUdfpsOverlay reason=8 -> touchEvent isDown true -> fingerprint capture/authentication`, proving that reason 8 is not a fabricated semantic mapping.
+
+Implementation:
+
+- Added pure `SelectiveBiometricPulseAdapter`. Native reason `8` enters `AUTH_UI_ONLY`; reasons `9/10`, `hideUdfpsOverlay()`, successful `setFingerprintAuthenticated(true)`, or a new ordinary icon-show reason `0..6` restore `IDLE`.
+- Unsupported reasons never invent a restricted presentation and also do not prematurely clear an already-active hardware TouchDown.
+- While `AUTH_UI_ONLY` is active, the normal Pixel AOD module policy and trigger-only entry path yield ordinary Pixel clock/content. Stock/native biometric presentation can therefore remain authoritative for that vendor-owned touch lifetime.
+- S17 does not call `showUdfpsOverlay`, request authentication, register a sensor, mutate `OnScreenFingerprintPressedIcon`, retime authentication, create a timer, or touch optical illumination/HBM/local-HBM/panel state.
+- The current active OPlus path exposes no separately proven no-UI or bright pulse classification, so those ADR capabilities remain absent rather than inferred from unrelated AOSP classes.
+
+Verification:
+
+- Final JDK 17 gate: **97 suites / 464 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS; protected seven-file clock/morph/weight animation core **ZERO_DIFF**.
+- Final visible candidate `0.1.16`, internal `versionCode=9007`, APK **19,784,719 bytes**, SHA-256 `bd3ba65cee8656fbcbac448605765427097a16c8fd4524a4fd2549111b5b1e8a`; installed device `base.apk` matches exactly.
+- Final SystemUI PID `9781` reports S17 `show=true hide=true authState=true`; the real startup fingerprint icon session emits `showUdfpsOverlay(4)` and remains `IDLE` as intended.
+- A controlled Awake -> Dozing -> Awake cycle kept PID `9781` unchanged and `.local/m9_s17_0.1.16/aod.png` shows a complete normal Pixel AOD scene. Current-PID crash/ANR/fatal scan is empty; the broader logcat SIGABRT hit is historical at 15:02 under old PID `18968`.
+- ADB touchscreen injection at the fingerprint location did not reach the fingerprint HAL and was not counted as biometric validation. No internal `requestPulse`, biometric callback, or UDFPS method was invoked to manufacture a passing auth edge.
+- `low_power=0`; animator/transition/window scales remain `1.0 / 1.0 / 1.0`; `non_lockscreen_aod_transition=direct_final` remains unchanged.
 ## Next implementation checkpoint
 
-S16 completes the reliable vendor wake-trigger slice without taking sensor/panel ownership. The next recommended small P1 slice is **S17 — selective biometric/auth pulse adapter / ADR 0017**: identify one reliable native authentication-pulse seam and keep it explicitly independent from wake-gesture, proximity, notification-pulse, and continuous-AOD suppression.
+S17 completes the current-ROM selective biometric presentation slice without taking authentication or optical/display ownership. The next recommended small P1 slice is **S18 — contextual target arbiter / ADR 0018**: centralize the already-existing module contextual rows first, then admit only proven native Smartspace/Live Update inputs under one deterministic privacy/TTL/visual-budget owner.
 Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.

@@ -234,6 +234,8 @@ final class PixelAodHook {
             new NativeDozeTransitionProgressAdapter();
     private static final VendorAmbientSuppressionCapabilities VENDOR_AMBIENT_SUPPRESSION =
             new VendorAmbientSuppressionCapabilities();
+    private static final SelectiveBiometricPulseAdapter SELECTIVE_BIOMETRIC_PULSE =
+            new SelectiveBiometricPulseAdapter();
     private static volatile WeakReference<Object> lastDozeParameters =
             new WeakReference<>(null);
     private static volatile WeakReference<Object> lastScreenOffAnimationController =
@@ -284,6 +286,7 @@ final class PixelAodHook {
         // Preserve the proven 0.1.380 registration order while making hook ownership explicit.
         PixelAodLifecycleHookInstaller.installScreenOffAnimationEligibility(classLoader);
         PixelAodLifecycleHookInstaller.installAmbientSuppressionCapabilities(classLoader);
+        PixelAodLifecycleHookInstaller.installSelectiveBiometricPulseSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installNativeKeyguardTransitionSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installWakefulness(classLoader);
         PixelAodLifecycleHookInstaller.installKeyguardGoingAway(classLoader);
@@ -2937,6 +2940,86 @@ final class PixelAodHook {
                 + " state={" + VENDOR_AMBIENT_SUPPRESSION.snapshot().describe() + "}");
     }
 
+    static void hookSelectiveBiometricPulseSemantics(ClassLoader classLoader) {
+        boolean showHooked = false;
+        boolean hideHooked = false;
+        boolean authStateHooked = false;
+        try {
+            Class<?> biometricClass = ModernHookBridge.findClass(
+                    OPLUS_BIOMETRIC_AUTH_CONTROLLER, classLoader);
+            Method show = ModernHookBridge.findMethod(
+                    biometricClass, "showUdfpsOverlay", int.class);
+            ModernHookBridge.hookAfter(show, param -> {
+                if (param.args == null || param.args.length == 0
+                        || !(param.args[0] instanceof Integer)) {
+                    return;
+                }
+                int reason = (Integer) param.args[0];
+                String source = "OplusBiometricAuthController#showUdfpsOverlay(" + reason + ")";
+                SelectiveBiometricPulseAdapter.Snapshot before =
+                        SELECTIVE_BIOMETRIC_PULSE.snapshot();
+                SelectiveBiometricPulseAdapter.Snapshot after =
+                        SELECTIVE_BIOMETRIC_PULSE.observeOverlayReason(reason, source);
+                if (after.generation != before.generation) {
+                    PixelAodLog.i("native selective biometric pulse changed"
+                            + " state={" + after.describe() + "}");
+                }
+                if (after.blocksPixelContent() != before.blocksPixelContent()) {
+                    PixelAodClockView.onSelectiveBiometricPulseChanged(source);
+                }
+            });
+            showHooked = true;
+
+            Method hide = ModernHookBridge.findMethod(biometricClass, "hideUdfpsOverlay");
+            ModernHookBridge.hookAfter(hide, param -> {
+                String source = "OplusBiometricAuthController#hideUdfpsOverlay";
+                SelectiveBiometricPulseAdapter.Snapshot before =
+                        SELECTIVE_BIOMETRIC_PULSE.snapshot();
+                SelectiveBiometricPulseAdapter.Snapshot after =
+                        SELECTIVE_BIOMETRIC_PULSE.observeOverlayHidden(source);
+                if (after.generation != before.generation) {
+                    PixelAodLog.i("native selective biometric pulse changed"
+                            + " state={" + after.describe() + "}");
+                }
+                if (after.blocksPixelContent() != before.blocksPixelContent()) {
+                    PixelAodClockView.onSelectiveBiometricPulseChanged(source);
+                }
+            });
+            hideHooked = true;
+
+            Method authState = ModernHookBridge.findMethod(
+                    biometricClass, "setFingerprintAuthenticated", boolean.class);
+            ModernHookBridge.hookAfter(authState, param -> {
+                if (param.args == null || param.args.length == 0
+                        || !Boolean.TRUE.equals(param.args[0])) {
+                    return;
+                }
+                String source = "OplusBiometricAuthController#setFingerprintAuthenticated(true)";
+                SelectiveBiometricPulseAdapter.Snapshot before =
+                        SELECTIVE_BIOMETRIC_PULSE.snapshot();
+                SelectiveBiometricPulseAdapter.Snapshot after =
+                        SELECTIVE_BIOMETRIC_PULSE.observeOverlayHidden(source);
+                if (after.generation != before.generation) {
+                    PixelAodLog.i("native selective biometric pulse changed"
+                            + " state={" + after.describe() + "}");
+                }
+                if (after.blocksPixelContent() != before.blocksPixelContent()) {
+                    PixelAodClockView.onSelectiveBiometricPulseChanged(source);
+                }
+            });
+            authStateHooked = true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook native selective biometric pulse semantics", t);
+        }
+        PixelAodLog.i("installed native selective biometric pulse semantics"
+                + " show=" + showHooked
+                + " hide=" + hideHooked
+                + " authState=" + authStateHooked
+                + " seam=OplusBiometricAuthController#showUdfpsOverlay(int)/hideUdfpsOverlay()"
+                + " touchDownReason=8 touchUpReasons=9,10"
+                + " state={" + SELECTIVE_BIOMETRIC_PULSE.snapshot().describe() + "}");
+    }
+
     private static void seedVendorAmbientSuppressionFromHost(Object host, String source) {
         if (host == null) {
             return;
@@ -3057,6 +3140,14 @@ final class PixelAodHook {
 
     static String describeVendorAmbientSuppression() {
         return VENDOR_AMBIENT_SUPPRESSION.snapshot().describe();
+    }
+
+    static SelectiveBiometricPulseAdapter.Snapshot selectiveBiometricPulseSnapshot() {
+        return SELECTIVE_BIOMETRIC_PULSE.snapshot();
+    }
+
+    static String describeSelectiveBiometricPulse() {
+        return SELECTIVE_BIOMETRIC_PULSE.snapshot().describe();
     }
 
     static boolean shouldAnimateVendorScreenOffPresentation() {

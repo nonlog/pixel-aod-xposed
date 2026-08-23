@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.16] - 2026-08-23
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Implement M9 P1-S17 / ADR 0017 as a read-only selective biometric presentation adapter over the exact current-OOS `OplusBiometricAuthController` UDFPS authority rather than a module-owned biometric pulse state machine.
+- Treat native `showUdfpsOverlay(8)` as the hardware fingerprint TouchDown/auth-UI-only edge. While that OPlus-owned touch presentation is active, ordinary Pixel AOD clock/content yields; native `showUdfpsOverlay(9/10)`, `hideUdfpsOverlay()`, successful fingerprint authentication, or a new ordinary icon-show session restores the established Pixel/vendor lifecycle.
+- Keep unsupported UDFPS reasons fail-open and do not fabricate no-UI/bright pulse classifications that are not exposed by the active OPlus AOD path. Normal notification/wake/continuous AOD presentation remains governed by the existing privacy, S15 proximity, S16 wake-trigger, schedule, power, and vendor-lifecycle gates.
+- Preserve OPlus ownership of fingerprint sensing, pressed carrier, optical illumination, HBM/local-HBM, wake locks, and panel state. S17 registers no sensor, requests no authentication/pulse, creates no timer, and does not alter the existing COUI UDFPS renderer lifecycle.
+- Advance the visible candidate version to `0.1.16`; Android update ordering uses independent `versionCode=9007`.
+
+### Evidence / Status
+- Exact SystemUI decompilation proves `showUdfpsOverlay(8)` calls `OnScreenFingerprintUiMech.onFpTouch(true)` plus `DreamPolicy.onFpTouchDown()`, while reasons `9/10` call the matching TouchUp path. Device runtime independently captured the real hardware chain `fingerprint trigger Down -> SensorOverlays ... reason=8 -> OnScreenFingerprintUiMech ... reason=8 -> touchEvent isDown true -> fingerprint capture/authentication` without synthetic internal pulse calls.
+- Final S17 hook installation reports `show=true hide=true authState=true`; normal device runtime also emits real `showUdfpsOverlay(4)` icon-session observations that remain `IDLE`. ADB touchscreen injection was deliberately not treated as hardware fingerprint validation because it does not reach the fingerprint HAL.
+- Final JDK 17 regression: **97 suites / 464 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS; protected seven-file clock/morph/weight animation core remains **ZERO_DIFF**.
+- Final APK: **19,784,719 bytes**, SHA-256 `bd3ba65cee8656fbcbac448605765427097a16c8fd4524a4fd2549111b5b1e8a`; installed device `base.apk` matches exactly and reports visible `versionName=0.1.16`.
+- Controlled Awake -> Dozing -> Awake retained SystemUI PID `9781`, with a complete Pixel AOD screenshot under `.local/m9_s17_0.1.16/aod.png`. Current-PID crash/ANR/fatal scan is empty; the only broader logcat SIGABRT match is historical at 15:02 under old PID `18968`.
+- Battery Saver remains off, Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`, and the existing `non_lockscreen_aod_transition=direct_final` preference is unchanged.
+
 ## [0.1.15] - 2026-08-23
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

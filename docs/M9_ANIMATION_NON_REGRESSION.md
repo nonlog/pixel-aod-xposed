@@ -127,3 +127,11 @@ S16 implements ADR 0007 by consuming OPlus's already-classified `notifyWakeUpCal
 The requested weather adjustment changes only compact information geometry: the active date-to-weather gap and legacy weather anchor are each raised by 2 dp. No clock target, type size, contextual/notification minimum anchor, 550 ms timing, weight interpolation, glyph/colon staging, Large <-> Small morph math, or non-lockscreen transition policy changes.
 
 Final S16 gate: **96 suites / 458 tests / 0 failures / 0 errors / 0 skipped**, debug build PASS, `git diff --check` PASS, and the protected animation core remains **ZERO_DIFF**. Installed 0.1.15 APK SHA-256 is `9d9462d4cf906958e3396e10a46c7fa241b4a1c40d84ee514c46d1be74c64a29`; controlled Awake -> Dozing -> Awake kept SystemUI PID `21570` unchanged, current-PID crash/ANR/fatal scan is empty, and Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`.
+
+## S17 gate evidence — biometric presentation is a policy edge, not an animation owner
+
+S17 observes the current OPlus UDFPS authority only. Hardware `showUdfpsOverlay(8)` becomes an auth-UI-only presentation edge; TouchUp/hide/auth-success returns to the existing lifecycle. The adapter never changes the clock target, transition origin, animation duration, weight interpolation, glyph/colon staging, pressed-carrier animation, HBM/local-HBM, or panel power state.
+
+The initially plausible AOSP `DozeMachine` seam was rejected after physical Awake -> Dozing testing showed that the active OPlus AOD path does not traverse it. This correction stayed entirely outside the protected animation engine. A normal final Awake -> Dozing -> Awake cycle renders the complete Pixel AOD scene and retains the same SystemUI PID.
+
+Final S17 gate: **97 suites / 464 tests / 0 failures / 0 errors / 0 skipped**, debug build PASS, `git diff --check` PASS, and all seven protected animation-core files remain **ZERO_DIFF**. Installed 0.1.16 APK SHA-256 is `bd3ba65cee8656fbcbac448605765427097a16c8fd4524a4fd2549111b5b1e8a`; controlled Awake -> Dozing -> Awake kept SystemUI PID `9781` unchanged, current-PID crash/ANR/fatal scan is empty, and Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`.

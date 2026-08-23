@@ -71,6 +71,14 @@ final class PixelAodRuntimeState {
         return PixelAodHook.describeVendorAmbientSuppression();
     }
 
+    static SelectiveBiometricPulseAdapter.Snapshot selectiveBiometricPulseSnapshot() {
+        return PixelAodHook.selectiveBiometricPulseSnapshot();
+    }
+
+    static String describeSelectiveBiometricPulse() {
+        return PixelAodHook.describeSelectiveBiometricPulse();
+    }
+
     static Float consumableVendorDozeTransitionAmbientFractionOrNull() {
         return PixelAodHook.consumableVendorDozeTransitionAmbientFractionOrNull();
     }
