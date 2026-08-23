@@ -80,7 +80,7 @@ public final class CouiCompactLayoutTest {
         assertEquals(632, weatherAlertTopPx);
         assertTrue(anchors.infoLeftPx - clockRightPx >= minimumHorizontalGapPx);
         assertTrue(weatherAlertTopPx - clockBottomPx >= minimumVerticalGapPx);
-        assertEquals(504, CouiCompactLayout.weatherTop(anchors, density));
+        assertEquals(496, CouiCompactLayout.weatherTop(anchors, density));
     }
 
     @Test

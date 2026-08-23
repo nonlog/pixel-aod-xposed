@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.15] - 2026-08-23
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Implement M9 P1-S16 / ADR 0007 with a read-only `VendorWakeTriggerAdapter` over the exact OPlus `OplusWakeUpController#notifyWakeUpCallback(int)` post-classification seam; the module does not register another gesture/motion sensor, request a vendor gesture mode, force panel state, or own a wake-window timer.
+- Normalize current-ROM wake types as `0=single tap`, `1=tilt/lift pickup`, and `2=AMD/motion`; unknown future integer values remain diagnostic-only. The current ROM's `onDoubleClick()` is empty, so no double-tap trigger is fabricated.
+- When the authoritative wake fanout hook is available, subordinate OPlus callback methods and `PowerManager#wakeUp(...)` display-trigger observations remain diagnostic-only to prevent duplicate Pixel transient starts. Existing committed proximity, power, module replacement schedule, privacy/content, and typed wake-suppression gates are reused without changing auth/display-power ownership.
+- Add explicit motion/significant-motion trigger classification to the vendor-transient presentation policy. Trigger-only lifetime still follows the vendor transient scene from ADR 0056; no module fixed-duration timer is introduced.
+- Fine-tune compact current-weather alignment from the user-provided lockscreen reference: raise the active small-scene date-to-weather gap by **2 dp** (`3 dp -> 1 dp`) and raise the legacy/shared compact weather anchor by the same **2 dp** (`27 dp -> 25 dp`). Clock position, type sizes, contextual/notification minimum anchors, and protected animation math are unchanged.
+- Advance the visible candidate version to `0.1.15`; Android update ordering uses independent `versionCode=9006`.
+
+### Evidence / Status
+- Exact current OOS binary evidence proves `notifyWakeUpCallback(int)` fans out only after OPlus gesture/motion classification. Current type sources are single-click type 0, tilt type 1, and AMD/motion type 2; `onDoubleClick()` is empty on this build.
+- Final JDK 17 regression: **96 suites / 458 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS; protected clock/morph/weight animation core remains **ZERO_DIFF**.
+- Final APK: **20,374,389 bytes**, SHA-256 `9d9462d4cf906958e3396e10a46c7fa241b4a1c40d84ee514c46d1be74c64a29`; installed device `base.apk` matches exactly and reports visible `versionName=0.1.15`.
+- Final SystemUI PID `21570` reports `installed OPlus vendor wake-trigger authority hooked=true ... seam=notifyWakeUpCallback(int)` with no matching hook failures. A controlled Awake -> Dozing -> Awake smoke kept the same PID throughout.
+- Runtime on the same S16 wake code captured a real OPlus `rawType=0,kind=SINGLE_TAP` observation through the authoritative fanout. The final layout-only rebuild did not alter wake code; type 1/2 remain exact-binary + unit-test covered rather than synthetically invoked.
+- Final screenshot evidence under `.local/m9_s16_0.1.15/keyguard.png` confirms the current-weather row moved upward while the clock/date/notification geometry stayed stable. Current-PID crash/ANR/fatal scan is empty; Battery Saver remains off, Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`, and `non_lockscreen_aod_transition=direct_final` plus debug logging remain unchanged.
+
 ## [0.1.14] - 2026-08-23
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

@@ -47,6 +47,10 @@ final class PixelAodLifecycleHookInstaller {
         PixelAodHook.hookOplusVendorProximityPauseSemantics(classLoader);
     }
 
+    static void installVendorWakeTriggerSemantics(ClassLoader classLoader) {
+        PixelAodHook.hookOplusVendorWakeTriggerSemantics(classLoader);
+    }
+
     static void installAodTriggerDiagnostics(ClassLoader classLoader) {
         PixelAodHook.hookOplusAodTriggerDiagnostics(classLoader);
     }

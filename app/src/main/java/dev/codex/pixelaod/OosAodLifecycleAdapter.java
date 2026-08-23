@@ -386,7 +386,8 @@ final class OosAodLifecycleAdapter {
     }
 
     private static Event classifyTrigger(String source) {
-        String lowerSource = TextUtils.isEmpty(source) ? "" : source.toLowerCase(Locale.US);
+        String lowerSource = source == null || source.isEmpty()
+                ? "" : source.toLowerCase(Locale.US);
         if (sourceContains(lowerSource, "proximity")
                 || sourceContains(lowerSource, "prox")
                 || sourceContains(lowerSource, "near")
@@ -408,6 +409,11 @@ final class OosAodLifecycleAdapter {
                 || sourceContains(lowerSource, "gesture")) {
             return Event.TRIGGER_TAP;
         }
+        if (sourceContains(lowerSource, "motion")
+                || sourceContains(lowerSource, "significant")
+                || sourceContains(lowerSource, "amd")) {
+            return Event.TRIGGER_MOTION;
+        }
         if (sourceContains(lowerSource, "sensor")) {
             return Event.TRIGGER_SENSOR;
         }
@@ -425,6 +431,8 @@ final class OosAodLifecycleAdapter {
                 return TriggerRule.PICKUP_VENDOR_TRANSIENT.toBehavior();
             case TRIGGER_TAP:
                 return TriggerRule.TAP_VENDOR_TRANSIENT.toBehavior();
+            case TRIGGER_MOTION:
+                return TriggerRule.MOTION_VENDOR_TRANSIENT.toBehavior();
             case TRIGGER_POCKET:
                 return TriggerRule.POCKET_HIDE.toBehavior();
             case TRIGGER_PROXIMITY:
@@ -508,6 +516,7 @@ final class OosAodLifecycleAdapter {
         ENERGY_SAVING_HIDE("energy-saving-hide"),
         TRIGGER_PICKUP("trigger-pickup"),
         TRIGGER_TAP("trigger-tap"),
+        TRIGGER_MOTION("trigger-motion"),
         TRIGGER_PROXIMITY("trigger-proximity"),
         TRIGGER_POCKET("trigger-pocket"),
         TRIGGER_SENSOR("trigger-sensor"),
@@ -727,6 +736,9 @@ final class OosAodLifecycleAdapter {
                 TriggerCategory.DISPLAY_WAKE, DisplayMode.TRIGGER_ONLY_VENDOR_TRANSIENT,
                 "observe-vendor-transient-scene", true, false, false),
         TAP_VENDOR_TRANSIENT("tap-vendor-transient", Event.TRIGGER_TAP,
+                TriggerCategory.DISPLAY_WAKE, DisplayMode.TRIGGER_ONLY_VENDOR_TRANSIENT,
+                "observe-vendor-transient-scene", true, false, false),
+        MOTION_VENDOR_TRANSIENT("motion-vendor-transient", Event.TRIGGER_MOTION,
                 TriggerCategory.DISPLAY_WAKE, DisplayMode.TRIGGER_ONLY_VENDOR_TRANSIENT,
                 "observe-vendor-transient-scene", true, false, false),
         POCKET_HIDE("pocket-hide", Event.TRIGGER_POCKET,

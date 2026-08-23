@@ -54,11 +54,10 @@ final class PixelAodVisualStyle {
     static final int PIXEL_SMALL_INFO_COLUMN_OFFSET_DP = 4;
     static final int COUI_COMPACT_CLOCK_TO_INFO_GAP_DP = 16;
     static final int COUI_COMPACT_CLOCK_TO_EVENT_GAP_DP = 12;
-    // Keep a readable gap between the compact date and weather, then lift the contextual row
-    // away from OOS notification cards without letting it overlap the current-weather line.
-    // Keep the date top, current-weather bottom, and contextual-row anchor unchanged while the
-    // compact date/current-weather type moves to the requested 16 dp.
-    static final int COUI_COMPACT_DATE_TO_WEATHER_TOP_OFFSET_DP = 27;
+    // Keep a readable gap between the compact date and weather. The current-weather row is lifted
+    // by 2 dp from the prior 27 dp anchor so its painted bottom aligns more closely with the small
+    // clock digits; the contextual/notification minimum anchors remain independently protected.
+    static final int COUI_COMPACT_DATE_TO_WEATHER_TOP_OFFSET_DP = 25;
     static final int COUI_COMPACT_INFO_TO_EVENT_GAP_DP = 4;
     static final int COMPACT_CONTEXTUAL_TO_NOTIFICATION_GAP_DP = 12;
     static final int COMPACT_MEDIA_TO_NOTIFICATION_GAP_DP = 12;

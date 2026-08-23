@@ -556,7 +556,36 @@ Verification:
 - Current-PID crash/ANR/fatal scan is empty. Android `low_power=0`, animator/transition/window scales remain `1.0 / 1.0 / 1.0`, and the existing `non_lockscreen_aod_transition=direct_final` preference remains unchanged.
 - Evidence is retained under `.local/m9_s15_0.1.14/`; exact decompiled proximity classes remain under `D:\Downloads\Xposed_test\pixel-aod-shared\systemui-analysis\s15-classes`.
 
+## S16 — Vendor wake-trigger adapter + compact weather alignment
+
+Status: **green candidate — exact OPlus post-classification wake authority integrated, duplicate lower-level wake actions suppressed, 0.1.15 installed/hash-verified, and requested weather alignment physically captured**
+
+Goal: implement ADR 0007 without registering a duplicate low-power sensor stack or creating an independent wake window, while making the user-requested compact current-weather row sit slightly higher without touching stable clock animation math.
+
+Native seam discovery on the exact current OOS SystemUI:
+
+- `OplusWakeUpController#notifyWakeUpCallback(int)` is the narrow synchronous fanout after OPlus has already classified its black-screen gesture / tilt / AMD motion inputs. OPlus continues to own gesture registration, motion sensors, proximity state, wake locks and hide alarms.
+- Current type `0` originates from the single black-screen click callback; type `1` originates from the tilt/lift path; type `2` originates from the AMD/motion path. The current `onDoubleClick()` callback is empty, so S16 does not invent a double-tap capability.
+- The prior broad OPlus callback/`PowerManager#wakeUp` hooks remain diagnostics/fallback only when the exact authority hook is installed, preventing one physical vendor event from starting two Pixel transient observations.
+
+Implementation:
+
+- Added pure `VendorWakeTriggerAdapter`: `0 -> SINGLE_TAP/tap`, `1 -> TILT_PICKUP/pickup`, `2 -> MOTION/motion`; unknown raw values are observe-only.
+- Added explicit `TRIGGER_MOTION` / `motion-vendor-transient` classification to the existing vendor-transient presentation policy. ADR 0056 still owns lifetime: Pixel follows the vendor scene and does not start a fixed timer or force panel state.
+- Wake-trigger presentation reuses the module replacement schedule, committed S15 proximity authority, existing power gate, current lockscreen/privacy content handling, and the typed `wakeGestures` suppression slot. The latter remains `UNKNOWN` on this ROM and therefore does not fabricate a denial.
+- Subordinate OPlus callback methods and `PowerManager#wakeUp(...)` are diagnostic-only while `notifyWakeUpCallback(int)` is available. If the exact seam is absent on another ROM, the previous fallback diagnostics remain available rather than black-screening presentation.
+- Compact weather layout was raised by exactly **2 dp** in both active and legacy paths: `CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP 3 -> 1` for the active COUI small scene, and `COUI_COMPACT_DATE_TO_WEATHER_TOP_OFFSET_DP 27 -> 25` for the shared fallback. Type sizes, date anchor, notification/context minimum anchors and clock position are unchanged.
+
+Verification:
+
+- Final JDK 17 gate: **96 suites / 458 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS; protected clock/morph/weight animation core **ZERO_DIFF**.
+- Final visible candidate `0.1.15`, internal `versionCode=9006`, APK **20,374,389 bytes**, SHA-256 `9d9462d4cf906958e3396e10a46c7fa241b4a1c40d84ee514c46d1be74c64a29`; installed device `base.apk` matches exactly.
+- Final SystemUI PID `21570` reports `installed OPlus vendor wake-trigger authority hooked=true ... seam=notifyWakeUpCallback(int)` with no corresponding hook failure. Controlled Awake -> Dozing -> Awake retained the same PID.
+- Runtime on the same S16 wake implementation captured an actual OPlus type-0 observation as `rawType=0,kind=SINGLE_TAP,normalizedTrigger=tap`; type 1/2 are covered by exact decompiled origin plus pure unit tests rather than internal callback injection.
+- `.local/m9_s16_0.1.15/keyguard.png` physically confirms the current-weather row moved upward and is visually bottom-aligned with the clock while the date/notification/card geometry stayed stable.
+- Current PID crash/ANR/fatal scan is empty; `low_power=0`; animator/transition/window scales are `1.0 / 1.0 / 1.0`; `non_lockscreen_aod_transition=direct_final` and `debug_logging=true` remain unchanged.
+
 ## Next implementation checkpoint
 
-S15 now preserves the current OPlus proximity dwell as the presentation pause authority without duplicating vendor timing. The next recommended small P1 slice is **S16 — vendor wake-trigger adapter / ADR 0007**: classify reliable pickup/tap/wake trigger sources and their native suppression boundaries while keeping proximity pause, authentication, and display-power ownership independent.
+S16 completes the reliable vendor wake-trigger slice without taking sensor/panel ownership. The next recommended small P1 slice is **S17 — selective biometric/auth pulse adapter / ADR 0017**: identify one reliable native authentication-pulse seam and keep it explicitly independent from wake-gesture, proximity, notification-pulse, and continuous-AOD suppression.
 Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.

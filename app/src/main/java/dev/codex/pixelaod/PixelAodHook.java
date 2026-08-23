@@ -57,6 +57,7 @@ final class PixelAodHook {
     private static final AtomicBoolean SELECTED_USER_RECEIVER_REGISTERED = new AtomicBoolean(false);
     private static final AtomicBoolean TORCH_CALLBACK_REGISTERED = new AtomicBoolean(false);
     private static final AtomicBoolean TORCH_REFRESH_RECEIVER_REGISTERED = new AtomicBoolean(false);
+    private static volatile boolean vendorWakeTriggerAuthorityHooked;
     private static final String ACTION_SWITCH_FLASHLIGHT =
             "com.android.systemui.ACTION_SWITCH_FLASHLIGHT";
     private static final String ACTION_USER_SWITCHED = "android.intent.action.USER_SWITCHED";
@@ -293,6 +294,7 @@ final class PixelAodHook {
         PixelAodLifecycleHookInstaller.installEnergySavingObservers(classLoader);
         PixelAodUdfpsHookInstaller.install(classLoader);
         PixelAodLifecycleHookInstaller.installVendorProximityPauseSemantics(classLoader);
+        PixelAodLifecycleHookInstaller.installVendorWakeTriggerSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installAodTriggerDiagnostics(classLoader);
         PixelAodLifecycleHookInstaller.installPowerWakeTriggers();
         PixelAodLifecycleHookInstaller.installDreamDozeStateObserver();
@@ -2455,6 +2457,40 @@ final class PixelAodHook {
                 + " dwellOwner=OplusWakeUpController$ProximityTask");
     }
 
+    static void hookOplusVendorWakeTriggerSemantics(ClassLoader classLoader) {
+        boolean hooked = false;
+        String authorityClass = "none";
+        for (String className : OPLUS_WAKE_UP_CONTROLLER_CANDIDATES) {
+            try {
+                Class<?> controllerClass = ModernHookBridge.findClass(className, classLoader);
+                Method notifyWakeUp = ModernHookBridge.findMethod(
+                        controllerClass, "notifyWakeUpCallback", int.class);
+                ModernHookBridge.hookAfter(notifyWakeUp, param -> {
+                    if (param.args == null || param.args.length == 0
+                            || !(param.args[0] instanceof Integer)) {
+                        return;
+                    }
+                    PixelAodClockView.observeVendorWakeTriggerFromOos(
+                            (Integer) param.args[0],
+                            "OplusWakeUpController#notifyWakeUpCallback(int)");
+                });
+                hooked = true;
+                authorityClass = className;
+                break;
+            } catch (ClassNotFoundException ignored) {
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to hook OPlus vendor wake-trigger authority class "
+                        + className, t);
+            }
+        }
+        vendorWakeTriggerAuthorityHooked = hooked;
+        PixelAodLog.i("installed OPlus vendor wake-trigger authority"
+                + " hooked=" + hooked
+                + " class=" + authorityClass
+                + " seam=notifyWakeUpCallback(int)"
+                + " mapping=0:tap,1:tilt-pickup,2:motion");
+    }
+
     static void hookOplusAodTriggerDiagnostics(ClassLoader classLoader) {
         boolean hooked = false;
         for (String className : OPLUS_WAKE_UP_CONTROLLER_CANDIDATES) {
@@ -2488,6 +2524,10 @@ final class PixelAodHook {
                     || !isAodTriggerDiagnosticMethod(method)) {
                 continue;
             }
+            if (vendorWakeTriggerAuthorityHooked
+                    && "notifyWakeUpCallback".equals(method.getName())) {
+                continue;
+            }
             if (candidates.length() > 0) {
                 candidates.append('|');
             }
@@ -2519,6 +2559,14 @@ final class PixelAodHook {
                             && param.getResult() instanceof Boolean) {
                         PixelAodClockView.observeRawProximityFromOos(
                                 (Boolean) param.getResult(), source, detail);
+                    } else if (vendorWakeTriggerAuthorityHooked
+                            && isDisplayTriggerType(triggerType)) {
+                        PixelAodLog.log("observed subordinate OPlus wake-trigger seam"
+                                + " source=" + source
+                                + " type=" + triggerType
+                                + " action=diagnostic-only"
+                                + " authority=notifyWakeUpCallback(int)"
+                                + " detail={" + detail + "}");
                     } else {
                         PixelAodClockView.noteNativeTrigger(triggerType, source, detail);
                     }
@@ -2587,6 +2635,16 @@ final class PixelAodHook {
                         String args = summarizeArgs(param.args, 6);
                         String triggerType = classifyAodTriggerEvent(source, args);
                         if (TextUtils.isEmpty(triggerType)) {
+                            return;
+                        }
+                        if (vendorWakeTriggerAuthorityHooked
+                                && isDisplayTriggerType(triggerType)) {
+                            PixelAodLog.log("observed PowerManager wake trigger"
+                                    + " source=" + source
+                                    + " type=" + triggerType
+                                    + " action=diagnostic-only"
+                                    + " authority=OplusWakeUpController#notifyWakeUpCallback(int)"
+                                    + " args=" + args);
                             return;
                         }
                         PixelAodClockView.noteNativeTrigger(triggerType, source,
@@ -2665,7 +2723,9 @@ final class PixelAodHook {
     }
 
     private static boolean isDisplayTriggerType(String triggerType) {
-        return "tap".equals(triggerType) || "pickup".equals(triggerType);
+        return "tap".equals(triggerType)
+                || "pickup".equals(triggerType)
+                || "motion".equals(triggerType);
     }
 
     private static Context contextFromHookParam(ModernHookBridge.HookParam param) {
@@ -3735,6 +3795,9 @@ final class PixelAodHook {
         if (str.contains("pickup") || str.contains("pick_up") || str.contains("pick-up")
                 || str.contains("raise") || str.contains("lift")) {
             return "pickup";
+        }
+        if (str.contains("motion") || str.contains("significant") || str.contains("amd")) {
+            return "motion";
         }
         if (str.contains("tap") || str.contains("touch") || str.contains("gesture")) {
             return "tap";

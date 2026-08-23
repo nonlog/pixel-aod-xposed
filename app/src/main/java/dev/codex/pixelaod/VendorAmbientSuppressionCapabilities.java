@@ -118,6 +118,18 @@ final class VendorAmbientSuppressionCapabilities {
             return notificationPulse == Decision.DENY;
         }
 
+        boolean wakeGesturesDenied() {
+            return wakeGestures == Decision.DENY;
+        }
+
+        String wakeGesturesReasonLabel() {
+            return wakeGestures == Decision.DENY
+                    ? "vendor-wake-gesture-suppressed"
+                    : (wakeGestures == Decision.UNKNOWN
+                    ? "vendor-wake-gesture-suppression-unknown"
+                    : "vendor-wake-gesture-unsuppressed");
+        }
+
         String baseAodReasonLabel() {
             if (baseAodReason == Reason.AOD_POWER_SAVE) {
                 return "vendor-aod-power-save";

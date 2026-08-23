@@ -1533,6 +1533,18 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    static void observeVendorWakeTriggerFromOos(int rawType, String source) {
+        VendorWakeTriggerAdapter.Observation observation =
+                VendorWakeTriggerAdapter.fromNotifyWakeUpType(rawType, source);
+        PixelAodLog.i("OOS vendor wake trigger observed state={" + observation.describe() + "}");
+        if (!observation.presentationCandidate) {
+            return;
+        }
+        noteNativeTrigger(observation.normalizedTrigger, observation.source,
+                "authority=notifyWakeUpCallback(int),rawType=" + rawType
+                        + ",kind=" + observation.kind);
+    }
+
     static void noteNativeTrigger(String type, String source, String detail) {
         long now = SystemClock.uptimeMillis();
         String normalizedType = TextUtils.isEmpty(type) ? "unknown" : type;
@@ -1637,6 +1649,27 @@ public final class PixelAodClockView extends FrameLayout {
                     + " source=" + source
                     + " reason=display-mode"
                     + " displayMode=" + displayMode
+                    + " trace=" + trace
+                    + " state={" + describeAodState(context) + "}");
+            return false;
+        }
+        if (!isWithinAodSchedule(context)) {
+            PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
+                    + " source=" + source
+                    + " reason=outside-pixel-replacement-schedule"
+                    + " displayMode=" + displayMode
+                    + " trace=" + trace
+                    + " state={" + describeAodState(context) + "}");
+            return false;
+        }
+        VendorAmbientSuppressionCapabilities.Snapshot vendorSuppression =
+                PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
+        if (vendorSuppression.wakeGesturesDenied()) {
+            PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
+                    + " source=" + source
+                    + " reason=" + vendorSuppression.wakeGesturesReasonLabel()
+                    + " displayMode=" + displayMode
+                    + " vendorSuppression={" + vendorSuppression.describe() + "}"
                     + " trace=" + trace
                     + " state={" + describeAodState(context) + "}");
             return false;
