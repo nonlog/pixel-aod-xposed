@@ -68,7 +68,9 @@ final class ContextualAtAGlanceSelector {
                 forecastStartTime, forecastEndTime);
         long forecastDeadline = AtAGlanceWeatherPolicy.nextForecastBoundary(displayWindow,
                 nowMillis, zoneId, forecastEnabled);
-        List<ContextualTarget> candidates = new ArrayList<>(3);
+        List<ContextualTarget> candidates = new ArrayList<>(6);
+        candidates.addAll(NativeSmartspaceContextualAdapter.currentTargets(
+                contextualPresentationAllowed, sensitiveContentHidden));
 
         BreezyWeatherAlert alert = weatherAlertsEnabled && allowWeatherAlerts
                 ? store.select(safeSnapshot.activeAlerts, safeSnapshot, nowMillis, surfaceEntryId,

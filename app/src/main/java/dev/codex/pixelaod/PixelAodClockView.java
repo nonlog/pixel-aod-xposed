@@ -3054,6 +3054,7 @@ public final class PixelAodClockView extends FrameLayout {
         if (alertExpiry != null) {
             mainHandler().removeCallbacks(alertExpiry);
         }
+        NativeSmartspaceContextualAdapter.clear(source);
         PixelLockscreenClockView.setActiveNotifications(EMPTY_NOTIFICATIONS);
         PixelAodLog.i("cleared Pixel AOD selected-user content state source="
                 + (source != null ? source : "unknown"));

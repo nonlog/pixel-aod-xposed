@@ -7,6 +7,7 @@ final class ContextualAtAGlanceCard {
 
     enum Kind {
         NONE,
+        NATIVE_SMARTSPACE,
         WEATHER_ALERT,
         CALENDAR_EVENT,
         WEATHER_FORECAST
@@ -53,6 +54,18 @@ final class ContextualAtAGlanceCard {
         return new ContextualAtAGlanceCard(Kind.WEATHER_ALERT, IconKind.WEATHER_ALERT,
                 alert.presentationKey, text, BreezyWeatherForecast.UNKNOWN_WEATHER_CODE,
                 alert.severity, alpha, privacyRedacted);
+    }
+
+    static ContextualAtAGlanceCard nativeSmartspace(String identity, String text, float alpha) {
+        String normalized = PixelAodRenderModel.normalizeAtAGlanceExtra(text);
+        if (normalized.isEmpty()) {
+            return none();
+        }
+        String key = identity != null && !identity.trim().isEmpty()
+                ? identity.trim() : "native-smartspace:" + normalized;
+        return new ContextualAtAGlanceCard(Kind.NATIVE_SMARTSPACE, IconKind.NONE,
+                key, normalized, BreezyWeatherForecast.UNKNOWN_WEATHER_CODE,
+                0, alpha, false);
     }
 
     static ContextualAtAGlanceCard calendar(String text, float alpha) {

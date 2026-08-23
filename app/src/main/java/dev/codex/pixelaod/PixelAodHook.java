@@ -84,6 +84,11 @@ final class PixelAodHook {
             "com.oplus.systemui.biometrics.OplusBiometricAuthController";
     private static final String OPLUS_ON_SCREEN_FINGERPRINT_UI_MECH =
             "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech";
+    private static final String LOCKSCREEN_SMARTSPACE_CONTROLLER =
+            "com.android.systemui.statusbar.lockscreen.LockscreenSmartspaceController";
+    private static final String LOCKSCREEN_SMARTSPACE_SESSION_LISTENER =
+            "com.android.systemui.statusbar.lockscreen."
+                    + "LockscreenSmartspaceController$sessionListener$1";
     private static final String[] FOD_AOD_DIAGNOSTIC_METHOD_NAMES = {
             "loadAnimDrawables",
             "restoreIconDrawable",
@@ -286,6 +291,7 @@ final class PixelAodHook {
         // Preserve the proven 0.1.380 registration order while making hook ownership explicit.
         PixelAodLifecycleHookInstaller.installScreenOffAnimationEligibility(classLoader);
         PixelAodLifecycleHookInstaller.installAmbientSuppressionCapabilities(classLoader);
+        PixelAodLifecycleHookInstaller.installNativeSmartspacePassThrough(classLoader);
         PixelAodLifecycleHookInstaller.installSelectiveBiometricPulseSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installNativeKeyguardTransitionSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installWakefulness(classLoader);
@@ -2938,6 +2944,65 @@ final class PixelAodHook {
                 + " battery=" + batteryHooked
                 + " suppressorSeed=" + suppressorSeedHooked
                 + " state={" + VENDOR_AMBIENT_SUPPRESSION.snapshot().describe() + "}");
+    }
+
+    static void hookNativeSmartspaceContextualPassThrough(ClassLoader classLoader) {
+        boolean controllerPresent = false;
+        int sessionListenerHooks = 0;
+        try {
+            ModernHookBridge.findClass(LOCKSCREEN_SMARTSPACE_CONTROLLER, classLoader);
+            controllerPresent = true;
+            Class<?> sessionListenerClass = ModernHookBridge.findClass(
+                    LOCKSCREEN_SMARTSPACE_SESSION_LISTENER, classLoader);
+            Method onTargetsAvailable = ModernHookBridge.findMethod(
+                    sessionListenerClass, "onTargetsAvailable", List.class);
+            ModernHookBridge.hookAfter(onTargetsAvailable, param ->
+                    observeNativeSmartspaceFilteredTargets(param.thisObject));
+            sessionListenerHooks = 1;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook native Lockscreen Smartspace pass-through", t);
+        }
+        PixelAodLog.i("installed native Smartspace pass-through"
+                + " controllerPresent=" + controllerPresent
+                + " sessionListenerHooks=" + sessionListenerHooks
+                + " seam=LockscreenSmartspaceController$sessionListener$1#onTargetsAvailable"
+                + " filteredSource=recentSmartspaceData#peekLast"
+                + " privacyOwner=SystemUI ownership=observe-only");
+    }
+
+    private static void observeNativeSmartspaceFilteredTargets(Object sessionListener) {
+        if (sessionListener == null) {
+            return;
+        }
+        try {
+            Object controller = ModernHookBridge.getObjectField(sessionListener, "this$0");
+            Object recent = ModernHookBridge.getObjectField(controller, "recentSmartspaceData");
+            List<?> filteredTargets = Collections.emptyList();
+            if (recent instanceof java.util.Deque) {
+                Object last = ((java.util.Deque<?>) recent).peekLast();
+                if (last instanceof List) {
+                    filteredTargets = (List<?>) last;
+                }
+            }
+            NativeSmartspaceContextualAdapter.Update update =
+                    NativeSmartspaceContextualAdapter.observeFilteredTargets(
+                            filteredTargets, System.currentTimeMillis(),
+                            "LockscreenSmartspaceController#session-listener-filtered");
+            PixelAodLog.i("native Smartspace filtered target callback"
+                    + " systemFiltered=" + update.rawTargetCount
+                    + " accepted=" + update.targetCount
+                    + " featureTypes=" + update.featureTypes
+                    + " changed=" + update.changed);
+            if (update.changed) {
+                MAIN.post(() -> {
+                    PixelLockscreenClockView.refreshAll("native-smartspace-targets");
+                    ActiveClockRendererController.refreshInformationFromExistingAdapters(
+                            "native-smartspace-targets");
+                });
+            }
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to observe filtered native Smartspace targets", t);
+        }
     }
 
     static void hookSelectiveBiometricPulseSemantics(ClassLoader classLoader) {

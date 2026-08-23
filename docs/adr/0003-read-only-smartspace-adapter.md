@@ -31,3 +31,12 @@ Implement a **read-only Smartspace adapter**.
 
 - Hand-code every contextual source independently: simple at first, but duplicates native providers and scales poorly.
 - Implement a complete Pixel/Google Smartspace backend: much larger scope, includes non-AOSP/private data sources, and conflicts with the project's presentation-focused ownership boundary.
+
+## M9 P1-S19 implementation note — 2026-08-23
+
+- Exact current-OOS SystemUI owns a real `LockscreenSmartspaceController` and framework lockscreen `SmartspaceSession` lifecycle.
+- The final read-only seam is `LockscreenSmartspaceController$sessionListener$1#onTargetsAvailable(List)` **after** the original callback. SystemUI first applies its own selected-user, managed-profile and sensitive-content filter, writes that post-filter list to `recentSmartspaceData`, and Pixel reads only `peekLast()` from that filtered history.
+- Pixel AOD never creates/requests the Smartspace session, builds a native Smartspace view, invokes `requestSmartspaceUpdate()`, registers a provider/plugin listener, or runs target actions.
+- The normalized adapter retains native target ID/feature/expiry/sensitivity metadata, adds only a fail-safe TTL when expiry is absent, applies existing AOD privacy/suppression again, skips duplicate current-weather feature type 1, and maps native calendar feature type 2 onto the module calendar semantic key for S18 deduplication.
+- A higher-level `BcSmartspaceDataPlugin` listener candidate was explicitly rejected after device runtime proved that controller field is `null` on the exact current build.
+- Current-device source state is absent/inactive: `Region Samplers: 0`, `Recent BC Smartspace Targets: No data`, and a real Keyguard lifecycle produced no target callback. This is accepted as the correct fail-open result; no synthetic target is used to claim native-content validation.

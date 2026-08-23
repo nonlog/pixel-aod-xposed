@@ -57,6 +57,7 @@ final class ContextualAtAGlancePresentation {
             PixelAodTypography.applySharedInfoText(text, context, safe.text);
             Drawable drawable = PixelAodContentState.contextualCardIcon(context, safe, color);
             icon.setImageDrawable(drawable);
+            icon.setVisibility(drawable != null && safe.isVisible() ? View.VISIBLE : View.GONE);
             icon.setColorFilter(color, PorterDuff.Mode.SRC_IN);
             float alpha = safe.isVisible() ? safe.alpha : 0f;
             icon.setAlpha(alpha);
@@ -68,7 +69,8 @@ final class ContextualAtAGlancePresentation {
         if (!animate) {
             applyContent.run();
             PixelAodLog.log("updated contextual card kind=" + safe.kind
-                    + " text=" + safe.text + " source=" + source + " animate=false");
+                    + " textPresent=" + !safe.text.isEmpty()
+                    + " source=" + source + " animate=false");
             return true;
         }
 
@@ -90,7 +92,7 @@ final class ContextualAtAGlancePresentation {
                     }).start();
         }
         PixelAodLog.log("updated contextual card kind=" + safe.kind
-                + " text=" + safe.text + " source=" + source);
+                + " textPresent=" + !safe.text.isEmpty() + " source=" + source);
         return true;
     }
 

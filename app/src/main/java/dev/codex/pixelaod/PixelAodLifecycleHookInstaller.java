@@ -19,6 +19,10 @@ final class PixelAodLifecycleHookInstaller {
         PixelAodHook.hookVendorAmbientSuppressionCapabilities(classLoader);
     }
 
+    static void installNativeSmartspacePassThrough(ClassLoader classLoader) {
+        PixelAodHook.hookNativeSmartspaceContextualPassThrough(classLoader);
+    }
+
     static void installSelectiveBiometricPulseSemantics(ClassLoader classLoader) {
         PixelAodHook.hookSelectiveBiometricPulseSemantics(classLoader);
     }

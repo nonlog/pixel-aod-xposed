@@ -660,7 +660,41 @@ Verification:
 - Controlled Dozing -> Keyguard Awake -> Dozing retained SystemUI PID `542`; current-PID fatal/ANR/signal scan is empty.
 - Device state remains `low_power=0`, animator/transition/window scales `1.0 / 1.0 / 1.0`, `non_lockscreen_aod_transition=direct_final`, and `debug_logging=true`.
 
+## S19 — Current-OOS native Smartspace read-only pass-through
+
+Status: **green capability / source absent — exact current-OOS filtered target seam integrated read-only; 0.1.19 installed/hash-verified, while the current device exposes no active native Smartspace target stream**
+
+Goal: implement ADR 0003 + ADR 0011 only if the installed SystemUI provides a trustworthy native contextual target boundary. Do not create a private provider/session or invent Smartspace content merely to obtain a non-empty sample.
+
+Exact current-OOS evidence:
+
+- Installed SystemUI SHA-256 remains `18ac7d6b40081fdd913d656e9f436bf583d559829661c1f14383aef80d9134a6`.
+- `LockscreenSmartspaceController` owns a real framework `SmartspaceSession("lockscreen")`. Its `sessionListener.onTargetsAvailable(List<SmartspaceTarget>)` processes native targets, applies `access$filterSmartspaceTarget(...)`, writes the filtered list to `recentSmartspaceData`, and only then optionally forwards the list to `BcSmartspaceDataPlugin`.
+- Decompilation proves the filter includes selected user, managed profile and sensitive-content/lockscreen-private-notification policy. Pixel therefore observes the **post-filter** `recentSmartspaceData.peekLast()` list after the listener returns instead of reconstructing that privacy policy.
+- A first candidate attempted the higher-level `BcSmartspaceDataPlugin.SmartspaceTargetListener` seam. Runtime proved the exact controller's `plugin` is `null`, so that candidate was rejected rather than being recorded as an active data source.
+- The final hook attaches only to `LockscreenSmartspaceController$sessionListener$1#onTargetsAvailable(List)` **after** SystemUI completes its own handling. It creates no Smartspace session, view, provider or plugin listener, does not call `requestSmartspaceUpdate()`, and never executes a target action/Intent.
+
+Implementation:
+
+- Added `NativeSmartspaceContextualAdapter`, which reflectively reads target ID, feature type, expiry, sensitivity and presentation text from the already-filtered framework target object without linking the app against hidden Smartspace SDK classes.
+- Native targets enter S18 as `ContextualTarget.Source.NATIVE_SMARTSPACE`. Framework expiry remains authoritative; a one-hour fail-safe TTL is used only when a target exposes no expiry so a missed disconnect cannot leave stale native text indefinitely.
+- Existing SystemUI user/profile filtering is retained, with module sensitive-content and typed `contextualPresentation` suppression gates applied again before AOD presentation.
+- Feature type `1` current weather is excluded because Pixel AOD already has a dedicated current-weather row. Feature type `2` calendar adopts the module calendar semantic key so the S18 arbiter can prefer a valid native equivalent but still retain the module fallback when native data is absent, stale or blocked.
+- Added `NATIVE_SMARTSPACE` contextual-card kind with no fabricated icon; presentation removes the icon view when the selected contextual card has no drawable rather than reserving a blank icon slot.
+- Contextual presentation diagnostics no longer log body text. Native diagnostics expose only filtered/accepted counts, feature types, card kind and text presence.
+- Selected-user reset clears the native Smartspace snapshot together with the existing notification/calendar/weather state.
+
+Verification:
+
+- Final JDK 17 gate: **99 suites / 478 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS; protected seven-file clock/morph/weight animation core **ZERO_DIFF**.
+- Focused S19 tests cover display-text normalization, native calendar/module-calendar semantic dedupe, fallback TTL, additional AOD privacy, typed contextual suppression, current-weather exclusion and native-equivalent arbitration.
+- Final visible candidate `0.1.19`, internal `versionCode=9010`, APK **19,784,715 bytes**, SHA-256 `7e0f2bc54c7f560c46f5c68c9371d62551729d6e5314e7343b675ef04bf02cec`; installed device `base.apk` matches exactly.
+- Final SystemUI PID `25026` reports `controllerPresent=true sessionListenerHooks=1` for the observe-only post-filter seam.
+- **Current target-source result is empty by evidence, not by assumption:** initial and post-Keyguard SystemUI dumps both show `Region Samplers: 0` and `Recent BC Smartspace Targets: No data`; a real `Dozing -> Keyguard Awake -> Dozing` cycle produced no native Smartspace callback. S19 deliberately did not call `requestSmartspaceUpdate()` or create a view/session to force one.
+- That lifecycle cycle kept PID `25026` unchanged. `.local/m9_s19_0.1.19/aod.png` shows the normal complete Pixel AOD with no fabricated contextual row; current-PID fatal/ANR/signal scan is empty.
+- Device state remains `low_power=0`, animator/transition/window scales `1.0 / 1.0 / 1.0`, `non_lockscreen_aod_transition=direct_final`, and `debug_logging=true`.
+
 ## Next implementation checkpoint
 
-S18.1 closes the requested typography polish without changing the S19 architecture plan. The next recommended small P1 slice remains **S19 — current-OOS native contextual/Smartspace source adapter / ADR 0003 + ADR 0011**: first identify a stable target surface in the exact installed SystemUI, then map only proven read-only target identity/text/TTL/privacy metadata into `ContextualTarget`. If the current ROM exposes no reliable Smartspace target seam, leave it absent rather than recreating a private provider and move to the next evidence-backed contextual source such as ADR 0013 Live Updates.
+S19 establishes the read-only native Smartspace capability boundary but proves that the exact current device does not presently expose an active target stream. The next recommended P1 slice is **S20 — system-classified Live Update read-only adapter / ADR 0013**: first prove current Android 17/OPlus notification promotion/classification metadata, then map only genuinely promoted ongoing/live content into the existing S18 arbiter. Ordinary ongoing notifications must not be upgraded by module heuristics.
 Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.

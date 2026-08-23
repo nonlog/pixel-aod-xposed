@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.19] - 2026-08-23
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Implement M9 P1-S19 / ADR 0003 + ADR 0011 as a read-only current-OOS Smartspace pass-through into the S18 `ContextualTargetArbiter`.
+- Exact installed SystemUI evidence shows `LockscreenSmartspaceController$sessionListener$1#onTargetsAvailable(List)` receives framework Smartspace targets, then SystemUI itself applies selected-user, managed-profile and sensitive-content filtering through `access$filterSmartspaceTarget(...)` before writing the filtered list to `recentSmartspaceData`.
+- Hook only the **after** edge of that existing listener and read `recentSmartspaceData.peekLast()`. Pixel AOD does not create a `SmartspaceSession`, request an update, register a provider/plugin listener, invoke a target action, or copy a private Smartspace backend.
+- Normalize eligible native targets into `ContextualTarget.Source.NATIVE_SMARTSPACE` with native expiry semantics and a one-hour fail-safe TTL only when the framework target exposes no expiry. SystemUI-filtered user/profile scope remains authoritative and the module's existing sensitive-content + typed contextual-suppression gates are applied again before presentation.
+- Exclude native feature type `1` current weather from the contextual row because Pixel AOD already has a dedicated current-weather row. Native calendar feature type `2` shares the module calendar semantic key so a valid native equivalent wins deduplication while a stale/blocked native target leaves the module calendar fallback intact.
+- Add a generic no-icon native contextual card path; the contextual icon view now becomes `GONE` when a selected card has no icon, avoiding an empty icon slot.
+- Stop writing contextual body text into the presentation debug log. Diagnostics record card kind/presence and native target counts/feature types only.
+- Advance the visible candidate version to `0.1.19`; Android update ordering uses independent `versionCode=9010`.
+
+### Evidence / Status
+- Final JDK 17 regression: **99 suites / 478 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS; all seven protected clock/morph/weight animation files remain **ZERO_DIFF**.
+- Final APK: **19,784,715 bytes**, SHA-256 `7e0f2bc54c7f560c46f5c68c9371d62551729d6e5314e7343b675ef04bf02cec`; installed device `base.apk` matches exactly and reports `versionName=0.1.19`, `versionCode=9010`.
+- Final SystemUI PID `25026` reports `controllerPresent=true / sessionListenerHooks=1` for the exact observe-only seam. The earlier plugin-listener probe was rejected after runtime proved `BcSmartspaceDataPlugin plugin=null`; the final implementation does not depend on that plugin.
+- Current device truth is **native Smartspace source absent/inactive**: after a real Dozing -> Keyguard Awake -> Dozing cycle, SystemUI dump remains `Region Samplers: 0`, `Recent BC Smartspace Targets: No data`, and no native target callback occurred. No synthetic target or forced `requestSmartspaceUpdate()` was used to manufacture a passing sample.
+- The same physical cycle kept SystemUI PID `25026` unchanged. `.local/m9_s19_0.1.19/aod.png` shows the complete normal Pixel AOD endpoint with no fabricated contextual row, and the current-PID fatal/ANR/signal scan is empty.
+- Device state after validation: `low_power=0`, animator/transition/window scales `1.0 / 1.0 / 1.0`, `non_lockscreen_aod_transition=direct_final`, and `debug_logging=true`.
+- Because the exact current OOS does not presently expose an active native Smartspace target stream, the next evidence-backed contextual slice is ADR 0013 **Live Updates** rather than creating a replacement Smartspace provider/session.
+
 ## [0.1.18] - 2026-08-23
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

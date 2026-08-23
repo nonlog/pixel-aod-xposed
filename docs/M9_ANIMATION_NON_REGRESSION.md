@@ -151,3 +151,11 @@ S18.1 is an explicit user-requested typography polish, not an AOSP parity adapte
 Only `weekView`, `dateView`, and `weatherView` request `ROND=100`; all other COUI auxiliary rows remain on the previous `ROND=0` path. Existing exact-reference clock-variation tests still pass, and a new pure test locks the rounded/non-rounded information variation split.
 
 Final S18.1 gate: **98 suites / 471 tests / 0 failures / 0 errors / 0 skipped**, debug build PASS and `git diff --check` PASS. Installed 0.1.18 APK SHA-256 is `f3d28f7061729fce54aad9fa5b5b9dcd28f5c04e618f28f25c049c01edc29979`; controlled Dozing -> Keyguard Awake -> Dozing retained SystemUI PID `542` with no current fatal/ANR/signal match. Lockscreen/AOD captures confirm the new rounded date/weather appearance without a visible geometry jump, and Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`.
+
+## S19 gate evidence — Smartspace is a read-only content source, not a transition owner
+
+S19 observes the exact current-OOS `LockscreenSmartspaceController$sessionListener$1#onTargetsAvailable(List)` only after SystemUI has produced and privacy-filtered its target list. Native contextual data is normalized into the S18 arbiter; S19 never creates a Smartspace session/view/provider, requests an update, invokes a target action, or adds a second presentation timeline.
+
+No protected clock/morph/weight file is touched. The new generic native contextual row continues to use the existing contextual presentation motion and one-row geometry; when no native target exists, the scene is identical to the established module-source path. Runtime additionally proves the current device has `Region Samplers: 0 / Recent BC Smartspace Targets: No data`, so S19 does not manufacture a card merely to exercise motion.
+
+Final S19 gate: **99 suites / 478 tests / 0 failures / 0 errors / 0 skipped**, debug build PASS, `git diff --check` PASS, and all seven protected animation-core files remain **ZERO_DIFF**. Installed 0.1.19 APK SHA-256 is `7e0f2bc54c7f560c46f5c68c9371d62551729d6e5314e7343b675ef04bf02cec`; a real Dozing -> Keyguard Awake -> Dozing cycle retained SystemUI PID `25026`, the normal AOD endpoint remained complete, current-PID fatal/ANR/signal scan is empty, and Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`.
