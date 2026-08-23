@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.13] - 2026-08-23
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Implement M9 P1-S14 / ADR 0005 + ADR 0032 as a typed, read-only `VendorAmbientSuppressionCapabilities` adapter instead of a single broad suppressor boolean.
+- Consume the exact current-OOS `DozeServiceHost#setAlwaysOnSuppressed(boolean)` seam as authoritative **base AOD** suppression only. Do not infer notification-pulse, wake-gesture, contextual, or authentication suppression from that boolean without matching native evidence.
+- Consume `BatteryControllerImpl.mAodPowerSave`, refreshed from Android power-save service type 14, as authoritative denial for **base AOD + notification pulse**. When power save clears, base AOD may become known-allowed only when the ambient-display suppressor is also known clear; notification pulse returns to `UNKNOWN` rather than pretending every other pulse suppressor is clear.
+- Wire continuous/base AOD policy to the base-AOD capability and posted notification pulse policy to the notification-pulse capability. Unknown capabilities fail open to the established vendor lifecycle; trigger-only vendor transient AOD, wake gestures, contextual presentation, and authentication remain independent.
+- Preserve ADR 0028 low-battery behavior: raw battery percentage remains diagnostic/fail-open; no fixed threshold or unproven OPlus low-battery suppressor is introduced.
+- Advance the visible candidate version to `0.1.13`; Android update ordering uses independent `versionCode=9004`.
+
+### Evidence / Status
+- Exact installed SystemUI SHA-256 `18ac7d6b40081fdd913d656e9f436bf583d559829661c1f14383aef80d9134a6` proves `suppressAmbientDisplay -> DozeServiceHost#setAlwaysOnSuppressed -> DozeSuppressor` and `BatteryControllerImpl.mAodPowerSave -> DozeParameters/DozeSuppressor/PulseBatterySaverSuppressor` ownership paths.
+- Final JDK 17 regression: **94 suites / 447 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS; all seven protected clock/morph/weight animation-core files remain **ZERO_DIFF**.
+- Final APK: **20,352,894 bytes**, SHA-256 `cfc6c6e1b88b5749f44dbad1bf998f7ef11a57f10c8ea57bad1b1e46991e4383`; installed device `base.apk` matches. Package metadata reports visible `versionName=0.1.13`, internal `versionCode=9004`.
+- Reversible real Battery Saver A/B began and ended with `low_power=0`: enabling it yielded `aodPowerSave=true`, `baseAod=DENY`, `notificationPulse=DENY`; restoring it yielded `aodPowerSave=false`, `baseAod=ALLOW`, `notificationPulse=UNKNOWN`, with contextual/wake/auth remaining `UNKNOWN` throughout.
+- Post-restore normal Awake -> Dozing -> Awake smoke kept SystemUI PID `17877`; current-PID crash scan is empty and Android animation scales remain `1.0 / 1.0 / 1.0`.
 ## [0.1.12] - 2026-08-23
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

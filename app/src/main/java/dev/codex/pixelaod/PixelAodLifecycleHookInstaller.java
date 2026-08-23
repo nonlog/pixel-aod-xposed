@@ -15,6 +15,10 @@ final class PixelAodLifecycleHookInstaller {
         PixelAodHook.hookVendorScreenOffAnimationEligibility(classLoader);
     }
 
+    static void installAmbientSuppressionCapabilities(ClassLoader classLoader) {
+        PixelAodHook.hookVendorAmbientSuppressionCapabilities(classLoader);
+    }
+
     static void installNativeKeyguardTransitionSemantics(ClassLoader classLoader) {
         PixelAodHook.hookNativeKeyguardTransitionSemantics(classLoader);
     }

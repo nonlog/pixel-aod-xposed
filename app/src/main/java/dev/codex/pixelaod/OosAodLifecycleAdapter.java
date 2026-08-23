@@ -154,10 +154,17 @@ final class OosAodLifecycleAdapter {
     static NotificationPulseObservation evaluateNotificationPulseObservation(String source,
             int rawCount, int usableCount, int rankingCount,
             ModulePolicy modulePolicy, boolean sensorBlocked) {
+        return evaluateNotificationPulseObservation(source, rawCount, usableCount, rankingCount,
+                modulePolicy, sensorBlocked, false);
+    }
+
+    static NotificationPulseObservation evaluateNotificationPulseObservation(String source,
+            int rawCount, int usableCount, int rankingCount,
+            ModulePolicy modulePolicy, boolean sensorBlocked, boolean vendorPulseSuppressed) {
         NotificationPulseRule rule = mapNotificationPulseRule(source, rawCount,
                 usableCount, rankingCount);
         NotificationPulsePolicy policy = NotificationPulsePolicy.evaluate(
-                rule, modulePolicy, sensorBlocked);
+                rule, modulePolicy, sensorBlocked, vendorPulseSuppressed);
         return rule.toObservation(policy);
     }
 
@@ -480,15 +487,15 @@ final class OosAodLifecycleAdapter {
     }
 
     private static boolean sourceContains(String source, String token) {
-        return !TextUtils.isEmpty(source) && source.contains(token);
+        return source != null && !source.isEmpty() && source.contains(token);
     }
 
     private static String normalizeSource(String source) {
-        return TextUtils.isEmpty(source) ? "unknown" : source;
+        return source == null || source.isEmpty() ? "unknown" : source;
     }
 
     private static String emptyAsNone(String value) {
-        return TextUtils.isEmpty(value) ? "none" : value;
+        return value == null || value.isEmpty() ? "none" : value;
     }
 
     private enum Event {
@@ -635,8 +642,16 @@ final class OosAodLifecycleAdapter {
 
         static NotificationPulsePolicy evaluate(NotificationPulseRule rule,
                 ModulePolicy modulePolicy, boolean sensorBlocked) {
+            return evaluate(rule, modulePolicy, sensorBlocked, false);
+        }
+
+        static NotificationPulsePolicy evaluate(NotificationPulseRule rule,
+                ModulePolicy modulePolicy, boolean sensorBlocked, boolean vendorPulseSuppressed) {
             if (sensorBlocked && rule == NotificationPulseRule.POSTED_PULSE_CANDIDATE) {
                 return sensorPowerBlocked("proximity-or-pocket-guard");
+            }
+            if (vendorPulseSuppressed && rule == NotificationPulseRule.POSTED_PULSE_CANDIDATE) {
+                return vendorSuppressionBlocked("vendor-aod-power-save");
             }
             if (blocksNotificationPulse(modulePolicy)
                     && rule == NotificationPulseRule.POSTED_PULSE_CANDIDATE) {
@@ -682,6 +697,15 @@ final class OosAodLifecycleAdapter {
         private static NotificationPulsePolicy sensorPowerBlocked(String reason) {
             return new NotificationPulsePolicy(
                     "sensor-power-blocked",
+                    emptyAsNone(reason),
+                    "block-native-pulse",
+                    false,
+                    true);
+        }
+
+        private static NotificationPulsePolicy vendorSuppressionBlocked(String reason) {
+            return new NotificationPulsePolicy(
+                    "vendor-suppression-blocked",
                     emptyAsNone(reason),
                     "block-native-pulse",
                     false,

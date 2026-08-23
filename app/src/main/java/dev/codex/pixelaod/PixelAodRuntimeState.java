@@ -63,6 +63,14 @@ final class PixelAodRuntimeState {
         return PixelAodHook.describeNativeDozeTransitionProgress();
     }
 
+    static VendorAmbientSuppressionCapabilities.Snapshot vendorAmbientSuppressionSnapshot() {
+        return PixelAodHook.vendorAmbientSuppressionSnapshot();
+    }
+
+    static String describeVendorAmbientSuppression() {
+        return PixelAodHook.describeVendorAmbientSuppression();
+    }
+
     static Float consumableVendorDozeTransitionAmbientFractionOrNull() {
         return PixelAodHook.consumableVendorDozeTransitionAmbientFractionOrNull();
     }

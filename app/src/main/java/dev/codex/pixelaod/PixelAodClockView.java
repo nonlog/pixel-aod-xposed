@@ -1026,10 +1026,12 @@ public final class PixelAodClockView extends FrameLayout {
             OosAodLifecycleAdapter.ModulePolicy pulseModulePolicy =
                     evaluateModuleAodPolicy(appContext,
                             source + "#notification-pulse-policy", trace, pulseState);
+            boolean vendorPulseSuppressed = PixelAodRuntimeState
+                    .vendorAmbientSuppressionSnapshot().notificationPulseDenied();
             OosAodLifecycleAdapter.NotificationPulseObservation pulseObservation =
                     OosAodLifecycleAdapter.evaluateNotificationPulseObservation(
                             source, rawCount, usableCount, -1,
-                            pulseModulePolicy, isProximityNear());
+                            pulseModulePolicy, isProximityNear(), vendorPulseSuppressed);
             if (pulseObservation.isPulseCandidate()) {
                 markNotificationPulseCandidateLocked(pulseObservation, source, trace,
                         packageSummary, rawCount, usableCount, mediaCandidateCount);
@@ -1708,6 +1710,10 @@ public final class PixelAodClockView extends FrameLayout {
         });
     }
 
+    static void onVendorAmbientSuppressionChanged(String source) {
+        refreshAodPolicyConsumers(source + "#vendor-ambient-suppression");
+    }
+
     static void refreshAodPolicyFromSettings(String source) {
         Context context = appContext;
         if (context != null && !isModuleEnabled(context)) {
@@ -2130,12 +2136,16 @@ public final class PixelAodClockView extends FrameLayout {
         }
         NativeAodAvailabilityAdapter.Decision nativeAod =
                 NativeAodAvailabilityAdapter.read(context, isVendorAmbientSessionActive());
+        VendorAmbientSuppressionCapabilities.Snapshot vendorSuppression =
+                PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
+        boolean vendorBaseAodSuppressed = vendorSuppression.baseAodDenied();
         boolean transitionPrearm = state != null
                 && !state.interactive
                 && !state.active
                 && (state.entryDelay || state.graceWindow);
         boolean nativeContinuousReady = nativeAod.continuousEligible
                 || (transitionPrearm && nativeAod.configuredEligible);
+        nativeContinuousReady = nativeContinuousReady && !vendorBaseAodSuppressed;
         boolean continuousAllowed = isContinuousAodAllowedByMode(displayMode)
                 && withinSchedule
                 && nativeContinuousReady;
@@ -2148,6 +2158,7 @@ public final class PixelAodClockView extends FrameLayout {
                     + " withinSchedule=" + withinSchedule
                     + " transitionPrearm=" + transitionPrearm
                     + " nativeAod={" + nativeAod.describe() + "}"
+                    + " vendorSuppression={" + vendorSuppression.describe() + "}"
                     + " trace=" + trace
                     + " state={" + describeAodState(context) + "}");
             return new OosAodLifecycleAdapter.ModulePolicy(true, moduleEnabled, continuousAllowed,
@@ -2161,15 +2172,18 @@ public final class PixelAodClockView extends FrameLayout {
         if (isContinuousAodAllowedByMode(displayMode)
                 && withinSchedule
                 && !nativeContinuousReady) {
+            String blockedReason = vendorBaseAodSuppressed
+                    ? vendorSuppression.baseAodReasonLabel() : nativeAod.reason;
             PixelAodLog.log("AOD module policy blocked source=" + source
-                    + " reason=" + nativeAod.reason
+                    + " reason=" + blockedReason
                     + " displayMode=" + displayMode
                     + " withinSchedule=" + withinSchedule
                     + " nativeAod={" + nativeAod.describe() + "}"
+                    + " vendorSuppression={" + vendorSuppression.describe() + "}"
                     + " trace=" + trace
                     + " state={" + describeAodState(context) + "}");
             return new OosAodLifecycleAdapter.ModulePolicy(false, moduleEnabled, false, false,
-                    nativeAod.reason, displayMode, withinSchedule, false);
+                    blockedReason, displayMode, withinSchedule, false);
         }
         if (isTriggerOnlyAodMode(displayMode)) {
             PixelAodLog.log("AOD module policy blocked source=" + source

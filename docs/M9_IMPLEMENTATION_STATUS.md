@@ -491,9 +491,40 @@ Verification:
 
 Remaining P1 progress work:
 
-- Doze transition progress and scene eligibility are now represented by read-only adapters. The next native-semantic slice can move to unified/typed vendor suppressor capabilities (ADR 0005 + ADR 0032), preserving the existing S3 low-battery fail-open rule until a validated OPlus/SystemUI suppressor seam is found.
+- Doze transition progress and scene eligibility are represented by read-only adapters. S14 below adds the first unified/typed vendor suppressor capabilities without changing the S3 raw-low-battery fail-open rule.
+
+## S14 — Unified vendor ambient suppression capabilities
+
+Status: **candidate green — exact current-OOS suppressor seams, typed consumer boundaries, full source/build gate, reversible Battery Saver runtime evidence, and normal AOD smoke verified**
+
+Goal: implement ADR 0005 + ADR 0032 by consuming only suppression decisions that the current OPlus/SystemUI binary actually owns, keeping capability semantics independent instead of turning every native suppressor into one broad module boolean.
+
+Native seam discovery on the exact installed SystemUI (`SystemUI.apk` SHA-256 `18ac7d6b40081fdd913d656e9f436bf583d559829661c1f14383aef80d9134a6`):
+
+- `CentralSurfacesCommandQueueCallbacks.suppressAmbientDisplay(boolean)` forwards the boolean unchanged to `DozeServiceHost#setAlwaysOnSuppressed(boolean)`. `DozeServiceHost` stores `mAlwaysOnSuppressed` and notifies `DozeHost.Callback`; `DozeSuppressor` responds by requesting `DOZE` while suppressed and `DOZE_AOD` when otherwise eligible. This is authoritative **base-AOD** suppression, but the binary does not prove it should also suppress wake gestures, authentication pulses, or notification pulses.
+- `BatteryControllerImpl#setPowerSave(boolean)` refreshes `mAodPowerSave` from `PowerManager.getPowerSaveState(14).batterySaverEnabled`. Current `DozeParameters#getAlwaysOn()` and `DozeSuppressor` consume that field for AOD, while `PulseBatterySaverSuppressor#shouldSuppress()` returns the same field and notification pulse policy checks it. Therefore `mAodPowerSave=true` authoritatively denies **base AOD + notification pulse**.
+- Clearing one suppressor is not treated as proof that every other suppressor is clear. Contextual presentation, wake gestures, and authentication pulse remain `UNKNOWN`; notification pulse returns to `UNKNOWN` when AOD power save clears. Missing or partial native observations therefore fail open to the existing vendor lifecycle instead of manufacturing an allow decision.
+
+Implementation:
+
+- Added pure `VendorAmbientSuppressionCapabilities` with typed `ALLOW / DENY / UNKNOWN` decisions and reason diagnostics for base AOD, notification pulse, contextual presentation, wake gestures, and authentication pulse.
+- Hooked `DozeServiceHost#setAlwaysOnSuppressed`, `BatteryControllerImpl#setPowerSave`, and constructor/`DozeSuppressor` seed paths. The later `DozeSuppressor` seed recovers live host/battery state even when the singleton host/controller existed before module hook registration.
+- Base continuous AOD policy reads only `baseAod`; trigger-only vendor transient presentation is not incorrectly denied by a base-AOD-only suppressor. Suppression clear only refreshes current policy consumers and still requires real native AOD availability/lifecycle before anything can render.
+- Notification-posted pulse candidates read only `notificationPulse`. Native AOD power-save suppression produces `vendor-suppression-blocked / vendor-aod-power-save`; `UNKNOWN` leaves the established pulse policy untouched. Snapshot/ranking observations remain observe-only.
+- Raw battery percentage remains diagnostic/fail-open exactly as S3/ADR 0028 require; S14 does not invent a low-battery threshold or claim a low-battery suppressor seam that was not found.
+- Replaced three local `TextUtils.isEmpty` string-helper calls in `OosAodLifecycleAdapter` with equivalent pure-Java null/empty checks so the new typed pulse policy can be JVM-tested without Android stub behavior; runtime semantics are unchanged.
+
+Verification:
+
+- Final full JDK 17 gate: **94 suites / 447 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS; protected animation core **ZERO_DIFF**.
+- Final visible candidate is `0.1.13`, internal `versionCode=9004`, APK **20,352,894 bytes**, SHA-256 `cfc6c6e1b88b5749f44dbad1bf998f7ef11a57f10c8ea57bad1b1e46991e4383`; installed device `base.apk` matches exactly.
+- Runtime hook installation reports `host=true battery=true suppressorSeed=true`; the live seed reaches `alwaysOnSuppressed=false`, `aodPowerSave=false`, `baseAod=ALLOW`, while unproven capabilities remain `UNKNOWN`.
+- Reversible real Battery Saver validation began and ended with Android `low_power=0`. Enabling Battery Saver produced `aodPowerSave=true`, `baseAod=DENY`, `notificationPulse=DENY`; restoring it produced `aodPowerSave=false`, `baseAod=ALLOW`, `notificationPulse=UNKNOWN`. Contextual/wake/auth remained `UNKNOWN` throughout.
+- The Android statusbar shell does not expose a `suppressAmbientDisplay` command, so no synthetic mutation of that system-level state was attempted. Its exact command-queue -> host -> DozeSuppressor binary path is retained as source evidence rather than bypassing SystemUI ownership for a test.
+- After restoration, a normal Awake -> Dozing -> Awake smoke kept SystemUI PID `17877` stable. Current-PID crash/ANR/fatal-signal/SIGSEGV/OOM/DeadSystemException scan is empty; Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`.
+- Evidence is retained under `.local/m9_s14_0.1.13/`; exact decompiled SystemUI classes remain under `D:\Downloads\Xposed_test\pixel-aod-shared\systemui-analysis\s14-classes`.
 
 ## Next implementation checkpoint
 
-S13 completes the Doze transition progress capability/normalization slice without changing animation ownership on current hardware. The next recommended P1 slice is suppressor capabilities: discover and normalize stable OPlus/SystemUI ambient suppression signals, keep them typed/capability-gated, and do not recreate AOSP DozeSuppressor policy inside the module.
+S14 completes the first unified typed suppressor slice without reimplementing AOSP DozeSuppressor. The next recommended small P1 slice is **S15 — vendor proximity pause capability / ADR 0004**: identify one reliable OPlus/SystemUI proximity authority, preserve native pause/resume ownership, and keep wake-trigger semantics separate for a later ADR 0007 slice.
 Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.

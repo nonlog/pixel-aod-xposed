@@ -134,6 +134,12 @@ final class PixelAodHook {
             "com.android.systemui.statusbar.phone.DozeParameters";
     private static final String SCREEN_OFF_ANIMATION_CONTROLLER =
             "com.android.systemui.statusbar.phone.ScreenOffAnimationController";
+    private static final String DOZE_SERVICE_HOST =
+            "com.android.systemui.statusbar.phone.DozeServiceHost";
+    private static final String BATTERY_CONTROLLER_IMPL =
+            "com.android.systemui.statusbar.policy.BatteryControllerImpl";
+    private static final String DOZE_SUPPRESSOR =
+            "com.android.systemui.doze.DozeSuppressor";
     private static final String KEYGUARD_STATE_CONTROLLER_IMPL =
             "com.android.systemui.statusbar.policy.KeyguardStateControllerImpl";
     private static final String KEYGUARD_TRANSITION_REPOSITORY_IMPL =
@@ -223,6 +229,8 @@ final class PixelAodHook {
             new NativeKeyguardSceneEligibility();
     private static final NativeDozeTransitionProgressAdapter NATIVE_DOZE_TRANSITION_PROGRESS =
             new NativeDozeTransitionProgressAdapter();
+    private static final VendorAmbientSuppressionCapabilities VENDOR_AMBIENT_SUPPRESSION =
+            new VendorAmbientSuppressionCapabilities();
     private static volatile WeakReference<Object> lastDozeParameters =
             new WeakReference<>(null);
     private static volatile WeakReference<Object> lastScreenOffAnimationController =
@@ -272,6 +280,7 @@ final class PixelAodHook {
         }
         // Preserve the proven 0.1.380 registration order while making hook ownership explicit.
         PixelAodLifecycleHookInstaller.installScreenOffAnimationEligibility(classLoader);
+        PixelAodLifecycleHookInstaller.installAmbientSuppressionCapabilities(classLoader);
         PixelAodLifecycleHookInstaller.installNativeKeyguardTransitionSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installWakefulness(classLoader);
         PixelAodLifecycleHookInstaller.installKeyguardGoingAway(classLoader);
@@ -2731,6 +2740,121 @@ final class PixelAodHook {
                 + " screenOffController=" + screenOffControllerHooked);
     }
 
+    static void hookVendorAmbientSuppressionCapabilities(ClassLoader classLoader) {
+        boolean hostHooked = false;
+        boolean batteryHooked = false;
+        boolean suppressorSeedHooked = false;
+        try {
+            Class<?> hostClass = ModernHookBridge.findClass(DOZE_SERVICE_HOST, classLoader);
+            for (java.lang.reflect.Constructor<?> constructor : hostClass.getDeclaredConstructors()) {
+                ModernHookBridge.hookAfter(constructor, param ->
+                        seedVendorAmbientSuppressionFromHost(
+                                param.thisObject, "DozeServiceHost#constructor"));
+            }
+            ModernHookBridge.hookAfter(hostClass, "setAlwaysOnSuppressed", param -> {
+                if (param.args == null || param.args.length == 0
+                        || !(param.args[0] instanceof Boolean)) {
+                    return;
+                }
+                VendorAmbientSuppressionCapabilities.Snapshot snapshot =
+                        VENDOR_AMBIENT_SUPPRESSION.observeAlwaysOnSuppressed(
+                                (Boolean) param.args[0],
+                                "DozeServiceHost#setAlwaysOnSuppressed");
+                onVendorAmbientSuppressionChanged(snapshot,
+                        "DozeServiceHost#setAlwaysOnSuppressed");
+            }, boolean.class);
+            hostHooked = true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook DozeServiceHost ambient suppression", t);
+        }
+        try {
+            Class<?> batteryClass = ModernHookBridge.findClass(BATTERY_CONTROLLER_IMPL, classLoader);
+            for (java.lang.reflect.Constructor<?> constructor
+                    : batteryClass.getDeclaredConstructors()) {
+                ModernHookBridge.hookAfter(constructor, param ->
+                        seedVendorAodPowerSaveFromBatteryController(
+                                param.thisObject, "BatteryControllerImpl#constructor"));
+            }
+            Method setPowerSave = ModernHookBridge.findMethod(
+                    batteryClass, "setPowerSave", boolean.class);
+            ModernHookBridge.hookAfter(setPowerSave, param -> {
+                VendorAmbientSuppressionCapabilities.Snapshot snapshot =
+                        observeVendorAodPowerSaveFromBatteryController(
+                                param.thisObject, "BatteryControllerImpl#setPowerSave");
+                if (snapshot != null) {
+                    onVendorAmbientSuppressionChanged(snapshot,
+                            "BatteryControllerImpl#setPowerSave");
+                }
+            });
+            batteryHooked = true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook BatteryControllerImpl AOD power-save suppression", t);
+        }
+        try {
+            Class<?> suppressorClass = ModernHookBridge.findClass(DOZE_SUPPRESSOR, classLoader);
+            for (java.lang.reflect.Constructor<?> constructor
+                    : suppressorClass.getDeclaredConstructors()) {
+                ModernHookBridge.hookAfter(constructor, param -> {
+                    Object host = null;
+                    try {
+                        host = ModernHookBridge.getObjectField(param.thisObject, "mDozeHost");
+                    } catch (Throwable ignored) {
+                    }
+                    seedVendorAmbientSuppressionFromHost(
+                            host, "DozeSuppressor#constructor");
+                });
+            }
+            suppressorSeedHooked = true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook DozeSuppressor suppression-state seed", t);
+        }
+        PixelAodLog.i("installed vendor ambient suppression capabilities"
+                + " host=" + hostHooked
+                + " battery=" + batteryHooked
+                + " suppressorSeed=" + suppressorSeedHooked
+                + " state={" + VENDOR_AMBIENT_SUPPRESSION.snapshot().describe() + "}");
+    }
+
+    private static void seedVendorAmbientSuppressionFromHost(Object host, String source) {
+        if (host == null) {
+            return;
+        }
+        Boolean alwaysOnSuppressed = readBooleanField(host, "mAlwaysOnSuppressed");
+        if (alwaysOnSuppressed != null) {
+            VENDOR_AMBIENT_SUPPRESSION.observeAlwaysOnSuppressed(
+                    alwaysOnSuppressed, source + "#always-on");
+        }
+        try {
+            Object batteryController = ModernHookBridge.getObjectField(host, "mBatteryController");
+            seedVendorAodPowerSaveFromBatteryController(
+                    batteryController, source + "#battery");
+        } catch (Throwable ignored) {
+        }
+        PixelAodLog.log("seeded vendor ambient suppression source=" + source
+                + " state={" + VENDOR_AMBIENT_SUPPRESSION.snapshot().describe() + "}");
+    }
+
+    private static void seedVendorAodPowerSaveFromBatteryController(
+            Object batteryController, String source) {
+        observeVendorAodPowerSaveFromBatteryController(batteryController, source);
+    }
+
+    private static VendorAmbientSuppressionCapabilities.Snapshot
+            observeVendorAodPowerSaveFromBatteryController(Object batteryController, String source) {
+        Boolean aodPowerSave = readBooleanField(batteryController, "mAodPowerSave");
+        if (aodPowerSave == null) {
+            return null;
+        }
+        return VENDOR_AMBIENT_SUPPRESSION.observeAodPowerSave(aodPowerSave, source);
+    }
+
+    private static void onVendorAmbientSuppressionChanged(
+            VendorAmbientSuppressionCapabilities.Snapshot snapshot, String source) {
+        PixelAodLog.i("vendor ambient suppression changed source=" + source
+                + " state={" + snapshot.describe() + "}");
+        PixelAodClockView.onVendorAmbientSuppressionChanged(source);
+    }
+
     private static void beginVendorScreenOffAnimationTransition(String source) {
         VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.beginTransition(source);
         Object dozeParameters = lastDozeParameters.get();
@@ -2791,6 +2915,26 @@ final class PixelAodHook {
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    private static Boolean readBooleanField(Object target, String fieldName) {
+        if (target == null || TextUtils.isEmpty(fieldName)) {
+            return null;
+        }
+        try {
+            Object value = ModernHookBridge.getObjectField(target, fieldName);
+            return value instanceof Boolean ? (Boolean) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    static VendorAmbientSuppressionCapabilities.Snapshot vendorAmbientSuppressionSnapshot() {
+        return VENDOR_AMBIENT_SUPPRESSION.snapshot();
+    }
+
+    static String describeVendorAmbientSuppression() {
+        return VENDOR_AMBIENT_SUPPRESSION.snapshot().describe();
     }
 
     static boolean shouldAnimateVendorScreenOffPresentation() {
