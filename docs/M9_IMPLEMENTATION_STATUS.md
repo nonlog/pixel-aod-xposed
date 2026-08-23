@@ -466,11 +466,34 @@ Final 0.1.11 boundary:
 - Merged direct-final runtime logs `COUI non-lockscreen AOD direct-final render kept animation disabled`, then releases the same bypass with `syncedHosts=0`.
 - Bouncer regression remains green: entry logs `hiddenHosts=1`; `PRIMARY_BOUNCER -> LOCKSCREEN` returns with `syncedHosts=1` and `releasedNonLockscreenBypasses=0`.
 
+## S13 — Native Doze transition progress capability adapter
+
+Status: **green — native continuous progress normalized and capability-gated; current OOS remains observe-only because S10 denies consumption**
+
+Goal: implement ADR 0016 without introducing a second animation clock or changing the protected 550 ms presentation engine.
+
+Implementation:
+
+- Added `NativeDozeTransitionProgressAdapter` over the same validated `KeyguardTransitionRepositoryImpl#emitTransition(TransitionStep, boolean)` seam used by S12 scene eligibility. No new SystemUI hook or module-owned timer is introduced.
+- Only ordinary `LOCKSCREEN -> DOZING/AOD` and `DOZING/AOD -> LOCKSCREEN` handoffs are recognized as presentation-progress directions. `GONE -> DOZING`, Bouncer, Occluded and ambient-internal transitions are excluded.
+- `transitionProgress` preserves the native TransitionStep 0-to-1 direction. `ambientFraction` normalizes both directions so `0.0 = Lockscreen` and `1.0 = ambient`; leaving ambient therefore maps to `1 - transitionProgress`.
+- A finite STARTED/RUNNING/FINISHED endpoint is a valid native sample, but continuous capability is not claimed until the exact transition has produced at least one real RUNNING sample (`continuousObserved=true`). Endpoint-only transitions therefore fall back to lifecycle endpoints instead of becoming synthetic continuous motion.
+- `PixelAodRuntimeState` exposes a future consumable ambient-fraction seam, but it returns no value unless all gates are true: reliable native sample, continuous RUNNING evidence, S10 `allowsVendorProgress=true`, and Android animations enabled. No S13 presentation code consumes the fraction.
+- Current OOS keeps `displayNeedsBlanking=false`, `shouldControlScreenOff=false`, `shouldAnimateDozingChange=true`; therefore `allowsExistingMorph=true` but `allowsVendorProgress=false`. The existing Pixel morph remains authoritative on this device.
+
+Verification:
+
+- Final full JDK 17 gate: **92 suites / 439 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS; protected animation core **ZERO_DIFF**.
+- Final visible candidate is `0.1.12`, internal `versionCode=9003`, APK **20,348,979 bytes**, SHA-256 `78495023df574e43610cc2f20c6e676878558b3e960f839368b947e3fd45355a`; installed device `base.apk` matches exactly.
+- Strict physical `Awake + showing=true` Lockscreen -> Dozing produced native `LOCKSCREEN -> DOZING` progress with `reliable=true`, `continuousObserved=true`, normalized `ambientFraction=1.0` at FINISHED, `vendorProgressAllowed=false`, and `canConsume=false`.
+- Physical Dozing -> Lockscreen reports normalized `ambientFraction=1.0` at STARTED and `0.0` at FINISHED. The final snapshot also records whether real RUNNING samples occurred for that exact transition.
+- SystemUI PID `10838` remains healthy with no current crash/ANR/fatal-signal/SIGSEGV/OOM/DeadSystemException match; Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`.
+
 Remaining P1 progress work:
 
-- ADR 0016 continuous Doze progress now has a confirmed native `TransitionStep.value` source, but this device's S10 permission gate deliberately denies consumption because `shouldControlScreenOff=false`. A future small slice may formalize the progress capability adapter, but must remain fail-closed on this hardware and must not replace the proven 550 ms morph without an allowed native path.
+- Doze transition progress and scene eligibility are now represented by read-only adapters. The next native-semantic slice can move to unified/typed vendor suppressor capabilities (ADR 0005 + ADR 0032), preserving the existing S3 low-battery fail-open rule until a validated OPlus/SystemUI suppressor seam is found.
+
 ## Next implementation checkpoint
 
-S12 remains the first P1 native semantic slice after the 0.1.11 non-lockscreen entry repair. Authoritative scene eligibility is preserved for ordinary native scenes, while the proven unlocked -> screen-off presentation handoff now has an explicit, session-scoped compatibility boundary. P0 remains complete on current hardware. The next P1 slice must remain small and capability-gated; the discovered native Doze progress value may be normalized next, but current OOS must continue to deny progress consumption while S10 reports `shouldControlScreenOff=false`.
-
+S13 completes the Doze transition progress capability/normalization slice without changing animation ownership on current hardware. The next recommended P1 slice is suppressor capabilities: discover and normalize stable OPlus/SystemUI ambient suppression signals, keep them typed/capability-gated, and do not recreate AOSP DozeSuppressor policy inside the module.
 Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.

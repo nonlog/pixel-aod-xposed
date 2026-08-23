@@ -221,6 +221,8 @@ final class PixelAodHook {
             new VendorScreenOffAnimationEligibility();
     private static final NativeKeyguardSceneEligibility NATIVE_KEYGUARD_SCENE_ELIGIBILITY =
             new NativeKeyguardSceneEligibility();
+    private static final NativeDozeTransitionProgressAdapter NATIVE_DOZE_TRANSITION_PROGRESS =
+            new NativeDozeTransitionProgressAdapter();
     private static volatile WeakReference<Object> lastDozeParameters =
             new WeakReference<>(null);
     private static volatile WeakReference<Object> lastScreenOffAnimationController =
@@ -2796,11 +2798,29 @@ final class PixelAodHook {
     }
 
     static boolean canConsumeVendorDozeTransitionProgress() {
-        return VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.allowsVendorProgress();
+        return NATIVE_DOZE_TRANSITION_PROGRESS.snapshot().canConsume(
+                VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.allowsVendorProgress(), true);
+    }
+
+    static Float consumableVendorDozeTransitionAmbientFractionOrNull() {
+        NativeDozeTransitionProgressAdapter.Snapshot snapshot =
+                NATIVE_DOZE_TRANSITION_PROGRESS.snapshot();
+        if (!snapshot.canConsume(
+                VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.allowsVendorProgress(),
+                SystemAnimationScalePolicy.animationsEnabled())) {
+            return null;
+        }
+        return snapshot.ambientFraction;
     }
 
     static String describeVendorScreenOffAnimationEligibility() {
         return VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.snapshot().describe();
+    }
+
+    static String describeNativeDozeTransitionProgress() {
+        return NATIVE_DOZE_TRANSITION_PROGRESS.snapshot().describe(
+                VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY.allowsVendorProgress(),
+                SystemAnimationScalePolicy.animationsEnabled());
     }
     static void hookWakefulnessLifecycle(ClassLoader classLoader) {
         hookKeyguardSleepOrigin(classLoader);
@@ -2907,6 +2927,8 @@ final class PixelAodHook {
                 observeNativeKeyguardTransitionStep(param.args[0],
                         "KeyguardTransitionRepositoryImpl#emitTransition");
             }, transitionStepClass, boolean.class);
+            NATIVE_DOZE_TRANSITION_PROGRESS.markSeamAvailable(
+                    "KeyguardTransitionRepositoryImpl#emitTransition");
             for (java.lang.reflect.Constructor<?> constructor
                     : repositoryClass.getDeclaredConstructors()) {
                 ModernHookBridge.hookAfter(constructor, param -> {
@@ -2938,16 +2960,25 @@ final class PixelAodHook {
             Object value = ModernHookBridge.callMethod(transitionStep, "getValue");
             Object phase = ModernHookBridge.callMethod(transitionStep, "getTransitionState");
             Object owner = ModernHookBridge.callMethod(transitionStep, "getOwnerName");
+            String fromName = String.valueOf(from);
+            String toName = String.valueOf(to);
+            float transitionValue = value instanceof Number
+                    ? ((Number) value).floatValue() : Float.NaN;
+            String phaseName = String.valueOf(phase);
+            String ownerName = String.valueOf(owner);
             NativeKeyguardSceneEligibility.Snapshot before =
                     NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot();
             NativeKeyguardSceneEligibility.Snapshot after =
                     NATIVE_KEYGUARD_SCENE_ELIGIBILITY.observe(
-                            String.valueOf(from),
-                            String.valueOf(to),
-                            value instanceof Number ? ((Number) value).floatValue() : Float.NaN,
-                            String.valueOf(phase),
-                            String.valueOf(owner),
+                            fromName,
+                            toName,
+                            transitionValue,
+                            phaseName,
+                            ownerName,
                             source);
+            NativeDozeTransitionProgressAdapter.Snapshot progressAfter =
+                    NATIVE_DOZE_TRANSITION_PROGRESS.observe(
+                            fromName, toName, transitionValue, phaseName, ownerName, source);
             if (NativeKeyguardSceneEligibility.becameIneligible(
                     before.presentationAllowed, after.presentationAllowed)) {
                 ActiveClockRendererController.suppressForNativeScene(source + "#ineligible");
@@ -2956,10 +2987,20 @@ final class PixelAodHook {
                     before.presentationAllowed, after.presentationAllowed)) {
                 ActiveClockRendererController.resyncForNativeScene(source + "#eligible");
             }
+            if (progressAfter.isRunningSample()) {
+                PixelAodLog.log("native-doze-progress-sample", () ->
+                        "native Doze transition progress sample {"
+                                + progressAfter.describe(
+                                        VENDOR_SCREEN_OFF_ANIMATION_ELIGIBILITY
+                                                .allowsVendorProgress(),
+                                        SystemAnimationScalePolicy.animationsEnabled())
+                                + "}");
+            }
             if (after.phase != NativeKeyguardSceneEligibility.Phase.RUNNING) {
                 PixelAodLog.i("native Keyguard scene transition {" + after.describe() + "}"
                         + " screenOffEligibility={"
                         + describeVendorScreenOffAnimationEligibility() + "}"
+                        + " dozeProgress={" + describeNativeDozeTransitionProgress() + "}"
                         + " systemAnimation={" + SystemAnimationScalePolicy.describe() + "}");
             }
             return after;

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.12] - 2026-08-23
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Implement M9 P1-S13 / ADR 0016 as a read-only `NativeDozeTransitionProgressAdapter` over the already-validated `KeyguardTransitionRepositoryImpl#emitTransition(TransitionStep, boolean)` seam. The adapter never creates a timer or synthetic progress.
+- Normalize ordinary `LOCKSCREEN -> DOZING/AOD` as `ENTERING_AMBIENT` and `DOZING/AOD -> LOCKSCREEN` as `LEAVING_AMBIENT`. `transitionProgress` preserves native 0-to-1 direction while `ambientFraction` is normalized to `0=Lockscreen` and `1=ambient`.
+- Keep the progress capability fail-closed: `GONE -> DOZING`, Bouncer, Occluded and ambient-internal transitions are not presentation-progress sources. A transition must also produce at least one real native `RUNNING` sample (`continuousObserved=true`) before it can ever qualify as a continuous signal.
+- Expose only a capability-gated future consumer seam. A progress fraction is consumable only when the native sample is reliable and continuous, S10 reports `allowsVendorProgress=true`, and Android system animations are enabled. No current presentation or animation code consumes this value in S13.
+- Advance the visible candidate version to `0.1.12`; Android update ordering uses independent `versionCode=9003`.
+
+### Evidence / Status
+- Final JDK 17 regression: **92 suites / 439 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS; all seven protected clock/morph/weight animation-core files remain **ZERO_DIFF**.
+- Final APK: **20,348,979 bytes**, SHA-256 `78495023df574e43610cc2f20c6e676878558b3e960f839368b947e3fd45355a`; device `base.apk` hash matches. Package metadata reports visible `versionName=0.1.12`, internal `versionCode=9003`.
+- Real `LOCKSCREEN -> DOZING` reaches `continuousObserved=true` with normalized `ambientFraction=1.0`, while current S10 state remains `displayNeedsBlanking=false`, `shouldControlScreenOff=false`, `shouldAnimateDozingChange=true`, `allowsVendorProgress=false`; therefore `canConsume=false` throughout.
+- Real `DOZING -> LOCKSCREEN` reports `ambientFraction=1.0` at STARTED and `0.0` at FINISHED. The adapter tracks whether RUNNING samples occurred for that exact native transition rather than treating an endpoint alone as proof of continuous capability.
+- SystemUI remains healthy after the S13 samples with PID `10838`, no current crash/ANR/signal/OOM match, and Android animator/transition/window scales remain `1.0 / 1.0 / 1.0`.
+
 ## [0.1.11] - 2026-08-23
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

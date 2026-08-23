@@ -59,6 +59,14 @@ final class PixelAodRuntimeState {
                 && SystemAnimationScalePolicy.animationsEnabled();
     }
 
+    static String describeNativeDozeTransitionProgress() {
+        return PixelAodHook.describeNativeDozeTransitionProgress();
+    }
+
+    static Float consumableVendorDozeTransitionAmbientFractionOrNull() {
+        return PixelAodHook.consumableVendorDozeTransitionAmbientFractionOrNull();
+    }
+
     static boolean nativeKeyguardSceneAllowsPresentation() {
         return PixelAodHook.nativeKeyguardSceneAllowsPresentation();
     }
