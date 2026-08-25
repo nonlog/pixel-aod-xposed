@@ -2,6 +2,7 @@
 
 Date: 2026-08-22
 Status: Accepted
+> Stable-line status (2026-08-25): implementation is paused by user decision. The S20 prototype is preserved only on `experiment/s20-live-update` (`b37c0b8`). `agent/m9-implementation` intentionally ships without Live Update hooks or presentation until the user explicitly resumes this experiment.
 
 ## Context
 

@@ -698,3 +698,15 @@ Verification:
 
 S19 establishes the read-only native Smartspace capability boundary but proves that the exact current device does not presently expose an active target stream. The next recommended P1 slice is **S20 — system-classified Live Update read-only adapter / ADR 0013**: first prove current Android 17/OPlus notification promotion/classification metadata, then map only genuinely promoted ongoing/live content into the existing S18 arbiter. Ordinary ongoing notifications must not be upgraded by module heuristics.
 Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.
+## S20 — Live Update prototype deferred to experimental branch
+
+2026-08-25 stable-line decision:
+
+- S20 Live Update is **not part of the stable candidate**. The full prototype, including vendor classification research, structured timer/hotspot semantics, AOD refresh experiments and dedicated metric UI, is preserved on `experiment/s20-live-update` at `b37c0b8`.
+- `agent/m9-implementation` continues from the S19 architecture without Live Update hooks/renderers. Ordinary notifications therefore remain on the established notification-icon path.
+- Two independent fixes discovered while investigating S20 are retained because they are not Live Update features and were physically validated: native COUI ownership of bouncer visibility (eliminating delayed clock return after PIN) and a 12 dp compact clock/date collision guard for wide digit combinations.
+- Stable candidate version is `0.1.25 / 9016`.
+
+### Recommended next checkpoint after skipping S20
+
+Prefer a bounded **S21 notification-presentation parity cleanup** rather than another speculative native contextual adapter: remove the legacy fixed five-icon + `+N` policy and converge notification order/capacity/visual metrics with accepted ADR 0048 / 0057 / 0058 while preserving the already-stable visibility/privacy pipeline. This is deterministic, user-visible work with much lower architectural risk than Live Update or another vendor-private contextual surface.

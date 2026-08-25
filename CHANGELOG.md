@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.25] - 2026-08-25
+### Changed
+- Pause S20 Live Update work from the stable development line. The complete experimental implementation is preserved on `experiment/s20-live-update` at checkpoint `b37c0b8`; the stable candidate contains no Live Update hooks, adapters, renderers, timer/hotspot semantics, or AOD refresh additions.
+- Preserve the physically accepted PIN/bouncer return fix by delegating `LOCKSCREEN <-> PRIMARY_BOUNCER/ALTERNATE_BOUNCER` visibility to the native COUI `ClockViewRoot`, avoiding the module's former second child-visibility gate and the resulting delayed clock reappearance.
+- Preserve the compact-clock/date collision correction: SMALL mode now guarantees a 12 dp minimum visual gap between the painted clock right edge and the date/weather group, moving information right only when wide digit combinations such as `00:08` require it.
+- Advance the stable candidate to `0.1.25`; Android update ordering uses `versionCode=9016` so it cleanly replaces the previously installed experimental 0.1.24 build.
+
+### Status
+- Live Update is explicitly experimental/deferred and must not be resumed on the stable branch without a new user request.
+- The protected clock/morph/weight animation core remains out of scope for these fixes.
 ## [0.1.19] - 2026-08-23
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

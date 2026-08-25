@@ -102,6 +102,7 @@ public final class CouiClockGeometryPolicyTest {
         assertEquals(.118f, CouiClockGeometryPolicy.INFO_Y_RATIO, EPSILON);
         assertEquals(33f, CouiClockGeometryPolicy.INFO_Y_OFFSET_DP, EPSILON);
         assertEquals(1f, CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP, EPSILON);
+        assertEquals(12f, CouiClockGeometryPolicy.COMPACT_CLOCK_INFO_MIN_GAP_DP, EPSILON);
         assertEquals(22f, CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP, EPSILON);
         assertEquals(2f, CouiClockGeometryPolicy.WEATHER_ICON_CONTENT_INSET_DP, EPSILON);
         assertEquals(4f, CouiClockGeometryPolicy.WEATHER_ICON_GAP_DP, EPSILON);
@@ -116,6 +117,24 @@ public final class CouiClockGeometryPolicyTest {
         assertEquals(.75f, CouiClockGeometryPolicy.BATTERY_BURN_IN_X_SCALE, EPSILON);
         assertEquals(.5f, CouiClockGeometryPolicy.BATTERY_BURN_IN_Y_SCALE, EPSILON);
         assertEquals(64f, CouiClockGeometryPolicy.BATTERY_BOTTOM_MARGIN_DP, EPSILON);
+    }
+
+    @Test
+    public void compactInformationStartKeepsCenteredPositionWhenGapIsAlreadySafe() {
+        assertEquals(760f, CouiClockGeometryPolicy.resolveCompactInformationStart(
+                760f, 700f, 48f, 1200f), EPSILON);
+    }
+
+    @Test
+    public void compactInformationStartMovesRightOnlyEnoughToProtectWideClock() {
+        assertEquals(815f, CouiClockGeometryPolicy.resolveCompactInformationStart(
+                760f, 767f, 48f, 1200f), EPSILON);
+    }
+
+    @Test
+    public void compactInformationStartRespectsRightEdgeCapacity() {
+        assertEquals(820f, CouiClockGeometryPolicy.resolveCompactInformationStart(
+                760f, 810f, 48f, 820f), EPSILON);
     }
 
     private static CouiClockGeometryPolicy.SurfaceTarget target(

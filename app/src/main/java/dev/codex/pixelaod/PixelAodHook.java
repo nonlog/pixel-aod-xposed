@@ -3331,6 +3331,10 @@ final class PixelAodHook {
     static boolean nativeKeyguardSceneSupportsNonLockscreenAodBypass() {
         return NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot().supportsNonLockscreenAodBypass();
     }
+    static boolean nativeKeyguardSceneUsesCouiHostVisibility() {
+        return CouiBouncerHostVisibilityPolicy.nativeHostOwns(
+                NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot());
+    }
 
     static String describeNativeKeyguardSceneEligibility() {
         return NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot().describe();

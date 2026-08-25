@@ -1278,7 +1278,7 @@ final class CouiClockHostView extends FrameLayout {
                 applyGlyphSet(glyphSet, targets, alpha, animate, duration);
             }
         }
-        applyInformationTargets(animate, duration, surface);
+        applyInformationTargets(animate, duration, surface, metricSet, targets);
         applyContentTargets(animate, duration);
         applyBatteryTarget(animate, duration);
     }
@@ -1360,7 +1360,8 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     private void applyInformationTargets(boolean animate, long duration,
-            CouiClockGeometryPolicy.SurfaceTarget surface) {
+            CouiClockGeometryPolicy.SurfaceTarget surface, GlyphSet metricSet,
+            GlyphTarget[] glyphTargets) {
         int dateWidth = dateGroup.getMeasuredWidth();
         int weatherWidth = weatherGroup.getMeasuredWidth();
         int maximumWidth = Math.max(dateWidth, weatherWidth);
@@ -1396,7 +1397,18 @@ final class CouiClockHostView extends FrameLayout {
                     : CouiClockGeometryPolicy.INFO_Y_RATIO)
                     + dp(immersed && !presentation.dozing()
                     ? 30f : CouiClockGeometryPolicy.INFO_Y_OFFSET_DP);
-            dateX = centerX - maximumWidth / 2f;
+            float centeredInformationStart = centerX - maximumWidth / 2f;
+            dateX = centeredInformationStart;
+            if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL
+                    && metricSet != null && glyphTargets != null) {
+                float clockBurnX = presentation.dozing() ? burnInX : 0f;
+                float clockRight = compactClockRight(metricSet, glyphTargets, clockBurnX);
+                float maximumInformationStart = getWidth() - dp(16) - maximumWidth;
+                dateX = CouiClockGeometryPolicy.resolveCompactInformationStart(
+                        centeredInformationStart, clockRight,
+                        dp(CouiClockGeometryPolicy.COMPACT_CLOCK_INFO_MIN_GAP_DP),
+                        maximumInformationStart);
+            }
             dateY = top;
             weatherX = dateX;
             weatherY = top + dateGroup.getMeasuredHeight()
@@ -1620,6 +1632,15 @@ final class CouiClockHostView extends FrameLayout {
         };
     }
 
+    private float compactClockRight(GlyphSet glyphSet, GlyphTarget[] targets, float burnX) {
+        float right = Float.NEGATIVE_INFINITY;
+        int count = Math.min(4, targets.length);
+        for (int i = 0; i < count; i++) {
+            right = Math.max(right, targets[i].x - burnX
+                    + glyphWidth(glyphSet, i) * targets[i].scale);
+        }
+        return right;
+    }
     private float glyphWidth(GlyphSet glyphSet, int index) {
         return glyphSet.digits[index].getPaint().measureText(
                 String.valueOf(timeText.charAt(index)));

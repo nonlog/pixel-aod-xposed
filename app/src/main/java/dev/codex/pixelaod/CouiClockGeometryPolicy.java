@@ -15,6 +15,7 @@ public final class CouiClockGeometryPolicy {
     public static final float INFO_Y_RATIO = .118f;
     public static final float INFO_Y_OFFSET_DP = 33f;
     public static final float DATE_WEATHER_GAP_DP = 1f;
+    public static final float COMPACT_CLOCK_INFO_MIN_GAP_DP = 12f;
     public static final float WEATHER_ICON_SLOT_DP = 22f;
     public static final float WEATHER_ICON_CONTENT_INSET_DP = 2f;
     public static final float WEATHER_ICON_GAP_DP = 4f;
@@ -94,6 +95,13 @@ public final class CouiClockGeometryPolicy {
     public static final SurfaceTarget LS_IMMERSED = new SurfaceTarget(
             0f, .072f, 30f, .32978722f, .25f, 8f, 500f, 96f, -.09f,
             .155f, .09f, false);
+
+    static float resolveCompactInformationStart(float centeredStart, float clockRight,
+            float minimumGap, float maximumStart) {
+        float requiredStart = Math.max(centeredStart, clockRight + Math.max(0f, minimumGap));
+        float safeMaximumStart = Math.max(centeredStart, maximumStart);
+        return Math.min(requiredStart, safeMaximumStart);
+    }
 
     private CouiClockGeometryPolicy() {
     }
