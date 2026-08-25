@@ -1,14 +1,15 @@
 package dev.codex.pixelaod;
 
-/** Pure capacity/overflow plan. Capacity comes from current SystemUI resources, not a module constant. */
+/** Pure COUI host policy for the requested five-icon plus-x notification presentation. */
 final class CouiClockNotificationOverflowPolicy {
+    static final int MAX_VISIBLE_ICONS = 5;
+
     private CouiClockNotificationOverflowPolicy() {
     }
 
-    static Plan forCount(int totalIconCount, int maxVisibleIcons) {
+    static Plan forCount(int totalIconCount) {
         int total = Math.max(0, totalIconCount);
-        int capacity = Math.max(1, maxVisibleIcons);
-        int visible = Math.min(capacity, total);
+        int visible = Math.min(MAX_VISIBLE_ICONS, total);
         return new Plan(total, visible);
     }
 
@@ -35,6 +36,10 @@ final class CouiClockNotificationOverflowPolicy {
 
         boolean hasOverflow() {
             return hiddenCount() > 0;
+        }
+
+        String overflowText() {
+            return hasOverflow() ? "+" + hiddenCount() : "";
         }
     }
 }

@@ -111,6 +111,7 @@ public final class CouiClockGeometryPolicyTest {
         assertEquals(28f, CouiClockGeometryPolicy.MEDIA_TO_NOTIFICATION_GAP_DP, EPSILON);
         assertEquals(18f, CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP, EPSILON);
         assertEquals(15f, CouiClockGeometryPolicy.NOTIFICATION_ICON_GAP_DP, EPSILON);
+        assertEquals(7, CouiClockGeometryPolicy.MAX_NOTIFICATION_ICONS);
         assertEquals(83, CouiClockGeometryPolicy.BURN_IN_X_PERIOD_MINUTES);
         assertEquals(521, CouiClockGeometryPolicy.BURN_IN_Y_PERIOD_MINUTES);
         assertEquals(.75f, CouiClockGeometryPolicy.BATTERY_BURN_IN_X_SCALE, EPSILON);

@@ -710,21 +710,3 @@ Validated independent stages are checkpointed and pushed to the current developm
 ### Recommended next checkpoint after skipping S20
 
 Prefer a bounded **S21 notification-presentation parity cleanup** rather than another speculative native contextual adapter: remove the legacy fixed five-icon + `+N` policy and converge notification order/capacity/visual metrics with accepted ADR 0048 / 0057 / 0058 while preserving the already-stable visibility/privacy pipeline. This is deterministic, user-visible work with much lower architectural risk than Live Update or another vendor-private contextual surface.
-## S21 — Notification Presentation Parity
-
-### S21.1 — Native ranking order + capacity/overflow ownership
-
-- Existing ADR 0024 eligibility/privacy filtering remains first. The filtered notification set is then reordered using the public SystemUI/NotificationManager ranking order from `RankingMap#getOrderedKeys()`; no module importance/post-time/package ranking formula is introduced.
-- A ranking-order-only change participates in the ranking signature so unchanged notification membership can still refresh icon order deterministically.
-- Primary COUI notification capacity is no longer a fixed five-icon module constant. Runtime reads the current SystemUI `max_notif_icons_on_aod` or `max_notif_icons_on_lockscreen` integer for the active scene, with a three-icon Android fallback only if the resource seam is unavailable.
-- Overflow no longer renders `+N`. The primary COUI row renders one native-style dot using SystemUI overflow-dot resources while preserving the exact hidden count in the internal presentation plan for diagnostics/tests.
-- Current CPH2573 resource evidence: `max_notif_icons_on_aod=3`, `max_notif_icons_on_lockscreen=3`, `overflow_dot_radius=2`, `overflow_icon_dot_padding=3`. Existing COUI 18 dp icon slots and 15 dp inter-icon spacing remain unchanged in S21.1; visual-metric convergence is a separate S21 slice.
-- No Live Update code is reintroduced. PIN/bouncer native-host ownership and the compact clock/date collision guard remain intact.
-
-Verification complete for `0.1.26 / 9017`:
-
-- Focused ordering/capacity/resource tests and full JVM/build gate pass: **102 suites / 490 tests / 0 failures / 0 errors / 0 skipped**; `git diff --check` PASS; protected seven-file animation core **ZERO_DIFF**.
-- APK is **19,801,107 bytes**, SHA-256 `06b59b60dea902aa1d65ed11aaa3593f78fa165b4537bc0de25a6cd22e4ff116`; overwrite-install succeeds and device `base.apk` hash matches exactly. SystemUI reload is `28983 -> 15523`.
-- Current CPH2573 SystemUI resources resolve `max_notif_icons_on_aod=3`, `max_notif_icons_on_lockscreen=3`, `overflow_dot_radius=2`, and `overflow_icon_dot_padding=3`.
-- Real Doze runtime repeatedly reports `COUI notification icon presentation total=4 visible=3 hidden=1 max=3 overflowDot=true dozing=true`. This is runtime proof that the current resource capacity is used and the fourth icon is represented by overflow-dot semantics rather than legacy `+N` text.
-- Temporary diagnostic logging was restored to `debug_logging=false` after evidence capture. Current SystemUI PID has no FATAL / ANR / fatal-signal / OOM matches.

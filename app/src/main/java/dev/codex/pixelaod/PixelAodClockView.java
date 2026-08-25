@@ -300,7 +300,6 @@ public final class PixelAodClockView extends FrameLayout {
     private static String cachedScheduleKey = "";
     private static final Map<String, AodNotificationPipeline.RankingSnapshot> notificationRankings =
             new HashMap<>();
-    private static String[] notificationOrderedKeys = new String[0];
     private static final Map<String, AodNotificationPipeline.LockscreenVisibilityDecision> lockscreenVisibilityDecisions =
             new HashMap<>();
     private static final LockscreenVisibilityRefreshGate LOCKSCREEN_VISIBILITY_REFRESH_GATE =
@@ -1094,14 +1093,12 @@ public final class PixelAodClockView extends FrameLayout {
         synchronized (PixelAodClockView.class) {
             rawNotifications = notifications != null ? notifications.clone() : EMPTY_NOTIFICATIONS;
             retainLockscreenVisibilityDecisionsLocked(rawNotifications);
-            StatusBarNotification[] sanitized = AodNotificationPipeline.sanitizeNotifications(
+            activeNotifications = AodNotificationPipeline.sanitizeNotifications(
                     appContext,
                     notifications,
                     notificationRankings,
                     lockscreenVisibilityDecisions,
                     currentAodTraceId());
-            activeNotifications = NativeAodNotificationOrderAdapter.apply(
-                    sanitized, notificationOrderedKeys);
             mediaCandidateCount = replaceMediaNotificationCandidatesLocked(rawNotifications);
             lastMediaCandidatesSignature = mediaCandidatesSignatureLocked();
             signature = AodNotificationPipeline.notificationSignature(rawNotifications) + "|"
@@ -2990,8 +2987,7 @@ public final class PixelAodClockView extends FrameLayout {
                     snapshot.put(key, AodNotificationPipeline.RankingSnapshot.from(ranking));
                 }
             }
-            String signature = AodNotificationPipeline.rankingSignature(snapshot)
-                    + "|order=" + NativeAodNotificationOrderAdapter.signature(keys);
+            String signature = AodNotificationPipeline.rankingSignature(snapshot);
             synchronized (PixelAodClockView.class) {
                 if (TextUtils.equals(lastRankingSignature, signature)) {
                     return;
@@ -2999,10 +2995,9 @@ public final class PixelAodClockView extends FrameLayout {
                 lastRankingSignature = signature;
                 notificationRankings.clear();
                 notificationRankings.putAll(snapshot);
-                notificationOrderedKeys = keys.clone();
             }
             PixelAodLog.log("updated AOD notification ranking lockscreen overrides count="
-                    + snapshot.size() + " orderedKeys=" + keys.length);
+                    + snapshot.size());
             OosAodLifecycleAdapter.recordNotificationPulseObservation(
                     "ranking-map",
                     -1,
@@ -3033,7 +3028,6 @@ public final class PixelAodClockView extends FrameLayout {
             lockscreenVisibilityDecisions.clear();
             lastNotificationSnapshotSignature = "";
             lastRankingSignature = "";
-            notificationOrderedKeys = new String[0];
             lastMediaCandidatesSignature = "";
             lastContextualArbitrationSignature = "";
             atAGlanceExtra = "";
