@@ -97,6 +97,22 @@ final class CouiClockPluginHostController {
      * Data refresh only. COUI 2.5 never re-runs ClockPlugin presentation state from unrelated
      * notification/weather/policy callbacks; presentation changes belong to loadPluginReal/render.
      */
+    static void onNativeAodMinuteTick(String source) {
+        runOnMain(() -> {
+            int refreshed = 0;
+            for (HostRecord record : snapshotRecords()) {
+                if (record == null || record.host.getParent() != record.root
+                        || !record.host.presentation().dozing()) {
+                    continue;
+                }
+                record.host.onNativeAodMinuteTick(source);
+                refreshed++;
+            }
+            PixelAodLog.log("COUI consumed native AOD minute tick hosts=" + refreshed
+                    + " source=" + source);
+        });
+    }
+
     static void refreshAll(String source) {
         runOnMain(() -> {
             for (HostRecord record : snapshotRecords()) {
@@ -252,6 +268,13 @@ final class CouiClockPluginHostController {
 
     static void suppressForNativeScene(String source) {
         runOnMain(() -> {
+            if (PixelAodRuntimeState.nativeKeyguardSceneUsesCouiHostVisibility()) {
+                PixelAodLog.i("COUI bouncer visibility delegated to native ClockViewRoot"
+                        + " rendererMode=COUI_PORT action=keep-child-state"
+                        + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
+                        + " source=" + source);
+                return;
+            }
             int hidden = 0;
             for (HostRecord record : snapshotRecords()) {
                 if (record == null || record.host.getParent() != record.root) {
@@ -289,6 +312,13 @@ final class CouiClockPluginHostController {
 
     static void resyncForNativeScene(String source) {
         runOnMain(() -> {
+            if (PixelAodRuntimeState.nativeKeyguardSceneUsesCouiHostVisibility()) {
+                PixelAodLog.i("COUI bouncer visibility delegated to native ClockViewRoot"
+                        + " rendererMode=COUI_PORT action=skip-child-resync"
+                        + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
+                        + " source=" + source);
+                return;
+            }
             if (!PixelAodRuntimeState.nativeKeyguardSceneAllowsPresentation()) {
                 return;
             }
@@ -541,6 +571,13 @@ final class CouiClockPluginHostController {
             synchronized (HOSTS) {
                 existing = HOSTS.get(root);
             }
+            if (PixelAodRuntimeState.nativeKeyguardSceneUsesCouiHostVisibility()) {
+                PixelAodLog.log("skipped COUI ClockPlugin attach/sync reason=native-bouncer-host-visibility"
+                        + " rootId=" + identity(root)
+                        + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
+                        + " source=" + source);
+                return;
+            }
             if (!nativeSceneAllowsRecord(existing)) {
                 if (existing != null && existing.host.getParent() == root) {
                     suppressRecordForNativeScene(existing, source + "#attach-block");
@@ -648,6 +685,15 @@ final class CouiClockPluginHostController {
             return;
         }
 
+        if (PixelAodRuntimeState.nativeKeyguardSceneUsesCouiHostVisibility()) {
+            PixelAodLog.log("skipped ClockPlugin sync reason=native-bouncer-host-visibility"
+                    + " rendererMode=COUI_PORT"
+                    + " rootId=" + identity(record.root)
+                    + " uiState=" + renderState.uiState
+                    + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
+                    + " source=" + source);
+            return;
+        }
         if (!nativeSceneAllowsRecord(record)) {
             suppressRecordForNativeScene(record, source + "#render-block");
             PixelAodLog.log("blocked stale ClockPlugin render reason=native-scene-ineligible"

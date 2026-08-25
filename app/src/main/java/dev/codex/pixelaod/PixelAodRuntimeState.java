@@ -83,12 +83,20 @@ final class PixelAodRuntimeState {
         return PixelAodHook.consumableVendorDozeTransitionAmbientFractionOrNull();
     }
 
+    static boolean liveUpdateSecondLevelAodRefreshAvailable() {
+        return PixelAodHook.liveUpdateSecondLevelAodRefreshAvailable();
+    }
+
     static boolean nativeKeyguardSceneAllowsPresentation() {
         return PixelAodHook.nativeKeyguardSceneAllowsPresentation();
     }
 
     static boolean nativeKeyguardSceneSupportsNonLockscreenAodBypass() {
         return PixelAodHook.nativeKeyguardSceneSupportsNonLockscreenAodBypass();
+    }
+
+    static boolean nativeKeyguardSceneUsesCouiHostVisibility() {
+        return PixelAodHook.nativeKeyguardSceneUsesCouiHostVisibility();
     }
 
     static String describeNativeKeyguardSceneEligibility() {

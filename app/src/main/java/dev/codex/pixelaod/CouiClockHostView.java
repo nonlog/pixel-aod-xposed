@@ -90,6 +90,9 @@ final class CouiClockHostView extends FrameLayout {
     private final LinearLayout contextualGroup;
     private final ImageView contextualIconView;
     private final TextView contextualView;
+    private final StructuredLiveUpdateTextView contextualMetricView;
+    private final LiveUpdateProgressView contextualProgressView;
+    private final LiveUpdateMetricView contextualLiveUpdateView;
     private final LinearLayout notificationIconRow;
     private final TextView notificationOverflowView;
     private final LinearLayout mediaGroup;
@@ -204,12 +207,27 @@ final class CouiClockHostView extends FrameLayout {
                 dp(PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP));
         contextualIconParams.setMarginEnd(dp(PixelAodVisualStyle.CALENDAR_ICON_SPACING_DP));
         contextualGroup.addView(contextualIconView, contextualIconParams);
-        contextualView = informationText(PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP,
+        contextualView = informationText(
+                PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP,
                 PixelAodVisualStyle.Aod.INFO_WEIGHT);
         contextualView.setEllipsize(TextUtils.TruncateAt.END);
         contextualView.setMaxLines(1);
         contextualGroup.addView(contextualView, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        contextualProgressView = new LiveUpdateProgressView(context);
+        LinearLayout.LayoutParams contextualProgressParams = new LinearLayout.LayoutParams(
+                dp(64), dp(PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP));
+        contextualProgressParams.setMarginStart(dp(10));
+        contextualProgressParams.setMarginEnd(dp(10));
+        contextualGroup.addView(contextualProgressView, contextualProgressParams);
+        contextualMetricView = new StructuredLiveUpdateTextView(context);
+        contextualMetricView.setVisibility(GONE);
+        contextualGroup.addView(contextualMetricView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        contextualLiveUpdateView = new LiveUpdateMetricView(context);
+        contextualLiveUpdateView.setVisibility(GONE);
+        contextualGroup.addView(contextualLiveUpdateView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         notificationIconRow = new LinearLayout(context);
         notificationIconRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -285,6 +303,12 @@ final class CouiClockHostView extends FrameLayout {
             public void onReceive(Context receiverContext, Intent intent) {
                 String action = intent == null ? null : intent.getAction();
                 if (CouiClockTimeTickPolicy.acceptsAction(action)) {
+                    if (Intent.ACTION_TIME_TICK.equals(action) && presentation.dozing()) {
+                        PixelAodLog.i("COUI AOD received system TIME_TICK"
+                                + " liveUpdate="
+                                + (ContextualAtAGlancePresentation.current(contextualGroup).kind
+                                == ContextualAtAGlanceCard.Kind.LIVE_UPDATE));
+                    }
                     lastMinute = Long.MIN_VALUE;
                     onTimeTick();
                 }
@@ -711,32 +735,77 @@ final class CouiClockHostView extends FrameLayout {
         }
         int textSizeDp = contextualTextSizeDp(card);
         int infoWeight = contextualInfoWeight(card);
-        boolean applicationIcon = card.kind == ContextualAtAGlanceCard.Kind.CALENDAR_EVENT
-                && ContextualAtAGlanceCalendarIcon.usesApplicationIcon(getContext());
-        ContextualAtAGlanceCalendarIcon.applyGeometry(contextualIconView, getContext(),
-                textSizeDp, applicationIcon);
         int contextualAccent = CouiClockVisualStylePolicy.contextualAccentColor(
                 presentation.visualScene(), presentation.dozing(), monetColor, aodMonetColor);
-        boolean changed = ContextualAtAGlancePresentation.apply(
-                getContext(), contextualGroup, contextualIconView, contextualView, card,
-                contextualAccent, contextualAccent, textSizeDp, infoWeight,
-                animate && surfaceVisible, source == null ? "coui-contextual" : source);
-        if (card.isVisible()) {
-            // COUI_PORT uses the same full-strength AOD accent as the clock/notification glyphs.
-            // The legacy selector's 0.72 forecast alpha is a legacy presentation detail, not a
-            // separate color semantic for this host.
-            contextualView.setTextColor(contextualAccent);
-            contextualIconView.setColorFilter(contextualAccent);
-            float contentAlpha = CouiClockVisualStylePolicy.contextualContentAlpha(true);
-            contextualView.setAlpha(contentAlpha);
-            contextualIconView.setAlpha(contentAlpha);
+        ContextualAtAGlanceCard previous = ContextualAtAGlancePresentation.current(contextualGroup);
+        boolean liveUpdate = card.kind == ContextualAtAGlanceCard.Kind.LIVE_UPDATE;
+        boolean changed;
+
+        if (liveUpdate) {
+            // Android 17 MetricStyle semantics: Live Update owns a dedicated metric block rather
+            // than being flattened into the generic one-line contextual sentence surface.
+            boolean sameIdentity = previous.kind == ContextualAtAGlanceCard.Kind.LIVE_UPDATE
+                    && previous.identity.equals(card.identity);
+            contextualGroup.animate().cancel();
+            contextualGroup.setGravity(android.view.Gravity.CENTER);
+            contextualGroup.setTag(card);
+            contextualIconView.setVisibility(GONE);
+            contextualView.setVisibility(GONE);
+            contextualMetricView.setVisibility(GONE);
+            contextualProgressView.setVisibility(GONE);
+            contextualLiveUpdateView.bind(card, contextualAccent, presentation.dozing(),
+                    PixelAodRuntimeState.liveUpdateSecondLevelAodRefreshAvailable());
+            contextualGroup.setVisibility(card.isVisible() ? VISIBLE : GONE);
+            contextualGroup.setAlpha(card.isVisible() ? 1f : 0f);
+            changed = !sameIdentity;
+            PixelAodLog.log("rendered dedicated Live Update metric kind=" + card.liveUpdateKind
+                    + " ambient=" + presentation.dozing()
+                    + " secondRefresh="
+                    + PixelAodRuntimeState.liveUpdateSecondLevelAodRefreshAvailable()
+                    + " source=" + (source == null ? "coui-contextual" : source));
+        } else {
+            contextualGroup.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            contextualLiveUpdateView.bind(ContextualAtAGlanceCard.none(), contextualAccent,
+                    presentation.dozing(), false);
+            contextualView.setVisibility(VISIBLE);
+            contextualMetricView.configureAmbientMode(presentation.dozing(),
+                    PixelAodRuntimeState.liveUpdateSecondLevelAodRefreshAvailable());
+            boolean applicationIcon = card.kind == ContextualAtAGlanceCard.Kind.CALENDAR_EVENT
+                    && ContextualAtAGlanceCalendarIcon.usesApplicationIcon(getContext());
+            ContextualAtAGlanceCalendarIcon.applyGeometry(contextualIconView, getContext(),
+                    textSizeDp, applicationIcon);
+            changed = ContextualAtAGlancePresentation.apply(
+                    getContext(), contextualGroup, contextualIconView, contextualView,
+                    contextualMetricView, contextualProgressView, card,
+                    contextualAccent, contextualAccent, textSizeDp, infoWeight,
+                    animate && surfaceVisible, source == null ? "coui-contextual" : source);
+            if (card.isVisible()) {
+                contextualView.setTextColor(contextualAccent);
+                contextualMetricView.setTextColor(contextualAccent);
+                contextualProgressView.bind(card, contextualAccent);
+                contextualIconView.setColorFilter(contextualAccent);
+                float contentAlpha = CouiClockVisualStylePolicy.contextualContentAlpha(true);
+                contextualView.setAlpha(contentAlpha);
+                contextualMetricView.setAlpha(contentAlpha);
+                contextualProgressView.setAlpha(contentAlpha);
+                contextualIconView.setAlpha(contentAlpha);
+            }
         }
         if (changed) {
             contextualGroup.requestLayout();
             // Lower AOD rows use the COUI snap-geometry contract, so re-evaluate them in the
-            // same frame as the card change rather than exposing the previous notification Y.
+            // same frame as a semantic card replacement, never for a metric tick.
             scheduleApplyTargets(false);
         }
+    }
+
+    void onNativeAodMinuteTick(String source) {
+        if (!presentation.dozing()) {
+            return;
+        }
+        onTimeTick();
+        contextualLiveUpdateView.refreshForHostTick(
+                source == null ? "native-aod-minute" : source);
     }
 
     private int contextualTextSizeDp(ContextualAtAGlanceCard card) {
@@ -1278,7 +1347,7 @@ final class CouiClockHostView extends FrameLayout {
                 applyGlyphSet(glyphSet, targets, alpha, animate, duration);
             }
         }
-        applyInformationTargets(animate, duration, surface);
+        applyInformationTargets(animate, duration, surface, metricSet, targets);
         applyContentTargets(animate, duration);
         applyBatteryTarget(animate, duration);
     }
@@ -1360,7 +1429,8 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     private void applyInformationTargets(boolean animate, long duration,
-            CouiClockGeometryPolicy.SurfaceTarget surface) {
+            CouiClockGeometryPolicy.SurfaceTarget surface, GlyphSet metricSet,
+            GlyphTarget[] glyphTargets) {
         int dateWidth = dateGroup.getMeasuredWidth();
         int weatherWidth = weatherGroup.getMeasuredWidth();
         int maximumWidth = Math.max(dateWidth, weatherWidth);
@@ -1371,6 +1441,8 @@ final class CouiClockHostView extends FrameLayout {
         float contextualX;
         float contextualY;
         float contextualGapPx;
+        boolean liveUpdateContextual = ContextualAtAGlancePresentation.current(contextualGroup).kind
+                == ContextualAtAGlanceCard.Kind.LIVE_UPDATE;
         if (presentation.visualScene() == CouiClockPresentationModel.Scene.LARGE) {
             float dozingScale = presentation.dozing() ? surface.scale : 1f;
             float centeredGap = ((1f - dozingScale)
@@ -1383,7 +1455,9 @@ final class CouiClockHostView extends FrameLayout {
             weatherX = dateX + dateWidth + dp(LARGE_INFO_SIDE_GAP_DP);
             weatherY = dateY;
             contextualX = dp(PixelAodVisualStyle.EDGE_DP);
-            contextualGapPx = dp(PixelAodVisualStyle.LARGE_INFO_ROW_GAP_DP);
+            contextualGapPx = dp(liveUpdateContextual
+                    ? LiveUpdateMetricLayoutPolicy.BLOCK_TOP_GAP_DP
+                    : PixelAodVisualStyle.LARGE_INFO_ROW_GAP_DP);
         } else {
             float centerX = getWidth() * CouiClockGeometryPolicy.INFO_CENTER_RATIO
                     + dp(presentation.dozing()
@@ -1396,14 +1470,27 @@ final class CouiClockHostView extends FrameLayout {
                     : CouiClockGeometryPolicy.INFO_Y_RATIO)
                     + dp(immersed && !presentation.dozing()
                     ? 30f : CouiClockGeometryPolicy.INFO_Y_OFFSET_DP);
-            dateX = centerX - maximumWidth / 2f;
+            float centeredInformationStart = centerX - maximumWidth / 2f;
+            dateX = centeredInformationStart;
+            if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL
+                    && metricSet != null && glyphTargets != null) {
+                float clockBurnX = presentation.dozing() ? burnInX : 0f;
+                float clockRight = compactClockRight(metricSet, glyphTargets, clockBurnX);
+                float maximumInformationStart = getWidth() - dp(16) - maximumWidth;
+                dateX = CouiClockGeometryPolicy.resolveCompactInformationStart(
+                        centeredInformationStart, clockRight,
+                        dp(CouiClockGeometryPolicy.COMPACT_CLOCK_INFO_MIN_GAP_DP),
+                        maximumInformationStart);
+            }
             dateY = top;
             weatherX = dateX;
             weatherY = top + dateGroup.getMeasuredHeight()
                     + dp(CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP);
             contextualX = CouiCompactLayout.couiHostContentLeft(
                     getResources().getDisplayMetrics().density);
-            contextualGapPx = dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
+            contextualGapPx = dp(liveUpdateContextual
+                    ? LiveUpdateMetricLayoutPolicy.BLOCK_TOP_GAP_DP
+                    : PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
         }
         contextualY = CouiClockContextualLayoutPolicy.contextualTop(
                 dateY, dateGroup.getMeasuredHeight(), weatherView.getVisibility() == VISIBLE,
@@ -1464,10 +1551,12 @@ final class CouiClockHostView extends FrameLayout {
                 contextualCard.kind == ContextualAtAGlanceCard.Kind.CALENDAR_EVENT
                         && ContextualAtAGlanceCalendarIcon.usesApplicationIcon(getContext())
                         ? ContextualAtAGlanceCalendarIcon.APPLICATION_ICON_SIZE_DP : 0));
-        float contextualToContentGapPx = dp(presentation.visualScene()
-                == CouiClockPresentationModel.Scene.SMALL
+        float contextualToContentGapPx = dp(contextualCard.kind
+                == ContextualAtAGlanceCard.Kind.LIVE_UPDATE
+                ? LiveUpdateMetricLayoutPolicy.BLOCK_TO_NOTIFICATION_GAP_DP
+                : (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL
                 ? PixelAodVisualStyle.COMPACT_CONTEXTUAL_TO_NOTIFICATION_GAP_DP
-                : PixelAodVisualStyle.LARGE_INFO_ROW_GAP_DP);
+                : PixelAodVisualStyle.LARGE_INFO_ROW_GAP_DP));
         baseY = CouiClockContextualLayoutPolicy.lowerContentTop(baseY, contextualVisible,
                 contextualTargetTopPx, contextualGroup.getMeasuredHeight(),
                 contextualFallbackHeightPx, contextualToContentGapPx);
@@ -1620,6 +1709,16 @@ final class CouiClockHostView extends FrameLayout {
         };
     }
 
+    private float compactClockRight(GlyphSet glyphSet, GlyphTarget[] targets, float burnX) {
+        float right = Float.NEGATIVE_INFINITY;
+        int count = Math.min(4, targets.length);
+        for (int i = 0; i < count; i++) {
+            right = Math.max(right, targets[i].x - burnX
+                    + glyphWidth(glyphSet, i) * targets[i].scale);
+        }
+        return right;
+    }
+
     private float glyphWidth(GlyphSet glyphSet, int index) {
         return glyphSet.digits[index].getPaint().measureText(
                 String.valueOf(timeText.charAt(index)));
@@ -1721,10 +1820,14 @@ final class CouiClockHostView extends FrameLayout {
         int contextualColor = CouiClockVisualStylePolicy.contextualAccentColor(
                 presentation.visualScene(), presentation.dozing(), monetColor, aodMonetColor);
         contextualView.setTextColor(contextualColor);
+        contextualMetricView.setTextColor(contextualColor);
+        contextualProgressView.bind(contextualCard, contextualColor);
         contextualIconView.setColorFilter(contextualColor);
         float contextualAlpha = CouiClockVisualStylePolicy.contextualContentAlpha(
                 contextualCard.isVisible());
         contextualView.setAlpha(contextualAlpha);
+        contextualMetricView.setAlpha(contextualAlpha);
+        contextualProgressView.setAlpha(contextualAlpha);
         contextualIconView.setAlpha(contextualAlpha);
         notificationOverflowView.setTextColor(CouiClockVisualStylePolicy.notificationOverflowColor(
                 PixelAodTypography.resolveMaterialInfoColor(getContext())));

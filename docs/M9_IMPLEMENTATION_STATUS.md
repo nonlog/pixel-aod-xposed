@@ -694,7 +694,111 @@ Verification:
 - That lifecycle cycle kept PID `25026` unchanged. `.local/m9_s19_0.1.19/aod.png` shows the normal complete Pixel AOD with no fabricated contextual row; current-PID fatal/ANR/signal scan is empty.
 - Device state remains `low_power=0`, animator/transition/window scales `1.0 / 1.0 / 1.0`, `non_lockscreen_aod_transition=direct_final`, and `debug_logging=true`.
 
+## S20 — OPlus/Android Live Update read-only pass-through
+
+Status: **implementation + JVM gate green; final latest-hook real-device gate pending one SystemUI process reload**
+
+Goal: implement ADR 0013 without promoting arbitrary `ONGOING_EVENT` notifications. Reuse OPlus/Android's own Live Alert classification and lifecycle, normalize one compact low-power row, and leave actions/notification ownership with SystemUI.
+
+Current-OOS evidence and design correction:
+
+- Current SystemUIPlugin recognizes API-36 `Notification.ProgressStyle`, `Notification.CallStyle`, `Notification.isPromotedOngoing()`, `POST_PROMOTED_NOTIFICATIONS`, OPlus `oplusLiveAlertAppConfig`, and Seedling Live Alert sources.
+- OPlus exposes `ENTRY_STATUS_BAR`, `ENTRY_NOTIFICATION`, and `ENTRY_AOD`. The first S20 candidate observed the final `AodManager#onSeedlingSetChanged/onReceiveData` sink only.
+- Real OnePlus Clock timer evidence disproved the assumption that every legitimate Live Alert is present in stock `ENTRY_AOD`: service `268451943` is a genuine OPlus `type=LIVE` / `SOURCE_SEEDLING` model with `shouldShow=true`, `panoramicAodEnable=1`, and `TimerImmersiveService`, while its Seedling hosts are `status_bar[8,20]` + `notification[16,30]` and the final stock AOD active set remains empty.
+- S20 therefore uses a two-level authority: final OPlus AOD data is preferred when present; otherwise it may consume the already-classified and already-ranked OPlus `ENTRY_STATUS_BAR` `LiveAlertModel` list. Ordinary notification flags never create a Live Update candidate.
+- Exact plugin fallback seam is `SystemUIPlugin o5.i#c(ENTRY_STATUS_BAR, boolean)` after vendor ranking/filtering, reading that interactor's current `f6909f[ENTRY_STATUS_BAR]` models. The earlier experimental `w4.c#a(ArrayList)` consumer seam produced no callback in real testing and is not retained in final source.
+
+Implementation:
+
+- Added `NativeLiveAlertContextualAdapter` with `ContextualTarget.Source.LIVE_UPDATE`, high urgency, vendor service-ID identity, explicit removal on vendor full-snapshot removal, 24-hour fail-safe staleness only for missed lifecycle cleanup, and final-AOD-over-vendor-fallback dedupe.
+- The fallback preserves OPlus ordering and contributes at most the first eligible vendor Live Alert; S18 remains the only cross-source arbiter and still enforces one contextual row.
+- If a vendor model supplies structured `title/des`, those are used directly. Seedling Timer proves these can be null, so only for an already vendor-classified LIVE model S20 may read text from the vendor-rendered wrapper View (`model.j()` / wrapper `n(true)`) and compact visible `TextView`/chronometer pieces. It does not decode the proprietary card protocol or inspect arbitrary app views.
+- A final OPlus AOD target is accepted only with vendor `should_show=true`; vendor fallback likewise requires its vendor `shouldShow` state. Pixel's sensitive-lockscreen setting fails closed for opaque Live Alert text, and S14 typed contextual suppression remains an independent gate.
+- `ContextualAtAGlanceCard.Kind.LIVE_UPDATE` uses no fabricated icon. `PixelAodClockView.contextualCardIcon(...)` was tightened to honor `IconKind.NONE`, also preventing S19 native Smartspace text from accidentally receiving a Calendar icon.
+- No Live Alert action, PendingIntent, provider, session, card engine, or notification lifecycle is owned or invoked by Pixel AOD.
+
+Verification so far:
+
+- Final source-side gate before the pending process reload: **100 suites / 490 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS; protected seven-file clock/morph/weight animation core **ZERO_DIFF**.
+- Current candidate: `0.1.20 / 9011`; APK **20,411,682 bytes**, SHA-256 `d3e5fa9be377756404e422e94eb2e20ec90427204e4e5638b2be28352f5a2235`; latest APK has been overwrite-installed to selected device `172.30.196.126:5555`.
+- The first manual SystemUI reload proved `o5.i#c(ENTRY_STATUS_BAR, boolean)` is the correct live callback for the real OnePlus Clock timer, but also exposed `NoSuchFieldException: o5.i#f6909f`: the code had accidentally used a JADX-generated field alias rather than a runtime field symbol, so no vendor snapshot reached S18.
+- That private-field dependency has been removed. The fixed hook now discovers the interactor's one-argument `List` accessor by signature for the runtime `ENTRY_STATUS_BAR` enum and snapshots the returned vendor model list. Full tests/build remain green, `git diff --check` passes and protected animation core remains ZERO_DIFF.
+- Fixed `0.1.20 / 9011` APK is 20,411,924 bytes, SHA-256 `a0dcdc64fd3e1ded8c99ff343d5601a9da2960cb13dc80cc45ccb9b1dd981a8d`, and overwrite-install succeeded. One further normal SystemUI reload is required to execute this exact fix; runtime completion requires no field exception, a nonzero vendor fallback snapshot, S18 `selectedSource=LIVE_UPDATE`, visible AOD text and correct removal.
+
 ## Next implementation checkpoint
 
-S19 establishes the read-only native Smartspace capability boundary but proves that the exact current device does not presently expose an active target stream. The next recommended P1 slice is **S20 — system-classified Live Update read-only adapter / ADR 0013**: first prove current Android 17/OPlus notification promotion/classification metadata, then map only genuinely promoted ongoing/live content into the existing S18 arbiter. Ordinary ongoing notifications must not be upgraded by module heuristics.
+Complete the pending S20 real-device process reload, verify `o5.i#c` callback + real Live Alert presentation/removal, then checkpoint/push the validated stage. Do not begin another M9 slice until this gate is closed.
 Validated independent stages are checkpointed and pushed to the current development branch. Merge/push to `master`, history rewriting, force-push, formal tags/releases, and other stable-history operations still require explicit user authorization.
+## S20.2 — Dedicated Live Update metric/progress renderer
+
+Status: **implementation/full JVM/build green; Hotspot real-device visual gate PASS; no further automated Timer tests permitted**
+
+User-visible reason for this refinement:
+
+- S20.1 real-device testing still rendered sentence-shaped `Timer 29:10` and `Hotspot 1 device`; the timer value also remained stale in deep AOD until the screen was touched. That result is rejected rather than checkpointed as complete.
+- S20.2 keeps the proven OPlus Live Alert classifier/lifecycle and S18 selection but removes `LIVE_UPDATE` from the generic one-string presentation contract.
+
+Implementation:
+
+- `ContextualAtAGlanceCard` now separates `text` (static semantic label), `liveUpdateMetricText`, `liveUpdateProgressPercent`, monotonic time base, and countdown direction. TIMER/HOTSPOT/PROGRESS/CALL each have a dedicated monochrome glyph kind.
+- Timer/Call use `StructuredLiveUpdateTextView` only for the right-side metric; static labels remain ordinary information TextViews. Timer derives `m:ss` / `h:mm:ss` from one `elapsedRealtime()` deadline and updates only when the displayed metric changes.
+- Hotspot carries `Hotspot` + numeric count, not a copied `...device connected...` sentence. Determinate progress carries semantic label + percentage + `LiveUpdateProgressView`; generic Live Alert text remains fail-closed.
+- Same-identity Live Updates update in place and `ContextualAtAGlancePresentation` returns no topology change for that update, preventing whole-row replacement animation and lower-row movement. Lockscreen, legacy AOD and COUI host use the same label/metric/progress split.
+- Exact current SystemUI proves stock Doze time ticks are minute-level. More importantly, exact `AodClockLayout#performAodUpdate()` increments vendor display time by 60,000 ms and total update count by 60, so it is explicitly prohibited as a second-level Timer repaint fallback.
+- S20.2 instead follows the stock current-OOS ramless branch. While genuinely Dozing, it calls the existing foreign AOD plugin `updateRamlessArea()` only when the exact `AodClockLayout` reports `mIsSupportRamLessAod=true`, `mIsAodInstalled=true`, and `mAodPlugin!=null`; requests are main-threaded and throttled to approximately 1 Hz. Unsupported capability fails closed.
+- Exact current VariUIEngine `13.7.10` (`com.oplus.uiengine`) exposes `com.oplus.aodimpl.AodManager#updateRamlessArea()` -> `AodRootLayout.updateRamlessArea()`. No AOD session/provider/action ownership is added.
+
+Verification so far:
+
+- Main Java compilation passes under JDK 17 after the dedicated renderer + ramless bridge changes.
+- Focused `NativeLiveAlertContextualAdapterTest` + `LiveUpdateAodRefreshPolicyTest` gate passes. Tests cover strict Timer/Hotspot extraction, stable monotonic Timer base, Timer > Hotspot arbitration, separated Progress fields, generic fail-closed behavior, privacy/suppression/removal, and the rule that second ticks cannot use the minute-semantic kick.
+- Final automated gate after the presentation/collision correction is **102 suites / 497 tests / 0 failures / 0 errors / 0 skipped**. `assembleDebug` PASS, `git diff --check` PASS, and the protected seven-file clock/morph/weight core is **ZERO_DIFF**.
+- Final `0.1.22 / 9013` APK is **20,439,008 bytes**, SHA-256 `0c0e1eb3598bd3e9e629d09c138b1644297306bf3e9e90a096becc6a8ffb84c4`. Standard LAN overwrite install succeeded and installed `base.apk` matches that hash exactly.
+- The established repository SystemUI process-reload path is executable in the current tool environment without bypassing safety policy; the final candidate reload changed PID `1712 -> 6901`. Current-PID and system-level fatal/ANR/death scans are clean.
+- Real Hotspot AOD capture after the final reload proves the metric is no longer a far-right column: the complete row is approximately `x=160..467`, with count at `x~450`; before the correction the count was at `x~1264`. The hotspot glyph now paints about 37 px high versus ~42 px for adjacent text, instead of the previous single-digit-pixel-height appearance.
+- Root cause of the reported `00:08` clock/date crowding was horizontal: SMALL time and the date/weather group had independent centers, so a wide fourth digit could consume the entire inter-column gap. A new 12dp collision guard moves only date/weather right when needed. On the real wide-digit AOD sample, clock paint ends around `x=764` and date begins around `x=835` (about 71 px / 17.75dp at physical density 640). Pure policy tests cover an `00:08`-class wide-clock boundary while leaving clock glyph targets and morph math untouched.
+- Before the final row-geometry patch, two real Timer AOD screenshots captured 8 seconds apart changed only the metric bbox (`x~1229..1293`), proving S20.2's ramless repaint path could advance the timer without touch while keeping the static row stable. The user subsequently explicitly prohibited any further automated Timer creation/testing after a test timer reached its alarm; **do not start, set, resume, or recreate a Timer for validation unless the user explicitly re-authorizes it in a future turn**. The final geometry build is therefore physically revalidated with Hotspot only.
+- Follow-up lockscreen/PIN regression, corrected after user rejection of the first hypothesis: the 900 ms `PixelLockscreenClockView` hierarchy-cache change was on the inactive fallback presentation path for this build and had no visible effect; it has been fully reverted, including its helper/test. The active primary renderer is the persistent COUI host controlled by native Keyguard scene eligibility.
+- Correct root cause is directional native-scene gating. Entry `LOCKSCREEN -> PRIMARY_BOUNCER` must remain immediately ineligible so the clock disappears as soon as credentials begin. Exit `PRIMARY_BOUNCER/ALTERNATE_BOUNCER -> LOCKSCREEN`, however, previously remained ineligible through STARTED/RUNNING because one endpoint was a bouncer; host recovery therefore waited for FINISHED. `NativeKeyguardSceneEligibility` now treats only this reverse-to-LOCKSCREEN transition as eligible from STARTED, causing the existing `CouiClockPluginHostController.resyncForNativeScene()` path to restore the persistent host immediately without touching the clock morph engine.
+- Focused tests cover PRIMARY_BOUNCER and ALTERNATE_BOUNCER exit-at-STARTED plus the existing enter-at-STARTED suppression. Final full JVM/build gate is **102 suites / 498 tests / 0 failures / 0 errors / 0 skipped**; `git diff --check` PASS and protected seven-file clock/morph/weight core **ZERO_DIFF**. Updated 0.1.22 / 9013 APK is **31,247,817 bytes**, SHA-256 `988391dc11afa74299372934011e88a84457693b448fcee9f4658391d55f2312`; raw-USB install/hash PASS and SystemUI reload is `26083 -> 3490`.
+- Runtime proof now reaches the exact native bouncer edges. Entry logs `LOCKSCREEN -> PRIMARY_BOUNCER STARTED`, `presentationAllowed=false`, and `COUI native-scene suppression`. Reverse logs `PRIMARY_BOUNCER -> LOCKSCREEN STARTED` at `11:25:10.101`, `presentationAllowed=true`, and `COUI native-scene resync ... syncedHosts=1`; FINISHED for the same transition is `11:25:10.563`, **462 ms later**. This measures the exact wait that the old policy imposed and proves the new binary resyncs at STARTED rather than FINISHED. Current SystemUI PID `3490` has 0 current-PID FATAL/ANR/fatal-signal matches; animator/transition/window scales remain `1.0/1.0/1.0`.
+- The binary/runtime policy gate is complete, but final on-screen acceptance still belongs to the user's physical `swipe up -> PIN keypad -> Back` observation. S20.2 remains uncommitted/unpushed until that visual gate is accepted; no Timer rerun is required or permitted.
+
+
+## S20.3 — Usable AOD Live Update
+
+Status: **runtime refresh infrastructure green; dedicated MetricStyle-inspired candidate installed; awaiting user physical Timer visual acceptance**
+
+Why S20.2 was rejected:
+
+- Physical AOD testing showed the Timer as a one-line auxiliary row (`Timer 29:00`) and the seconds froze after the black-frame/AOD handoff. Touch/UDFPS caused the value to catch up, proving the temporal anchor was sound but a normal Java 1 Hz callback did not imply an AOD hardware frame.
+- Current-ROM capability inspection is decisive: `AodClockLayout.mIsSupportRamLessAod=false`. The only previously identified safe vendor second-level region repaint (`mAodPlugin.updateRamlessArea()`) is therefore unavailable on this device.
+
+S20.3 implementation:
+
+- Live Update no longer shares the generic one-line contextual sentence renderer on the active COUI host. It owns a dedicated block: 20dp semantic glyph, 13dp static label, 24dp primary metric, and an optional 112x7dp determinate progress indicator.
+- Timer/Call remain monotonic `elapsedRealtime()` models. Interactive/lockscreen presentation retains chronometer seconds. Deep AOD without proven ramless repaint uses an adaptive low-power countdown/count-up (`30m`, `29m`, `<1m`, `1h 5m`) rather than displaying frozen seconds.
+- Same-identity metric changes update the metric view in place. They do not replay S18 arbitration, whole-row crossfade, or lower-row topology changes.
+- Existing `CouiClockHostView` `ACTION_TIME_TICK` handling now serves as the primary deep-AOD metric cadence; it already refreshes clock/information/contextual state. OPlus `UPDATE_TIME` / `AodClockLayout#performAodUpdate` callbacks are observed as additional native refresh seams. The module does not create a Timer alarm, acquire a wakelock, or call `performAodUpdate()` itself.
+- The accepted PIN/bouncer fix remains untouched: native `ClockViewRoot` owns `LOCKSCREEN <-> BOUNCER` visibility, with no module-added return delay.
+
+Runtime proof:
+
+- Final candidate: `0.1.23 / 9014`; APK **23,531,868 bytes**, SHA-256 `2c39b7421b302714686f9b9383f1f0dc96190e6a8ab9a02896914863802e813d`; overwrite install hash matched.
+- SystemUI normal reload: `22845 -> 29315`.
+- While `mWakefulness=Dozing`, PID `29315` logged `COUI AOD received system TIME_TICK` at `13:56:00.076`; OPlus `AodClockLayout#performAodUpdate(boolean)` followed at `13:56:00.120`. AlarmManager shows consecutive `TIME_TICK` minute history and `time_tick_allowed_while_idle=true`. This proves autonomous minute refresh without touch/UDFPS.
+- Full JDK17 gate: **104 suites / 506 tests / 0 failures / 0 errors / 0 skipped**; `assembleDebug` PASS; `git diff --check` PASS; protected seven-file animation core `ZERO_DIFF`.
+- No Timer was started, resumed, stopped, or otherwise manipulated by the module/assistant during S20.3 validation. The remaining acceptance gate is the user's own physical Timer test: dedicated metric layout and autonomous minute change on visible AOD.
+
+S20.3 remains uncommitted/unpushed until that physical acceptance.
+
+## S20.4 — Live Update composition / Timer remaining indicator
+
+Status: **candidate installed — code/runtime gates green; awaiting user physical visual acceptance**
+
+- Physical 0.1.23 feedback rejected the first dedicated metric block as visually unbalanced: although structurally separate, it still inherited the generic contextual lane's leading-edge composition, weak 13dp/450/0.82 label treatment, 24dp metric and tight notification spacing.
+- 0.1.24 centers only `LIVE_UPDATE` inside the existing wide contextual lane; generic calendar/weather/Smartspace rows keep their previous leading-edge geometry. The vertical hierarchy is now clock/date-weather -> 16dp -> Live Update -> 18dp -> notification icons.
+- Live Update visual contract: 18dp glyph; 13dp WGT 500 label at alpha 0.92; 30dp WGT 500 primary metric. This is deliberately a compact metric block rather than a sentence-shaped contextual row.
+- Timer may show a 96x2dp rounded remaining-time bar. Installer/structured Progress never shows a bar; it keeps only the percentage metric.
+- OnePlus Clock APK reverse engineering confirmed `TimerSchedule` owns `mDuration`, `mStartTime`, `mRemainTime`, while current OPlus SystemUI Seedling model `z3.w#v()` exposes the stable `ServiceInfo.getTimeStamp()` used in the card instance key. Pixel does not read Clock private storage. It uses that stable vendor timestamp plus the already accepted structured remaining time only to bootstrap a total duration, then recomputes the bar from the monotonic deadline on host ticks. Invalid/future/<3s/>24h candidates fail closed with no bar.
+- No automated Timer action occurred in this stage. Full gate: **104 suites / 509 tests / 0 failures/errors/skips**, `git diff --check` PASS, protected animation core ZERO_DIFF. Installed `0.1.24 / 9015`, SHA-256 `e61cfa4709f30ff76217d716321c4fd1985d3a492ddf262ca49a9d41d47d0b5b`, device hash match; SystemUI `933 -> 20119`.

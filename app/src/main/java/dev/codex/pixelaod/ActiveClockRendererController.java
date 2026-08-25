@@ -103,4 +103,8 @@ final class ActiveClockRendererController {
     static void onTimeTick(String source) {
         CouiClockPluginHostController.onTimeTick(source);
     }
+
+    static void onNativeAodMinuteTick(String source) {
+        CouiClockPluginHostController.onNativeAodMinuteTick(source);
+    }
 }

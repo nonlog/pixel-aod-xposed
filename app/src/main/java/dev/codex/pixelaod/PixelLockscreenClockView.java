@@ -106,6 +106,8 @@ final class PixelLockscreenClockView extends FrameLayout {
     private final LinearLayout contextualRow;
     private final ImageView contextualIconView;
     private final TextView contextualView;
+    private final StructuredLiveUpdateTextView contextualMetricView;
+    private final LiveUpdateProgressView contextualProgressView;
     private final LinearLayout notificationIconRow;
     private TextView notificationOverflowView;
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -277,6 +279,16 @@ final class PixelLockscreenClockView extends FrameLayout {
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         contextualTextParams.leftMargin = dp(PixelAodVisualStyle.CALENDAR_ICON_SPACING_DP);
         contextualRow.addView(contextualView, contextualTextParams);
+        contextualProgressView = new LiveUpdateProgressView(context);
+        LinearLayout.LayoutParams contextualProgressParams = new LinearLayout.LayoutParams(
+                dp(64), dp(LARGE_INFO_TEXT_DP));
+        contextualProgressParams.setMarginStart(dp(10));
+        contextualProgressParams.setMarginEnd(dp(10));
+        contextualRow.addView(contextualProgressView, contextualProgressParams);
+        contextualMetricView = new StructuredLiveUpdateTextView(context);
+        contextualMetricView.setVisibility(View.GONE);
+        contextualRow.addView(contextualMetricView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         notificationIconRow = new LinearLayout(context);
         notificationIconRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1569,9 +1581,11 @@ final class PixelLockscreenClockView extends FrameLayout {
         FrameLayout.LayoutParams previousNotificationParams =
                 (FrameLayout.LayoutParams) notificationIconRow.getLayoutParams();
         int previousNotificationTopPx = previousNotificationParams.topMargin;
+        contextualMetricView.configureAmbientMode(false, false);
         boolean contextualChanged = ContextualAtAGlancePresentation.apply(
                 getContext(), contextualRow, contextualIconView, contextualView,
-                contextual.card, PixelAodTypography.resolveMaterialInfoColor(getContext()),
+                contextualMetricView, contextualProgressView, contextual.card,
+                PixelAodTypography.resolveMaterialInfoColor(getContext()),
                 PixelAodTypography.resolveMaterialClockColor(getContext()),
                 contextualTextSizeDp(contextual.card),
                 currentInfoWeight > 0 ? currentInfoWeight : INFO_LOCKSCREEN_WEIGHT,
@@ -1626,6 +1640,8 @@ final class PixelLockscreenClockView extends FrameLayout {
             int contextualTextSize = contextualTextSizeDp(
                     ContextualAtAGlancePresentation.current(contextualRow));
             contextualView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, contextualTextSize);
+            contextualMetricView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, contextualTextSize);
+            updateContextualLiveProgressGeometry(contextualTextSize);
             updateContextualSlotIconGeometry(contextualTextSize);
             dateView.setVisibility(View.VISIBLE);
         } else {
@@ -1640,6 +1656,8 @@ final class PixelLockscreenClockView extends FrameLayout {
             int contextualTextSize = contextualTextSizeDp(
                     ContextualAtAGlancePresentation.current(contextualRow));
             contextualView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, contextualTextSize);
+            contextualMetricView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, contextualTextSize);
+            updateContextualLiveProgressGeometry(contextualTextSize);
             updateContextualSlotIconGeometry(contextualTextSize);
             dateView.setVisibility(View.VISIBLE);
         }
@@ -1915,6 +1933,16 @@ final class PixelLockscreenClockView extends FrameLayout {
         }
     }
 
+    private void updateContextualLiveProgressGeometry(int textSizeDp) {
+        if (contextualProgressView == null) {
+            return;
+        }
+        LinearLayout.LayoutParams params =
+                (LinearLayout.LayoutParams) contextualProgressView.getLayoutParams();
+        params.height = dp(textSizeDp);
+        contextualProgressView.setLayoutParams(params);
+    }
+
     private void updateContextualSlotIconGeometry(int textSizeDp) {
         boolean applicationIcon = ContextualAtAGlancePresentation.current(contextualRow).kind
                 == ContextualAtAGlanceCard.Kind.CALENDAR_EVENT
@@ -1976,7 +2004,11 @@ final class PixelLockscreenClockView extends FrameLayout {
         clockView.setTextColor(clockColor);
         dateView.setTextColor(clockColor);
         weatherView.setTextColor(clockColor);
-        contextualView.setTextColor(PixelAodTypography.resolveMaterialInfoColor(getContext()));
+        int contextualColor = PixelAodTypography.resolveMaterialInfoColor(getContext());
+        contextualView.setTextColor(contextualColor);
+        contextualMetricView.setTextColor(contextualColor);
+        contextualProgressView.bind(ContextualAtAGlancePresentation.current(contextualRow),
+                contextualColor);
         PixelAodClockView.applyWeatherLeadingIcon(weatherView,
                 PixelAodContentState.currentFreshWeather(getContext()), clockColor);
     }
@@ -2135,6 +2167,8 @@ final class PixelLockscreenClockView extends FrameLayout {
         PixelAodTypography.applySharedClockTypeface(dateView, getContext(), synchronizedWeight);
         PixelAodTypography.applySharedClockTypeface(weatherView, getContext(), synchronizedWeight);
         PixelAodTypography.applySharedClockTypeface(contextualView, getContext(), synchronizedWeight);
+        PixelAodTypography.applySharedClockTypeface(contextualMetricView, getContext(),
+                synchronizedWeight);
         // A weight change alters measured text/ink bounds. Keep the date/weather group and the
         // downstream notification anchor in the same geometry transaction.
         if (contextualRow != null && notificationIconRow != null) {

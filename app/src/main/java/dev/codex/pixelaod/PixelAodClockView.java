@@ -421,6 +421,8 @@ public final class PixelAodClockView extends FrameLayout {
     private final LinearLayout calendarRow;
     private final ImageView calendarIconView;
     private final TextView calendarView;
+    private final StructuredLiveUpdateTextView calendarMetricView;
+    private final LiveUpdateProgressView calendarProgressView;
     private final TextView mediaView;
     private final TextView mediaArtistView;
     private final LinearLayout batteryRow;
@@ -625,6 +627,16 @@ public final class PixelAodClockView extends FrameLayout {
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         calendarTextParams.leftMargin = dp(CALENDAR_ICON_SPACING_DP);
         calendarRow.addView(calendarView, calendarTextParams);
+        calendarProgressView = new LiveUpdateProgressView(context);
+        LinearLayout.LayoutParams calendarProgressParams = new LinearLayout.LayoutParams(
+                dp(64), dp(LARGE_INFO_TEXT_DP));
+        calendarProgressParams.setMarginStart(dp(10));
+        calendarProgressParams.setMarginEnd(dp(10));
+        calendarRow.addView(calendarProgressView, calendarProgressParams);
+        calendarMetricView = new StructuredLiveUpdateTextView(context);
+        calendarMetricView.setVisibility(View.GONE);
+        calendarRow.addView(calendarMetricView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         notificationIconRow = new LinearLayout(context);
         notificationIconRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -930,10 +942,14 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static Drawable contextualCardIcon(Context context, ContextualAtAGlanceCard card, int color) {
-        if (card == null || !card.isVisible()) {
+        if (card == null || !card.isVisible()
+                || card.iconKind == ContextualAtAGlanceCard.IconKind.NONE) {
             return null;
         }
-        if (card.kind == ContextualAtAGlanceCard.Kind.WEATHER_ALERT) {
+        if (card.kind == ContextualAtAGlanceCard.Kind.LIVE_UPDATE) {
+            return new LiveUpdateGlyphDrawable(card.liveUpdateKind, color);
+        }
+        if (card.iconKind == ContextualAtAGlanceCard.IconKind.WEATHER_ALERT) {
             switch (WeatherAlertVisuals.iconLevel(card.alertSeverity)) {
                 case MODERATE:
                     return moduleDrawable(context, R.drawable.ic_weather_alert_moderate);
@@ -947,7 +963,7 @@ public final class PixelAodClockView extends FrameLayout {
                     return moduleDrawable(context, R.drawable.ic_weather_alert);
             }
         }
-        if (card.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST) {
+        if (card.iconKind == ContextualAtAGlanceCard.IconKind.WEATHER_FORECAST) {
             if (card.weatherCode == BreezyWeatherForecast.UNKNOWN_WEATHER_CODE) {
                 return null;
             }
@@ -961,7 +977,10 @@ public final class PixelAodClockView extends FrameLayout {
             }
             return new WeatherIconDrawable(card.weatherCode, color);
         }
-        return resolveCalendarIcon(context, color);
+        if (card.iconKind == ContextualAtAGlanceCard.IconKind.CALENDAR) {
+            return resolveCalendarIcon(context, color);
+        }
+        return null;
     }
 
     static Drawable resolveCalendarIcon(Context context, int color) {
@@ -6814,6 +6833,8 @@ public final class PixelAodClockView extends FrameLayout {
         dateView.setTextColor(clockColor);
         weatherView.setTextColor(clockColor);
         calendarView.setTextColor(infoColor);
+        calendarMetricView.setTextColor(infoColor);
+        calendarProgressView.bind(ContextualAtAGlancePresentation.current(calendarRow), infoColor);
         applyCalendarIcon(infoColor);
         syncNotificationOverflowStyle(notificationOverflowView, dateView, notificationIconRow);
         int mediaColor = Color.rgb(PixelAodVisualStyle.MEDIA_EMPHASIS_COLOR_RED,
@@ -7421,9 +7442,11 @@ public final class PixelAodClockView extends FrameLayout {
             usingCalendarApplicationIcon = false;
             updateCalendarRowStyle(contextualTextSize);
         }
+        calendarMetricView.configureAmbientMode(true,
+                PixelAodRuntimeState.liveUpdateSecondLevelAodRefreshAvailable());
         boolean contextualChanged = ContextualAtAGlancePresentation.apply(
-                getContext(), calendarRow, calendarIconView, calendarView, contextual.card,
-                infoColor, clockColor,
+                getContext(), calendarRow, calendarIconView, calendarView,
+                calendarMetricView, calendarProgressView, contextual.card, infoColor, clockColor,
                 contextualTextSize,
                 contextualInfoWeight(contextual.card,
                         currentInfoWeight > 0 ? currentInfoWeight : INFO_AOD_WEIGHT), "aod-update");
@@ -7890,8 +7913,10 @@ public final class PixelAodClockView extends FrameLayout {
         currentInfoWeight = normalizedWeight;
         applySharedClockTypeface(dateView, getContext(), normalizedWeight);
         applySharedClockTypeface(weatherView, getContext(), normalizedWeight);
-        applySharedClockTypeface(calendarView, getContext(), contextualInfoWeight(
-                ContextualAtAGlancePresentation.current(calendarRow), normalizedWeight));
+        int contextualWeight = contextualInfoWeight(
+                ContextualAtAGlancePresentation.current(calendarRow), normalizedWeight);
+        applySharedClockTypeface(calendarView, getContext(), contextualWeight);
+        applySharedClockTypeface(calendarMetricView, getContext(), contextualWeight);
         // Text metrics can change with the synchronized variable-font weight. Recalculate the
         // shared information group before notification/media rows are positioned below it.
         if (calendarRow != null && notificationIconRow != null && mediaRow != null) {
@@ -8115,6 +8140,11 @@ public final class PixelAodClockView extends FrameLayout {
 
     private void updateCalendarRowStyle(int textSizeDp) {
         calendarView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, textSizeDp);
+        calendarMetricView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, textSizeDp);
+        LinearLayout.LayoutParams progressParams =
+                (LinearLayout.LayoutParams) calendarProgressView.getLayoutParams();
+        progressParams.height = dp(textSizeDp);
+        calendarProgressView.setLayoutParams(progressParams);
         ContextualAtAGlanceCalendarIcon.applyGeometry(calendarIconView, getContext(), textSizeDp,
                 usingCalendarApplicationIcon);
         FrameLayout.LayoutParams rowParams =

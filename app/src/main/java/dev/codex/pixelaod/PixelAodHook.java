@@ -14,6 +14,7 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.hardware.camera2.CameraManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -57,6 +58,10 @@ final class PixelAodHook {
     private static final AtomicBoolean SELECTED_USER_RECEIVER_REGISTERED = new AtomicBoolean(false);
     private static final AtomicBoolean TORCH_CALLBACK_REGISTERED = new AtomicBoolean(false);
     private static final AtomicBoolean TORCH_REFRESH_RECEIVER_REGISTERED = new AtomicBoolean(false);
+    private static final Set<Class<?>> LIVE_ALERT_AOD_MANAGER_HOOKED_CLASSES =
+            Collections.synchronizedSet(new HashSet<>());
+    private static final Set<Class<?>> LIVE_ALERT_PLUGIN_STATUS_HOOKED_CLASSES =
+            Collections.synchronizedSet(new HashSet<>());
     private static volatile boolean vendorWakeTriggerAuthorityHooked;
     private static final String ACTION_SWITCH_FLASHLIGHT =
             "com.android.systemui.ACTION_SWITCH_FLASHLIGHT";
@@ -66,6 +71,8 @@ final class PixelAodHook {
     private static final String AOD_RECORD = "com.oplus.systemui.aod.AodRecord";
     private static final String AOD_UPDATE_MANAGER =
             "com.oplus.systemui.aod.aodclock.off.AodUpdateManager";
+    private static final String AOD_CONTROLLER_UPDATE_RECEIVER =
+            "com.oplus.systemui.aod.controller.BaseAodController$AodControllerUpdateReceiver";
     private static final String[] OPLUS_WAKE_UP_CONTROLLER_CANDIDATES = {
             "com.oplus.systemui.aod.display.OplusWakeUpController",
             "com.oplus.systemui.aod.OplusWakeUpController",
@@ -84,6 +91,12 @@ final class PixelAodHook {
             "com.oplus.systemui.biometrics.OplusBiometricAuthController";
     private static final String OPLUS_ON_SCREEN_FINGERPRINT_UI_MECH =
             "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech";
+    private static final String OPLUS_AOD_PLUGIN_MANAGER =
+            "com.oplus.systemui.aod.plugin.AODPluginManager";
+    private static final String OPLUS_LIVE_ALERT_NOTIFICATIONS_INTERACTOR =
+            "com.oplus.systemui.statusbar.notification.livealert.data.interactor."
+                    + "OplusLiveAlertNotificationsInteractor";
+    private static final String OPLUS_PLUGIN_LIVE_ALERT_INTERACTOR = "o5.i";
     private static final String LOCKSCREEN_SMARTSPACE_CONTROLLER =
             "com.android.systemui.statusbar.lockscreen.LockscreenSmartspaceController";
     private static final String LOCKSCREEN_SMARTSPACE_SESSION_LISTENER =
@@ -179,6 +192,8 @@ final class PixelAodHook {
     private static final long NATIVE_AOD_TICK_STOCK_SUPPRESSION_DEBOUNCE_MILLIS = 250L;
     private static final long NATIVE_AOD_TICK_STOCK_SUPPRESSION_RECHECK_DELAY_MILLIS = 56L;
     private static final long NATIVE_AOD_FRAME_KICK_MIN_INTERVAL_MILLIS = 1200L;
+    private static final long LIVE_UPDATE_RAMLESS_REFRESH_MIN_INTERVAL_MILLIS = 850L;
+    private static final long LIVE_UPDATE_RAMLESS_FAILURE_LOG_INTERVAL_MILLIS = 30_000L;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_REAPPLY = false;
     private static final boolean ENABLE_EXPENSIVE_DEBUG_DUMPS = false;
     private static final boolean ENABLE_NOTIFICATION_VIEW_REFLECTION_DUMP = false;
@@ -222,10 +237,16 @@ final class PixelAodHook {
             new WeakReference<>(null);
     private static volatile WeakReference<Object> lastNativeAodClockLayout =
             new WeakReference<>(null);
+    private static final AtomicBoolean NATIVE_AOD_CLOCK_REFRESH_HOOKED =
+            new AtomicBoolean(false);
     private static volatile Method nativeAodClockRefreshMethod;
     private static volatile Object[] nativeAodClockRefreshArgs = new Object[0];
     private static volatile boolean nativeAodFrameKickInProgress;
     private static volatile long lastNativeAodFrameKickAt;
+    private static volatile boolean liveUpdateRamlessRefreshInProgress;
+    private static volatile long lastLiveUpdateRamlessRefreshAt;
+    private static volatile long lastLiveUpdateRamlessFailureLogAt;
+    private static volatile String lastLiveUpdateRamlessCapabilitySignature = "";
     private static final FodNativeTimeoutHideGate FOD_NATIVE_TIMEOUT_HIDE_GATE =
             new FodNativeTimeoutHideGate();
     private static final OosProximityTransitionGate OOS_PROXIMITY_TRANSITION_GATE =
@@ -248,6 +269,7 @@ final class PixelAodHook {
     private static volatile long lastOosProximityFarAt;
     private static volatile String lastScreenOffStockSuppressionTrace;
     private static volatile long lastNativeAodTickStockSuppressionAt;
+    private static volatile long lastNativeAodRefreshDispatchAt;
     private static volatile String lastNativeAodTickStockSuppressionTrace;
 
     private PixelAodHook() {
@@ -292,6 +314,7 @@ final class PixelAodHook {
         PixelAodLifecycleHookInstaller.installScreenOffAnimationEligibility(classLoader);
         PixelAodLifecycleHookInstaller.installAmbientSuppressionCapabilities(classLoader);
         PixelAodLifecycleHookInstaller.installNativeSmartspacePassThrough(classLoader);
+        PixelAodLifecycleHookInstaller.installNativeLiveAlertAodPassThrough(classLoader);
         PixelAodLifecycleHookInstaller.installSelectiveBiometricPulseSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installNativeKeyguardTransitionSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installWakefulness(classLoader);
@@ -922,20 +945,64 @@ final class PixelAodHook {
     static void hookNativeAodRefreshCallbacks(ClassLoader classLoader) {
         boolean hooked = false;
         try {
-            Class<?> clockLayoutClass = ModernHookBridge.findClass(CLOCK_LAYOUT, classLoader);
-            hooked |= hookNativeAodRefreshMethods(clockLayoutClass, "AodClockLayout",
-                    "performAodUpdate", "refreshAodTime");
+            Class<?> receiverClass = ModernHookBridge.findClass(
+                    AOD_CONTROLLER_UPDATE_RECEIVER, classLoader);
+            Method receive = null;
+            for (Method method : receiverClass.getDeclaredMethods()) {
+                if ("onReceive".equals(method.getName()) && method.getParameterCount() == 2) {
+                    receive = method;
+                    break;
+                }
+            }
+            if (receive == null) {
+                throw new NoSuchMethodException(AOD_CONTROLLER_UPDATE_RECEIVER + "#onReceive");
+            }
+            receive.setAccessible(true);
+            ModernHookBridge.hookAfter(receive, param -> {
+                Object actionArg = param.args != null && param.args.length > 1 ? param.args[1] : null;
+                String action = actionArg instanceof Intent ? ((Intent) actionArg).getAction() : null;
+                if (action != null && !"com.android.systemui.aod.UPDATE_TIME".equals(action)) {
+                    return;
+                }
+                MAIN.post(() -> handleNativeAodRefreshCallback(
+                        "AodControllerUpdateReceiver#onReceive", true));
+            });
+            hooked = true;
+            PixelAodLog.i("installed authoritative native AOD minute seam "
+                    + AOD_CONTROLLER_UPDATE_RECEIVER + "#onReceive");
         } catch (Throwable t) {
-            PixelAodLog.log("failed to hook AodClockLayout native AOD refresh callbacks", t);
+            PixelAodLog.log("failed to hook authoritative AOD UPDATE_TIME receiver", t);
         }
+
+        // Keep the concrete clock hook as a fallback for ROM variants that skip the controller
+        // receiver. On current OPlus the receiver above is the authoritative owner.
         try {
-            Class<?> updateManagerClass = ModernHookBridge.findClass(AOD_UPDATE_MANAGER, classLoader);
-            hooked |= hookNativeAodRefreshMethods(updateManagerClass, "AodUpdateManager",
-                    "setExactTimeForAlarm", "updateCounterOrSetHideAlarm");
+            Class<?> clockLayoutClass = ModernHookBridge.findClass(CLOCK_LAYOUT, classLoader);
+            hooked |= ensureNativeAodClockRefreshHooks(clockLayoutClass, "startup-fallback");
         } catch (Throwable t) {
-            PixelAodLog.log("failed to hook AodUpdateManager native AOD refresh callbacks", t);
+            PixelAodLog.log("failed to hook AodClockLayout native AOD refresh fallback", t);
         }
-        PixelAodLog.log("installed native AOD refresh callbacks hooked=" + hooked);
+        PixelAodLog.i("installed native AOD refresh callbacks hooked=" + hooked);
+    }
+
+    private static boolean ensureNativeAodClockRefreshHooks(Class<?> clockLayoutClass,
+            String reason) {
+        if (clockLayoutClass == null) {
+            return false;
+        }
+        synchronized (NATIVE_AOD_CLOCK_REFRESH_HOOKED) {
+            if (NATIVE_AOD_CLOCK_REFRESH_HOOKED.get()) {
+                return true;
+            }
+            boolean hooked = hookNativeAodRefreshMethods(clockLayoutClass, "AodClockLayout",
+                    "performAodUpdate", "refreshAodTime");
+            if (hooked) {
+                NATIVE_AOD_CLOCK_REFRESH_HOOKED.set(true);
+            }
+            PixelAodLog.log("native AOD clock refresh seam ensured=" + hooked
+                    + " class=" + clockLayoutClass.getName() + " reason=" + reason);
+            return hooked;
+        }
     }
 
     private static boolean hookNativeAodRefreshMethods(Class<?> clazz, String sourceClass,
@@ -971,7 +1038,15 @@ final class PixelAodHook {
 
     private static void handleNativeAodRefreshCallback(String source,
             boolean reassertStockAodSuppression) {
+        long now = SystemClock.uptimeMillis();
+        long previous = lastNativeAodRefreshDispatchAt;
+        if (previous > 0L && now >= previous && now - previous < 250L) {
+            return;
+        }
+        lastNativeAodRefreshDispatchAt = now;
+        ActiveClockRendererController.onNativeAodMinuteTick(source);
         PixelAodClockView.refreshAllForNativeAodTick(source);
+        PixelAodLog.i("consumed authoritative native AOD minute tick source=" + source);
         if (reassertStockAodSuppression) {
             reassertStockAodSuppressionAfterNativeTick(source);
         }
@@ -2026,6 +2101,64 @@ final class PixelAodHook {
         MAIN.post(() -> runNativeAodFrameRefreshKick(source));
     }
 
+    /**
+     * Requests a second-level Live Update repaint through OPlus's ramless-region path.
+     * This deliberately never falls back to performAodUpdate(): that stock method advances
+     * vendor minute counters and is unsafe for a 1 Hz timer.
+     */
+    static void requestLiveUpdateMetricAodRefresh(String source) {
+        MAIN.post(() -> runLiveUpdateMetricAodRefresh(source));
+    }
+
+    private static void runLiveUpdateMetricAodRefresh(String source) {
+        Context context = systemUiContext;
+        if (context == null || PixelAodClockView.isDeviceInteractive(context)
+                || !PixelAodClockView.isAodActive()) {
+            return;
+        }
+        Object receiver = lastNativeAodClockLayout.get();
+        Boolean ramlessSupported = readBooleanField(receiver, "mIsSupportRamLessAod");
+        Boolean aodInstalled = readBooleanField(receiver, "mIsAodInstalled");
+        Object plugin = readObjectField(receiver, "mAodPlugin");
+        boolean capable = LiveUpdateAodRefreshPolicy.canUseRamless(
+                ramlessSupported, aodInstalled, plugin != null);
+        String capabilitySignature = "ramless=" + ramlessSupported
+                + ",installed=" + aodInstalled
+                + ",plugin=" + (plugin != null)
+                + ",receiver=" + (receiver != null ? receiver.getClass().getName() : "null");
+        if (!capabilitySignature.equals(lastLiveUpdateRamlessCapabilitySignature)) {
+            lastLiveUpdateRamlessCapabilitySignature = capabilitySignature;
+            PixelAodLog.i("Live Update AOD repaint capability " + capabilitySignature
+                    + " usable=" + capable);
+        }
+        if (!capable) {
+            return;
+        }
+        long now = SystemClock.uptimeMillis();
+        long age = now - lastLiveUpdateRamlessRefreshAt;
+        if (lastLiveUpdateRamlessRefreshAt > 0L && age >= 0L
+                && age < LIVE_UPDATE_RAMLESS_REFRESH_MIN_INTERVAL_MILLIS) {
+            return;
+        }
+        if (liveUpdateRamlessRefreshInProgress) {
+            return;
+        }
+        try {
+            liveUpdateRamlessRefreshInProgress = true;
+            lastLiveUpdateRamlessRefreshAt = now;
+            ModernHookBridge.callMethod(plugin, "updateRamlessArea");
+        } catch (Throwable t) {
+            if (now - lastLiveUpdateRamlessFailureLogAt
+                    >= LIVE_UPDATE_RAMLESS_FAILURE_LOG_INTERVAL_MILLIS) {
+                lastLiveUpdateRamlessFailureLogAt = now;
+                PixelAodLog.log("failed Live Update ramless AOD repaint source=" + source
+                        + " capability={" + capabilitySignature + "}", t);
+            }
+        } finally {
+            liveUpdateRamlessRefreshInProgress = false;
+        }
+    }
+
     private static void runNativeAodFrameRefreshKick(String source) {
         Context context = systemUiContext;
         if (context == null) {
@@ -3005,6 +3138,492 @@ final class PixelAodHook {
         }
     }
 
+    static void hookNativeLiveAlertAodPassThrough(ClassLoader classLoader) {
+        boolean managerGetterHooked = false;
+        boolean vendorClassifierHooked = false;
+        try {
+            Class<?> managerClass = ModernHookBridge.findClass(
+                    OPLUS_AOD_PLUGIN_MANAGER, classLoader);
+            Method getAodManager = ModernHookBridge.findMethod(managerClass, "getAODManager");
+            ModernHookBridge.hookAfter(getAodManager, param ->
+                    installNativeLiveAlertAodManagerHooks(param.getResult()));
+            managerGetterHooked = true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook native Live Alert AOD manager discovery", t);
+        }
+        try {
+            Class<?> interactorClass = ModernHookBridge.findClass(
+                    OPLUS_LIVE_ALERT_NOTIFICATIONS_INTERACTOR, classLoader);
+            for (Method method : interactorClass.getDeclaredMethods()) {
+                if (!"start".equals(method.getName()) || method.getParameterCount() != 1) {
+                    continue;
+                }
+                ModernHookBridge.hookAfter(method, param -> {
+                    Object plugin = param.args != null && param.args.length > 0 ? param.args[0] : null;
+                    installVendorLiveAlertStatusBarHooks(plugin);
+                });
+                vendorClassifierHooked = true;
+            }
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook OPlus Live Alert classifier plugin discovery", t);
+        }
+        PixelAodLog.i("installed native Live Alert AOD pass-through"
+                + " managerGetter=" + managerGetterHooked
+                + " vendorClassifier=" + vendorClassifierHooked
+                + " seam=AODPluginManager#getAODManager+OplusLiveAlertNotificationsInteractor#start"
+                + " ownership=observe-only classification=vendor-AOD-or-LIVE");
+    }
+
+    private static void installNativeLiveAlertAodManagerHooks(Object manager) {
+        if (manager == null) {
+            return;
+        }
+        Class<?> managerClass = manager.getClass();
+        synchronized (LIVE_ALERT_AOD_MANAGER_HOOKED_CLASSES) {
+            if (!LIVE_ALERT_AOD_MANAGER_HOOKED_CLASSES.add(managerClass)) {
+                return;
+            }
+        }
+        int receiveHooks = 0;
+        int activeSetHooks = 0;
+        try {
+            Class<?> current = managerClass;
+            while (current != null) {
+                for (Method method : current.getDeclaredMethods()) {
+                    if (method.getParameterCount() != 1
+                            || !Map.class.isAssignableFrom(method.getParameterTypes()[0])) {
+                        continue;
+                    }
+                    if ("onReceiveData".equals(method.getName())) {
+                        ModernHookBridge.hookAfter(method, param -> {
+                            Object value = param.args.length > 0 ? param.args[0] : null;
+                            if (value instanceof Map) {
+                                publishNativeLiveAlertUpdate(
+                                        NativeLiveAlertContextualAdapter.observeAodData(
+                                                (Map<?, ?>) value, System.currentTimeMillis(),
+                                                "OPlus-AodManager#onReceiveData"));
+                            }
+                        });
+                        receiveHooks++;
+                    } else if ("onSeedlingSetChanged".equals(method.getName())) {
+                        ModernHookBridge.hookAfter(method, param -> {
+                            Object value = param.args.length > 0 ? param.args[0] : null;
+                            if (value instanceof Map) {
+                                publishNativeLiveAlertUpdate(
+                                        NativeLiveAlertContextualAdapter.observeActiveSet(
+                                                (Map<?, ?>) value, System.currentTimeMillis(),
+                                                "OPlus-AodManager#onSeedlingSetChanged"));
+                            }
+                        });
+                        activeSetHooks++;
+                    }
+                }
+                current = current.getSuperclass();
+            }
+        } catch (Throwable t) {
+            LIVE_ALERT_AOD_MANAGER_HOOKED_CLASSES.remove(managerClass);
+            PixelAodLog.log("failed to hook resolved OPlus AOD manager Live Alert callbacks", t);
+            return;
+        }
+        PixelAodLog.i("resolved native Live Alert AOD sink"
+                + " class=" + managerClass.getName()
+                + " receiveHooks=" + receiveHooks
+                + " activeSetHooks=" + activeSetHooks
+                + " privacyOwner=OPlus-AOD-gate ownership=observe-only");
+    }
+
+    private static void installVendorLiveAlertStatusBarHooks(Object plugin) {
+        if (plugin == null) {
+            return;
+        }
+        try {
+            ClassLoader pluginClassLoader = plugin.getClass().getClassLoader();
+            if (pluginClassLoader == null) {
+                return;
+            }
+            Class<?> interactorClass = ModernHookBridge.findClass(
+                    OPLUS_PLUGIN_LIVE_ALERT_INTERACTOR, pluginClassLoader);
+            synchronized (LIVE_ALERT_PLUGIN_STATUS_HOOKED_CLASSES) {
+                if (!LIVE_ALERT_PLUGIN_STATUS_HOOKED_CLASSES.add(interactorClass)) {
+                    return;
+                }
+            }
+            Method notifyEntryDataChanged = null;
+            for (Method method : interactorClass.getDeclaredMethods()) {
+                if ("c".equals(method.getName()) && method.getParameterCount() == 2
+                        && method.getParameterTypes()[1] == boolean.class) {
+                    notifyEntryDataChanged = method;
+                    break;
+                }
+            }
+            if (notifyEntryDataChanged == null) {
+                LIVE_ALERT_PLUGIN_STATUS_HOOKED_CLASSES.remove(interactorClass);
+                PixelAodLog.i("vendor Live Alert interactor found without notify callback"
+                        + " class=" + interactorClass.getName());
+                return;
+            }
+            ModernHookBridge.hookAfter(notifyEntryDataChanged, param -> {
+                try {
+                    Object entryType = param.args != null && param.args.length > 0
+                            ? param.args[0] : null;
+                    if (entryType == null || !"ENTRY_STATUS_BAR".equals(String.valueOf(entryType))) {
+                        return;
+                    }
+                    List<?> models = currentVendorLiveAlertStatusModels(
+                            param.thisObject, entryType);
+                    publishVendorLiveAlertStatusBarList(models,
+                            "SystemUIPlugin-LiveAlertInteractorImpl#ENTRY_STATUS_BAR");
+                } catch (Throwable t) {
+                    PixelAodLog.log("failed to read vendor-classified Live Alert status list", t);
+                }
+            });
+            PixelAodLog.i("resolved vendor Live Alert status classifier"
+                    + " class=" + interactorClass.getName()
+                    + " callback=c(ENTRY_STATUS_BAR,boolean) state=public-list-accessor"
+                    + " ownership=observe-only classification=vendor-LIVE");
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook vendor Live Alert status classifier", t);
+        }
+    }
+
+    private static List<?> currentVendorLiveAlertStatusModels(
+            Object interactor, Object entryType) throws ReflectiveOperationException {
+        if (interactor == null || entryType == null) {
+            return Collections.emptyList();
+        }
+        Method accessor = null;
+        Class<?> current = interactor.getClass();
+        while (current != null && accessor == null) {
+            for (Method method : current.getDeclaredMethods()) {
+                if (method.getParameterCount() != 1
+                        || !List.class.isAssignableFrom(method.getReturnType())) {
+                    continue;
+                }
+                Class<?> parameterType = method.getParameterTypes()[0];
+                if (!parameterType.isInstance(entryType)) {
+                    continue;
+                }
+                accessor = method;
+                if ("a".equals(method.getName())) {
+                    break;
+                }
+            }
+            current = current.getSuperclass();
+        }
+        if (accessor == null) {
+            throw new NoSuchMethodException(interactor.getClass().getName()
+                    + "#<List accessor>(" + entryType.getClass().getName() + ")");
+        }
+        accessor.setAccessible(true);
+        Object value = accessor.invoke(interactor, entryType);
+        if (!(value instanceof List)) {
+            return Collections.emptyList();
+        }
+        return new ArrayList<>((List<?>) value);
+    }
+
+    private static void publishVendorLiveAlertStatusBarList(List<?> models, String source) {
+        ArrayList<NativeLiveAlertContextualAdapter.VendorLivePayload> payloads = new ArrayList<>();
+        int unsupportedCount = 0;
+        String firstServiceId = "";
+        String firstPackage = "";
+        String firstBundleKeys = "";
+        String structuredKinds = "";
+        for (Object model : models) {
+            if (model == null) {
+                continue;
+            }
+            try {
+                String serviceId = safeReflectString(model, "q");
+                String packageName = safeReflectString(model, "f");
+                boolean shouldShow = safeReflectBoolean(model, "r", false);
+                boolean milestone = safeReflectBoolean(model, "i", false);
+                Bundle bundle = safeReflectBundle(model, "u");
+                if (firstServiceId.isEmpty()) {
+                    firstServiceId = serviceId;
+                    firstPackage = packageName;
+                    if (bundle != null && !bundle.isEmpty()) {
+                        firstBundleKeys = String.join(",", bundle.keySet());
+                    }
+                }
+                NativeLiveAlertContextualAdapter.VendorLivePayload payload =
+                        structuredVendorLivePayload(model, serviceId, packageName,
+                                shouldShow, milestone);
+                if (payload == null
+                        || payload.semanticKind == NativeLiveAlertContextualAdapter.SemanticKind.NONE) {
+                    unsupportedCount++;
+                    continue;
+                }
+                payloads.add(payload);
+                if (!structuredKinds.isEmpty()) {
+                    structuredKinds += ",";
+                }
+                structuredKinds += payload.semanticKind;
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to normalize structured vendor Live Alert model", t);
+            }
+        }
+        NativeLiveAlertContextualAdapter.Update update =
+                NativeLiveAlertContextualAdapter.observeVendorLiveSet(
+                        payloads, System.currentTimeMillis(), source);
+        PixelAodLog.i("vendor Live Alert status callback"
+                + " models=" + models.size()
+                + " structured=" + update.vendorSnapshotCount
+                + " unsupported=" + unsupportedCount
+                + " kinds=" + (structuredKinds.isEmpty() ? "none" : structuredKinds)
+                + " firstServiceId=" + (firstServiceId.isEmpty() ? "none" : firstServiceId)
+                + " firstPackage=" + (firstPackage.isEmpty() ? "none" : firstPackage)
+                + " firstBundleKeys=" + (firstBundleKeys.isEmpty() ? "none" : firstBundleKeys)
+                + " changed=" + update.changed);
+        publishNativeLiveAlertUpdate(update);
+    }
+
+    private static NativeLiveAlertContextualAdapter.VendorLivePayload structuredVendorLivePayload(
+            Object model, String serviceId, String packageName, boolean shouldShow,
+            boolean milestone) {
+        String liveAlertService = safeReflectString(model, "B");
+        if (isVendorTimerLiveAlert(serviceId, packageName, liveAlertService)) {
+            long remainingMillis = NativeLiveAlertContextualAdapter.parseTimerRemainingMillis(
+                    extractVendorLiveAlertRenderedTexts(model));
+            if (remainingMillis > 0L) {
+                long nowWallMillis = System.currentTimeMillis();
+                long modelStartedAtMillis = safeReflectLong(model, "v", 0L);
+                int remainingPercent = NativeLiveAlertContextualAdapter.timerRemainingPercent(
+                        modelStartedAtMillis, nowWallMillis, remainingMillis);
+                return new NativeLiveAlertContextualAdapter.VendorLivePayload(
+                        serviceId, packageName,
+                        NativeLiveAlertContextualAdapter.SemanticKind.TIMER,
+                        "Timer", "", remainingPercent,
+                        SystemClock.elapsedRealtime() + remainingMillis,
+                        true, shouldShow, milestone);
+            }
+            return null;
+        }
+        if (isVendorHotspotLiveAlert(serviceId, packageName)) {
+            int connectedDevices = NativeLiveAlertContextualAdapter.parseConnectedDeviceCount(
+                    extractVendorLiveAlertRenderedTexts(model));
+            if (connectedDevices >= 0) {
+                return new NativeLiveAlertContextualAdapter.VendorLivePayload(
+                        serviceId, packageName,
+                        NativeLiveAlertContextualAdapter.SemanticKind.HOTSPOT,
+                        "Hotspot", String.valueOf(connectedDevices), -1,
+                        0L, false, shouldShow, milestone);
+            }
+            return null;
+        }
+
+        StatusBarNotification notification = findStructuredLiveAlertNotification(
+                serviceId, packageName);
+        NativeLiveAlertContextualAdapter.VendorLivePayload progress =
+                structuredProgressPayload(serviceId, packageName, shouldShow, milestone,
+                        notification);
+        if (progress != null) {
+            return progress;
+        }
+        return structuredCallPayload(serviceId, packageName, shouldShow, milestone,
+                notification);
+    }
+
+    private static boolean isVendorTimerLiveAlert(String serviceId, String packageName,
+            String liveAlertService) {
+        return "268451943".equals(serviceId)
+                || ("com.oneplus.deskclock".equals(packageName)
+                && liveAlertService.contains("TimerImmersiveService"));
+    }
+
+    private static boolean isVendorHotspotLiveAlert(String serviceId, String packageName) {
+        return "268451843".equals(serviceId)
+                && "com.oplus.wirelesssettings".equals(packageName);
+    }
+
+    private static StatusBarNotification findStructuredLiveAlertNotification(
+            String serviceId, String packageName) {
+        StatusBarNotification packageFallback = null;
+        synchronized (NOTIFICATION_CACHE) {
+            for (StatusBarNotification sbn : NOTIFICATION_CACHE.values()) {
+                if (sbn == null || sbn.getNotification() == null) {
+                    continue;
+                }
+                Bundle extras = sbn.getNotification().extras;
+                String notificationServiceId = extras != null
+                        ? extras.getString("op_fluid_serviceId", "") : "";
+                if (!serviceId.isEmpty() && serviceId.equals(notificationServiceId)) {
+                    return sbn;
+                }
+                if (packageFallback == null && !packageName.isEmpty()
+                        && packageName.equals(sbn.getPackageName())) {
+                    packageFallback = sbn;
+                }
+            }
+        }
+        return packageFallback;
+    }
+
+    private static NativeLiveAlertContextualAdapter.VendorLivePayload structuredProgressPayload(
+            String serviceId, String packageName, boolean shouldShow, boolean milestone,
+            StatusBarNotification sbn) {
+        if (sbn == null || sbn.getNotification() == null) {
+            return null;
+        }
+        Bundle extras = sbn.getNotification().extras;
+        if (extras == null) {
+            return null;
+        }
+        int max = extras.getInt(Notification.EXTRA_PROGRESS_MAX, 0);
+        int progress = extras.getInt(Notification.EXTRA_PROGRESS, 0);
+        boolean indeterminate = extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE, false);
+        if (max <= 0 || indeterminate || progress < 0) {
+            return null;
+        }
+        int percent = Math.max(0, Math.min(100,
+                Math.round((progress * 100f) / Math.max(1, max))));
+        CharSequence rawTitle = extras.getCharSequence(Notification.EXTRA_TITLE);
+        String label = NativeLiveAlertContextualAdapter.progressSemanticLabel(
+                rawTitle != null ? rawTitle.toString() : "");
+        return new NativeLiveAlertContextualAdapter.VendorLivePayload(
+                serviceId, packageName,
+                NativeLiveAlertContextualAdapter.SemanticKind.PROGRESS,
+                label, percent + "%", percent, 0L, false, shouldShow, milestone);
+    }
+
+
+    private static NativeLiveAlertContextualAdapter.VendorLivePayload structuredCallPayload(
+            String serviceId, String packageName, boolean shouldShow, boolean milestone,
+            StatusBarNotification sbn) {
+        if (sbn == null || sbn.getNotification() == null
+                || !Notification.CATEGORY_CALL.equals(sbn.getNotification().category)) {
+            return null;
+        }
+        long startElapsedRealtime = 0L;
+        long when = sbn.getNotification().when;
+        if (when > 0L) {
+            long age = Math.max(0L, System.currentTimeMillis() - when);
+            startElapsedRealtime = Math.max(1L, SystemClock.elapsedRealtime() - age);
+        }
+        return new NativeLiveAlertContextualAdapter.VendorLivePayload(
+                serviceId, packageName,
+                NativeLiveAlertContextualAdapter.SemanticKind.CALL,
+                "Call", "", -1, startElapsedRealtime, false, shouldShow, milestone);
+    }
+
+    private static List<String> extractVendorLiveAlertRenderedTexts(Object model) {
+        ArrayList<String> texts = new ArrayList<>();
+        if (model == null) {
+            return texts;
+        }
+        try {
+            Object wrappersValue = ModernHookBridge.callMethod(model, "j");
+            if (!(wrappersValue instanceof List)) {
+                return texts;
+            }
+            Set<View> visited = Collections.newSetFromMap(new WeakHashMap<>());
+            for (Object wrapper : (List<?>) wrappersValue) {
+                if (wrapper == null || texts.size() >= 16) {
+                    continue;
+                }
+                Object viewValue;
+                try {
+                    viewValue = ModernHookBridge.callMethod(wrapper, "n", true);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                if (viewValue instanceof View) {
+                    collectVendorLiveAlertText((View) viewValue, texts, visited, 0);
+                }
+            }
+        } catch (Throwable ignored) {
+            // Renderer text is consulted only to extract a strict structured metric.
+        }
+        return texts;
+    }
+
+    private static void collectVendorLiveAlertText(View view, List<String> out,
+            Set<View> visited, int depth) {
+        if (view == null || out == null || visited == null || depth > 12
+                || out.size() >= 16 || !visited.add(view)) {
+            return;
+        }
+        if (view instanceof TextView) {
+            CharSequence raw = ((TextView) view).getText();
+            String text = raw != null
+                    ? PixelAodRenderModel.normalizeAtAGlanceExtra(raw.toString()) : "";
+            if (!text.isEmpty() && !out.contains(text)) {
+                out.add(text);
+            }
+        }
+        if (!(view instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup group = (ViewGroup) view;
+        int childCount = Math.min(group.getChildCount(), 64);
+        for (int index = 0; index < childCount && out.size() < 16; index++) {
+            collectVendorLiveAlertText(group.getChildAt(index), out, visited, depth + 1);
+        }
+    }
+
+    private static String safeReflectString(Object receiver, String methodName) {
+        try {
+            Object value = ModernHookBridge.callMethod(receiver, methodName);
+            return value != null ? String.valueOf(value).trim() : "";
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private static boolean safeReflectBoolean(Object receiver, String methodName,
+            boolean fallback) {
+        try {
+            Object value = ModernHookBridge.callMethod(receiver, methodName);
+            return value instanceof Boolean ? (Boolean) value : fallback;
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
+
+    private static long safeReflectLong(Object receiver, String methodName, long fallback) {
+        try {
+            Object value = ModernHookBridge.callMethod(receiver, methodName);
+            return value instanceof Number ? ((Number) value).longValue() : fallback;
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
+    private static Bundle safeReflectBundle(Object receiver, String methodName) {
+        try {
+            Object value = ModernHookBridge.callMethod(receiver, methodName);
+            return value instanceof Bundle ? (Bundle) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+
+    private static void publishNativeLiveAlertUpdate(
+            NativeLiveAlertContextualAdapter.Update update) {
+        if (update == null) {
+            return;
+        }
+        PixelAodLog.i("native Live Alert callback"
+                + " event=" + update.event
+                + " activeSetObserved=" + update.activeSetObserved
+                + " active=" + update.activeCount
+                + " accepted=" + update.snapshotCount
+                + " aod=" + update.aodSnapshotCount
+                + " vendorFallback=" + update.vendorSnapshotCount
+                + " package=" + (update.packageName.isEmpty() ? "none" : update.packageName)
+                + " titlePresent=" + update.titlePresent
+                + " descriptionPresent=" + update.descriptionPresent
+                + " changed=" + update.changed);
+        if (!update.changed) {
+            return;
+        }
+        MAIN.post(() -> {
+            PixelLockscreenClockView.refreshAll("native-live-alert-aod");
+            ActiveClockRendererController.refreshInformationFromExistingAdapters(
+                    "native-live-alert-aod");
+        });
+    }
+
     static void hookSelectiveBiometricPulseSemantics(ClassLoader classLoader) {
         boolean showHooked = false;
         boolean hideHooked = false;
@@ -3199,6 +3818,17 @@ final class PixelAodHook {
         }
     }
 
+    private static Object readObjectField(Object target, String fieldName) {
+        if (target == null || TextUtils.isEmpty(fieldName)) {
+            return null;
+        }
+        try {
+            return ModernHookBridge.getObjectField(target, fieldName);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     static VendorAmbientSuppressionCapabilities.Snapshot vendorAmbientSuppressionSnapshot() {
         return VENDOR_AMBIENT_SUPPRESSION.snapshot();
     }
@@ -3324,12 +3954,26 @@ final class PixelAodHook {
         }
     }
 
+    static boolean liveUpdateSecondLevelAodRefreshAvailable() {
+        Object receiver = lastNativeAodClockLayout.get();
+        Boolean ramlessSupported = readBooleanField(receiver, "mIsSupportRamLessAod");
+        Boolean aodInstalled = readBooleanField(receiver, "mIsAodInstalled");
+        Object plugin = readObjectField(receiver, "mAodPlugin");
+        return LiveUpdateAodRefreshPolicy.canUseRamless(
+                ramlessSupported, aodInstalled, plugin != null);
+    }
+
     static boolean nativeKeyguardSceneAllowsPresentation() {
         return NATIVE_KEYGUARD_SCENE_ELIGIBILITY.allowsPresentationFallbackTrue();
     }
 
     static boolean nativeKeyguardSceneSupportsNonLockscreenAodBypass() {
         return NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot().supportsNonLockscreenAodBypass();
+    }
+
+    static boolean nativeKeyguardSceneUsesCouiHostVisibility() {
+        return CouiBouncerHostVisibilityPolicy.nativeHostOwns(
+                NATIVE_KEYGUARD_SCENE_ELIGIBILITY.snapshot());
     }
 
     static String describeNativeKeyguardSceneEligibility() {
@@ -3884,6 +4528,10 @@ final class PixelAodHook {
     private static void handleClockLayout(Context context, Object clockLayoutObject, String source) {
         try {
             rememberNativeAodClockLayout(clockLayoutObject);
+            if (clockLayoutObject != null) {
+                ensureNativeAodClockRefreshHooks(clockLayoutObject.getClass(),
+                        "runtime-instance#" + source);
+            }
             if (!(clockLayoutObject instanceof ViewGroup)) {
                 PixelAodLog.log("AodClockLayout is not ViewGroup from " + source + ": " + clockLayoutObject);
                 return;

@@ -1,5 +1,63 @@
 # Changelog
 
+## [0.1.24] - 2026-08-25
+### Changed
+- Recompose the S20 Live Update surface after physical 0.1.23 feedback: the dedicated block is now centered inside the full contextual lane below the clock/date-weather cluster instead of visually hanging from the 32dp leading edge.
+- Establish a deliberate AOD hierarchy: 16dp cluster-to-Live-Update gap, 18dp Live-Update-to-notification gap, 18dp semantic glyph, 13dp/WGT 500/0.92-alpha label, and 30dp/WGT 500 primary metric.
+- Timer alone may show a 96x2dp rounded remaining-time indicator. Installer/determinate Progress keeps its percentage metric but deliberately omits a bar because those tasks are normally short-lived and interactive.
+- Timer progress uses the existing structured deadline plus the stable OPlus Seedling service timestamp only as a conservative bootstrap for total duration. Invalid, too-fresh, future, stale, or >24h totals fail closed with no bar. Once accepted, the bar recomputes from the same deadline on host minute ticks, so it cannot freeze while the adaptive AOD metric continues changing.
+- Preserve the accepted native ClockViewRoot ownership for LOCKSCREEN <-> BOUNCER and the protected clock morph/glyph/weight core unchanged.
+
+### Evidence / Status
+- Final local gate: 104 suites / 509 tests / 0 failures / 0 errors / 0 skipped; `git diff --check` PASS; protected seven-file animation core ZERO_DIFF.
+- Candidate `0.1.24 / 9015`, APK SHA-256 `e61cfa4709f30ff76217d716321c4fd1985d3a492ddf262ca49a9d41d47d0b5b`; overwrite install/hash verification PASS; SystemUI reload `933 -> 20119`.
+- No Timer was started, set, resumed, recreated, stopped, or otherwise manipulated during this stage. Physical Timer layout acceptance remains user-owned.
+
+## [0.1.23] - 2026-08-25
+### Changed
+- Continue M9 P1-S20 as **S20.3 usable AOD Live Update** after physical testing proved that S20.2 still froze Timer seconds after the black-frame/AOD handoff and only caught up when touch/UDFPS woke SystemUI.
+- Runtime capability evidence on CPH2573 is authoritative: `AodClockLayout.mIsSupportRamLessAod=false`, so this ROM has no proven safe one-second ramless repaint path for a normal Pixel child View. S20.3 therefore stops advertising frozen second-level AOD time.
+- Mirror Android 17 `MetricStyle` semantics: interactive/lockscreen Timer and Call keep chronometer seconds, while deep AOD without ramless support uses an adaptive low-power metric (`30m`, `29m`, `<1m`, `1h 5m`) derived from the same monotonic time base.
+- Add a dedicated two-level Live Update metric block on the active COUI host: semantic glyph + small label above a larger primary metric value, with determinate progress beneath when applicable. Live Update is no longer rendered as one line of auxiliary contextual text.
+- Drive low-power AOD metric refresh from the platform minute cadence already present on this ROM: the COUI host's existing `ACTION_TIME_TICK` receiver is the primary seam, with OPlus `AodClockLayout#performAodUpdate/refreshAodTime` / `UPDATE_TIME` observed as secondary native seams. The module never schedules its own Timer alarm and never invokes `performAodUpdate()` itself.
+- Preserve the accepted native `ClockViewRoot` ownership for `LOCKSCREEN <-> BOUNCER`; S20.3 does not change the validated no-delay PIN-return path or the protected clock morph/glyph/weight core.
+- Advance the test candidate to `0.1.23`; Android update ordering uses `versionCode=9014`.
+
+### Evidence / Status
+- Official Android 17 documentation defines `MetricStyle` for timers and an AOD-specific presentation state; `Metric.TimeDifference` semantics are temporal-anchor based rather than app-reposted strings.
+- Focused JVM coverage includes low-power adaptive Timer/Call formatting, ramless-vs-non-ramless second-tick policy, and the dedicated metric hierarchy where the 24dp metric is visually primary over the 13dp label. Final gate: **104 suites / 506 tests / 0 failures/errors/skips**, `assembleDebug` PASS, `git diff --check` PASS, protected animation core ZERO_DIFF.
+- Final S20.3 candidate remains `0.1.23 / 9014`; APK **23,531,868 bytes**, SHA-256 `2c39b7421b302714686f9b9383f1f0dc96190e6a8ab9a02896914863802e813d`; device `base.apk` matched before the normal SystemUI reload `22845 -> 29315`.
+- Runtime proof on PID `29315`: while `mWakefulness=Dozing` and no Timer was created by the module, the COUI host received system `TIME_TICK` at `13:56:00.076`; OPlus `AodClockLayout#performAodUpdate(boolean)` was observed at `13:56:00.120`. AlarmManager independently shows `time_tick_allowed_while_idle=true` with consecutive minute ticks. Thus a visible adaptive Live Update can advance on the same minute cadence as the AOD clock without touch/UDFPS or a private wakeup.
+- The current physical acceptance gate is visual only: the user must start any Timer themselves and confirm the dedicated AOD metric block plus autonomous minute changes. Automated Timer creation/resume remains explicitly forbidden.
+
+## [0.1.22] - 2026-08-24
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Continue M9 P1-S20 as **S20.2 dedicated Live Update presentation** after real-device S20.1 testing proved that sentence-shaped `Timer 29:10` / `Hotspot 1 device` text is not an acceptable Android 17 MetricStyle analogue.
+- Keep OPlus as the classification/lifecycle authority and S18 as the sole cross-source arbiter, but split a winning `LIVE_UPDATE` into independent low-power presentation fields: semantic glyph, static label, dynamic metric value, and optional determinate progress. Generic vendor-rendered text remains fail-closed.
+- Timer and Call now use a dedicated tabular-number metric view driven from one monotonic time base. The metric is an inline compact value beside the static label instead of a right-edge column; same-identity metric changes never replay the contextual replacement crossfade or move lower notification/media rows.
+- Hotspot renders a hotspot glyph + static `Hotspot` label + inline numeric connected-device metric only. Progress renders a task glyph + semantic label + percentage metric plus a thin determinate progress indicator; it is still accepted only from structured notification progress extras.
+- Live Update row geometry no longer lets the label consume the remaining row width: the artificial 48dp metric minimum is removed, Live Update labels use wrap-content/no-weight geometry, the metric gets an 8dp inline gap, and dedicated glyphs use an upscalable >=20dp slot instead of a 24-physical-pixel `CENTER_INSIDE` drawable.
+- SMALL clock/date geometry now has a 12dp collision guard between the painted clock right edge and the date/weather group. Only the information group is shifted when a wide four-digit time would violate the gap; the clock glyph target calculation and accepted LS<->AOD morph path are unchanged.
+- Add dedicated monochrome Live Update glyphs for Timer, Hotspot, Progress, and Call instead of borrowing Calendar or copying vendor capsule artwork.
+- Add a second-level AOD repaint bridge that follows the exact current-OOS ramless path: while genuinely dozing and only when `AodClockLayout.mIsSupportRamLessAod`, `mIsAodInstalled`, and `mAodPlugin` are all present, a changed metric asks the existing foreign AOD plugin for `updateRamlessArea()`. It never calls `performAodUpdate()` for second ticks because the exact current SystemUI implementation advances vendor display time by 60,000 ms and increments minute/update counters on every invocation.
+- Apply the same structured label/metric/progress surface to Lockscreen, legacy Pixel AOD, and the COUI host while leaving the protected 550 ms clock morph/glyph/weight implementation untouched.
+- Advance the visible candidate to `0.1.22`; Android update ordering uses independent `versionCode=9013`.
+
+### Evidence / Status
+- Follow-up lockscreen regression correction: the first attempted 900 ms `PixelLockscreenClockView` bouncer-cache fix was physically rejected and has been fully reverted. The active S20.2 renderer is the persistent COUI host; its authoritative hide/reveal path is `NativeKeyguardSceneEligibility -> CouiClockPluginHostController`.
+- Correct root cause: native `LOCKSCREEN -> PRIMARY_BOUNCER` must suppress immediately, but the previous eligibility policy also kept `PRIMARY_BOUNCER -> LOCKSCREEN` suppressed for every STARTED/RUNNING sample and restored the COUI host only at FINISHED. That explicitly held the host `INVISIBLE` for the native bouncer-exit animation. The policy is now directional: entering either PRIMARY/ALTERNATE_BOUNCER still hides on STARTED, while a transition from either bouncer to LOCKSCREEN becomes presentation-eligible on STARTED and immediately runs the existing non-animated COUI resync.
+- Focused tests now assert immediate bouncer-exit eligibility at STARTED/RUNNING while preserving immediate bouncer-entry suppression. Final full gate is **102 suites / 498 tests / 0 failures / 0 errors / 0 skipped**; `assembleDebug`, `git diff --check`, and protected seven-file clock/morph/weight core **ZERO_DIFF** all PASS.
+- Updated 0.1.22 / 9013 APK is **31,247,817 bytes**, SHA-256 `988391dc11afa74299372934011e88a84457693b448fcee9f4658391d55f2312`; raw-USB overwrite install and installed `base.apk` hash both PASS. SystemUI reload changed PID `26083 -> 3490`; current-PID FATAL/ANR/fatal-signal scan is 0 and animation scales remain `1.0/1.0/1.0`.
+- Runtime transition proof now reproduces both native edges. `LOCKSCREEN -> PRIMARY_BOUNCER STARTED` still logs `presentationAllowed=false` with `COUI native-scene suppression`. On the reverse edge, `PRIMARY_BOUNCER -> LOCKSCREEN STARTED` at `11:25:10.101` already logs `presentationAllowed=true` and `COUI native-scene resync ... syncedHosts=1`; the same native transition does not reach FINISHED until `11:25:10.563`, **462 ms later**. The old policy waited for that terminal sample, matching the reported several-hundred-millisecond delay; the new runtime path restores at the transition start. Final visible acceptance still requires the user's physical `swipe up -> PIN -> Back` check before commit/push.
+- Exact current SystemUI SHA-256 remains `18ac7d6b40081fdd913d656e9f436bf583d559829661c1f14383aef80d9134a6`. Exact `AodClockLayout#lambda$new$0` proves the stock ramless branch calls `ReflectionUtils.methodInvoke(mAodPlugin, "updateRamlessArea")`, while `lambda$performAodUpdate$2` advances `mCurrentDisplayTime += 60000` and `mTotalUpdateCount += 60`; S20.2 therefore explicitly forbids the latter as a 1 Hz fallback.
+- Exact current `com.oplus.uiengine` / VariUIEngine `13.7.10` SHA-256 `b16244c8c3cd02e4ce4d56844e570a04a74724c254ffda6625857b46b2408676` exposes `com.oplus.aodimpl.AodManager#updateRamlessArea()` and forwards it to `AodRootLayout.updateRamlessArea()`.
+- Final automated gate after the layout correction: **102 suites / 497 tests / 0 failures / 0 errors / 0 skipped**; `assembleDebug` PASS; `git diff --check` PASS; protected seven-file clock/morph/weight core **ZERO_DIFF**. APK is **20,439,008 bytes**, SHA-256 `0c0e1eb3598bd3e9e629d09c138b1644297306bf3e9e90a096becc6a8ffb84c4`; overwrite install succeeded and installed `base.apk` matches exactly.
+- Final candidate SystemUI reload used the repository's established rooted process-reload path and changed PID `1712 -> 6901`. Current PID and system-level scans show no FATAL/ANR/SystemUI death.
+- Real Hotspot AOD screenshot proof closes the reported geometry defect: before the fix the numeric metric was at about `x=1264` while the label was at the left edge; after the fix the complete Live Update row is about `x=160..467` and the metric is at about `x=450`, immediately after the label. The dedicated hotspot glyph's painted height increased from roughly single-digit pixels to about **37 px**, comparable to the **42 px** text paint height.
+- The wide-digit clock/date guard is active on the real SMALL AOD: with a wide right-hand minute pair the painted clock right edge is about `x=764` and date content begins around `x=835`, leaving about **71 px / 17.75dp** at the current 640-dpi density. A pure regression case also covers the reported `00:08`-class collision by forcing a 12dp minimum gap without modifying clock glyph targets.
+- Before the final row-geometry correction, two real Timer AOD captures 8 seconds apart changed only the metric region, proving the S20.2 ramless repaint path could update without touch. The user has since explicitly prohibited any further automated Timer creation/testing, so the final geometry build is validated with Hotspot only; Timer must not be started again unless the user explicitly re-authorizes it later.
+
 ## [0.1.19] - 2026-08-23
 ### Changed
 - Modification model: **GPT-5.6 Sol**.
