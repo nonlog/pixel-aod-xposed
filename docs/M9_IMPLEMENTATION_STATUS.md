@@ -710,3 +710,13 @@ Validated independent stages are checkpointed and pushed to the current developm
 ### Recommended next checkpoint after skipping S20
 
 Prefer a bounded **S21 notification-presentation parity cleanup** rather than another speculative native contextual adapter: remove the legacy fixed five-icon + `+N` policy and converge notification order/capacity/visual metrics with accepted ADR 0048 / 0057 / 0058 while preserving the already-stable visibility/privacy pipeline. This is deterministic, user-visible work with much lower architectural risk than Live Update or another vendor-private contextual surface.
+## S21 — Notification Presentation Parity deferred after regression
+
+2026-08-26 stable-line decision:
+
+- The first S21 candidate (`0.1.26 / 9017`, checkpoint `a9cd0ce`) consumed native `RankingMap#getOrderedKeys()`, SystemUI notification-capacity resources, and overflow-dot semantics.
+- Real-device testing then exposed a regression: silent-notification icons can appear transiently on AOD and disappear after the notification eligibility state settles. This violates the stable invariant that only the final eligible AOD notification set is presented.
+- S21.1 is therefore preserved only on `experiment/s21-notification-parity`; `agent/m9-implementation` restores the physically accepted 0.1.25 notification presentation behavior.
+- Stable rollback candidate is `0.1.27 / 9018`. S21 remains paused until the transient visibility path is reproduced and fixed without racing the existing eligibility/privacy authority.
+- Final rollback verification: **100 suites / 486 tests / 0 failures**, `git diff --check` PASS, protected core `ZERO_DIFF`, and production source/test tree is exactly identical to the accepted 0.1.25 baseline. APK SHA-256 `03e9004ef3b90cc48929f22da8e2c103d21cbe6219a3d73bbe92a02dc13a21b4` matches the installed package; SystemUI `15523 -> 11774`; current-PID health scan is empty; `debug_logging=false`.
+- S20 Live Update remains independently deferred on `experiment/s20-live-update`.

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.27] - 2026-08-26
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Roll back S21 notification-presentation changes from the stable development line after real-device testing exposed a regression where silent-notification icons could appear transiently on AOD and then disappear after SystemUI eligibility state converged.
+- Preserve the complete S21.1 prototype on `experiment/s21-notification-parity` at checkpoint `a9cd0ce`; stable notification ordering/capacity/overflow behavior is restored to the physically accepted 0.1.25 implementation while the root cause is investigated off the stable line.
+- Keep S20 Live Update deferred on `experiment/s20-live-update`; no Live Update code is reintroduced.
+- Advance the stable rollback candidate to `0.1.27 / 9018` so it cleanly replaces the installed regressed 0.1.26 build without a package downgrade.
+
+### Status
+- S21 is paused on the stable line. Do not reintroduce ranking-order or overflow ownership changes until transient silent-notification visibility has a deterministic reproducer and fix.
+- The accepted PIN/bouncer return fix, compact clock/date collision guard, notification eligibility/privacy pipeline, and protected clock/morph/weight animation core remain unchanged.
+- Final rollback gate: **100 suites / 486 tests / 0 failures / 0 errors / 0 skipped**; `git diff --check` PASS; protected seven-file clock/morph/weight core `ZERO_DIFF`; production source/test diff against accepted 0.1.25 baseline is exactly zero.
+- APK SHA-256 `03e9004ef3b90cc48929f22da8e2c103d21cbe6219a3d73bbe92a02dc13a21b4` matches the installed device package. SystemUI reloaded `15523 -> 11774`; `debug_logging=false`; current-PID FATAL / ANR / OOM scan is empty.
+- Remaining work: S21 root cause is intentionally unresolved on the stable line. The experimental branch is retained for offline diagnosis; no S21 behavior should be reintroduced until the transient silent-icon path is deterministic and physically validated.
 ## [0.1.25] - 2026-08-25
 ### Changed
 - Pause S20 Live Update work from the stable development line. The complete experimental implementation is preserved on `experiment/s20-live-update` at checkpoint `b37c0b8`; the stable candidate contains no Live Update hooks, adapters, renderers, timer/hotspot semantics, or AOD refresh additions.
