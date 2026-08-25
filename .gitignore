@@ -17,3 +17,6 @@ screenshots/
 
 # Local supervisor checkpoints and secrets (never commit)
 .local/
+
+# Local-only decompiled COUI reference; never commit/push.
+/reference/coui-2.5.0-260802/
