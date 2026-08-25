@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.26] - 2026-08-25
+### Changed
+- Start M9 S21 notification-presentation parity cleanup while leaving the S20 Live Update prototype isolated on its experimental branch.
+- Consume `NotificationListenerService.RankingMap#getOrderedKeys()` as the system ordering authority after existing AOD eligibility/privacy filtering. Ranking-order-only changes now invalidate the presentation signature, while keys missing from the system ranking retain stable input order instead of receiving a module ranking formula.
+- Remove the module-owned fixed five-icon capacity from the primary COUI renderer. AOD/lockscreen capacity is read from the current `com.android.systemui` resources (`max_notif_icons_on_aod` / `max_notif_icons_on_lockscreen`), with the Android fallback of three icons only when the resource seam is unavailable.
+- Replace the legacy `+N` overflow label with a native-style overflow dot using current SystemUI `overflow_dot_radius` / `overflow_icon_dot_padding` resources. Current COUI 18 dp icon slot / 15 dp inter-icon geometry is intentionally unchanged in this first S21 slice.
+- Device resource audit on CPH2573 resolves current SystemUI capacity to `3 / 3` for AOD/lockscreen and overflow-dot radius/padding to `2 / 3`; these are consumed at runtime rather than hard-coded as OPlus product policy.
+- Advance the candidate to `0.1.26`; Android update ordering uses `versionCode=9017`.
+
+### Status
+- S21.1 changes ordering and capacity/overflow ownership only. Notification eligibility/privacy, pulse lifetime, and the protected clock/morph/weight animation core remain unchanged.
+- Final S21.1 gate: **102 suites / 490 tests / 0 failures**; `git diff --check` PASS; protected seven-file clock/morph/weight core `ZERO_DIFF`. APK SHA-256 `06b59b60dea902aa1d65ed11aaa3593f78fa165b4537bc0de25a6cd22e4ff116` matches the installed device package; SystemUI reload `28983 -> 15523`.
+- Real Doze runtime with four eligible non-media icon glyphs reports `total=4 visible=3 hidden=1 max=3 overflowDot=true dozing=true`, proving the current SystemUI capacity is consumed and the legacy `+N` path is absent. Diagnostic logging was enabled only for this capture and restored to `false` immediately afterward; current-PID crash/ANR/OOM scan remains empty.
 ## [0.1.25] - 2026-08-25
 ### Changed
 - Pause S20 Live Update work from the stable development line. The complete experimental implementation is preserved on `experiment/s20-live-update` at checkpoint `b37c0b8`; the stable candidate contains no Live Update hooks, adapters, renderers, timer/hotspot semantics, or AOD refresh additions.

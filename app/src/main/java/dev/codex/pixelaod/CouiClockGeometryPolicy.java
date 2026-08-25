@@ -24,7 +24,6 @@ public final class CouiClockGeometryPolicy {
     public static final float MEDIA_TO_NOTIFICATION_GAP_DP = 28f;
     public static final float NOTIFICATION_ICON_SIZE_DP = 18f;
     public static final float NOTIFICATION_ICON_GAP_DP = 15f;
-    public static final int MAX_NOTIFICATION_ICONS = 7;
     public static final int BURN_IN_X_PERIOD_MINUTES = 83;
     public static final int BURN_IN_Y_PERIOD_MINUTES = 521;
     public static final float BATTERY_BURN_IN_X_SCALE = .75f;

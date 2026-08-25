@@ -8,35 +8,31 @@ import static org.junit.Assert.assertTrue;
 
 public final class CouiClockNotificationOverflowPolicyTest {
     @Test
-    public void zeroToFiveIconsHaveNoOverflow() {
-        for (int count = 0; count <= 5; count++) {
+    public void atOrBelowNativeCapacityHasNoOverflow() {
+        for (int count = 0; count <= 3; count++) {
             CouiClockNotificationOverflowPolicy.Plan plan =
-                    CouiClockNotificationOverflowPolicy.forCount(count);
+                    CouiClockNotificationOverflowPolicy.forCount(count, 3);
             assertEquals(count, plan.visibleCount());
             assertEquals(0, plan.hiddenCount());
             assertFalse(plan.hasOverflow());
-            assertEquals("", plan.overflowText());
         }
     }
 
     @Test
-    public void sixIconsShowFiveAndPlusOne() {
+    public void aboveNativeCapacityKeepsCapacityAndUsesOverflowDot() {
         CouiClockNotificationOverflowPolicy.Plan plan =
-                CouiClockNotificationOverflowPolicy.forCount(6);
-
-        assertEquals(5, plan.visibleCount());
+                CouiClockNotificationOverflowPolicy.forCount(4, 3);
+        assertEquals(3, plan.visibleCount());
         assertEquals(1, plan.hiddenCount());
         assertTrue(plan.hasOverflow());
-        assertEquals("+1", plan.overflowText());
     }
 
     @Test
-    public void largerCountsUseExactHiddenCountInOverflowLabel() {
+    public void capacityIsAnInputRatherThanModuleFiveIconConstant() {
         CouiClockNotificationOverflowPolicy.Plan plan =
-                CouiClockNotificationOverflowPolicy.forCount(12);
-
-        assertEquals(5, plan.visibleCount());
-        assertEquals(7, plan.hiddenCount());
-        assertEquals("+7", plan.overflowText());
+                CouiClockNotificationOverflowPolicy.forCount(12, 7);
+        assertEquals(7, plan.visibleCount());
+        assertEquals(5, plan.hiddenCount());
+        assertTrue(plan.hasOverflow());
     }
 }

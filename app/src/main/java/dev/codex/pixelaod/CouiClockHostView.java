@@ -54,8 +54,6 @@ final class CouiClockHostView extends FrameLayout {
     static final long LIVE_FADE_IN_MS = CouiClockPresentationModel.LIVE_FADE_IN_MS;
     static final float COLON_START_FRACTION = CouiClockPresentationModel.COLON_START_FRACTION;
     static final float COLON_DURATION_FRACTION = CouiClockPresentationModel.COLON_DURATION_FRACTION;
-    static final int MAX_NOTIFICATION_ICONS =
-            CouiClockNotificationOverflowPolicy.MAX_VISIBLE_ICONS;
 
     private static final int INFORMATION_COLOR = Color.WHITE;
     private static final float LARGE_COLON_SCALE = 0.44f;
@@ -91,7 +89,7 @@ final class CouiClockHostView extends FrameLayout {
     private final ImageView contextualIconView;
     private final TextView contextualView;
     private final LinearLayout notificationIconRow;
-    private final TextView notificationOverflowView;
+    private final NotificationOverflowDotView notificationOverflowView;
     private final LinearLayout mediaGroup;
     private final TextView mediaTitleView;
     private final LinearLayout mediaSubtitleRow;
@@ -216,13 +214,8 @@ final class CouiClockHostView extends FrameLayout {
         notificationIconRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         notificationIconRow.setClipChildren(false);
         notificationIconRow.setAlpha(0f);
-        notificationOverflowView = informationText(16f, 500);
-        notificationOverflowView.setGravity(android.view.Gravity.CENTER);
-        notificationOverflowView.setVisibility(GONE);
-        LinearLayout.LayoutParams overflowParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        overflowParams.setMarginStart(dp(16));
-        notificationIconRow.addView(notificationOverflowView, overflowParams);
+        notificationOverflowView = new NotificationOverflowDotView(context);
+        notificationIconRow.addView(notificationOverflowView, new LinearLayout.LayoutParams(1, dp(18)));
 
         mediaGroup = new LinearLayout(context);
         mediaGroup.setOrientation(LinearLayout.VERTICAL);
@@ -761,11 +754,14 @@ final class CouiClockHostView extends FrameLayout {
 
     void setNotificationIcons(List<? extends Drawable> icons) {
         int totalCount = icons == null ? 0 : icons.size();
+        NativeNotificationIconPresentationPolicy.Snapshot metrics =
+                NativeNotificationIconPresentationPolicy.resolve(getContext(), presentation.dozing());
         CouiClockNotificationOverflowPolicy.Plan plan =
-                CouiClockNotificationOverflowPolicy.forCount(totalCount);
+                CouiClockNotificationOverflowPolicy.forCount(totalCount, metrics.maxVisibleIcons);
         int count = plan.visibleCount();
         while (notificationIconCount() < count) {
             ImageView iconView = new ImageView(getContext());
+            iconView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             iconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(18), dp(18));
             if (notificationIconCount() > 0) {
@@ -787,12 +783,27 @@ final class CouiClockHostView extends FrameLayout {
             iconView.setVisibility(icon == null ? GONE : VISIBLE);
             iconIndex++;
         }
-        notificationOverflowView.setText(plan.overflowText());
+        LinearLayout.LayoutParams overflowParams =
+                (LinearLayout.LayoutParams) notificationOverflowView.getLayoutParams();
+        overflowParams.width = metrics.dotDiameterPx();
+        overflowParams.height = dp(18);
+        overflowParams.setMarginStart(plan.hasOverflow() ? dp(15) : 0);
+        notificationOverflowView.setLayoutParams(overflowParams);
+        notificationOverflowView.configure(
+                CouiClockVisualStylePolicy.notificationOverflowColor(
+                        PixelAodTypography.resolveMaterialInfoColor(getContext())),
+                metrics.dotDiameterPx());
         notificationOverflowView.setVisibility(plan.hasOverflow() ? VISIBLE : GONE);
         notificationIconRow.requestLayout();
         scheduleApplyTargets(false);
+        PixelAodLog.log("COUI notification icon presentation"
+                + " total=" + totalCount
+                + " visible=" + plan.visibleCount()
+                + " hidden=" + plan.hiddenCount()
+                + " max=" + metrics.maxVisibleIcons
+                + " overflowDot=" + plan.hasOverflow()
+                + " dozing=" + presentation.dozing());
     }
-
     private int notificationIconCount() {
         int count = 0;
         for (int i = 0; i < notificationIconRow.getChildCount(); i++) {
@@ -1747,7 +1758,7 @@ final class CouiClockHostView extends FrameLayout {
                 contextualCard.isVisible());
         contextualView.setAlpha(contextualAlpha);
         contextualIconView.setAlpha(contextualAlpha);
-        notificationOverflowView.setTextColor(CouiClockVisualStylePolicy.notificationOverflowColor(
+        notificationOverflowView.setDotColor(CouiClockVisualStylePolicy.notificationOverflowColor(
                 PixelAodTypography.resolveMaterialInfoColor(getContext())));
         mediaTitleView.setTextColor(Color.WHITE);
         mediaArtistView.setTextColor(Color.WHITE);
