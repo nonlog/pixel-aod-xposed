@@ -5,6 +5,7 @@ final class SystemNotificationIconPolicy {
     static final String SYSTEMUI_PACKAGE = "com.android.systemui";
     static final String OPLUS_DND_CHANNEL = "channel_dnd_notice";
     static final int OPLUS_DND_NOTIFICATION_ID = 10001;
+    static final float OPLUS_DND_VISUAL_SCALE = 1.22f;
 
     private SystemNotificationIconPolicy() {
     }
@@ -17,5 +18,10 @@ final class SystemNotificationIconPolicy {
         return SYSTEMUI_PACKAGE.equals(packageName)
                 && (OPLUS_DND_CHANNEL.equals(channelId)
                         || notificationId == OPLUS_DND_NOTIFICATION_ID);
+    }
+
+    static float visualScaleFor(String packageName, String channelId, int notificationId) {
+        return isOplusDndNotice(packageName, channelId, notificationId)
+                ? OPLUS_DND_VISUAL_SCALE : 1f;
     }
 }

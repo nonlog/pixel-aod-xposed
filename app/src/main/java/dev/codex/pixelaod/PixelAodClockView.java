@@ -625,6 +625,8 @@ public final class PixelAodClockView extends FrameLayout {
         notificationIconRow = new LinearLayout(context);
         notificationIconRow.setOrientation(LinearLayout.HORIZONTAL);
         notificationIconRow.setGravity(Gravity.CENTER_VERTICAL);
+        notificationIconRow.setClipChildren(false);
+        notificationIconRow.setClipToPadding(false);
         notificationIconRow.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         notificationIconRow.setAlpha(INFO_ALPHA);
         FrameLayout.LayoutParams notificationParams = new FrameLayout.LayoutParams(
@@ -5407,6 +5409,10 @@ public final class PixelAodClockView extends FrameLayout {
                         + " state={" + describeAodState(getContext()) + "}");
                 continue;
             }
+            float visualScale = notificationIconVisualScale(sbn);
+            if (visualScale > 1f) {
+                drawable = new VisualScaleDrawable(drawable, visualScale);
+            }
             loadedIconKeys.add(dedupeKey);
             loadedIcons.add(drawable);
         }
@@ -5445,6 +5451,73 @@ public final class PixelAodClockView extends FrameLayout {
                 + " iconOrder=" + TextUtils.join(",", loadedIconKeys)
                 + " packages=" + AodNotificationPipeline.describePackages(notifications)
                 + " state={" + describeAodState(getContext()) + "}");
+    }
+
+    private static float notificationIconVisualScale(StatusBarNotification sbn) {
+        if (sbn == null) {
+            return 1f;
+        }
+        Notification notification = sbn.getNotification();
+        String channelId = notification == null ? null : notification.getChannelId();
+        float visualScale = SystemNotificationIconPolicy.visualScaleFor(
+                sbn.getPackageName(), channelId, sbn.getId());
+        if (SystemNotificationIconPolicy.SYSTEMUI_PACKAGE.equals(sbn.getPackageName())) {
+            PixelAodLog.log("AOD notification visual scale"
+                    + " pkg=" + sbn.getPackageName()
+                    + " id=" + sbn.getId()
+                    + " channel=" + channelId
+                    + " scale=" + visualScale);
+        }
+        return visualScale;
+    }
+
+    private static final class VisualScaleDrawable extends Drawable {
+        private final Drawable delegate;
+        private final float visualScale;
+
+        VisualScaleDrawable(Drawable delegate, float visualScale) {
+            this.delegate = delegate;
+            this.visualScale = Math.max(1f, visualScale);
+        }
+
+        @Override
+        protected void onBoundsChange(android.graphics.Rect bounds) {
+            int scaledWidth = Math.max(1, Math.round(bounds.width() * visualScale));
+            int scaledHeight = Math.max(1, Math.round(bounds.height() * visualScale));
+            int left = bounds.centerX() - scaledWidth / 2;
+            int top = bounds.centerY() - scaledHeight / 2;
+            delegate.setBounds(left, top, left + scaledWidth, top + scaledHeight);
+        }
+
+        @Override
+        public void draw(android.graphics.Canvas canvas) {
+            delegate.draw(canvas);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            delegate.setAlpha(alpha);
+        }
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter colorFilter) {
+            delegate.setColorFilter(colorFilter);
+        }
+
+        @Override
+        public int getOpacity() {
+            return delegate.getOpacity();
+        }
+
+        @Override
+        public int getIntrinsicWidth() {
+            return delegate.getIntrinsicWidth();
+        }
+
+        @Override
+        public int getIntrinsicHeight() {
+            return delegate.getIntrinsicHeight();
+        }
     }
 
     static TextView addNotificationOverflowText(LinearLayout row, int overflowCount,
@@ -5574,6 +5647,10 @@ public final class PixelAodClockView extends FrameLayout {
             }
             Drawable drawable = loadSmallIconDrawable(context, sbn);
             if (drawable != null) {
+                float visualScale = notificationIconVisualScale(sbn);
+                if (visualScale > 1f) {
+                    drawable = new VisualScaleDrawable(drawable, visualScale);
+                }
                 loadedIconKeys.add(dedupeKey);
                 loadedIcons.add(drawable);
             }

@@ -742,3 +742,23 @@ Verification:
 - The final resource-cleaned binary reload changed SystemUI `11033 -> 14804`. Current native settings are all-day (`EnableImmediate=1 / EnergySaving=0 / UserSetTime=0`), and runtime reports `displayMode=all-day`, `scheduleWindowEligible=true`, `prearmEligible=true` while still refusing settled continuous presentation before the vendor lifecycle becomes active.
 - `.local/m9_s22_0.1.28/aod-final.png` is a real settled AOD capture from the final binary and visibly shows the DND minus-in-circle icon alongside the existing notification icons. The device remains Dozing with SystemUI PID `14804`; the current-PID fatal / ANR / OOM / fatal-signal / DeadSystem scan is empty.
 - Current-PID fatal / ANR / OOM / fatal-signal / DeadSystem scan is empty. Diagnostic logging was restored to `debug_logging=false`. The retired `module_aod_display_mode` and `aod_schedule_*` keys are absent from device-protected SharedPreferences after normalization.
+
+## S22.1 — DND notification glyph optical-size correction
+
+Status: **green — DND visible bounds normalized on the active COUI renderer and verified on the final 0.1.29 binary**
+
+2026-08-26 stable-line correction:
+
+- Physical review of 0.1.28 found that the restored DND minus-in-circle glyph was visibly smaller than adjacent notification icons even though it occupied the same logical row slot.
+- Pixel measurement of `.local/m9_s22_0.1.28/aod-final.png` confirms the mismatch: DND occupied approximately `46x46 px`, while adjacent visible notification glyphs were roughly `52x62`, `66x66`, `66x51`, and `64x57 px`.
+- Root cause is optical/intrinsic whitespace in the native OPlus/SystemUI DND drawable, not notification-row geometry. The active renderer is the COUI semantic path (`PixelAodClockView.currentCouiNotificationIcons -> CouiClockSemanticAdapter -> CouiClockHostView`), whose 18 dp `FIT_CENTER` slots correctly preserve the drawable's smaller visible content.
+- `SystemNotificationIconPolicy` now assigns a DND-only visual scale of `1.22x` for the exact current-ROM identity (`com.android.systemui`, notification id `10001`, channel `channel_dnd_notice`). All other notifications remain `1.00x`.
+- The scale is implemented at drawable bounds before the active COUI semantic handoff, and is also applied to the legacy Pixel notification-row path for parity. Logical slot size and inter-icon spacing are unchanged; this is not a global native-icon scale.
+
+Verification:
+
+- Runtime diagnostic logging on the test pass explicitly reported `pkg=com.android.systemui id=10001 channel=channel_dnd_notice scale=1.22` while Dozing. Diagnostic logging was then restored to `debug_logging=false` for the final run.
+- Final settled AOD capture `.local/m9_s22_1_0.1.29/aod-final.png` measures DND at approximately **57x57 px**. Other visible glyphs in that same frame are approximately `52x61`, `48x50`, and `66x66 px`; DND is therefore within the normal optical-size range and no row overlap/clipping is visible.
+- Final JVM/build gate: **100 suites / 492 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS. `PixelAodClockView` changes are notification-only; the protected clock/morph/weight transition code is untouched.
+- Final candidate is `0.1.29 / 9020`, APK **20,376,261 bytes**, SHA-256 `d92e01572933db1a730901dad51b6627b70e2bb794f76313d015cc179c05c84b`; the installed device APK hash matches exactly.
+- Final SystemUI reload for release-state logging changed PID `526 -> 4833`. A controlled sleep sample remained Dozing and kept PID `4833`; current-PID fatal / ANR / OOM / fatal-signal / DeadSystem scan is empty.

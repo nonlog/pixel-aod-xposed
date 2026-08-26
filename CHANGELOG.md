@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.29] - 2026-08-26
+### Fixed
+- Correct the optical size of the OPlus/SystemUI DND glyph on Pixel AOD. The restored native `stat_sys_dnd` / `zen_mode_icon` has substantially more internal whitespace than ordinary notification small icons, so an equal icon slot made its visible circle look roughly one size smaller.
+- Apply a narrowly scoped `1.22x` drawable-bounds normalization only to the confirmed OPlus DND notice (`com.android.systemui`, id `10001`, `channel_dnd_notice`). Other notification glyphs remain at `1.00x`; notification slot size and spacing are unchanged.
+- Apply the normalization before both the legacy Pixel notification row and the active `COUI_PORT` semantic path (`currentCouiNotificationIcons -> CouiClockSemanticAdapter -> CouiClockHostView`), so the current renderer receives the corrected drawable rather than relying on an ineffective child-View transform.
+
+### Status
+- Real-device settled AOD measurement changed the DND visible bounds from approximately **46x46 px** on 0.1.28 to **57x57 px** on the final 0.1.29 frame. The same frame's other visible glyphs are approximately `52x61`, `48x50`, and `66x66` px, placing DND back in the normal optical-size range without changing row spacing.
+- Final gate: **100 suites / 492 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS. The `PixelAodClockView` diff is confined to notification-icon construction/scaling helpers; clock/morph/weight animation logic is unchanged.
+- Final APK is **20,376,261 bytes**, SHA-256 `d92e01572933db1a730901dad51b6627b70e2bb794f76313d015cc179c05c84b`; installed `base.apk` matches exactly and reports `0.1.29 / 9020`.
+- Final settled evidence is `.local/m9_s22_1_0.1.29/aod-final.png`; the device remains Dozing with SystemUI PID `4833`, current-PID fatal/ANR/OOM/fatal-signal/DeadSystem scan is empty, and `debug_logging=false` is restored.
+
 ## [0.1.28] - 2026-08-26
 ### Changed
 - Retire the module-owned `Continuous + Trigger` / `Trigger-only` display selector and the separate Pixel AOD continuous-display schedule. Pixel AOD now treats the selected user's OPlus AOD configuration as the display-mode authority instead of intersecting it with a second module policy.
