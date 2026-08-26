@@ -12,7 +12,7 @@ Android AOD and Keyguard behavior is evaluated for the currently selected user, 
 Adopt **selected-user scoped presentation preferences**.
 
 1. Resolve user-visible Pixel presentation choices against the current Android selected user.
-2. Per-user preferences include AOD palette, AOD/Lockscreen base clock weights, Trigger-only versus Continuous presentation filter, Pixel replacement schedule, weather/contextual/calendar visibility, and comparable presentation choices.
+2. Per-user module preferences include AOD palette, AOD/Lockscreen base clock weights, non-lockscreen transition style, weather/contextual/calendar visibility, and comparable Pixel presentation choices. The native OPlus AOD display mode and schedule remain selected-user scoped system settings and are consumed directly rather than duplicated into module preferences.
 3. Module installation/enablement, diagnostics/debug logging, safety release policy, and other administrator/device-wide controls may remain module-wide where appropriate.
 4. A selected-user change invalidates cached preference/content state and the current vendor ambient session epoch before rendering the new user's presentation.
 5. Work-profile privacy and quiet/locked-profile eligibility remain governed by the existing privacy/profile adapter rather than by copying the parent user's settings into the profile.

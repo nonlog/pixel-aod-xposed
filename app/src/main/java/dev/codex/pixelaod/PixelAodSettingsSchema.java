@@ -12,7 +12,6 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_CUSTOM_AOD = "custom_aod";
     public static final String KEY_LOCKSCREEN_CLOCK = "lockscreen_clock";
     public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY = "lockscreen_notification_policy";
-    public static final String KEY_AOD_DISPLAY_MODE = "module_aod_display_mode";
     public static final String KEY_NON_LOCKSCREEN_AOD_TRANSITION = "non_lockscreen_aod_transition";
     public static final String KEY_WEATHER = "weather";
     public static final String KEY_WEATHER_ALERTS = "weather_alerts";
@@ -37,13 +36,8 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_FORCE_ENGLISH_DATE = "force_english_date";
     public static final String KEY_DISABLE_BURN_IN_OFFSET = "disable_burn_in_offset";
     public static final String KEY_POCKET_MODE = "pocket_mode";
-    public static final String KEY_AOD_SCHEDULE_ENABLED = "aod_schedule_enabled";
-    public static final String KEY_AOD_SCHEDULE_START_TIME = "aod_schedule_start_time";
-    public static final String KEY_AOD_SCHEDULE_END_TIME = "aod_schedule_end_time";
     public static final String KEY_LANGUAGE = "ui_language";
 
-    public static final String AOD_DISPLAY_MODE_CONTINUOUS = "continuous";
-    public static final String AOD_DISPLAY_MODE_TRIGGER_ONLY = "trigger_only";
     public static final String NON_LOCKSCREEN_AOD_TRANSITION_ANIMATED = "animated";
     public static final String NON_LOCKSCREEN_AOD_TRANSITION_DIRECT_FINAL = "direct_final";
     public static final String LANGUAGE_SYSTEM = "system";
@@ -60,8 +54,6 @@ public final class PixelAodSettingsSchema {
     public static final SettingSpec LOCKSCREEN_CLOCK = booleanSpec(KEY_LOCKSCREEN_CLOCK, true, true);
     public static final SettingSpec LOCKSCREEN_NOTIFICATION_POLICY =
             booleanSpec(KEY_LOCKSCREEN_NOTIFICATION_POLICY, true, false);
-    public static final SettingSpec AOD_DISPLAY_MODE =
-            stringSpec(KEY_AOD_DISPLAY_MODE, AOD_DISPLAY_MODE_CONTINUOUS, false);
     public static final SettingSpec NON_LOCKSCREEN_AOD_TRANSITION = stringSpec(
             KEY_NON_LOCKSCREEN_AOD_TRANSITION, NON_LOCKSCREEN_AOD_TRANSITION_ANIMATED, false);
     public static final SettingSpec WEATHER = booleanSpec(KEY_WEATHER, true, false);
@@ -98,12 +90,6 @@ public final class PixelAodSettingsSchema {
     public static final SettingSpec DISABLE_BURN_IN_OFFSET =
             booleanSpec(KEY_DISABLE_BURN_IN_OFFSET, false, false);
     public static final SettingSpec POCKET_MODE = alwaysEnabledBooleanSpec(KEY_POCKET_MODE);
-    public static final SettingSpec AOD_SCHEDULE_ENABLED =
-            booleanSpec(KEY_AOD_SCHEDULE_ENABLED, false, false);
-    public static final SettingSpec AOD_SCHEDULE_START_TIME =
-            stringSpec(KEY_AOD_SCHEDULE_START_TIME, "22:00", false);
-    public static final SettingSpec AOD_SCHEDULE_END_TIME =
-            stringSpec(KEY_AOD_SCHEDULE_END_TIME, "07:00", false);
     public static final SettingSpec LANGUAGE = stringSpec(KEY_LANGUAGE, LANGUAGE_SYSTEM, false);
 
     private PixelAodSettingsSchema() {

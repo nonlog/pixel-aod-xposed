@@ -9,13 +9,16 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class PixelAodSettings {
+    private static final String LEGACY_KEY_AOD_DISPLAY_MODE = "module_aod_display_mode";
+    private static final String LEGACY_KEY_AOD_SCHEDULE_ENABLED = "aod_schedule_enabled";
+    private static final String LEGACY_KEY_AOD_SCHEDULE_START_TIME = "aod_schedule_start_time";
+    private static final String LEGACY_KEY_AOD_SCHEDULE_END_TIME = "aod_schedule_end_time";
     public static final String PREFS = PixelAodSettingsSchema.PREFS;
     public static final String KEY_MODULE_ENABLED = PixelAodSettingsSchema.KEY_MODULE_ENABLED;
     public static final String KEY_CUSTOM_AOD = PixelAodSettingsSchema.KEY_CUSTOM_AOD;
     public static final String KEY_LOCKSCREEN_CLOCK = PixelAodSettingsSchema.KEY_LOCKSCREEN_CLOCK;
     public static final String KEY_LOCKSCREEN_NOTIFICATION_POLICY =
             PixelAodSettingsSchema.KEY_LOCKSCREEN_NOTIFICATION_POLICY;
-    public static final String KEY_AOD_DISPLAY_MODE = PixelAodSettingsSchema.KEY_AOD_DISPLAY_MODE;
     public static final String KEY_NON_LOCKSCREEN_AOD_TRANSITION =
             PixelAodSettingsSchema.KEY_NON_LOCKSCREEN_AOD_TRANSITION;
     public static final String KEY_WEATHER = PixelAodSettingsSchema.KEY_WEATHER;
@@ -54,17 +57,7 @@ public final class PixelAodSettings {
     public static final String KEY_DISABLE_BURN_IN_OFFSET =
             PixelAodSettingsSchema.KEY_DISABLE_BURN_IN_OFFSET;
     public static final String KEY_POCKET_MODE = PixelAodSettingsSchema.KEY_POCKET_MODE;
-    public static final String KEY_AOD_SCHEDULE_ENABLED =
-            PixelAodSettingsSchema.KEY_AOD_SCHEDULE_ENABLED;
-    public static final String KEY_AOD_SCHEDULE_START_TIME =
-            PixelAodSettingsSchema.KEY_AOD_SCHEDULE_START_TIME;
-    public static final String KEY_AOD_SCHEDULE_END_TIME =
-            PixelAodSettingsSchema.KEY_AOD_SCHEDULE_END_TIME;
     public static final String KEY_LANGUAGE = PixelAodSettingsSchema.KEY_LANGUAGE;
-    public static final String AOD_DISPLAY_MODE_CONTINUOUS =
-            PixelAodSettingsSchema.AOD_DISPLAY_MODE_CONTINUOUS;
-    public static final String AOD_DISPLAY_MODE_TRIGGER_ONLY =
-            PixelAodSettingsSchema.AOD_DISPLAY_MODE_TRIGGER_ONLY;
     public static final String NON_LOCKSCREEN_AOD_TRANSITION_ANIMATED =
             PixelAodSettingsSchema.NON_LOCKSCREEN_AOD_TRANSITION_ANIMATED;
     public static final String NON_LOCKSCREEN_AOD_TRANSITION_DIRECT_FINAL =
@@ -128,6 +121,19 @@ public final class PixelAodSettings {
                 editor = prefs.edit();
             }
             editor.putBoolean(KEY_POCKET_MODE, true);
+            changed = true;
+        }
+        if (prefs.contains(LEGACY_KEY_AOD_DISPLAY_MODE)
+                || prefs.contains(LEGACY_KEY_AOD_SCHEDULE_ENABLED)
+                || prefs.contains(LEGACY_KEY_AOD_SCHEDULE_START_TIME)
+                || prefs.contains(LEGACY_KEY_AOD_SCHEDULE_END_TIME)) {
+            if (editor == null) {
+                editor = prefs.edit();
+            }
+            editor.remove(LEGACY_KEY_AOD_DISPLAY_MODE);
+            editor.remove(LEGACY_KEY_AOD_SCHEDULE_ENABLED);
+            editor.remove(LEGACY_KEY_AOD_SCHEDULE_START_TIME);
+            editor.remove(LEGACY_KEY_AOD_SCHEDULE_END_TIME);
             changed = true;
         }
         return !changed || (editor != null && editor.commit());

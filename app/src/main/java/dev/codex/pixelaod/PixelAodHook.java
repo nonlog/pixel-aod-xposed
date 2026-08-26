@@ -282,9 +282,8 @@ final class PixelAodHook {
         boolean pixelFingerprintIcon = PixelAodUdfpsRuntimePolicy.replacementRequested(appContext);
         boolean weather = PixelAodSettings.getBoolean(appContext,
                 PixelAodSettings.KEY_WEATHER, true);
-        String aodDisplayMode = PixelAodSettings.getString(appContext,
-                PixelAodSettings.KEY_AOD_DISPLAY_MODE,
-                PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS);
+        NativeAodAvailabilityAdapter.Decision nativeAod =
+                NativeAodAvailabilityAdapter.read(appContext, false);
         if (weather) {
             PixelAodContentState.ensureBreezyWeatherReceiver(appContext);
         }
@@ -314,7 +313,7 @@ final class PixelAodHook {
         PixelAodSurfaceHookInstaller.installShadeAndLockscreen(appContext, classLoader);
         PixelAodLog.log("skipped global stock clock draw suppression to avoid UI jank");
         PixelAodLog.log("installed Pixel AOD hooks moduleEnabled=" + moduleEnabled
-                + " aodDisplayMode=" + aodDisplayMode
+                + " nativeAodMode=" + nativeAod.displayMode
                 + " notificationIcons=" + notificationIcons
                 + " pixelFingerprintIcon=" + pixelFingerprintIcon
                 + " udfpsRenderer=" + PixelAodFeatureFlags.startupUdfpsRenderer()
@@ -438,11 +437,39 @@ final class PixelAodHook {
                             NativeAodAvailabilityAdapter.OPLUS_AOD_ENABLED_SETTING),
                     false, observer);
             appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(
+                            NativeAodAvailabilityAdapter.OPLUS_AOD_ALWAYS_DISPLAY_SETTING),
+                    false, observer);
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(
+                            NativeAodAvailabilityAdapter.OPLUS_AOD_TIMING_SETTING),
+                    false, observer);
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(
+                            NativeAodAvailabilityAdapter.OPLUS_AOD_ENERGY_SAVING_SETTING),
+                    false, observer);
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(
+                            NativeAodAvailabilityAdapter.OPLUS_AOD_START_HOUR_SETTING),
+                    false, observer);
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(
+                            NativeAodAvailabilityAdapter.OPLUS_AOD_START_MINUTE_SETTING),
+                    false, observer);
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(
+                            NativeAodAvailabilityAdapter.OPLUS_AOD_END_HOUR_SETTING),
+                    false, observer);
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(
+                            NativeAodAvailabilityAdapter.OPLUS_AOD_END_MINUTE_SETTING),
+                    false, observer);
+            appContext.getContentResolver().registerContentObserver(
                     Settings.Secure.getUriFor("user_setup_complete"), false, observer);
             appContext.getContentResolver().registerContentObserver(
                     Settings.Global.getUriFor(Settings.Global.DEVICE_PROVISIONED),
                     false, observer);
-            PixelAodLog.log("registered native AOD availability observers");
+            PixelAodLog.log("registered native AOD availability/display-mode observers");
         } catch (Throwable t) {
             NATIVE_AOD_SETTINGS_OBSERVER_REGISTERED.set(false);
             PixelAodLog.log("failed to register native AOD availability observers", t);
@@ -4012,62 +4039,6 @@ final class PixelAodHook {
             return value;
         }
         return value.substring(0, maxLength) + "...";
-    }
-
-    private static boolean isAodAllowedBySystemSettings(Context context) {
-        if (context == null) {
-            return true;
-        }
-        try {
-            android.content.ContentResolver resolver = context.getContentResolver();
-            
-            // Check global AOD switches
-            int aodEnable = android.provider.Settings.Secure.getInt(resolver, "Setting_AodEnable", 1);
-            int aodSwitchEnable = android.provider.Settings.Secure.getInt(resolver, "Setting_AodSwitchEnable", 1);
-            int aodState = android.provider.Settings.Secure.getInt(resolver, "Setting_AodState", 1);
-            if (aodEnable == 0 || aodSwitchEnable == 0 || aodState == 0) {
-                return false;
-            }
-
-            int aodDisplayMode = android.provider.Settings.Secure.getInt(resolver, "aod_display_mode", 1);
-            // If display mode is 0 (off), return false
-            if (aodDisplayMode == 0) {
-                return false;
-            }
-
-            int userSetTime = android.provider.Settings.Secure.getInt(resolver, "Setting_AodUserSetTime", 0);
-            
-            // Mode 3 is scheduled, or UserSetTime == 1 is scheduled
-            if (aodDisplayMode == 3 || userSetTime == 1) {
-                int beginHour = android.provider.Settings.Secure.getInt(resolver, "Setting_AodSetTimeBeginHour", 7);
-                int beginMin = android.provider.Settings.Secure.getInt(resolver, "Setting_AodSetTimeBeginMin", 0);
-                int endHour = android.provider.Settings.Secure.getInt(resolver, "Setting_AodSetTimeEndHour", 23);
-                int endMin = android.provider.Settings.Secure.getInt(resolver, "Setting_AodSetTimeEndMin", 0);
-
-                java.util.Calendar now = java.util.Calendar.getInstance();
-                int currentHour = now.get(java.util.Calendar.HOUR_OF_DAY);
-                int currentMin = now.get(java.util.Calendar.MINUTE);
-
-                int nowMinutes = currentHour * 60 + currentMin;
-                int startMinutes = beginHour * 60 + beginMin;
-                int endMinutes = endHour * 60 + endMin;
-
-                if (startMinutes < endMinutes) {
-                    // Schedule is within the same day, e.g. 07:00 to 23:00
-                    if (nowMinutes < startMinutes || nowMinutes >= endMinutes) {
-                        return false;
-                    }
-                } else if (startMinutes > endMinutes) {
-                    // Schedule crosses midnight, e.g. 23:00 to 07:00
-                    if (nowMinutes < startMinutes && nowMinutes >= endMinutes) {
-                        return false;
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            PixelAodLog.log("failed to check AOD system settings", t);
-        }
-        return true;
     }
 
     private static void inspectLockscreenClockCandidate(Object candidate, String source) {

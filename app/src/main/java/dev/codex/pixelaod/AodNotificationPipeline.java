@@ -425,7 +425,7 @@ final class AodNotificationPipeline {
                 || joined.contains("tether");
     }
 
-    private static boolean isSystemUiDndNotification(StatusBarNotification sbn) {
+    static boolean isSystemUiDndNotification(StatusBarNotification sbn) {
         if (sbn == null || !"com.android.systemui".equals(sbn.getPackageName())) {
             return false;
         }
@@ -434,11 +434,12 @@ final class AodNotificationPipeline {
             return false;
         }
         String channelId = notification.getChannelId();
-        if ("channel_dnd_notice".equals(channelId)) {
+        if (SystemNotificationIconPolicy.isOplusDndNotice(
+                sbn.getPackageName(), channelId, sbn.getId())) {
             return true;
         }
         String joined = systemNotificationText(sbn);
-        return sbn.getId() == 10001
+        return sbn.getId() == SystemNotificationIconPolicy.OPLUS_DND_NOTIFICATION_ID
                 && (joined.contains("do not disturb") || joined.contains("勿扰"));
     }
 

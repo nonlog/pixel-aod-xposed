@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.28] - 2026-08-26
+### Changed
+- Retire the module-owned `Continuous + Trigger` / `Trigger-only` display selector and the separate Pixel AOD continuous-display schedule. Pixel AOD now treats the selected user's OPlus AOD configuration as the display-mode authority instead of intersecting it with a second module policy.
+- Read current OPlus `Setting_AodEnableImmediate`, `Setting_AodUserSetTime`, `Setting_AodUserEnergySavingSet`, and the native begin/end time settings through `NativeAodAvailabilityAdapter`. All-day mode permits the existing screen-off presentation pre-arm; scheduled mode permits pre-arm only inside the native schedule; energy-saving mode does not pre-arm continuous Pixel AOD and waits for a real vendor ambient scene.
+- Keep the real OPlus ambient session authoritative in every mode. Native settings can permit a presentation pre-arm but never create or extend Doze; an actually visible Pixel AOD still requires a valid vendor ambient lifecycle plus the existing power/proximity/privacy/suppression gates.
+- Remove the retired display-mode/schedule controls and strings from Settings, remove their schema/runtime consumers, and delete their persisted legacy preference values during normal settings normalization.
+
+### Fixed
+- Restore the OPlus Do Not Disturb indicator on Pixel AOD. The current ROM publishes the DND notice as `com.android.systemui` notification `10001` on `channel_dnd_notice`, using the special SystemUI `zen_mode_icon`; it already passed notification eligibility but the generic blocky-small-icon guard discarded that drawable. DND now resolves the native SystemUI `stat_sys_dnd` / `zen_mode_icon` glyph before the generic guard.
+
+### Status
+- User physically confirmed the preceding `0.1.27` rollback no longer flashes silent-notification icons, closing that rollback acceptance gate while S21 parity work itself remains paused on its experimental branch.
+- Final source/build gate: **100 suites / 491 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS; protected seven-file clock/morph/weight core `ZERO_DIFF`.
+- Final APK is **19,781,831 bytes**, SHA-256 `2075a01f3f52d670f270ee516048052a0f0d5f48b3cb05f2d050ef432117c1af`; installed `base.apk` matches exactly and reports `0.1.28 / 9019`. The final binary reload changed SystemUI `11033 -> 14804` after the earlier candidate had already proven the same runtime code path.
+- Current device native AOD configuration is all-day (`Setting_AodEnableImmediate=1`, `Setting_AodUserEnergySavingSet=0`, `Setting_AodUserSetTime=0`). Runtime on the final binary reports `displayMode=all-day / scheduleWindowEligible=true / prearmEligible=true`; a settled Dozing capture at `.local/m9_s22_0.1.28/aod-final.png` visibly contains the DND minus-in-circle glyph, while logs show the SystemUI DND notification as `system-native-icon` rather than the old `dropped-blocky-system-smallIcon` path.
+- Final state is Dozing with SystemUI PID `14804`; current-PID fatal/ANR/OOM/death scan is empty. `debug_logging=false` is restored, and all four retired legacy preference keys are absent from the device-protected settings XML.
+
 ## [0.1.27] - 2026-08-26
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

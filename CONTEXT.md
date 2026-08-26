@@ -1,4 +1,4 @@
-﻿# Pixel AOD for OPlus
+# Pixel AOD for OPlus
 
 This context defines the user-visible concepts used by the module’s Pixel-like AOD and lock-screen information surfaces.
 
@@ -274,12 +274,16 @@ _Avoid_: Removing the confirmed OOS compatibility fix in the name of pure read-o
 Continuous Pixel AOD requires a valid native AOD-capable device/configuration in addition to the selected user's native AOD-enabled preference and a valid vendor lifecycle. If native availability is false, Pixel presentation cannot manufacture continuous AOD; separately authorized transient pulse, wake, or authentication paths remain capability-gated.
 _Avoid_: Treating enabled and available as the same signal, keeping Pixel continuous AOD alive on an unavailable native configuration, suppressing valid vendor transient authentication solely because base AOD is unavailable
 
+**Native AOD display-option authority**:
+The selected user's OPlus AOD mode is the only display-mode/schedule authority. All-day may pre-arm the existing Pixel screen-off presentation, scheduled mode may pre-arm only inside the native OPlus time window, and energy-saving mode waits for a real vendor transient/ambient scene. Pixel AOD exposes no second Continuous/Trigger-only selector or replacement schedule and never creates or extends Doze from these settings.
+_Avoid_: Intersecting native AOD with a second module schedule, copying OPlus energy-saving mode into a fixed module timer, treating a configuration value as proof that a vendor ambient session is already active
+
 **Native direct-wake-to-Gone handoff**:
 When OPlus/SystemUI has already committed an AOD/Dozing wake transition directly to the unlocked/Gone scene, Pixel exits ambient presentation without attaching or briefly showing its lockscreen replacement. If the native direct-to-Gone transition is cancelled, presentation follows the next authoritative native scene instead of guessing.
 _Avoid_: Flashing Pixel Lockscreen during face/trust/direct-unlock wake, forcing every AOD exit through a lockscreen scene, inferring Gone solely from screen-on timing
 
 **Selected-user scoped presentation preferences**:
-User-visible Pixel presentation preferences are resolved for the current Android selected user, including AOD palette, clock weights, Trigger-only/Continuous presentation filter, Pixel replacement schedule, and contextual/weather/calendar display choices. Device/module enablement, diagnostics, and release-safety policy may remain module-wide. Selected-user changes invalidate cached preference/content state and the current ambient session epoch.
+User-visible Pixel presentation preferences are resolved for the current Android selected user, including AOD palette, clock weights, non-lockscreen transition style, and contextual/weather/calendar display choices. AOD display mode and schedule are deliberately excluded because OPlus native AOD settings own those decisions. Device/module enablement, diagnostics, and release-safety policy may remain module-wide. Selected-user changes invalidate cached preference/content state and the current ambient session epoch.
 _Avoid_: Reusing one user's private or visual preferences for another user, treating a profile switch as only a content refresh, making safety gates user-disableable through per-user preferences
 
 **Primary-display-only M9 scope**:

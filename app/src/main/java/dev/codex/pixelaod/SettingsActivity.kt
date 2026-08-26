@@ -62,8 +62,6 @@ private const val REQUEST_BREEZY_WEATHER_RELAY =
     "dev.codex.pixelaod.REQUEST_BREEZY_WEATHER_RELAY"
 
 private enum class ClockDialTarget {
-    AOD_START,
-    AOD_END,
     FORECAST_START,
     FORECAST_END
 }
@@ -71,7 +69,6 @@ private enum class ClockDialTarget {
 private enum class SettingsPage {
     HOME,
     AOD,
-    AOD_DISPLAY,
     CLOCK,
     FINGERPRINT,
     AT_A_GLANCE,
@@ -208,14 +205,6 @@ private fun SettingsContent(
     val moduleEnabled = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_MODULE_ENABLED, true))
     }
-    val aodDisplayMode = remember {
-        mutableStateOf(
-            prefs.schemaString(
-                PixelAodSettings.KEY_AOD_DISPLAY_MODE,
-                PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS
-            )
-        )
-    }
     val nonLockscreenAodTransition = remember {
         mutableStateOf(
             prefs.schemaString(
@@ -273,36 +262,23 @@ private fun SettingsContent(
     val weatherIconPack = remember {
         mutableStateOf(prefs.schemaString(PixelAodSettings.KEY_WEATHER_ICON_PACK, ""))
     }
-    val aodScheduleEnabled = remember {
-        mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, false))
-    }
-    val aodScheduleStartTime = remember {
-        mutableStateOf(prefs.schemaString(PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME, "22:00"))
-    }
-    val aodScheduleEndTime = remember {
-        mutableStateOf(prefs.schemaString(PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME, "07:00"))
-    }
     val language = remember {
         mutableStateOf(
             prefs.schemaString(PixelAodSettings.KEY_LANGUAGE, PixelAodSettings.LANGUAGE_SYSTEM)
         )
     }
     var showClockDial by remember { mutableStateOf(false) }
-    var clockDialTarget by remember { mutableStateOf(ClockDialTarget.AOD_START) }
+    var clockDialTarget by remember { mutableStateOf(ClockDialTarget.FORECAST_START) }
     var clockDialTitle by remember { mutableStateOf("") }
     var clockDialHour by remember { mutableIntStateOf(22) }
     var clockDialMinute by remember { mutableIntStateOf(0) }
 
-    val startTimeLabel = stringResource(R.string.title_schedule_start_time)
-    val endTimeLabel = stringResource(R.string.title_schedule_end_time)
     val forecastStartTimeLabel = stringResource(R.string.title_weather_forecast_start_time)
     val forecastEndTimeLabel = stringResource(R.string.title_weather_forecast_end_time)
 
     val showClockDialPicker: (ClockDialTarget, String) -> Unit = { target, currentTime ->
         val parts = currentTime.split(":")
         val defaultHour = when (target) {
-            ClockDialTarget.AOD_START -> 22
-            ClockDialTarget.AOD_END -> 7
             ClockDialTarget.FORECAST_START -> 21
             ClockDialTarget.FORECAST_END -> 23
         }
@@ -310,8 +286,6 @@ private fun SettingsContent(
         val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
         clockDialTarget = target
         clockDialTitle = when (target) {
-            ClockDialTarget.AOD_START -> startTimeLabel
-            ClockDialTarget.AOD_END -> endTimeLabel
             ClockDialTarget.FORECAST_START -> forecastStartTimeLabel
             ClockDialTarget.FORECAST_END -> forecastEndTimeLabel
         }
@@ -379,7 +353,6 @@ private fun SettingsContent(
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showIconPackDialog by remember { mutableStateOf(false) }
     var showCalendarIconAppDialog by remember { mutableStateOf(false) }
-    var showDisplayModeDialog by remember { mutableStateOf(false) }
     var showNonLockscreenTransitionDialog by remember { mutableStateOf(false) }
 
     var currentPageName by rememberSaveable { mutableStateOf(SettingsPage.HOME.name) }
@@ -390,7 +363,6 @@ private fun SettingsContent(
     val selectedBottomPage = when (currentPage) {
         SettingsPage.HOME -> SettingsPage.HOME
         SettingsPage.AOD,
-        SettingsPage.AOD_DISPLAY,
         SettingsPage.CLOCK,
         SettingsPage.FINGERPRINT,
         SettingsPage.AT_A_GLANCE,
@@ -414,12 +386,8 @@ private fun SettingsContent(
             onSelected = { currentPageName = it }
         )
     }
-    val continuousAodMode =
-        aodDisplayMode.value == PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS
-    val scheduleTimesEnabled = continuousAodMode && aodScheduleEnabled.value
     BackHandler(enabled = currentPage != SettingsPage.HOME) {
         currentPageName = when (currentPage) {
-            SettingsPage.AOD_DISPLAY,
             SettingsPage.CLOCK,
             SettingsPage.FINGERPRINT,
             SettingsPage.AT_A_GLANCE,
@@ -498,13 +466,6 @@ private fun SettingsContent(
             PixelAodSection(stringResource(R.string.section_aod_pages)) {
                 PixelAodGroup {
                     PixelAodNavigationRow(
-                        icon = Icons.Outlined.Schedule,
-                        title = stringResource(R.string.title_aod_display_behavior),
-                        subtitle = stringResource(R.string.desc_aod_display_behavior),
-                        valueText = aodDisplayModeLabel(aodDisplayMode.value),
-                        showDivider = true
-                    ) { navigate(SettingsPage.AOD_DISPLAY) }
-                    PixelAodNavigationRow(
                         icon = Icons.Outlined.Palette,
                         title = stringResource(R.string.section_clock),
                         subtitle = stringResource(R.string.desc_page_clock),
@@ -530,66 +491,6 @@ private fun SettingsContent(
                     ) { navigate(SettingsPage.LOCKSCREEN) }
                 }
             }
-        }
-
-        SettingsPage.AOD_DISPLAY -> PixelAodPage(
-            title = stringResource(R.string.title_aod_display_behavior),
-            subtitle = "",
-            onBack = navigateAod,
-            backDescription = stringResource(R.string.navigate_back),
-            bottomBar = bottomBar
-        ) {
-        PixelAodSection(stringResource(R.string.section_aod_display)) {
-            PixelAodGroup() {
-                PixelAodChoiceRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_aod_behavior),
-                    valueText = aodDisplayModeLabel(aodDisplayMode.value),
-                    showDivider = true
-                ) {
-                    showDisplayModeDialog = true
-                }
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_continuous_schedule),
-                    subtitle = if (continuousAodMode) {
-                        stringResource(R.string.desc_continuous_schedule)
-                    } else {
-                        stringResource(R.string.desc_continuous_schedule_disabled)
-                    },
-                    checked = aodScheduleEnabled.value,
-                    showDivider = true,
-                    enabled = continuousAodMode
-                ) {
-                    aodScheduleEnabled.value = it
-                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_AOD_SCHEDULE_ENABLED, it)
-                }
-                PixelAodChoiceRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_schedule_start_time),
-                    valueText = aodScheduleStartTime.value,
-                    showDivider = true,
-                    enabled = scheduleTimesEnabled
-                ) {
-                    showClockDialPicker(
-                        ClockDialTarget.AOD_START,
-                        aodScheduleStartTime.value
-                    )
-                }
-                PixelAodChoiceRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_schedule_end_time),
-                    valueText = aodScheduleEndTime.value,
-                    showDivider = false,
-                    enabled = scheduleTimesEnabled
-                ) {
-                    showClockDialPicker(
-                        ClockDialTarget.AOD_END,
-                        aodScheduleEndTime.value
-                    )
-                }
-            }
-        }
         }
 
         SettingsPage.CLOCK -> PixelAodPage(
@@ -976,20 +877,6 @@ private fun SettingsContent(
         )
     }
 
-    if (showDisplayModeDialog) {
-        AodDisplayModeDialog(
-            current = aodDisplayMode.value,
-            onDismiss = { showDisplayModeDialog = false },
-            onSelected = { selected ->
-                showDisplayModeDialog = false
-                if (selected != aodDisplayMode.value) {
-                    aodDisplayMode.value = selected
-                    updateModuleStringSetting(context, PixelAodSettings.KEY_AOD_DISPLAY_MODE, selected)
-                }
-            }
-        )
-    }
-
     if (showNonLockscreenTransitionDialog) {
         NonLockscreenAodTransitionDialog(
             current = nonLockscreenAodTransition.value,
@@ -1019,22 +906,6 @@ private fun SettingsContent(
                 showClockDial = false
                 val formatted = String.format("%02d:%02d", hour, minute)
                 when (clockDialTarget) {
-                    ClockDialTarget.AOD_START -> {
-                        aodScheduleStartTime.value = formatted
-                        updateModuleStringSetting(
-                            context,
-                            PixelAodSettings.KEY_AOD_SCHEDULE_START_TIME,
-                            formatted
-                        )
-                    }
-                    ClockDialTarget.AOD_END -> {
-                        aodScheduleEndTime.value = formatted
-                        updateModuleStringSetting(
-                            context,
-                            PixelAodSettings.KEY_AOD_SCHEDULE_END_TIME,
-                            formatted
-                        )
-                    }
                     ClockDialTarget.FORECAST_START -> {
                         weatherForecastStartTime.value = formatted
                         updateModuleStringSetting(
@@ -1088,12 +959,6 @@ private fun languageLabel(value: String): String = when (value) {
 }
 
 @Composable
-private fun aodDisplayModeLabel(value: String): String = when (value) {
-    PixelAodSettings.AOD_DISPLAY_MODE_TRIGGER_ONLY -> stringResource(R.string.aod_behavior_trigger_only)
-    else -> stringResource(R.string.aod_behavior_continuous_trigger)
-}
-
-@Composable
 private fun nonLockscreenAodTransitionLabel(value: String): String = when (value) {
     PixelAodSettings.NON_LOCKSCREEN_AOD_TRANSITION_DIRECT_FINAL ->
         stringResource(R.string.non_lockscreen_aod_transition_direct_final)
@@ -1120,31 +985,6 @@ private fun LanguageDialog(
             PixelAodSelectionOption(
                 PixelAodSettings.LANGUAGE_ENGLISH,
                 stringResource(R.string.language_english)
-            )
-        ),
-        cancelLabel = stringResource(android.R.string.cancel),
-        onDismiss = onDismiss,
-        onSelected = onSelected
-    )
-}
-
-@Composable
-private fun AodDisplayModeDialog(
-    current: String,
-    onDismiss: () -> Unit,
-    onSelected: (String) -> Unit
-) {
-    PixelAodSelectionDialog(
-        title = stringResource(R.string.title_aod_behavior),
-        current = current,
-        options = listOf(
-            PixelAodSelectionOption(
-                PixelAodSettings.AOD_DISPLAY_MODE_CONTINUOUS,
-                stringResource(R.string.aod_behavior_continuous_trigger)
-            ),
-            PixelAodSelectionOption(
-                PixelAodSettings.AOD_DISPLAY_MODE_TRIGGER_ONLY,
-                stringResource(R.string.aod_behavior_trigger_only)
             )
         ),
         cancelLabel = stringResource(android.R.string.cancel),
