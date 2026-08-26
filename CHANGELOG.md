@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.30] - 2026-08-26
+### Changed
+- Implement M9 S23 / ADR 0036 by moving the COUI media row's primary semantic source from raw `MediaSessionManager#getActiveSessions()` enumeration to the current OOS SystemUI media pipeline.
+- The verified native chain is `LegacyMediaDataManagerImpl -> LegacyMediaDataFilterImpl -> OplusMediaDataFilterEx`. `LegacyMediaDataFilterImpl` first applies SystemUI current-user / available-profile filtering; the OPlus extension then owns the current-media choice exposed through `getCurData()` / `loadCurrentMediaData(...)` and `MediaDataManager.Listener#onCurrentActiveMediaChanged(...)`.
+- Add `NativeSystemUiMediaAdapter` as a reflection-only, read-only bridge over that post-filter seam. It never creates a media session, sends transport commands, changes resumption/timeout state, or modifies SystemUI ordering. Direct `MediaSessionManager` enumeration remains available only until a trustworthy native authority has actually been observed on the running ROM.
+- Preserve the existing Pixel/COUI media presentation, app-icon normalization, notification/media deduplication, Large/Small scene rules, layout and animation behavior. Selected-user reset clears the cached native semantic snapshot together with the existing Pixel content state so prior-user media cannot leak across the S8 user boundary.
+
+### Status
+- Exact-device runtime identifies the extension as `com.oplus.systemui.media.OplusMediaDataFilterExImpl`; registration reports `bootstrapped=true`. A real PixelPlay session produced native `present=true / active=true / userId=0 / package=com.theveloper.pixelplay` updates and refreshed the COUI semantic host from `native-systemui-media`.
+- A real PLAYING -> PAUSED probe kept the media row because SystemUI/OPlus continued to classify that item as its current active media. After the app session was removed, OPlus could still retain the same current item as media-resumption state. S23 intentionally follows that native semantic instead of reintroducing the old module-owned PLAYING-only rule.
+- Final settled media capture `.local/m9_s23_0.1.30/aod-media-final.png` shows the unchanged Pixel media layout with the native-selected title/artist and no duplicate media notification icon. The candidate remained Dozing with the same SystemUI PID during the capture.
+- Final JDK 17 gate: **101 suites / 495 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS. The seven protected clock/morph/weight files remain `ZERO_DIFF`.
+- Final APK is **19,779,451 bytes**, SHA-256 `03975d6e45dbfe59d9592ca3cd2a9190a09b7bbf70551c650adee3f5c1b2eb5f`; installed `base.apk` matches exactly and reports `0.1.30 / 9021`. Final `Awake -> Dozing -> Awake -> Dozing` validation keeps SystemUI PID `20211`; current-PID FATAL / ANR / OOM / fatal-signal / DeadSystem and crash-buffer scans are empty, and `debug_logging=false` is restored.
+
 ## [0.1.29] - 2026-08-26
 ### Fixed
 - Correct the optical size of the OPlus/SystemUI DND glyph on Pixel AOD. The restored native `stat_sys_dnd` / `zen_mode_icon` has substantially more internal whitespace than ordinary notification small icons, so an equal icon slot made its visible circle look roughly one size smaller.

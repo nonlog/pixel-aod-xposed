@@ -66,7 +66,7 @@ final class CouiClockPluginHostController {
             Class<?> pluginClass = ModernHookBridge.findClass(CLOCK_PLUGIN_CLASS, classLoader);
             int hooks = hookPluginClass(pluginClass);
             hooksInstalled = hooks > 0;
-            CouiClockSemanticAdapter.install(context,
+            CouiClockSemanticAdapter.install(context, classLoader,
                     () -> refreshAll("COUI-semantic-data"));
             PixelAodLog.log("COUI clock persistent-host hooks installed=" + hooksInstalled
                     + " methods=" + hooks + " class=" + pluginClass.getName()

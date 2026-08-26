@@ -51,7 +51,7 @@ final class CouiClockSemanticAdapter {
     private CouiClockSemanticAdapter() {
     }
 
-    static void install(Context context, Runnable listener) {
+    static void install(Context context, ClassLoader classLoader, Runnable listener) {
         if (context == null) {
             return;
         }
@@ -66,19 +66,22 @@ final class CouiClockSemanticAdapter {
             }
             installed = true;
         }
+        NativeSystemUiMediaAdapter.install(applicationContext, classLoader,
+                () -> refreshMediaState("native-systemui-media"));
         try {
             mediaSessionManager = (MediaSessionManager) applicationContext.getSystemService(
                     Context.MEDIA_SESSION_SERVICE);
             if (mediaSessionManager == null) {
-                PixelAodLog.log("COUI semantic media adapter unavailable reason=no-manager");
+                PixelAodLog.log("COUI fallback media adapter unavailable reason=no-manager");
                 return;
             }
             mediaSessionManager.addOnActiveSessionsChangedListener(
                     CouiClockSemanticAdapter::replaceControllers, null);
             replaceControllers(mediaSessionManager.getActiveSessions(null));
-            PixelAodLog.log("COUI semantic media adapter installed rendererMode=COUI_PORT");
+            PixelAodLog.log("COUI fallback media adapter installed rendererMode=COUI_PORT"
+                    + " authority=MediaSessionManager");
         } catch (Throwable t) {
-            PixelAodLog.log("COUI semantic media adapter unavailable", t);
+            PixelAodLog.log("COUI fallback media adapter unavailable", t);
         }
     }
 
@@ -147,6 +150,18 @@ final class CouiClockSemanticAdapter {
     }
 
     private static MediaData currentMediaData(Context context) {
+        NativeSystemUiMediaAdapter.Snapshot nativeMedia = NativeSystemUiMediaAdapter.snapshot();
+        if (nativeMedia.authoritative) {
+            if (!nativeMedia.present) {
+                return MediaData.empty();
+            }
+            return new MediaData(true, nativeMedia.packageName, nativeMedia.title,
+                    nativeMedia.artist, nativeMedia.appIcon);
+        }
+        return fallbackMediaData(context);
+    }
+
+    private static MediaData fallbackMediaData(Context context) {
         List<MediaController> controllers;
         synchronized (LOCK) {
             controllers = new ArrayList<>(CONTROLLERS);
@@ -157,6 +172,18 @@ final class CouiClockSemanticAdapter {
             }
         }
         return MediaData.empty();
+    }
+
+    static void clearSelectedUserState(String source) {
+        NativeSystemUiMediaAdapter.clearForSelectedUserChange(source);
+        Runnable listener;
+        synchronized (LOCK) {
+            activeMedia = MediaData.empty();
+            listener = changeListener;
+        }
+        if (listener != null) {
+            listener.run();
+        }
     }
 
     private static boolean isPlaying(MediaController controller) {

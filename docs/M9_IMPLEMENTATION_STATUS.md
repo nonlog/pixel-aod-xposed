@@ -762,3 +762,24 @@ Verification:
 - Final JVM/build gate: **100 suites / 492 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS. `PixelAodClockView` changes are notification-only; the protected clock/morph/weight transition code is untouched.
 - Final candidate is `0.1.29 / 9020`, APK **20,376,261 bytes**, SHA-256 `d92e01572933db1a730901dad51b6627b70e2bb794f76313d015cc179c05c84b`; the installed device APK hash matches exactly.
 - Final SystemUI reload for release-state logging changed PID `526 -> 4833`. A controlled sleep sample remained Dozing and kept PID `4833`; current-PID fatal / ANR / OOM / fatal-signal / DeadSystem scan is empty.
+
+## S23 — Native SystemUI media semantics
+
+Status: **green on the current OOS media pipeline — native post-filter current-media authority active; raw MediaSession enumeration demoted to fallback**
+
+2026-08-26 implementation:
+
+- Exact SystemUI inspection identified `LegacyMediaDataManagerImpl -> LegacyMediaDataFilterImpl -> OplusMediaDataFilterEx` as the current media-selection chain. Before the OPlus extension receives an entry, `LegacyMediaDataFilterImpl` enforces current-user / available-profile scope using `ActivityManager.getCurrentUser()` and `NotificationLockscreenUserManager.isCurrentProfile(...)`.
+- The current ROM extends `MediaDataManager.Listener` with `onCurrentActiveMediaChanged(String, MediaData)`. `OplusMediaDataFilterEx` also exposes `getCurData()`, `getCurKeyHandling()` and `loadCurrentMediaData(listener)`, providing a direct read-only current-media seam after SystemUI/OPlus filtering rather than requiring Pixel to reproduce the policy.
+- Added `NativeSystemUiMediaAdapter`. It hooks the existing manager/listener lifecycle, dynamically implements the hidden listener interface, bootstraps the OPlus filter's current item, and normalizes only the semantic fields needed by the existing COUI media row. It never creates a media session, invokes transport controls, alters SystemUI timeout/resumption, or takes ordering/lifecycle ownership.
+- `CouiClockSemanticAdapter` now prefers the native snapshot only after a real OPlus authority has been observed. Until then, the previous `MediaSessionManager#getActiveSessions()` path remains a fail-open compatibility fallback. Once native authority exists, a native empty state remains authoritative and cannot be overwritten by fallback sessions.
+- The existing COUI media row, media notification deduplication, app-icon presentation, Large/Small content model, geometry, transition durations, clock morph and weight handoff are unchanged. Selected-user reset also clears the native media snapshot to preserve the S8 user boundary.
+
+Verification:
+
+- Final JDK 17 gate: **101 suites / 495 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS; protected seven-file clock/morph/weight core **ZERO_DIFF**.
+- Final visible candidate is `0.1.30`, internal `versionCode=9021`, APK **19,779,451 bytes**, SHA-256 `03975d6e45dbfe59d9592ca3cd2a9190a09b7bbf70551c650adee3f5c1b2eb5f`; installed `base.apk` matches exactly.
+- Final binary startup under SystemUI PID `20211` reports `constructorHooks=2`, then `registered native SystemUI media listener ... bootstrapped=true`. A real PixelPlay session identifies the concrete extension as `com.oplus.systemui.media.OplusMediaDataFilterExImpl` and reports native `present=true / active=true / userId=0 / package=com.theveloper.pixelplay`.
+- Physical PLAYING media renders through the unchanged AOD media row in `.local/m9_s23_0.1.30/aod-media-final.png`. A PLAYING -> PAUSED probe leaves the media visible because OPlus itself keeps the item active/current; force-stopping the app can remove the raw MediaSession while OPlus retains media-resumption state. Pixel intentionally inherits both decisions.
+- A second installed player was launched as a switch probe but did not publish a MediaSession, so a real two-player arbitration switch was **not** fabricated or counted as physical coverage. The native current-media callback and exact OPlus selection seam remain the authority when such a switch occurs naturally.
+- The final media capture reached `mWakefulness=Dozing` without changing SystemUI PID `20211`; the final controlled Awake -> Dozing -> Awake -> Dozing cycle also retained its PID. Current-PID FATAL / ANR / OOM / fatal-signal / DeadSystem and crash-buffer scans are empty. Diagnostic logging is restored to `debug_logging=false`.
