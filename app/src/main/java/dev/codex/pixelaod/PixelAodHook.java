@@ -256,7 +256,8 @@ final class PixelAodHook {
     private static boolean isPixelClockOverlay(View view) {
         return view instanceof PixelAodClockView
                 || view instanceof PixelLockscreenClockView
-                || view instanceof CouiClockHostView;
+                || view instanceof CouiClockHostView
+                || view instanceof PixelPeekNotificationView;
     }
 
     static void install(Context context, ClassLoader classLoader) {
@@ -321,6 +322,10 @@ final class PixelAodHook {
                 + " weather=" + weather);
     }
 
+    static ViewGroup currentPixelPresentationHost() {
+        ViewGroup host = lastPixelHost.get();
+        return host != null ? host : lastShadeHost.get();
+    }
     static void registerSettingsObserver(Context context) {
         if (context == null || !SETTINGS_OBSERVER_REGISTERED.compareAndSet(false, true)) {
             return;

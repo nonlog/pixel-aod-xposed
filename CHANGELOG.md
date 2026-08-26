@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.32] - 2026-08-26
+### Added
+- Complete M9 S25 Pixel-style Peek notification presentation on top of the current OPlus screen-off incoming-notification lifecycle. The selected user's native **Show new notifications on AOD** setting remains authoritative; Pixel does not create a second Doze/pulse timer or reinterpret notification eligibility.
+- Add `NativeOplusPeekSettingAdapter` for the current CPH2573/OOS 16.0.9 legacy AOD preference seam, `Settings.Secure.oplus_customize_aod_curved_display_notification_switch`.
+- Add a transient non-interactive Pixel Peek card that reuses the already privacy-processed app/title/message text exposed by `OplusAodCurvedDisplayView`, but replaces the OPlus curved/full-screen drawing while keeping the vendor view attached so vendor animation/end/removal timing remains authoritative.
+- Add dynamic foreground-collision geometry. Peek is placed below the actual Pixel/COUI ambient clock/date/weather/contextual/media/notification bounds with an 18 dp gap, a 248 dp minimum top anchor, and a protected lower safe area rather than using the rejected fixed 132 dp overlay position.
+- Add Material You Peek surface coloring. The card uses `system_neutral1_800` with a restrained 10% `system_accent1_800` tint and a dark AOD brightness cap. The current device palette resolves `#2C3131 + #003738` to `#283232`.
+
+### Changed
+- Peek iconography now uses the notification's own `Notification.smallIcon`, loaded and tinted as a monochrome AOD glyph. OPlus' `mIncomingNotiPaint.mDrawable` is intentionally not reused because that field is the launcher/application icon and produced an incorrect full-color app icon.
+- Refine the original ADR 0021 handoff rule with ADR 0066 for the exact current ROM: when no stable interactive pulsing-HUN layer exists but OPlus exposes a stable vendor-owned incoming-notification AOD surface, Pixel may replace only that surface's drawing with a non-interactive Pixel card while vendor admission, privacy processing, lifetime and removal remain authoritative.
+
+### Status
+- User physically accepted the final Peek position, monochrome notification icon behavior, and Material You background after the initial `#161F1F` candidate was rejected as too dark. Final accepted runtime surface is `#283232` under the current wallpaper palette.
+- Real notification validation remained `mWakefulness=Dozing`; runtime logs confirm `source=notification-smallIcon` and `Pixel peek Material You background neutral=#2C3131 primary=#003738 resolved=#283232 tint=0.1`. The Peek overlay is removed on native `OplusAodCurvedDisplayView` detach.
+- Final full gate: **108 suites / 513 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug --rerun-tasks --no-daemon` and `git diff --check` PASS. Final APK is **19,795,839 bytes**, SHA-256 `c6d5153d58dfc74c6100fb5d5bb685cd1a1fb44ed7e64d3e96cdf5289940855f`; installed `base.apk` matches exactly and reports `0.1.32 / 9023`.
+- Final release-state SystemUI reload changed PID `20322 -> 21753`; device remains Dozing, current-PID fatal/ANR/OOM/fatal-signal/DeadSystem scan is empty, and `debug_logging=false` is restored. S25 does not re-enable the deferred S20 Live Update or S21 notification-order/capacity prototype.
+
 ## [0.1.31] - 2026-08-26
 ### Changed
 - Modification model: **GPT-5.6 Sol**.

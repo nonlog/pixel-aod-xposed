@@ -1592,6 +1592,65 @@ final class CouiClockHostView extends FrameLayout {
         applyViewTarget(batteryView, x, y, visible ? 1f : 0f, animate, duration);
     }
 
+    /**
+     * Returns the bottom edge, in window coordinates, of Pixel ambient content that a transient
+     * foreground card must not cover. Battery is deliberately excluded because it owns the lower
+     * safe area rather than the upper notification stack.
+     */
+    int peekForegroundBottomInWindow() {
+        int bottom = 0;
+        GlyphSet glyphSet = morphRuntime != null ? largeSet : activeGlyphSetForPresentation();
+        if (glyphSet != null) {
+            for (TextView digit : glyphSet.digits) {
+                bottom = Math.max(bottom, visibleBottomInWindow(digit, true));
+            }
+            bottom = Math.max(bottom, visibleBottomInWindow(glyphSet.colon, true));
+        }
+        bottom = Math.max(bottom, visibleBottomInWindow(dateGroup, true));
+        bottom = Math.max(bottom, visibleBottomInWindow(weatherGroup, true));
+
+        ContextualAtAGlanceCard contextual = ContextualAtAGlancePresentation.current(contextualGroup);
+        if (contextual.isVisible()) {
+            bottom = Math.max(bottom, visibleBottomInWindow(contextualGroup, false));
+        }
+
+        CouiClockPresentationModel.AodContent content = presentation.content();
+        boolean partialAodActive = presentation.dozing() && presentation.partialAod();
+        boolean mediaActive = partialAodActive
+                && content.kind() == CouiClockPresentationModel.AodContent.Kind.MEDIA;
+        boolean notificationsActive = partialAodActive
+                && (content.kind() == CouiClockPresentationModel.AodContent.Kind.NOTIFICATIONS
+                || (mediaActive && content.notificationIconCount() > 0));
+        if (mediaActive) {
+            bottom = Math.max(bottom, visibleBottomInWindow(mediaGroup, false));
+        }
+        if (notificationsActive) {
+            bottom = Math.max(bottom, visibleBottomInWindow(notificationIconRow, false));
+        }
+        return bottom;
+    }
+
+    private GlyphSet activeGlyphSetForPresentation() {
+        CouiClockPresentationModel.Scene scene = presentation.visualScene();
+        if (presentation.dozing()) {
+            return scene == CouiClockPresentationModel.Scene.LARGE ? aodLargeSet : aodCompactSet;
+        }
+        return scene == CouiClockPresentationModel.Scene.LARGE ? largeSet : compactSet;
+    }
+
+    private static int visibleBottomInWindow(View view, boolean requireVisibleAlpha) {
+        if (view == null || view.getVisibility() != VISIBLE || view.getMeasuredHeight() <= 0) {
+            return 0;
+        }
+        if (requireVisibleAlpha && view.getAlpha() <= 0.02f) {
+            return 0;
+        }
+        int[] location = new int[2];
+        view.getLocationInWindow(location);
+        float scaledHeight = view.getMeasuredHeight() * Math.max(0f, view.getScaleY());
+        return Math.round(location[1] + scaledHeight);
+    }
+
     private void applyViewTarget(View view, float x, float y, float alpha, boolean animate,
             long duration) {
         view.animate().cancel();

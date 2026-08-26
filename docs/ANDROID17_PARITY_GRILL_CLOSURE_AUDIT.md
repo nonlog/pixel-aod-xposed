@@ -6,7 +6,7 @@ Scope: Pixel AOD for OPlus, AOSP/Pixel presentation parity with vendor-delegated
 
 ## Verdict
 
-The Android 17 parity grill is complete at **65 accepted decisions**. The closure audit found no missing ADR ID, no unresolved choice marker, and no remaining AOSP/Pixel-vs-OPlus product or architecture question that requires Q66.
+The original Android 17 parity grill closed at **65 accepted decisions**. S25 later produced new current-ROM evidence for OPlus' incoming-notification AOD architecture and a user-visible Pixel Peek requirement, justifying one post-grill refinement: **ADR 0066**. The active decision ledger therefore contains **66 accepted decisions**.
 
 Further work is **M9 implementation and validation**, not continued grilling. A future grill question is justified only if new technical evidence reveals two or more materially different user-visible/product behaviors that cannot be derived from the accepted decisions.
 
@@ -39,11 +39,11 @@ This explains why plain `git describe` from the active runtime branch can report
 
 Closure checks:
 
-- ADR files present: **65**.
-- Unique IDs in `0001` through `0065`: **65/65**.
+- ADR files present: **66**.
+- Unique IDs in `0001` through `0066`: **66/66**.
 - Missing IDs: **none**.
 - Duplicate IDs: **none**.
-- IDs above 65: **none**.
+- IDs above 66: **none**.
 - Non-`Accepted` ADRs: **none**.
 - `git diff --check`: **PASS**.
 
@@ -116,6 +116,7 @@ No module Doze sensor or falsing stack is required.
 - notification Doze visibility and eligibility: ADRs 0023 and 0024
 - ambient indication/Now Playing pass-through: ADR 0029
 - native media semantics: ADR 0036
+- current-ROM Pixel Peek presentation on vendor notification-AOD lifetime: ADR 0066
 - notification capacity/overflow: ADR 0048
 - notification order: ADR 0057
 - notification visual metrics: ADR 0058

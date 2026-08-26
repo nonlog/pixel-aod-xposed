@@ -9,6 +9,7 @@ final class PixelAodNotificationHookInstaller {
 
     static void installBaseViewHooks(ClassLoader classLoader) {
         PixelAodHook.hookNotificationView(classLoader);
+        PixelPeekNotificationController.install(classLoader);
     }
 
     static void installNotificationContent(Context context, ClassLoader classLoader,
