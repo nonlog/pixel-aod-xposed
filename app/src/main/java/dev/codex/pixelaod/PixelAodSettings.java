@@ -13,6 +13,7 @@ public final class PixelAodSettings {
     private static final String LEGACY_KEY_AOD_SCHEDULE_ENABLED = "aod_schedule_enabled";
     private static final String LEGACY_KEY_AOD_SCHEDULE_START_TIME = "aod_schedule_start_time";
     private static final String LEGACY_KEY_AOD_SCHEDULE_END_TIME = "aod_schedule_end_time";
+    private static final String LEGACY_KEY_FORCE_ENGLISH_DATE = "force_english_date";
     public static final String PREFS = PixelAodSettingsSchema.PREFS;
     public static final String KEY_MODULE_ENABLED = PixelAodSettingsSchema.KEY_MODULE_ENABLED;
     public static final String KEY_CUSTOM_AOD = PixelAodSettingsSchema.KEY_CUSTOM_AOD;
@@ -52,8 +53,6 @@ public final class PixelAodSettings {
     public static final String KEY_DEBUG_LOGGING = PixelAodSettingsSchema.KEY_DEBUG_LOGGING;
     public static final String KEY_AOD_WEIGHT = PixelAodSettingsSchema.KEY_AOD_WEIGHT;
     public static final String KEY_LOCKSCREEN_WEIGHT = PixelAodSettingsSchema.KEY_LOCKSCREEN_WEIGHT;
-    public static final String KEY_FORCE_ENGLISH_DATE =
-            PixelAodSettingsSchema.KEY_FORCE_ENGLISH_DATE;
     public static final String KEY_DISABLE_BURN_IN_OFFSET =
             PixelAodSettingsSchema.KEY_DISABLE_BURN_IN_OFFSET;
     public static final String KEY_POCKET_MODE = PixelAodSettingsSchema.KEY_POCKET_MODE;
@@ -126,7 +125,8 @@ public final class PixelAodSettings {
         if (prefs.contains(LEGACY_KEY_AOD_DISPLAY_MODE)
                 || prefs.contains(LEGACY_KEY_AOD_SCHEDULE_ENABLED)
                 || prefs.contains(LEGACY_KEY_AOD_SCHEDULE_START_TIME)
-                || prefs.contains(LEGACY_KEY_AOD_SCHEDULE_END_TIME)) {
+                || prefs.contains(LEGACY_KEY_AOD_SCHEDULE_END_TIME)
+                || prefs.contains(LEGACY_KEY_FORCE_ENGLISH_DATE)) {
             if (editor == null) {
                 editor = prefs.edit();
             }
@@ -134,6 +134,7 @@ public final class PixelAodSettings {
             editor.remove(LEGACY_KEY_AOD_SCHEDULE_ENABLED);
             editor.remove(LEGACY_KEY_AOD_SCHEDULE_START_TIME);
             editor.remove(LEGACY_KEY_AOD_SCHEDULE_END_TIME);
+            editor.remove(LEGACY_KEY_FORCE_ENGLISH_DATE);
             changed = true;
         }
         return !changed || (editor != null && editor.commit());

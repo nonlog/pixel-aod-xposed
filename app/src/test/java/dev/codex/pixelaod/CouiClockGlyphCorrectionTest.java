@@ -24,6 +24,18 @@ public final class CouiClockGlyphCorrectionTest {
     }
 
     @Test
+    public void localizedZeroAndOneKeepTheSameOpticalCorrections() {
+        assertEquals(-5f,
+                CouiClockGlyphCorrection.leftTrimOffset('٠', 100f), EPSILON);
+        assertEquals(-5f,
+                CouiClockGlyphCorrection.rightSideExpansion('۰', 100f), EPSILON);
+        assertEquals(6f,
+                CouiClockGlyphCorrection.leftTrimOffset('١', 100f), EPSILON);
+        assertEquals(9f,
+                CouiClockGlyphCorrection.rightSideExpansion('۱', 100f), EPSILON);
+    }
+
+    @Test
     public void otherDigitsHaveNoCorrection() {
         assertEquals(0f,
                 CouiClockGlyphCorrection.leftTrimOffset('8', 100f), EPSILON);

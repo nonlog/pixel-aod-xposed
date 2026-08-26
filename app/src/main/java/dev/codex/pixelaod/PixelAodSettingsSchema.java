@@ -33,7 +33,6 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_DEBUG_LOGGING = "debug_logging";
     public static final String KEY_AOD_WEIGHT = "aod_weight";
     public static final String KEY_LOCKSCREEN_WEIGHT = "lockscreen_weight";
-    public static final String KEY_FORCE_ENGLISH_DATE = "force_english_date";
     public static final String KEY_DISABLE_BURN_IN_OFFSET = "disable_burn_in_offset";
     public static final String KEY_POCKET_MODE = "pocket_mode";
     public static final String KEY_LANGUAGE = "ui_language";
@@ -85,8 +84,6 @@ public final class PixelAodSettingsSchema {
             floatSpec(KEY_AOD_WEIGHT, DEFAULT_AOD_WEIGHT, false);
     public static final SettingSpec LOCKSCREEN_WEIGHT =
             floatSpec(KEY_LOCKSCREEN_WEIGHT, DEFAULT_LOCKSCREEN_WEIGHT, false);
-    public static final SettingSpec FORCE_ENGLISH_DATE =
-            booleanSpec(KEY_FORCE_ENGLISH_DATE, false, false);
     public static final SettingSpec DISABLE_BURN_IN_OFFSET =
             booleanSpec(KEY_DISABLE_BURN_IN_OFFSET, false, false);
     public static final SettingSpec POCKET_MODE = alwaysEnabledBooleanSpec(KEY_POCKET_MODE);

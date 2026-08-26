@@ -6,20 +6,22 @@ final class CouiClockGlyphCorrection {
     }
 
     static float leftTrimOffset(char digit, float lineWidth) {
-        if (digit == '0') {
+        int numericDigit = Character.digit(digit, 10);
+        if (numericDigit == 0) {
             return -lineWidth * 0.05f;
         }
-        if (digit == '1') {
+        if (numericDigit == 1) {
             return lineWidth * 0.06f;
         }
         return 0f;
     }
 
     static float rightSideExpansion(char digit, float lineWidth) {
-        if (digit == '0') {
+        int numericDigit = Character.digit(digit, 10);
+        if (numericDigit == 0) {
             return -lineWidth * 0.05f;
         }
-        if (digit == '1') {
+        if (numericDigit == 1) {
             return lineWidth * 0.09f;
         }
         return 0f;

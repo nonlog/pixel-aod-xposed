@@ -2,9 +2,7 @@ package dev.codex.pixelaod;
 
 import android.content.Context;
 import android.text.TextUtils;
-import android.text.format.DateFormat;
 
-import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Locale;
 
@@ -37,7 +35,8 @@ final class PixelAodRenderModel {
             boolean batteryCharging) {
         Calendar calendar = Calendar.getInstance();
         return new PixelAodRenderModel(calendar, formatClockText(context, calendar, compactClock),
-                formatDate(calendar), formatWeatherText(weather != null ? weather.temperatureText : ""),
+                formatDate(context, calendar),
+                formatWeatherText(weather != null ? weather.temperatureText : ""),
                 weather, batteryText, batteryCharging);
     }
 
@@ -45,15 +44,19 @@ final class PixelAodRenderModel {
             PixelAodClockView.WeatherSnapshot weather) {
         Calendar calendar = Calendar.getInstance();
         return new PixelAodRenderModel(calendar, formatClockText(context, calendar, compactClock),
-                formatDate(calendar), formatWeatherText(weather != null ? weather.temperatureText : ""),
+                formatDate(context, calendar),
+                formatWeatherText(weather != null ? weather.temperatureText : ""),
                 weather, "", false);
     }
 
+    static String formatDate(Context context, Calendar calendar) {
+        return SystemPresentationLocalePolicy.formatDate(context, calendar);
+    }
+
+    /** JVM-only compatibility seam; production formatting always uses the SystemUI context. */
     static String formatDate(Calendar calendar) {
         Locale locale = Locale.getDefault();
-        String pattern = locale.getLanguage().equals(Locale.CHINESE.getLanguage())
-                ? "M\u6708d\u65e5 EEEE" : "EEE, MMM d";
-        return new SimpleDateFormat(pattern, locale).format(calendar.getTime());
+        return SystemPresentationLocalePolicy.formatWithPattern(calendar, locale, "EEE, MMM d");
     }
 
     static String formatWeatherText(String temperatureText) {
@@ -70,16 +73,14 @@ final class PixelAodRenderModel {
     }
 
     private static String formatClockText(Context context, Calendar calendar, boolean compactClock) {
-        boolean is24Hour = context == null || DateFormat.is24HourFormat(context);
+        boolean is24Hour = context == null || SystemPresentationLocalePolicy.is24Hour(context);
         int hour = calendar.get(is24Hour ? Calendar.HOUR_OF_DAY : Calendar.HOUR);
         if (!is24Hour && hour == 0) {
             hour = 12;
         }
         int minute = calendar.get(Calendar.MINUTE);
-        if (compactClock) {
-            return String.format(Locale.getDefault(), "%02d:%02d", hour, minute);
-        }
-        return String.format(Locale.getDefault(), "%02d\n%02d", hour, minute);
+        return SystemPresentationLocalePolicy.formatClockText(
+                SystemPresentationLocalePolicy.resolveLocale(context), hour, minute, compactClock);
     }
 
     static String normalizeAtAGlanceExtra(String extra) {

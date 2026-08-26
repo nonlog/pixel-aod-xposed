@@ -19,7 +19,7 @@ import android.graphics.drawable.Drawable;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.text.TextUtils;
-import android.text.format.DateFormat;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -32,7 +32,6 @@ import android.widget.TextView;
 import java.util.Calendar;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -179,6 +178,7 @@ final class CouiClockHostView extends FrameLayout {
         weatherGroup.setClipChildren(false);
         weatherIconView = new ImageView(context);
         weatherIconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        weatherIconView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         int weatherIconInset = dp(CouiClockGeometryPolicy.WEATHER_ICON_CONTENT_INSET_DP);
         weatherIconView.setPadding(weatherIconInset, weatherIconInset, weatherIconInset,
                 weatherIconInset);
@@ -199,6 +199,7 @@ final class CouiClockHostView extends FrameLayout {
         contextualGroup.setAlpha(0f);
         contextualIconView = new ImageView(context);
         contextualIconView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        contextualIconView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         LinearLayout.LayoutParams contextualIconParams = new LinearLayout.LayoutParams(
                 dp(PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP),
                 dp(PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP));
@@ -243,6 +244,7 @@ final class CouiClockHostView extends FrameLayout {
         mediaGroup.addView(mediaSubtitleRow, subtitleParams);
         mediaAppIconView = new ImageView(context);
         mediaAppIconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        mediaAppIconView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         LinearLayout.LayoutParams mediaIconParams = new LinearLayout.LayoutParams(dp(18), dp(18));
         mediaIconParams.setMarginEnd(dp(6));
         mediaSubtitleRow.addView(mediaAppIconView, mediaIconParams);
@@ -258,7 +260,10 @@ final class CouiClockHostView extends FrameLayout {
         setClipToPadding(false);
         setClickable(false);
         setFocusable(false);
-        setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
+        if (Build.VERSION.SDK_INT >= 28) {
+            setScreenReaderFocusable(true);
+        }
         GlyphSet[] attachedGlyphSets = morphRuntime != null
                 ? new GlyphSet[]{largeSet} : glyphSets;
         for (GlyphSet glyphSet : attachedGlyphSets) {
@@ -293,6 +298,7 @@ final class CouiClockHostView extends FrameLayout {
         onTimeTick();
         setMediaData("", "", null);
         updateMonetColor();
+        updateAccessibilitySemantics();
         scheduleApplyTargets(false);
         if (morphRuntime != null) {
             morphRuntime.prewarmAsync(motionInterpolator);
@@ -634,13 +640,14 @@ final class CouiClockHostView extends FrameLayout {
         }
         lastMinute = minute;
         calendar.setTimeInMillis(System.currentTimeMillis());
-        boolean is24Hour = DateFormat.is24HourFormat(getContext());
+        boolean is24Hour = SystemPresentationLocalePolicy.is24Hour(getContext());
         int hour = calendar.get(is24Hour ? Calendar.HOUR_OF_DAY : Calendar.HOUR);
         if (!is24Hour && hour == 0) {
             hour = 12;
         }
         int minuteOfHour = calendar.get(Calendar.MINUTE);
-        timeText = String.format(Locale.US, "%02d%02d", hour, minuteOfHour);
+        timeText = SystemPresentationLocalePolicy.formatFourDigitTime(
+                SystemPresentationLocalePolicy.resolveLocale(getContext()), hour, minuteOfHour);
         for (GlyphSet glyphSet : glyphSets) {
             for (int i = 0; i < glyphSet.digits.length; i++) {
                 glyphSet.digits[i].setText(String.valueOf(timeText.charAt(i)));
@@ -650,6 +657,7 @@ final class CouiClockHostView extends FrameLayout {
         if (presentation.dozing() && !manualBurnIn) {
             updateBurnInForPresentation();
         }
+        updateAccessibilitySemantics();
         scheduleApplyTargets(false);
     }
 
@@ -675,6 +683,7 @@ final class CouiClockHostView extends FrameLayout {
         weatherView.setVisibility(TextUtils.isEmpty(weatherView.getText()) ? GONE : VISIBLE);
         dateGroup.requestLayout();
         weatherGroup.requestLayout();
+        updateAccessibilitySemantics();
         scheduleApplyTargets(false);
     }
 
@@ -737,6 +746,7 @@ final class CouiClockHostView extends FrameLayout {
             // same frame as the card change rather than exposing the previous notification Y.
             scheduleApplyTargets(false);
         }
+        updateAccessibilitySemantics();
     }
 
     private int contextualTextSizeDp(ContextualAtAGlanceCard card) {
@@ -767,6 +777,7 @@ final class CouiClockHostView extends FrameLayout {
         while (notificationIconCount() < count) {
             ImageView iconView = new ImageView(getContext());
             iconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            iconView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(18), dp(18));
             if (notificationIconCount() > 0) {
                 params.setMarginStart(dp(15));
@@ -790,6 +801,7 @@ final class CouiClockHostView extends FrameLayout {
         notificationOverflowView.setText(plan.overflowText());
         notificationOverflowView.setVisibility(plan.hasOverflow() ? VISIBLE : GONE);
         notificationIconRow.requestLayout();
+        updateAccessibilitySemantics();
         scheduleApplyTargets(false);
     }
 
@@ -809,6 +821,7 @@ final class CouiClockHostView extends FrameLayout {
         mediaAppIconView.setImageDrawable(normalizeMediaAppIcon(appIcon));
         mediaAppIconView.setVisibility(appIcon == null ? GONE : VISIBLE);
         mediaGroup.requestLayout();
+        updateAccessibilitySemantics();
         scheduleApplyTargets(false);
     }
 
@@ -913,6 +926,7 @@ final class CouiClockHostView extends FrameLayout {
         lastBatteryState = state;
         batteryView.setText(lastBatteryLevel + "%" + CouiBatteryStatusPolicy.suffix(state));
         batteryView.requestLayout();
+        updateAccessibilitySemantics();
         scheduleApplyTargets(false);
     }
 
@@ -921,6 +935,7 @@ final class CouiClockHostView extends FrameLayout {
             return;
         }
         batteryEnabled = enabled;
+        updateAccessibilitySemantics();
         scheduleApplyTargets(false);
     }
 
@@ -945,6 +960,7 @@ final class CouiClockHostView extends FrameLayout {
             cancelTransitions();
             setVisibility(INVISIBLE);
         }
+        updateAccessibilitySemantics();
     }
 
     void cancelTransitions() {
@@ -987,6 +1003,20 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     @Override
+    public void onRtlPropertiesChanged(int layoutDirection) {
+        super.onRtlPropertiesChanged(layoutDirection);
+        // View may receive direction callbacks while its superclass is still constructing.
+        // Only invalidate presentation caches after this host's own fields are initialized.
+        if (appliedGlyphTargets != null && appliedInformationTargets != null
+                && notificationIconRow != null) {
+            appliedGlyphTargets.clear();
+            appliedInformationTargets.clear();
+            updateAccessibilitySemantics();
+            scheduleApplyTargets(false);
+        }
+    }
+
+    @Override
     protected void onDetachedFromWindow() {
         detachLifecycle();
         super.onDetachedFromWindow();
@@ -1026,7 +1056,10 @@ final class CouiClockHostView extends FrameLayout {
             int colonHeight = Math.max(Math.round(sizePx), Math.round(
                     glyphSet.colon.getPaint().getFontMetrics().descent
                             - glyphSet.colon.getPaint().getFontMetrics().ascent));
-            glyphSet.colon.setLayoutParams(new FrameLayout.LayoutParams(colonWidth, colonHeight));
+            FrameLayout.LayoutParams colonParams = glyphLayoutParams();
+            colonParams.width = colonWidth;
+            colonParams.height = colonHeight;
+            glyphSet.colon.setLayoutParams(colonParams);
         }
     }
 
@@ -1064,6 +1097,7 @@ final class CouiClockHostView extends FrameLayout {
         filter.addAction(Intent.ACTION_TIME_TICK);
         filter.addAction(Intent.ACTION_TIME_CHANGED);
         filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+        filter.addAction(Intent.ACTION_LOCALE_CHANGED);
         filter.addAction(Intent.ACTION_SCREEN_ON);
         filter.addAction(Intent.ACTION_SCREEN_OFF);
         try {
@@ -1281,6 +1315,7 @@ final class CouiClockHostView extends FrameLayout {
         applyInformationTargets(animate, duration, surface, metricSet, targets);
         applyContentTargets(animate, duration);
         applyBatteryTarget(animate, duration);
+        updateAccessibilitySemantics();
     }
 
     private void applyGlyphSet(GlyphSet glyphSet, GlyphTarget[] targets, float alpha,
@@ -1372,24 +1407,35 @@ final class CouiClockHostView extends FrameLayout {
         float contextualX;
         float contextualY;
         float contextualGapPx;
+        boolean rtl = isRtl();
         if (presentation.visualScene() == CouiClockPresentationModel.Scene.LARGE) {
             float dozingScale = presentation.dozing() ? surface.scale : 1f;
             float centeredGap = ((1f - dozingScale)
                     * (getWidth() * surface.baseWidthRatio * 1.82f) / 2f)
                     + getHeight() * surface.topRatio;
-            dateX = Math.max(dp(16), (getWidth()
+            float pairStart = Math.max(dp(16), (getWidth()
                     - (dateWidth + dp(LARGE_INFO_SIDE_GAP_DP) + weatherWidth)) / 2f);
+            if (rtl) {
+                weatherX = pairStart;
+                dateX = weatherX + weatherWidth + dp(LARGE_INFO_SIDE_GAP_DP);
+            } else {
+                dateX = pairStart;
+                weatherX = dateX + dateWidth + dp(LARGE_INFO_SIDE_GAP_DP);
+            }
             dateY = getWidth() * surface.baseWidthRatio * LARGE_INFO_WIDTH_MULTIPLIER
                     * dozingScale + centeredGap;
-            weatherX = dateX + dateWidth + dp(LARGE_INFO_SIDE_GAP_DP);
             weatherY = dateY;
-            contextualX = dp(PixelAodVisualStyle.EDGE_DP);
+            contextualX = PresentationLayoutDirectionPolicy.startAlignedX(
+                    getWidth(), contextualGroup.getMeasuredWidth(),
+                    dp(PixelAodVisualStyle.EDGE_DP), rtl);
             contextualGapPx = dp(PixelAodVisualStyle.LARGE_INFO_ROW_GAP_DP);
         } else {
-            float centerX = getWidth() * CouiClockGeometryPolicy.INFO_CENTER_RATIO
+            float ltrCenterX = getWidth() * CouiClockGeometryPolicy.INFO_CENTER_RATIO
                     + dp(presentation.dozing()
                     ? CouiClockGeometryPolicy.AOD_INFO_X_DP
                     : CouiClockGeometryPolicy.LOCKSCREEN_INFO_X_DP);
+            float centerX = PresentationLayoutDirectionPolicy.mirrorCenter(
+                    getWidth(), ltrCenterX, rtl);
             boolean immersed = presentation.visualScene()
                     == CouiClockPresentationModel.Scene.IMMERSED;
             float top = getHeight() * (immersed && !presentation.dozing()
@@ -1402,19 +1448,23 @@ final class CouiClockHostView extends FrameLayout {
             if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL
                     && metricSet != null && glyphTargets != null) {
                 float clockBurnX = presentation.dozing() ? burnInX : 0f;
+                float clockLeft = compactClockLeft(metricSet, glyphTargets, clockBurnX);
                 float clockRight = compactClockRight(metricSet, glyphTargets, clockBurnX);
+                float minimumInformationStart = dp(16);
                 float maximumInformationStart = getWidth() - dp(16) - maximumWidth;
-                dateX = CouiClockGeometryPolicy.resolveCompactInformationStart(
-                        centeredInformationStart, clockRight,
+                dateX = PresentationLayoutDirectionPolicy.compactInformationStart(
+                        centeredInformationStart, maximumWidth, clockLeft, clockRight,
                         dp(CouiClockGeometryPolicy.COMPACT_CLOCK_INFO_MIN_GAP_DP),
-                        maximumInformationStart);
+                        minimumInformationStart, maximumInformationStart, rtl);
             }
             dateY = top;
             weatherX = dateX;
             weatherY = top + dateGroup.getMeasuredHeight()
                     + dp(CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP);
-            contextualX = CouiCompactLayout.couiHostContentLeft(
-                    getResources().getDisplayMetrics().density);
+            contextualX = PresentationLayoutDirectionPolicy.startAlignedX(
+                    getWidth(), contextualGroup.getMeasuredWidth(),
+                    CouiCompactLayout.couiHostContentLeft(
+                            getResources().getDisplayMetrics().density), rtl);
             contextualGapPx = dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
         }
         contextualY = CouiClockContextualLayoutPolicy.contextualTop(
@@ -1465,8 +1515,13 @@ final class CouiClockHostView extends FrameLayout {
                 && (content.kind() == CouiClockPresentationModel.AodContent.Kind.NOTIFICATIONS
                 || (content.kind() == CouiClockPresentationModel.AodContent.Kind.MEDIA
                 && content.notificationIconCount() > 0));
-        float x = CouiCompactLayout.couiHostContentLeft(
-                getResources().getDisplayMetrics().density) + burnInX;
+        boolean rtl = isRtl();
+        float startInset = CouiCompactLayout.couiHostContentLeft(
+                getResources().getDisplayMetrics().density);
+        float notificationBaseX = PresentationLayoutDirectionPolicy.startAlignedX(
+                getWidth(), notificationIconRow.getMeasuredWidth(), startInset, rtl) + burnInX;
+        float mediaBaseX = PresentationLayoutDirectionPolicy.startAlignedX(
+                getWidth(), mediaGroup.getMeasuredWidth(), startInset, rtl) + burnInX;
         float baseY = getHeight() * CouiClockGeometryPolicy.PARTIAL_CONTENT_TOP_RATIO + burnInY;
         ContextualAtAGlanceCard contextualCard =
                 ContextualAtAGlancePresentation.current(contextualGroup);
@@ -1490,10 +1545,10 @@ final class CouiClockHostView extends FrameLayout {
         boolean preserveCurrentPosition =
                 CouiClockAodContentMotionPolicy.preserveCurrentPosition(partialAodActive, animate);
         float notificationX = preserveCurrentPosition
-                ? notificationIconRow.getTranslationX() : x;
+                ? notificationIconRow.getTranslationX() : notificationBaseX;
         float resolvedNotificationY = preserveCurrentPosition
                 ? notificationIconRow.getTranslationY() : notificationY;
-        float mediaX = preserveCurrentPosition ? mediaGroup.getTranslationX() : x;
+        float mediaX = preserveCurrentPosition ? mediaGroup.getTranslationX() : mediaBaseX;
         float resolvedMediaY = preserveCurrentPosition ? mediaGroup.getTranslationY() : mediaY;
         applyContentViewTarget(notificationIconRow, notificationX, resolvedNotificationY,
                 notificationsVisible ? 1f : 0f, animate, duration);
@@ -1596,7 +1651,9 @@ final class CouiClockHostView extends FrameLayout {
                 * surface.scale;
         float tracking = -0.09f * lineWidth;
         float colonTracking = tracking * COMPACT_COLON_TRACKING_SCALE;
-        float xCenter = width * surface.centerRatio + dp(surface.centerDp);
+        float ltrCenter = width * surface.centerRatio + dp(surface.centerDp);
+        float xCenter = PresentationLayoutDirectionPolicy.mirrorCenter(
+                width, ltrCenter, isRtl());
         float y = getHeight() * surface.topRatio + dp(surface.topDp);
         float[] advances = new float[4];
         float[] leftCorrections = new float[4];
@@ -1640,6 +1697,19 @@ final class CouiClockHostView extends FrameLayout {
                     + glyphWidth(glyphSet, i) * targets[i].scale);
         }
         return right;
+    }
+
+    private float compactClockLeft(GlyphSet glyphSet, GlyphTarget[] targets, float burnX) {
+        float left = Float.POSITIVE_INFINITY;
+        int count = Math.min(4, targets.length);
+        for (int i = 0; i < count; i++) {
+            left = Math.min(left, targets[i].x - burnX);
+        }
+        return left;
+    }
+
+    private boolean isRtl() {
+        return getLayoutDirection() == LAYOUT_DIRECTION_RTL;
     }
     private float glyphWidth(GlyphSet glyphSet, int index) {
         return glyphSet.digits[index].getPaint().measureText(
@@ -1874,6 +1944,69 @@ final class CouiClockHostView extends FrameLayout {
                 : CouiClockPresentationModel.Scene.SMALL;
     }
 
+    private void updateAccessibilitySemantics() {
+        String timeDescription = SystemPresentationLocalePolicy.formatAccessibleTime(
+                getContext(), calendar);
+        setContentDescription(timeDescription);
+        setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
+        if (Build.VERSION.SDK_INT >= 28) {
+            setScreenReaderFocusable(true);
+        }
+
+        String dateDescription = KeyguardAccessibilitySemantics.join(
+                dateView.getText(), weekView.getText());
+        updateSemanticUnit(dateGroup, !dateDescription.isEmpty(), dateDescription);
+
+        String weatherDescription = KeyguardAccessibilitySemantics.join(weatherView.getText());
+        updateSemanticUnit(weatherGroup,
+                weatherView.getVisibility() == VISIBLE && !weatherDescription.isEmpty(),
+                weatherDescription);
+
+        ContextualAtAGlanceCard contextualCard =
+                ContextualAtAGlancePresentation.current(contextualGroup);
+        String contextualDescription = KeyguardAccessibilitySemantics.join(
+                contextualView.getText());
+        updateSemanticUnit(contextualGroup,
+                contextualCard.isVisible() && contextualGroup.getVisibility() == VISIBLE
+                        && !contextualDescription.isEmpty(),
+                contextualDescription);
+
+        boolean mediaVisible = presentation.dozing() && presentation.partialAod()
+                && presentation.content().kind()
+                == CouiClockPresentationModel.AodContent.Kind.MEDIA;
+        String mediaDescription = KeyguardAccessibilitySemantics.join(
+                mediaTitleView.getText(), mediaArtistView.getText());
+        updateSemanticUnit(mediaGroup, mediaVisible && !mediaDescription.isEmpty(),
+                mediaDescription);
+
+        String batteryDescription = KeyguardAccessibilitySemantics.join(batteryView.getText());
+        updateSemanticUnit(batteryView,
+                presentation.dozing() && batteryEnabled && !batteryDescription.isEmpty(),
+                batteryDescription);
+
+        // Notification glyphs and overflow decoration remain visual-only. SystemUI owns the
+        // notification accessibility surface; exposing this compact icon row would duplicate it.
+        notificationIconRow.setContentDescription(null);
+        notificationIconRow.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        if (Build.VERSION.SDK_INT >= 28) {
+            notificationIconRow.setScreenReaderFocusable(false);
+        }
+    }
+
+    private static void updateSemanticUnit(View view, boolean visible, String description) {
+        if (view == null) {
+            return;
+        }
+        view.setContentDescription(visible ? description : null);
+        view.setImportantForAccessibility(visible
+                ? IMPORTANT_FOR_ACCESSIBILITY_YES : IMPORTANT_FOR_ACCESSIBILITY_NO);
+        if (Build.VERSION.SDK_INT >= 28) {
+            view.setScreenReaderFocusable(visible);
+        }
+        view.setClickable(false);
+        view.setFocusable(false);
+    }
+
     private TextView informationText(float sizeSp, int weight) {
         return informationText(sizeSp, weight, false);
     }
@@ -1933,7 +2066,15 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     private FrameLayout.LayoutParams glyphLayoutParams() {
-        return new FrameLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+        // All top-level COUI children are positioned in physical screen coordinates via
+        // translationX/translationY. FrameLayout's unspecified gravity resolves to START, which
+        // moves the child's layout origin to the right edge in RTL and then applies our explicit
+        // mirrored translation a second time. Pin the base layout origin to physical LEFT/TOP;
+        // PresentationLayoutDirectionPolicy remains the single owner of horizontal mirroring.
+        params.gravity = Gravity.LEFT | Gravity.TOP;
+        return params;
     }
 
     private int dp(float value) {

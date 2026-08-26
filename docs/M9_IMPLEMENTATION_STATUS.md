@@ -783,3 +783,25 @@ Verification:
 - Physical PLAYING media renders through the unchanged AOD media row in `.local/m9_s23_0.1.30/aod-media-final.png`. A PLAYING -> PAUSED probe leaves the media visible because OPlus itself keeps the item active/current; force-stopping the app can remove the raw MediaSession while OPlus retains media-resumption state. Pixel intentionally inherits both decisions.
 - A second installed player was launched as a switch probe but did not publish a MediaSession, so a real two-player arbitration switch was **not** fabricated or counted as physical coverage. The native current-media callback and exact OPlus selection seam remain the authority when such a switch occurs naturally.
 - The final media capture reached `mWakefulness=Dozing` without changing SystemUI PID `20211`; the final controlled Awake -> Dozing -> Awake -> Dozing cycle also retained its PID. Current-PID FATAL / ANR / OOM / fatal-signal / DeadSystem and crash-buffer scans are empty. Diagnostic logging is restored to `debug_logging=false`.
+
+## S24 — Presentation correctness: system locale, RTL, and Keyguard accessibility
+
+Status: **green — implementation closed on 0.1.31; global Force RTL left disabled after reversible exploratory validation**
+
+2026-08-26 implementation:
+
+- ADR 0027 is now the runtime formatting authority. `SystemPresentationLocalePolicy` resolves the SystemUI configuration locale, uses the selected-user 12/24-hour seam where available, asks Android for the locale date skeleton/order, and emits localized decimal digits for both compact and large clock rendering. The old `force_english_date` preference is retired and normalized out of persisted settings.
+- `ACTION_LOCALE_CHANGED` joins the existing time/time-zone/screen refresh receiver. Module Settings UI language remains separate from the SystemUI presentation locale.
+- ADR 0030 is enabled in the manifest. `PresentationLayoutDirectionPolicy` mirrors physical clock centers and START-aligned content while preserving direction-neutral visual elements. Large date/weather pairing, compact date/weather collision avoidance, contextual/media/notification anchors and burn-in-relative positioning now have explicit RTL geometry. Top-level translated COUI children are pinned to a physical LEFT/TOP base so FrameLayout does not apply an additional START-origin mirror; the resized colon preserves that same base.
+- Localized decimal zero/one now receive the same optical glyph correction as ASCII zero/one through `Character.digit(...)`, avoiding digit-shape-specific geometry regressions.
+- ADR 0049 replaces the old whole-host `IMPORTANT_FOR_ACCESSIBILITY_NO` behavior. The replacement host owns one localized time semantic plus grouped date, weather, contextual, media and battery descriptions. Decorative clock digits/icons/notification glyphs stay inaccessible, while the suppressed native OPlus clock tree has its accessibility importance hidden and restored together with visual ownership.
+- The rare user-reported Lockscreen -> AOD weight-transition miss was investigated during S24 but never reproduced as a deterministic failing ROM `TextAnimator` transaction. Normal native `LOCKSCREEN -> DOZING` animation eligibility remained allowed. Per user direction, the investigation stopped and all temporary diagnostics/speculative animation fixes were removed; S24 ships no guessed workaround.
+
+Verification:
+
+- Final JVM/debug gate: **105 suites / 503 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` PASS; `git diff --check` PASS; the seven protected animation-core files are `ZERO_DIFF`.
+- Final candidate `0.1.31 / 9022`: APK **19,795,835 bytes**, SHA-256 `7545961b21a869995afe302fad2179b3bc57eb185f1939bce11e167fbb8a66bf`; installed `base.apk` matches exactly. SystemUI reload `23342 -> 1686`.
+- Current physical configuration remains `[en_SG, zh_Hans_SG]`, `ldltr`, `debug.force_rtl=0 / false`, with Android animator/transition/window scales `1.0 / 1.0 / 1.0`. Two controlled `Awake -> Dozing` cycles retained PID `1686`; current-PID fatal/ANR/OOM/fatal-signal/DeadSystem scan is empty. `.local/m9_s24_0.1.31/aod.png` is the settled final LTR AOD capture.
+- Focused tests cover Arabic/Persian localized digits, platform date ordering, symmetric START/center RTL geometry, compact clock-information separation, accessibility grouping, locale-change refresh acceptance, and removal of `force_english_date` from the active schema. The device-wide Force RTL option is intentionally not re-enabled for final validation; future RTL release-matrix visual testing must be isolated and fully reversible.
+
+Next approved stage: **S25 — Notification Pulse / native peek-notification parity**. Start from ADR 0002, then bind ADR 0021/0038/0044 only to exact OPlus/SystemUI native pulse/foreground seams. Do not implement edge lighting, a custom pulse card, or a second Doze/panel lifecycle.

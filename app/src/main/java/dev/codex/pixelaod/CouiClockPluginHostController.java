@@ -880,6 +880,10 @@ final class CouiClockPluginHostController {
                 if (!record.nativeVisualAlphas.containsKey(view)) {
                     record.nativeVisualAlphas.put(view, view.getAlpha());
                 }
+                if (!record.nativeAccessibilityImportance.containsKey(view)) {
+                    record.nativeAccessibilityImportance.put(
+                            view, view.getImportantForAccessibility());
+                }
             }
         }
     }
@@ -946,6 +950,8 @@ final class CouiClockPluginHostController {
             View view = entry.getKey();
             if (view != null && !touchesHost(record, view)) {
                 view.setAlpha(0f);
+                view.setImportantForAccessibility(
+                        View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
                 view.invalidate();
             }
         }
@@ -957,6 +963,10 @@ final class CouiClockPluginHostController {
             Float alpha = entry.getValue();
             if (view != null && alpha != null) {
                 view.setAlpha(alpha);
+                Integer importance = record.nativeAccessibilityImportance.get(view);
+                if (importance != null) {
+                    view.setImportantForAccessibility(importance);
+                }
                 view.invalidate();
             }
         }
@@ -1229,6 +1239,8 @@ final class CouiClockPluginHostController {
         final CouiClockHostView host;
         final Map<View, Float> nativeVisualAlphas =
                 Collections.synchronizedMap(new WeakHashMap<View, Float>());
+        final Map<View, Integer> nativeAccessibilityImportance =
+                Collections.synchronizedMap(new WeakHashMap<View, Integer>());
         final Set<View> nativeDrawContainers =
                 Collections.newSetFromMap(new WeakHashMap<View, Boolean>());
         WeakReference<Object> plugin;

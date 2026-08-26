@@ -11,6 +11,7 @@ public class CouiClockTimeTickPolicyTest {
         assertTrue(CouiClockTimeTickPolicy.acceptsAction("android.intent.action.TIME_TICK"));
         assertTrue(CouiClockTimeTickPolicy.acceptsAction("android.intent.action.TIME_SET"));
         assertTrue(CouiClockTimeTickPolicy.acceptsAction("android.intent.action.TIMEZONE_CHANGED"));
+        assertTrue(CouiClockTimeTickPolicy.acceptsAction("android.intent.action.LOCALE_CHANGED"));
         assertTrue(CouiClockTimeTickPolicy.acceptsAction("android.intent.action.SCREEN_ON"));
         assertTrue(CouiClockTimeTickPolicy.acceptsAction("android.intent.action.SCREEN_OFF"));
         assertFalse(CouiClockTimeTickPolicy.acceptsAction("android.intent.action.BATTERY_CHANGED"));

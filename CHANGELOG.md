@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.31] - 2026-08-26
+### Changed
+- Modification model: **GPT-5.6 Sol**.
+- Complete M9 S24 presentation-correctness convergence for ADR 0027 / 0030 / 0049 without changing the protected clock/morph/weight engine. SystemUI clock/date formatting now follows the selected Android user's SystemUI locale, 12/24-hour preference, localized decimal digits, and platform date skeleton/order; `ACTION_LOCALE_CHANGED` participates in the existing lifecycle-safe refresh path.
+- Retire the old runtime `force_english_date` presentation preference. Its schema entry and runtime consumer are gone, and any persisted legacy key is removed during normal settings normalization. The module app's own UI language remains independent from SystemUI presentation locale.
+- Enable `android:supportsRtl="true"` and make the active COUI host direction-aware. Clock centers, compact information collision bounds, contextual/media/notification START anchors, and the large date/weather pair mirror from one explicit layout-direction policy. Top-level translated children use a physical LEFT/TOP base to avoid FrameLayout START-origin double mirroring; the dynamically resized colon preserves the same base geometry. Numeric glyph correction now recognizes localized decimal zero/one through `Character.digit(...)`.
+- Make the Pixel/COUI replacement host the Keyguard accessibility semantic owner: one localized time node plus grouped date, weather, contextual, media and battery semantics. Decorative clock glyphs, weather/media icons and notification glyph decoration remain out of the accessibility tree. When the stock OPlus clock tree is visually suppressed, its accessibility importance is suppressed with it and restored when native presentation returns.
+
+### Status
+- Final source gate: **105 suites / 503 tests / 0 failures / 0 errors / 0 skipped**; `:app:assembleDebug` and `git diff --check` PASS. All seven protected animation-core files remain `ZERO_DIFF`.
+- Final APK is **19,795,835 bytes**, SHA-256 `7545961b21a869995afe302fad2179b3bc57eb185f1939bce11e167fbb8a66bf`; installed `base.apk` matches exactly and reports `0.1.31 / 9022`. Reload changed SystemUI `23342 -> 1686`.
+- Current device configuration remains `[en_SG, zh_Hans_SG] / ldltr`, `debug.force_rtl=0 / false`, and animator/transition/window scales `1.0 / 1.0 / 1.0`. Two controlled `Awake -> Dozing` cycles retained PID `1686`; current-PID FATAL / ANR / OOM / fatal-signal / DeadSystem scan is empty. `.local/m9_s24_0.1.31/aod.png` shows the complete settled LTR AOD endpoint; the legacy `force_english_date` preference is absent from device-protected settings.
+- RTL geometry/localized-digit behavior is covered by focused pure-policy tests and the earlier S24 exploratory RTL probes. The final closure deliberately does **not** re-enable the device-wide Force RTL developer option after it disrupted normal phone reading order; a future release-matrix RTL visual run must use an isolated/reversible harness rather than silently mutating the user's global layout direction.
+- During S24, the user reported a very rare Lockscreen -> AOD weight-transition miss seen only twice. Investigation confirmed normal OPlus animation eligibility and did not produce a deterministic failing `TextAnimator` transaction. Per user direction, all temporary diagnostics/speculative fixes were removed; no unproven animation workaround is shipped in 0.1.31.
+
 ## [0.1.30] - 2026-08-26
 ### Changed
 - Implement M9 S23 / ADR 0036 by moving the COUI media row's primary semantic source from raw `MediaSessionManager#getActiveSessions()` enumeration to the current OOS SystemUI media pipeline.

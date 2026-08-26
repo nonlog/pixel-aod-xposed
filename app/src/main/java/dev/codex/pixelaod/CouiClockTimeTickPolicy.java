@@ -9,6 +9,7 @@ final class CouiClockTimeTickPolicy {
         return IntentAction.TIME_TICK.equals(action)
                 || IntentAction.TIME_CHANGED.equals(action)
                 || IntentAction.TIMEZONE_CHANGED.equals(action)
+                || IntentAction.LOCALE_CHANGED.equals(action)
                 || IntentAction.SCREEN_ON.equals(action)
                 || IntentAction.SCREEN_OFF.equals(action);
     }
@@ -22,6 +23,7 @@ final class CouiClockTimeTickPolicy {
         static final String TIME_TICK = "android.intent.action.TIME_TICK";
         static final String TIME_CHANGED = "android.intent.action.TIME_SET";
         static final String TIMEZONE_CHANGED = "android.intent.action.TIMEZONE_CHANGED";
+        static final String LOCALE_CHANGED = "android.intent.action.LOCALE_CHANGED";
         static final String SCREEN_ON = "android.intent.action.SCREEN_ON";
         static final String SCREEN_OFF = "android.intent.action.SCREEN_OFF";
 
