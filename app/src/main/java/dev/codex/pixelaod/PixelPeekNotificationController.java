@@ -1,7 +1,6 @@
 package dev.codex.pixelaod;
 
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.app.Notification;
@@ -312,10 +311,12 @@ final class PixelPeekNotificationController {
             if (result == null) {
                 return null;
             }
-            result.setTint(Color.rgb(PixelAodVisualStyle.INFO_COLOR_RED,
-                    PixelAodVisualStyle.INFO_COLOR_GREEN,
-                    PixelAodVisualStyle.INFO_COLOR_BLUE));
-            PixelAodLog.log("Pixel peek icon source=notification-smallIcon pkg="
+            // Keep the notification's native smallIcon artwork exactly as supplied. The Peek
+            // card must not recolor it with Material/Monet accent, and must never substitute the
+            // launcher/application icon from OPlus' mIncomingNotiPaint.mDrawable.
+            result.setTintList(null);
+            result.clearColorFilter();
+            PixelAodLog.log("Pixel peek icon source=notification-smallIcon tint=none pkg="
                     + sbn.getPackageName() + " key=" + sbn.getKey()
                     + " iconType=" + smallIcon.getType());
             return result;

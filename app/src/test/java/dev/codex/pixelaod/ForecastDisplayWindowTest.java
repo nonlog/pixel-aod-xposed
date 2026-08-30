@@ -63,6 +63,20 @@ public final class ForecastDisplayWindowTest {
                 time("2026-08-05T13:00:00Z"), SINGAPORE, true, window));
     }
 
+    @Test
+    public void policyReportsTheConfiguredForecastWindowWithoutRequiringCachedData() {
+        ForecastDisplayWindow window = ForecastDisplayWindow.defaults();
+
+        assertFalse(AtAGlanceWeatherPolicy.forecastWindowActive(
+                time("2026-08-05T12:59:59Z"), SINGAPORE, true, window));
+        assertTrue(AtAGlanceWeatherPolicy.forecastWindowActive(
+                time("2026-08-05T13:21:00Z"), SINGAPORE, true, window));
+        assertFalse(AtAGlanceWeatherPolicy.forecastWindowActive(
+                time("2026-08-05T13:21:00Z"), SINGAPORE, false, window));
+        assertFalse(AtAGlanceWeatherPolicy.forecastWindowActive(
+                time("2026-08-05T15:30:00Z"), SINGAPORE, true, window));
+    }
+
     private static long time(String instant) {
         return Instant.parse(instant).toEpochMilli();
     }

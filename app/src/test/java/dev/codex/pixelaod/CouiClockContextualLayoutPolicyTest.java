@@ -14,6 +14,32 @@ public final class CouiClockContextualLayoutPolicyTest {
     }
 
     @Test
+    public void largeContextualRowCentersOnDisplay() {
+        assertEquals(410f, CouiClockContextualLayoutPolicy.largeContextualStart(
+                1000f, 180f), 0.001f);
+        assertEquals(0f, CouiClockContextualLayoutPolicy.largeContextualStart(
+                120f, 180f), 0.001f);
+    }
+
+    @Test
+    public void largeContextualRowCentersOnlyDisplayedForecast() {
+        assertEquals(410f, CouiClockContextualLayoutPolicy.largeContextualStartForDisplayedCard(
+                1000f, 180f, 24f, true), 0.001f);
+        assertEquals(24f, CouiClockContextualLayoutPolicy.largeContextualStartForDisplayedCard(
+                1000f, 180f, 24f, false), 0.001f);
+    }
+
+    @Test
+    public void largeContextualRowUsesVisibleContentInsteadOfExpandedRowWidth() {
+        assertEquals(180f, CouiClockContextualLayoutPolicy.visibleContentWidth(
+                140f, true, 40f, 840f), 0.001f);
+        assertEquals(140f, CouiClockContextualLayoutPolicy.visibleContentWidth(
+                140f, false, 40f, 840f), 0.001f);
+        assertEquals(840f, CouiClockContextualLayoutPolicy.visibleContentWidth(
+                900f, true, 40f, 840f), 0.001f);
+    }
+
+    @Test
     public void contextualRowStartsBelowVisibleWeather() {
         assertEquals(176f, CouiClockContextualLayoutPolicy.contextualTop(
                 100f, 32, true, 138f, 32, 6f), 0.001f);

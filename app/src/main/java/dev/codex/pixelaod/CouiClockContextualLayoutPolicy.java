@@ -10,6 +10,29 @@ final class CouiClockContextualLayoutPolicy {
         return dozing;
     }
 
+    static float largeContextualStart(float containerWidthPx, float visibleContentWidthPx) {
+        float container = Math.max(0f, containerWidthPx);
+        float content = Math.max(0f, visibleContentWidthPx);
+        return Math.max(0f, (container - content) / 2f);
+    }
+
+    /** Large only centers the rendered weather forecast; other contextual kinds keep S25 X. */
+    static float largeContextualStartForDisplayedCard(float containerWidthPx,
+            float visibleContentWidthPx, float defaultStartPx, boolean displayedForecast) {
+        return displayedForecast
+                ? largeContextualStart(containerWidthPx, visibleContentWidthPx)
+                : defaultStartPx;
+    }
+
+    static float visibleContentWidth(float textWidthPx, boolean iconVisible,
+            float iconSpanPx, float maximumRowWidthPx) {
+        float maximum = Math.max(0f, maximumRowWidthPx);
+        float icon = iconVisible ? Math.max(0f, iconSpanPx) : 0f;
+        float maximumText = Math.max(0f, maximum - icon);
+        float text = Math.min(Math.max(0f, textWidthPx), maximumText);
+        return Math.min(maximum, icon + text);
+    }
+
     static float contextualTop(float dateTopPx, int dateHeightPx,
             boolean weatherVisible, float weatherTopPx, int weatherHeightPx, float gapPx) {
         float infoBottom = dateTopPx + Math.max(0, dateHeightPx);

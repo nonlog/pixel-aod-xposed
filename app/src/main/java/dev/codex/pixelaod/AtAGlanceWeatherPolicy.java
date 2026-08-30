@@ -25,10 +25,15 @@ final class AtAGlanceWeatherPolicy {
 
     static boolean forecastEligible(BreezyWeatherForecast forecast, long nowMillis,
             ZoneId zoneId, boolean enabled, ForecastDisplayWindow displayWindow) {
+        return forecastWindowActive(nowMillis, zoneId, enabled, displayWindow)
+                && forecast != null && forecast.isEligible(nowMillis, zoneId);
+    }
+
+    static boolean forecastWindowActive(long nowMillis, ZoneId zoneId, boolean enabled,
+            ForecastDisplayWindow displayWindow) {
         ForecastDisplayWindow window = displayWindow != null
                 ? displayWindow : ForecastDisplayWindow.defaults();
-        return enabled && forecast != null && forecast.isEligible(nowMillis, zoneId)
-                && window.contains(nowMillis, zoneId);
+        return enabled && window.contains(nowMillis, zoneId);
     }
 
     static long nextForecastBoundary(ForecastDisplayWindow displayWindow, long nowMillis,

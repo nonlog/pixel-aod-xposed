@@ -104,6 +104,11 @@ final class CouiClockHostView extends FrameLayout {
     private final Map<View, CouiClockAppliedTargetPolicy.Information> appliedInformationTargets =
             new IdentityHashMap<>();
 
+    // The Large forecast anchor must not follow transient ImageView visibility/layout passes.
+    // Capture one content width per forecast card and hold it through its visible lifetime.
+    private ContextualAtAGlanceCard stableLargeForecastCard = ContextualAtAGlanceCard.none();
+    private float stableLargeForecastContentWidthPx = Float.NaN;
+
     private CouiClockPresentationModel presentation = new CouiClockPresentationModel(
             CouiClockPresentationModel.Scene.LARGE, false, false,
             CouiClockPresentationModel.AodContent.none());
@@ -717,29 +722,31 @@ final class CouiClockHostView extends FrameLayout {
                             getContext(), surfaceVisible, true,
                             source == null ? "coui-contextual" : source);
             card = selection != null ? selection.card : ContextualAtAGlanceCard.none();
+            PixelAodContentState.maybeRequestForecastSnapshot(
+                    getContext(), presentation.dozing(), card,
+                    source == null ? "coui-contextual" : source);
         }
         int textSizeDp = contextualTextSizeDp(card);
         int infoWeight = contextualInfoWeight(card);
-        boolean applicationIcon = card.kind == ContextualAtAGlanceCard.Kind.CALENDAR_EVENT
-                && ContextualAtAGlanceCalendarIcon.usesApplicationIcon(getContext());
-        ContextualAtAGlanceCalendarIcon.applyGeometry(contextualIconView, getContext(),
-                textSizeDp, applicationIcon);
+        applyContextualIconGeometry(ContextualAtAGlancePresentation.displayed(contextualGroup));
         int contextualAccent = CouiClockVisualStylePolicy.contextualAccentColor(
                 presentation.visualScene(), presentation.dozing(), monetColor, aodMonetColor);
         boolean changed = ContextualAtAGlancePresentation.apply(
                 getContext(), contextualGroup, contextualIconView, contextualView, card,
                 contextualAccent, contextualAccent, textSizeDp, infoWeight,
-                animate && surfaceVisible, source == null ? "coui-contextual" : source);
-        if (card.isVisible()) {
-            // COUI_PORT uses the same full-strength AOD accent as the clock/notification glyphs.
-            // The legacy selector's 0.72 forecast alpha is a legacy presentation detail, not a
-            // separate color semantic for this host.
-            contextualView.setTextColor(contextualAccent);
-            contextualIconView.setColorFilter(contextualAccent);
+                animate && surfaceVisible, this::onContextualDisplayedContentChanged,
+                source == null ? "coui-contextual" : source);
+        ContextualAtAGlancePresentation.restyleDisplayed(
+                contextualGroup, contextualIconView, contextualView,
+                contextualAccent, contextualAccent);
+        ContextualAtAGlanceCard displayedCard =
+                ContextualAtAGlancePresentation.displayed(contextualGroup);
+        if (displayedCard.isVisible()) {
             float contentAlpha = CouiClockVisualStylePolicy.contextualContentAlpha(true);
             contextualView.setAlpha(contentAlpha);
             contextualIconView.setAlpha(contentAlpha);
         }
+        updateStableLargeForecastCard(displayedCard);
         if (changed) {
             contextualGroup.requestLayout();
             // Lower AOD rows use the COUI snap-geometry contract, so re-evaluate them in the
@@ -747,6 +754,48 @@ final class CouiClockHostView extends FrameLayout {
             scheduleApplyTargets(false);
         }
         updateAccessibilitySemantics();
+    }
+
+    /** Re-evaluates geometry only when the row's rendered pixels actually switch cards. */
+    private void onContextualDisplayedContentChanged() {
+        ContextualAtAGlanceCard displayedCard =
+                ContextualAtAGlancePresentation.displayed(contextualGroup);
+        applyContextualIconGeometry(displayedCard);
+        updateStableLargeForecastCard(displayedCard);
+        primeLargeContextualHorizontalTarget(displayedCard);
+        contextualGroup.requestLayout();
+        scheduleApplyTargets(false);
+    }
+
+    /**
+     * Commits Large contextual X before newly prepared pixels can become visible. The normal
+     * posted target pass still owns complete geometry/Y; this only closes the one-frame window
+     * where a fresh forecast could inherit the previous START translation.
+     */
+    private void primeLargeContextualHorizontalTarget(ContextualAtAGlanceCard displayedCard) {
+        if (presentation.visualScene() != CouiClockPresentationModel.Scene.LARGE
+                || displayedCard == null || !displayedCard.isVisible() || getWidth() <= 0) {
+            return;
+        }
+        boolean displayedForecast =
+                displayedCard.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST;
+        float defaultContextualX = PresentationLayoutDirectionPolicy.startAlignedX(
+                getWidth(), contextualGroup.getMeasuredWidth(),
+                dp(PixelAodVisualStyle.EDGE_DP), isRtl());
+        float contextualX = CouiClockContextualLayoutPolicy.largeContextualStartForDisplayedCard(
+                getWidth(), contextualVisibleContentWidthPx(), defaultContextualX,
+                displayedForecast);
+        contextualGroup.setTranslationX(
+                contextualX + (presentation.dozing() ? burnInX : 0f));
+    }
+
+    private void applyContextualIconGeometry(ContextualAtAGlanceCard displayedCard) {
+        ContextualAtAGlanceCard safe = displayedCard != null
+                ? displayedCard : ContextualAtAGlanceCard.none();
+        boolean applicationIcon = safe.kind == ContextualAtAGlanceCard.Kind.CALENDAR_EVENT
+                && ContextualAtAGlanceCalendarIcon.usesApplicationIcon(getContext());
+        ContextualAtAGlanceCalendarIcon.applyGeometry(contextualIconView, getContext(),
+                contextualTextSizeDp(safe), applicationIcon);
     }
 
     private int contextualTextSizeDp(ContextualAtAGlanceCard card) {
@@ -1027,6 +1076,7 @@ final class CouiClockHostView extends FrameLayout {
         int width = MeasureSpec.getSize(widthMeasureSpec);
         if (width > 0 && width != clockBaseWidth) {
             clockBaseWidth = width;
+            stableLargeForecastContentWidthPx = Float.NaN;
             setClockBaseSize(width * CouiClockGeometryPolicy.LS_LARGE.baseWidthRatio);
             int mediaWidth = Math.max(0, width - dp(64));
             mediaGroup.getLayoutParams().width = mediaWidth;
@@ -1425,9 +1475,16 @@ final class CouiClockHostView extends FrameLayout {
             dateY = getWidth() * surface.baseWidthRatio * LARGE_INFO_WIDTH_MULTIPLIER
                     * dozingScale + centeredGap;
             weatherY = dateY;
-            contextualX = PresentationLayoutDirectionPolicy.startAlignedX(
+            ContextualAtAGlanceCard displayedContextual =
+                    ContextualAtAGlancePresentation.displayed(contextualGroup);
+            boolean displayedForecast = displayedContextual.isVisible()
+                    && displayedContextual.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST;
+            float defaultContextualX = PresentationLayoutDirectionPolicy.startAlignedX(
                     getWidth(), contextualGroup.getMeasuredWidth(),
                     dp(PixelAodVisualStyle.EDGE_DP), rtl);
+            contextualX = CouiClockContextualLayoutPolicy.largeContextualStartForDisplayedCard(
+                    getWidth(), contextualVisibleContentWidthPx(), defaultContextualX,
+                    displayedForecast);
             contextualGapPx = dp(PixelAodVisualStyle.LARGE_INFO_ROW_GAP_DP);
         } else {
             float ltrCenterX = getWidth() * CouiClockGeometryPolicy.INFO_CENTER_RATIO
@@ -1485,6 +1542,52 @@ final class CouiClockHostView extends FrameLayout {
         float contextualTargetX = contextualX + xOffset;
         contextualGroup.setTranslationX(contextualTargetX);
         contextualGroup.setTranslationY(contextualTargetTopPx);
+    }
+
+    private void updateStableLargeForecastCard(ContextualAtAGlanceCard displayedCard) {
+        ContextualAtAGlanceCard safe = displayedCard != null
+                ? displayedCard : ContextualAtAGlanceCard.none();
+        boolean forecast = safe.isVisible()
+                && safe.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST;
+        if (forecast && stableLargeForecastCard.sameContent(safe)) {
+            return;
+        }
+        stableLargeForecastCard = forecast ? safe : ContextualAtAGlanceCard.none();
+        stableLargeForecastContentWidthPx = Float.NaN;
+    }
+
+    private float contextualVisibleContentWidthPx() {
+        ContextualAtAGlanceCard displayed =
+                ContextualAtAGlancePresentation.displayed(contextualGroup);
+        boolean forecast = displayed.isVisible()
+                && displayed.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST;
+        float maximumRowWidthPx = Math.max(0, getWidth() - dp(64));
+        if (forecast && stableLargeForecastCard.sameContent(displayed)
+                && !Float.isNaN(stableLargeForecastContentWidthPx)) {
+            return Math.min(maximumRowWidthPx, stableLargeForecastContentWidthPx);
+        }
+
+        float measured = calculateContextualVisibleContentWidthPx(maximumRowWidthPx);
+        if (forecast && measured > 0f) {
+            stableLargeForecastCard = displayed;
+            stableLargeForecastContentWidthPx = measured;
+        }
+        return measured;
+    }
+
+    private float calculateContextualVisibleContentWidthPx(float maximumRowWidthPx) {
+        LinearLayout.LayoutParams iconParams =
+                (LinearLayout.LayoutParams) contextualIconView.getLayoutParams();
+        float iconSpanPx = 0f;
+        if (iconParams != null) {
+            iconSpanPx = Math.max(0, iconParams.width)
+                    + Math.max(0, iconParams.getMarginStart())
+                    + Math.max(0, iconParams.getMarginEnd());
+        }
+        float textWidthPx = PixelAodClockView.estimatedTextContentWidthPx(contextualView);
+        return CouiClockContextualLayoutPolicy.visibleContentWidth(
+                textWidthPx, contextualIconView.getVisibility() == VISIBLE,
+                iconSpanPx, maximumRowWidthPx);
     }
 
     private void applyInformationTarget(View view, float x, float y, boolean animate,
@@ -1609,7 +1712,8 @@ final class CouiClockHostView extends FrameLayout {
         bottom = Math.max(bottom, visibleBottomInWindow(dateGroup, true));
         bottom = Math.max(bottom, visibleBottomInWindow(weatherGroup, true));
 
-        ContextualAtAGlanceCard contextual = ContextualAtAGlancePresentation.current(contextualGroup);
+        ContextualAtAGlanceCard contextual =
+                ContextualAtAGlancePresentation.displayed(contextualGroup);
         if (contextual.isVisible()) {
             bottom = Math.max(bottom, visibleBottomInWindow(contextualGroup, false));
         }
@@ -1866,16 +1970,22 @@ final class CouiClockHostView extends FrameLayout {
         // is already constructed with its resolved fallback color, so an ImageView tint would
         // only destroy multicolor provider icons.
         weatherIconView.setImageTintList(null);
-        ContextualAtAGlanceCard contextualCard =
-                ContextualAtAGlancePresentation.current(contextualGroup);
-        int contextualColor = CouiClockVisualStylePolicy.contextualAccentColor(
-                presentation.visualScene(), presentation.dozing(), monetColor, aodMonetColor);
-        contextualView.setTextColor(contextualColor);
-        contextualIconView.setColorFilter(contextualColor);
-        float contextualAlpha = CouiClockVisualStylePolicy.contextualContentAlpha(
-                contextualCard.isVisible());
-        contextualView.setAlpha(contextualAlpha);
-        contextualIconView.setAlpha(contextualAlpha);
+        if (presentation.dozing()) {
+            int contextualColor = CouiClockVisualStylePolicy.contextualAccentColor(
+                    presentation.visualScene(), true, monetColor, aodMonetColor);
+            ContextualAtAGlancePresentation.restyleDisplayed(
+                    contextualGroup, contextualIconView, contextualView,
+                    contextualColor, contextualColor);
+            ContextualAtAGlanceCard displayedCard =
+                    ContextualAtAGlancePresentation.displayed(contextualGroup);
+            float contextualAlpha = CouiClockVisualStylePolicy.contextualContentAlpha(
+                    displayedCard.isVisible());
+            contextualView.setAlpha(contextualAlpha);
+            contextualIconView.setAlpha(contextualAlpha);
+        }
+        // ContextualAtAGlancePresentation owns AOD-only leave styling. In a non-dozing frame the
+        // row may still be visually fading out even though its target tag is already NONE; do not
+        // repaint those old pixels with the lockscreen accent before they disappear.
         notificationOverflowView.setTextColor(CouiClockVisualStylePolicy.notificationOverflowColor(
                 PixelAodTypography.resolveMaterialInfoColor(getContext())));
         mediaTitleView.setTextColor(Color.WHITE);

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.33] - 2026-08-29
+### Fixed
+- Modification model: **GPT-5.6 Sol**.
+- Keep Large-clock weather-forecast geometry owned by the card that is actually rendered, not the next target published before a contextual replacement crossfade. Forecast-to-forecast and forecast-to-other-card swaps now retain the old rendered anchor through fade-out, then invalidate/recalculate width exactly when `applyContent()` swaps pixels so the new content is repositioned while transparent rather than inheriting stale width.
+- Keep contextual icon-slot geometry on the same displayed-card boundary. Target calendar/alert geometry no longer mutates a still-visible forecast before the replacement midpoint.
+- Restrict the Large centered visible-content X policy to a displayed `WEATHER_FORECAST`. Other Large contextual kinds retain the accepted S25 start-aligned geometry, and Small keeps its existing COUI information-column START layout.
+- Make Pixel Peek foreground collision use the displayed contextual card, so a new Peek card continues to clear a forecast/calendar/alert row that is still visibly fading after its target has already become `NONE`.
+- Synchronize the weak displayed-card registry used to separate target state from rendered contextual pixels. Forecast text remains white, forecast artwork keeps source colours, and Peek continues to use the native `Notification.smallIcon` without module accent tint.
+- Eliminate the Large forecast first-frame START flash on Lockscreen -> AOD. New contextual pixels now publish their final displayed-card state, icon geometry and Large horizontal target before the row becomes visible; forecast replacements perform the same X commit while transparent at the crossfade midpoint, then fade in from the final centered position.
+- Reconcile Breezy forecast data once the COUI host has entered dozing/AOD presentation inside the configured forecast window and arbitration has no card to render. Previously the 21:00/23:30 boundary only re-ran arbitration against SystemUI's cached snapshot; a stale or empty forecast cache could therefore remain blank until an unrelated weather broadcast arrived. The COUI content facade now sends a throttled explicit-package Breezy relay request without waiting for View#isShown(), while keeping the six-hour provider-source freshness rule authoritative.
+
+### Status
+- Current source/build gate: **108 suites / 517 tests / 0 failures / 0 errors / 0 skipped**; `:app:testDebugUnitTest`, `:app:assembleDebug --rerun-tasks`, and `git diff --check` PASS. The protected Lockscreen <-> AOD clock/morph/weight files have **ZERO worktree diff** from this repair, including `PixelAodClockView`.
+- Current build candidate remains `0.1.33 / 9024`, **19,795,835 bytes**, SHA-256 `ca5b87786fa72cce5ca213692714da686b798ac2e762996c4ddc3d844fafdc01`. ADB was recovered through the JP FRP visitor at `127.0.0.1:15556`; installed `base.apk` hash matches exactly. SystemUI reload `12650 -> 22422`, current-PID fatal/ANR/OOM/fatal-signal/DeadSystem scan is empty. Automatic provider reconciliation is runtime-proven by `lastSuccessfulSourceAtMillis` advancing `22:47:48.565 -> 22:48:55.106` without a manual relay (`AUTO_REQUERY=True`).
+- The configured forecast window remains start-inclusive/end-exclusive and the live settings are 21:00-23:30. Provider reconciliation is now working, and the real forecast source timestamp is fresh (`21:51:16`). The remaining reason tonight's card is `NONE` is data completeness: Breezy's parsed `2026-08-30` record has valid `31.0 / 19.3 C` temperatures but `weatherCode=UNKNOWN`, so the existing `isComplete()` rule correctly rejects it. This candidate is the final pre-GitHub-first migration snapshot. The remaining forecast data/parser investigation continues after the repository migration; the six-hour source freshness rule remains unchanged.
+
 ## [0.1.32] - 2026-08-26
 ### Added
 - Complete M9 S25 Pixel-style Peek notification presentation on top of the current OPlus screen-off incoming-notification lifecycle. The selected user's native **Show new notifications on AOD** setting remains authoritative; Pixel does not create a second Doze/pulse timer or reinterpret notification eligibility.

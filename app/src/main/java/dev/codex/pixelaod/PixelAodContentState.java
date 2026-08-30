@@ -1,8 +1,10 @@
 package dev.codex.pixelaod;
 
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.drawable.Drawable;
 
+import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -12,6 +14,9 @@ import java.util.List;
  * callers no longer need to treat {@link PixelAodClockView} as the content repository.</p>
  */
 final class PixelAodContentState {
+    private static final long FORECAST_REQUERY_MIN_INTERVAL_MILLIS = 60_000L;
+    private static long lastForecastRequeryAtMillis;
+
     private PixelAodContentState() {
     }
 
@@ -37,6 +42,57 @@ final class PixelAodContentState {
             boolean surfaceVisible, boolean allowWeatherAlerts, String source) {
         return PixelAodClockView.selectContextualCard(
                 context, surfaceVisible, allowWeatherAlerts, source);
+    }
+
+    /**
+     * Reconciles the contextual forecast cache with Breezy once the COUI host has entered AOD presentation
+     * inside the configured forecast window but arbitration has no card to render. The request is
+     * explicit-package and throttled; the receiver owns the provider query and existing relay path.
+     */
+    static void maybeRequestForecastSnapshot(Context context, boolean aodPresentationActive,
+            ContextualAtAGlanceCard selectedCard, String source) {
+        if (context == null || !aodPresentationActive
+                || (selectedCard != null && selectedCard.isVisible())) {
+            return;
+        }
+        boolean enabled = PixelAodSettings.getBoolean(context,
+                PixelAodSettings.KEY_WEATHER_FORECAST, false);
+        String startTime = PixelAodSettings.getString(context,
+                PixelAodSettings.KEY_WEATHER_FORECAST_START_TIME,
+                ForecastDisplayWindow.DEFAULT_START_TIME);
+        String endTime = PixelAodSettings.getString(context,
+                PixelAodSettings.KEY_WEATHER_FORECAST_END_TIME,
+                ForecastDisplayWindow.DEFAULT_END_TIME);
+        ForecastDisplayWindow window = ForecastDisplayWindow.fromSettings(startTime, endTime);
+        long nowMillis = System.currentTimeMillis();
+        if (!AtAGlanceWeatherPolicy.forecastWindowActive(
+                nowMillis, ZoneId.systemDefault(), enabled, window)) {
+            return;
+        }
+
+        synchronized (PixelAodContentState.class) {
+            if (lastForecastRequeryAtMillis > 0L
+                    && nowMillis - lastForecastRequeryAtMillis
+                    < FORECAST_REQUERY_MIN_INTERVAL_MILLIS) {
+                return;
+            }
+            lastForecastRequeryAtMillis = nowMillis;
+        }
+        try {
+            Intent request = new Intent(BreezyWeatherRelayReceiver.ACTION_REQUEST_RELAY)
+                    .setPackage(AodNotificationPipeline.MODULE_PACKAGE)
+                    .setFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
+            context.sendBroadcast(request);
+            PixelAodLog.log("requested Breezy forecast snapshot source="
+                    + (source != null ? source : "unknown"));
+        } catch (Throwable t) {
+            synchronized (PixelAodContentState.class) {
+                if (lastForecastRequeryAtMillis == nowMillis) {
+                    lastForecastRequeryAtMillis = 0L;
+                }
+            }
+            PixelAodLog.log("failed to request Breezy forecast snapshot", t);
+        }
     }
 
     static long beginContextualSurfaceEntry(String source) {

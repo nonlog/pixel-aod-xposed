@@ -1,6 +1,7 @@
 package dev.codex.pixelaod;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.Drawable;
 import android.util.TypedValue;
@@ -9,10 +10,16 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
+
 /** Renders the one-line contextual card into the stable calendar-row geometry. */
 final class ContextualAtAGlancePresentation {
     private static final long REPLACEMENT_HALF_FADE_MILLIS =
             ContextualAtAGlanceCard.REPLACEMENT_CROSSFADE_MILLIS / 2L;
+    private static final Map<LinearLayout, ContextualAtAGlanceCard> DISPLAYED_CARDS =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     private ContextualAtAGlancePresentation() {
     }
@@ -28,6 +35,17 @@ final class ContextualAtAGlancePresentation {
     static boolean apply(Context context, LinearLayout row, ImageView icon, TextView text,
             ContextualAtAGlanceCard next, int infoColor, int clockColor, int textSizeDp,
             int infoWeight, boolean animate, String source) {
+        return apply(context, row, icon, text, next, infoColor, clockColor, textSizeDp,
+                infoWeight, animate, null, source);
+    }
+
+    /**
+     * Same presentation contract with an optional callback fired only when the rendered pixels
+     * actually switch cards. Target state is still published before the fade for lower-row layout.
+     */
+    static boolean apply(Context context, LinearLayout row, ImageView icon, TextView text,
+            ContextualAtAGlanceCard next, int infoColor, int clockColor, int textSizeDp,
+            int infoWeight, boolean animate, Runnable onDisplayedContentChanged, String source) {
         if (row == null || icon == null || text == null) {
             return false;
         }
@@ -35,6 +53,7 @@ final class ContextualAtAGlancePresentation {
         ContextualAtAGlanceCard safe = next != null
                 ? next : ContextualAtAGlanceCard.none();
         ContextualAtAGlanceCard previous = current(row);
+        ensureDisplayedCard(row, previous);
         if (previous.sameContent(safe)) {
             return false;
         }
@@ -49,19 +68,24 @@ final class ContextualAtAGlancePresentation {
         row.setTag(safe);
         Runnable applyContent = () -> {
             row.setTag(safe);
-            int color = safe.kind == ContextualAtAGlanceCard.Kind.WEATHER_ALERT
-                    ? clockColor : infoColor;
-            text.setTextColor(color);
+            setDisplayedCard(row, safe);
+            int color = visualColor(safe, infoColor, clockColor);
             text.setTextSize(TypedValue.COMPLEX_UNIT_DIP, textSizeDp);
             PixelAodTypography.applySharedClockTypeface(text, context, infoWeight);
             PixelAodTypography.applySharedInfoText(text, context, safe.text);
             Drawable drawable = PixelAodContentState.contextualCardIcon(context, safe, color);
             icon.setImageDrawable(drawable);
             icon.setVisibility(drawable != null && safe.isVisible() ? View.VISIBLE : View.GONE);
-            icon.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+            applyVisualStyle(icon, text, safe, infoColor, clockColor);
             float alpha = safe.isVisible() ? safe.alpha : 0f;
             icon.setAlpha(alpha);
             text.setAlpha(alpha);
+            // Commit geometry after the new text/icon are prepared but before the row can reveal
+            // them. Otherwise a NONE -> forecast first frame can inherit the old START X and
+            // visibly jump to the Large centered target on the next posted target pass.
+            if (onDisplayedContentChanged != null) {
+                onDisplayedContentChanged.run();
+            }
             row.setVisibility(safe.isVisible() ? View.VISIBLE : View.GONE);
             row.setAlpha(safe.isVisible() ? 1f : 0f);
         };
@@ -94,6 +118,65 @@ final class ContextualAtAGlancePresentation {
         PixelAodLog.log("updated contextual card kind=" + safe.kind
                 + " textPresent=" + !safe.text.isEmpty() + " source=" + source);
         return true;
+    }
+
+    /** Re-applies colour styling to the pixels that are actually still displayed on this row. */
+    static void restyleDisplayed(LinearLayout row, ImageView icon, TextView text,
+            int infoColor, int clockColor) {
+        if (row == null || icon == null || text == null) {
+            return;
+        }
+        applyVisualStyle(icon, text, displayed(row), infoColor, clockColor);
+    }
+
+    static ContextualAtAGlanceCard displayed(LinearLayout row) {
+        if (row == null) {
+            return ContextualAtAGlanceCard.none();
+        }
+        ContextualAtAGlanceCard displayed = DISPLAYED_CARDS.get(row);
+        return displayed != null ? displayed : current(row);
+    }
+
+    private static void ensureDisplayedCard(LinearLayout row, ContextualAtAGlanceCard fallback) {
+        if (row == null) {
+            return;
+        }
+        synchronized (DISPLAYED_CARDS) {
+            if (!DISPLAYED_CARDS.containsKey(row)) {
+                DISPLAYED_CARDS.put(row,
+                        fallback != null ? fallback : ContextualAtAGlanceCard.none());
+            }
+        }
+    }
+
+    private static void setDisplayedCard(LinearLayout row, ContextualAtAGlanceCard card) {
+        if (row != null) {
+            DISPLAYED_CARDS.put(row,
+                    card != null ? card : ContextualAtAGlanceCard.none());
+        }
+    }
+
+    private static int visualColor(ContextualAtAGlanceCard card, int infoColor, int clockColor) {
+        ContextualAtAGlanceCard safe = card != null ? card : ContextualAtAGlanceCard.none();
+        if (safe.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST) {
+            return Color.WHITE;
+        }
+        return safe.kind == ContextualAtAGlanceCard.Kind.WEATHER_ALERT ? clockColor : infoColor;
+    }
+
+    private static void applyVisualStyle(ImageView icon, TextView text,
+            ContextualAtAGlanceCard card, int infoColor, int clockColor) {
+        ContextualAtAGlanceCard safe = card != null ? card : ContextualAtAGlanceCard.none();
+        int color = visualColor(safe, infoColor, clockColor);
+        text.setTextColor(color);
+        if (safe.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST) {
+            // Forecast is the sole owner of source-colour artwork. Never allow a target-card
+            // accent refresh to tint forecast pixels that are still visible during a crossfade.
+            icon.setImageTintList(null);
+            icon.clearColorFilter();
+        } else {
+            icon.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+        }
     }
 
     /** Returns the remaining vertical offset for a lower row at a normalized transition point. */
