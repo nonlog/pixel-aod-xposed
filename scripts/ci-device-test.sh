@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export ADB_VENDOR_KEYS="${ADB_VENDOR_KEYS:-$HOME/.android/adbkey}"
+
 : "${ADB_TARGET:?ADB_TARGET must be set by the runner workflow}"
 APK="candidate/app-debug.apk"
 PACKAGE="dev.codex.pixelaod"
