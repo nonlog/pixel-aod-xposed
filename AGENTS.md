@@ -12,7 +12,7 @@
 - 本文件只保存跨分支长期有效的工程、安全、验证和交付规则。禁止写入当前 branch/worktree 路径、SystemUI PID、ADB 当前 serial、当前 APK hash、当前阶段编号、下一步任务或其它易过期状态。
 - 当前工作状态写入对应 worktree 的 gitignored `.local/CHATGPT_WEB_HANDOFF.md`；架构/里程碑事实写入 tracked `docs/`。
 - 修改本文件时，应把同一内容同步到所有仍在使用的已注册 worktree。历史 commit 中旧版本无需改写历史；任何历史分支重新投入开发前，先同步最新仓库级 `AGENTS.md`。
-- 当统一规则最终提交并合入集成分支后，以集成分支/`master` 中的仓库根 `AGENTS.md` 作为持久 canonical source。未提交阶段以用户最近明确批准的统一工作副本为准。
+- 持久 canonical source 是 GitHub `main` 分支中的仓库根 `AGENTS.md`；其它分支开始工作时先以 `main` 同步本文件。
 
 ## Worktree 与 Git 安全
 
@@ -91,7 +91,7 @@
 - 对实际执行的多步骤任务，当前助手负责 Telegram 阶段通知。
 - 开始任务、完成重要阶段、遇到真实阻塞、任务结束时发送简短中文进度；不要按每条命令刷屏。
 - 每条通知只说明：完成了什么、结果如何、下一步是什么；异常时再增加阻塞/风险。
-- 优先使用现有共享 helper：`D:\Downloads\Xposed_test\pixel-aod-shared\.local\send-stage.ps1`。不要读取、打印或展开 helper 内部 secret。
+- 在 ChatGPT Web 执行任务时优先通过已连接的 Executor Telegram Notify Adapter 更新同一个 task notification；不得直接调用 Telegram Bot API。
 - 如必须直接读取私密配置，优先当前 worktree `.local/secrets.env`，再使用已知共享私密配置位置；token 不得出现在命令输出、日志、diff、checkpoint 或记忆中。
 - Telegram 通知失败最多合理重试一次；仍失败则继续主任务，并在聊天说明通知失败。
 
@@ -133,8 +133,8 @@
 
 ## 会话连续性与本地状态
 
-- `.local/CHATGPT_WEB_HANDOFF.md` 是每个 worktree 自己的本地恢复摘要；用于记录当前 branch/worktree、不可破坏约束、已验证阶段、脏/新增文件、测试/build/device 状态、未解决问题和下一步。
+- GitHub `main`、当前远程开发分支及 tracked `docs/` 是跨会话恢复的 canonical state。`.local/CHATGPT_WEB_HANDOFF.md` 只允许作为临时本地镜像的辅助摘要，不得成为唯一状态来源。
 - `.local/CHATGPT_WEB_HANDOFF.md` 必须保持 gitignored；不同 worktree 可以且应该有不同 handoff，不要把其瞬时状态复制进 `AGENTS.md`。
-- 新会话恢复顺序：仓库根 `AGENTS.md` -> 当前 worktree `.local/CHATGPT_WEB_HANDOFF.md`（如存在）-> 相关 tracked `docs/` / Claude-mem durable context（如可用）-> 实时 `git status/diff` 与设备状态。实时磁盘状态优先于旧摘要/记忆。
+- 新会话恢复顺序：GitHub `main` 的 `AGENTS.md` -> 当前远程开发分支/PR -> tracked `docs/` -> Claude-mem durable context（如可用）-> 必要时的 runner/device 实时状态。本地 worktree 状态不得覆盖已经更新的 GitHub canonical state。
 - Claude-mem 只保存长期有效决策、约束和已经验证的阶段结论；不要把大段瞬时日志或秘密写进去。
 - `.local/secrets.env`、`.local/device-pin.txt` 等本地私密文件必须保持 gitignored。
