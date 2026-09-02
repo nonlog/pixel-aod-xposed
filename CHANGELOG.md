@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.35] - 2026-09-02
+### Fixed
+- Modification model: **GPT-5.6 Sol**.
+- Remove the delayed Pixel clock reappearance after a full-screen alarm or call ends on the lockscreen. Runtime evidence showed the vendor keyguard clearing occlusion (`setKeyguardOccludedLw occluded=false`) on the affected return path.
+- Treat `LOCKSCREEN <-> OCCLUDED` like the already-proven PIN/bouncer visibility handoff: preserve the existing COUI child presentation and let the native `ClockViewRoot` own effective visibility during the transition instead of suppressing the child and waiting for a later scene resync.
+- Keep `GONE`, `DOZING`, and cross-transient transitions on the existing scene gate; no clock glyph, weight, morph, or AOD transition code is changed.
+
+### Status
+- Candidate version is `0.1.35 / 9026`, stacked on the pending Doze-safe media-timeout candidate. Full GitHub CI and JP device validation follow before physical acceptance.
 ## [0.1.34] - 2026-09-02
 ### Fixed
 - Modification model: **GPT-5.6 Sol**.

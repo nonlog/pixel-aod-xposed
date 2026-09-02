@@ -45,12 +45,48 @@ public final class CouiBouncerHostVisibilityPolicyTest {
     }
 
     @Test
-    public void nonBouncerTransitionsRemainUnderExistingSceneGate() {
+    public void lockscreenToOccludedPreservesClockUnderNativeHost() {
+        NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
+
+        assertTrue(CouiBouncerHostVisibilityPolicy.nativeHostOwns(gate.observe(
+                "LOCKSCREEN", "OCCLUDED", 0.0f, "STARTED", "owner", "alarm-start")));
+        assertTrue(CouiBouncerHostVisibilityPolicy.nativeHostOwns(gate.observe(
+                "LOCKSCREEN", "OCCLUDED", 0.6f, "RUNNING", "owner", "alarm-running")));
+        assertTrue(CouiBouncerHostVisibilityPolicy.nativeHostOwns(gate.observe(
+                "LOCKSCREEN", "OCCLUDED", 1.0f, "FINISHED", "owner", "alarm-visible")));
+    }
+
+    @Test
+    public void occludedToLockscreenRevealsPreservedClockBeforeFinished() {
+        NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
+
+        assertTrue(CouiBouncerHostVisibilityPolicy.nativeHostOwns(gate.observe(
+                "OCCLUDED", "LOCKSCREEN", 0.0f, "STARTED", "owner", "call-end-start")));
+        assertTrue(CouiBouncerHostVisibilityPolicy.nativeHostOwns(gate.observe(
+                "OCCLUDED", "LOCKSCREEN", 0.7f, "RUNNING", "owner", "call-end-running")));
+        assertFalse(CouiBouncerHostVisibilityPolicy.nativeHostOwns(gate.observe(
+                "OCCLUDED", "LOCKSCREEN", 1.0f, "FINISHED", "owner", "call-end-finish")));
+    }
+
+    @Test
+    public void canceledOcclusionTransitionReturnsOwnershipToSettledScene() {
+        NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
+
+        assertFalse(CouiBouncerHostVisibilityPolicy.nativeHostOwns(gate.observe(
+                "LOCKSCREEN", "OCCLUDED", 0.4f, "CANCELED", "owner", "cancel-entry")));
+        assertTrue(CouiBouncerHostVisibilityPolicy.nativeHostOwns(gate.observe(
+                "OCCLUDED", "LOCKSCREEN", 0.4f, "CANCELED", "owner", "cancel-exit")));
+    }
+
+    @Test
+    public void unrelatedTransitionsRemainUnderExistingSceneGate() {
         NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
 
         assertFalse(CouiBouncerHostVisibilityPolicy.nativeHostOwns(gate.observe(
                 "LOCKSCREEN", "GONE", 0.2f, "RUNNING", "owner", "gone")));
         assertFalse(CouiBouncerHostVisibilityPolicy.nativeHostOwns(gate.observe(
                 "LOCKSCREEN", "DOZING", 0.2f, "RUNNING", "owner", "dozing")));
+        assertFalse(CouiBouncerHostVisibilityPolicy.nativeHostOwns(gate.observe(
+                "PRIMARY_BOUNCER", "OCCLUDED", 0.2f, "RUNNING", "owner", "cross-transient")));
     }
 }
