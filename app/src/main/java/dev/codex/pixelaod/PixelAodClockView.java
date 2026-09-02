@@ -1,6 +1,8 @@
 package dev.codex.pixelaod;
 
+import android.app.AlarmManager;
 import android.app.Notification;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -28,6 +30,7 @@ import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
+import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -196,6 +199,9 @@ public final class PixelAodClockView extends FrameLayout {
     private static final long NOTIFICATION_PULSE_RECENT_MILLIS = 30_000L;
     private static final long WEATHER_STALE_MILLIS = 12L * 60L * 60L * 1000L;
     private static final long PAUSED_MEDIA_TIMEOUT_MILLIS = 10L * 60L * 1000L;
+    private static final long INACTIVE_MEDIA_TIMEOUT_ALARM_GRACE_MILLIS = 50L;
+    private static final String ACTION_INACTIVE_MEDIA_TIMEOUT =
+            MODULE_PACKAGE + ".action.INACTIVE_MEDIA_TIMEOUT";
     private static final PathInterpolator CLOCK_PLUGIN_GEOMETRY_HANDOFF_INTERPOLATOR =
             new PathInterpolator(0.2f, 0f, 0f, 1f);
     private static final StatusBarNotification[] EMPTY_NOTIFICATIONS = new StatusBarNotification[0];
@@ -203,6 +209,22 @@ public final class PixelAodClockView extends FrameLayout {
             new LinkedHashMap<>();
     private static final Set<String> expiredInactiveMediaPackages = new HashSet<>();
     private static final Set<String> loggedNativeSystemDrawableNames = new HashSet<>();
+    private static final Object INACTIVE_MEDIA_TIMEOUT_RECEIVER_LOCK = new Object();
+    private static boolean inactiveMediaTimeoutReceiverRegistered;
+    private static final BroadcastReceiver INACTIVE_MEDIA_TIMEOUT_RECEIVER = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null || !ACTION_INACTIVE_MEDIA_TIMEOUT.equals(intent.getAction())) {
+                return;
+            }
+            PixelAodLog.log("received AOD media inactive alarm trace=" + currentAodTraceId());
+            for (PixelAodClockView view : new ArrayList<>(INSTANCES)) {
+                if (view != null && view.running) {
+                    view.updateMediaLine("media-inactive-alarm");
+                }
+            }
+        }
+    };
     private static StatusBarNotification[] rawNotifications = EMPTY_NOTIFICATIONS;
     private static StatusBarNotification[] activeNotifications = EMPTY_NOTIFICATIONS;
     private static Typeface cachedClockTypeface;
@@ -443,6 +465,7 @@ public final class PixelAodClockView extends FrameLayout {
     private final Map<MediaController, MediaController.Callback> mediaCallbacks = new HashMap<>();
     private final Map<String, Long> inactiveMediaStartedAt = new HashMap<>();
     private final Map<String, Runnable> inactiveMediaTimeoutRunnables = new HashMap<>();
+    private final int inactiveMediaAlarmInstanceId = System.identityHashCode(this);
     private final MediaSessionManager.OnActiveSessionsChangedListener activeSessionsChangedListener =
             this::updateMediaControllers;
     private final BroadcastReceiver screenStateReceiver = new BroadcastReceiver() {
@@ -6221,7 +6244,8 @@ public final class PixelAodClockView extends FrameLayout {
             scheduleInactiveMediaTimeoutCheck(controller, key);
         }
         long age = now - startedAt;
-        boolean within = age >= 0L && age < PAUSED_MEDIA_TIMEOUT_MILLIS;
+        boolean within = InactiveMediaTimeoutPolicy.isWithinTimeout(
+                startedAt, now, PAUSED_MEDIA_TIMEOUT_MILLIS);
         PixelAodLog.log("AOD media inactive keep pkg=" + controller.getPackageName()
                 + " key=" + key
                 + " reason=" + reason
@@ -6266,22 +6290,102 @@ public final class PixelAodClockView extends FrameLayout {
         if (startedAt == null) {
             return;
         }
-        Runnable previous = inactiveMediaTimeoutRunnables.remove(key);
-        if (previous != null) {
-            mainHandler().removeCallbacks(previous);
-        }
-        long delay = (startedAt + PAUSED_MEDIA_TIMEOUT_MILLIS) - SystemClock.elapsedRealtime();
+        clearInactiveMediaTimeout(key);
+        long now = SystemClock.elapsedRealtime();
+        long triggerAt = InactiveMediaTimeoutPolicy.deadline(
+                startedAt, PAUSED_MEDIA_TIMEOUT_MILLIS);
+        long delay = InactiveMediaTimeoutPolicy.remainingDelay(
+                startedAt, now, PAUSED_MEDIA_TIMEOUT_MILLIS);
         if (delay <= 0L) {
             mainHandler().post(() -> expireInactiveMedia(controller, key, "media-inactive-timeout"));
             return;
         }
         Runnable timeoutRunnable = () -> expireInactiveMedia(controller, key, "media-inactive-timeout");
         inactiveMediaTimeoutRunnables.put(key, timeoutRunnable);
-        mainHandler().postDelayed(timeoutRunnable, delay + 50L);
+        // Keep the Handler callback as an awake-process fast path, but it is not the deadline
+        // authority: Handler delays use uptimeMillis and therefore stop advancing in deep sleep.
+        mainHandler().postDelayed(timeoutRunnable,
+                delay + INACTIVE_MEDIA_TIMEOUT_ALARM_GRACE_MILLIS);
+        scheduleInactiveMediaAlarm(key, triggerAt + INACTIVE_MEDIA_TIMEOUT_ALARM_GRACE_MILLIS);
         PixelAodLog.log("scheduled AOD media inactive timeout pkg=" + controller.getPackageName()
                 + " key=" + key
                 + " delayMs=" + delay
+                + " triggerElapsedMs=" + triggerAt
                 + " trace=" + currentAodTraceId());
+    }
+
+    private void scheduleInactiveMediaAlarm(String key, long triggerElapsedRealtime) {
+        Context context = getContext();
+        if (context == null || TextUtils.isEmpty(key)) {
+            return;
+        }
+        ensureInactiveMediaTimeoutReceiver(context);
+        PendingIntent alarmIntent = inactiveMediaTimeoutAlarmIntent(key, true);
+        AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        if (alarmManager == null || alarmIntent == null) {
+            return;
+        }
+        try {
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    triggerElapsedRealtime, alarmIntent);
+        } catch (SecurityException exactDenied) {
+            // SystemUI normally owns USE_EXACT_ALARM. Keep a Doze-capable fallback if a ROM
+            // changes that grant rather than silently reverting to Handler/uptime semantics.
+            try {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        triggerElapsedRealtime, alarmIntent);
+                PixelAodLog.log("AOD media inactive exact alarm denied; using allow-while-idle fallback",
+                        exactDenied);
+            } catch (Throwable fallbackFailure) {
+                PixelAodLog.log("failed to schedule AOD media inactive alarm", fallbackFailure);
+            }
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to schedule AOD media inactive alarm", t);
+        }
+    }
+
+    private static void ensureInactiveMediaTimeoutReceiver(Context context) {
+        if (context == null) {
+            return;
+        }
+        synchronized (INACTIVE_MEDIA_TIMEOUT_RECEIVER_LOCK) {
+            if (inactiveMediaTimeoutReceiverRegistered) {
+                return;
+            }
+            Context receiverContext = context.getApplicationContext();
+            if (receiverContext == null) {
+                receiverContext = context;
+            }
+            IntentFilter filter = new IntentFilter(ACTION_INACTIVE_MEDIA_TIMEOUT);
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    receiverContext.registerReceiver(INACTIVE_MEDIA_TIMEOUT_RECEIVER, filter,
+                            Context.RECEIVER_NOT_EXPORTED);
+                } else {
+                    receiverContext.registerReceiver(INACTIVE_MEDIA_TIMEOUT_RECEIVER, filter);
+                }
+                inactiveMediaTimeoutReceiverRegistered = true;
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to register AOD media inactive alarm receiver", t);
+            }
+        }
+    }
+
+    private PendingIntent inactiveMediaTimeoutAlarmIntent(String key, boolean create) {
+        Context context = getContext();
+        if (context == null || TextUtils.isEmpty(key)) {
+            return null;
+        }
+        int keyHash = key.hashCode();
+        int requestCode = 31 * inactiveMediaAlarmInstanceId + keyHash;
+        Intent intent = new Intent(ACTION_INACTIVE_MEDIA_TIMEOUT)
+                .setPackage(context.getPackageName())
+                .setData(Uri.parse("pixelaod://inactive-media-timeout/"
+                        + Integer.toHexString(inactiveMediaAlarmInstanceId) + "/"
+                        + Integer.toHexString(keyHash)));
+        int flags = PendingIntent.FLAG_IMMUTABLE
+                | (create ? PendingIntent.FLAG_UPDATE_CURRENT : PendingIntent.FLAG_NO_CREATE);
+        return PendingIntent.getBroadcast(context, requestCode, intent, flags);
     }
 
     private void expireInactiveMedia(MediaController controller, String key, String source) {
@@ -6368,6 +6472,19 @@ public final class PixelAodClockView extends FrameLayout {
         Runnable pendingTimeout = inactiveMediaTimeoutRunnables.remove(key);
         if (pendingTimeout != null) {
             mainHandler().removeCallbacks(pendingTimeout);
+        }
+        PendingIntent alarmIntent = inactiveMediaTimeoutAlarmIntent(key, false);
+        if (alarmIntent != null) {
+            try {
+                AlarmManager alarmManager = (AlarmManager) getContext()
+                        .getSystemService(Context.ALARM_SERVICE);
+                if (alarmManager != null) {
+                    alarmManager.cancel(alarmIntent);
+                }
+                alarmIntent.cancel();
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to cancel AOD media inactive alarm", t);
+            }
         }
     }
 

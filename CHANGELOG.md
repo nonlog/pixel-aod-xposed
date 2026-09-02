@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.34] - 2026-09-02
+### Fixed
+- Modification model: **GPT-5.6 Sol**.
+- Make the 10-minute paused/idle media-row timeout follow SystemClock.elapsedRealtime() through Doze. The previous deadline arithmetic used elapsed realtime but delivery relied only on Handler.postDelayed(), whose uptime clock stops during deep sleep and could leave stale media visible well past ten minutes.
+- Keep the existing Handler callback as an awake-process fast path, and add a loopback SystemUI-process AlarmManager ELAPSED_REALTIME_WAKEUP setExactAndAllowWhileIdle() deadline (with setAndAllowWhileIdle() fallback) that only re-evaluates existing media state; it does not wake the display, start playback, or synthesize media state.
+- Centralize elapsed-realtime deadline arithmetic in InactiveMediaTimeoutPolicy and add boundary/deep-sleep regression coverage.
+
+### Status
+- Pre-fix device evidence: PixelPlay remained PAUSED with PlaybackState.lastPositionUpdateTime about **26.3 minutes** old while the AOD media row was still eligible, proving the configured 10-minute age rule was not being delivered on time.
+- Candidate version is 0.1.34 (versionCode=9025). GitHub CI and JP self-hosted device installation/health validation follow this commit.
+
 ## [0.1.33] - 2026-08-29
 ### Fixed
 - Modification model: **GPT-5.6 Sol**.
