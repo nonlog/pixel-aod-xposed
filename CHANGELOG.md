@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.37] - 2026-09-03
+### Fixed
+- Modification model: **GPT-5.6 Sol**.
+- Preserve the pre-armed non-lockscreen AOD host across the transient LOCKSCREEN -> GONE CANCELED and initial GONE -> DOZING/AOD STARTED edges observed during rapid unlock -> screen-off. Previously the canceled eligibility edge could release the scoped scene-gate bypass and the following Doze start would hide the host until native transition completion, causing Direct Final to appear late and Animated mode to start a late abnormal morph.
+- Keep that exception strictly scoped to the first two non-lockscreen AOD entry edges inside the existing entry window. RUNNING/FINISHED, lockscreen-origin screen-off, normal Lockscreen <-> AOD morphing, glyph/weight interpolation, and the protected clock renderer/controller remain unchanged.
+- Retain the 0.1.36 Ranking precedence fix so hidden/SECRET service notifications cannot transiently pre-arm SMALL and then animate back to LARGE when no user-visible notification exists.
+- Set the application version name to 0.1.37. Android versionCode=9028 remains internal update ordering only; redundant version/versionCode entries were removed from the modern Xposed module.prop so module-owned visible version metadata is version-name-only.
+
+### Status
+- GitHub-first candidate: all Android tests/builds run on GitHub Actions; JP/TYO are device-validation nodes only. Candidate remains unmerged until repeated Direct Final, Animated, and no-notification Large-clock physical validation passes.
+
 ## [0.1.36] - 2026-09-03
 ### Fixed
 - Modification model: **GPT-5.6 Sol**.
