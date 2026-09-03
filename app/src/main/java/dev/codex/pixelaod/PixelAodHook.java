@@ -305,6 +305,7 @@ final class PixelAodHook {
         PixelAodLifecycleHookInstaller.installVendorProximityPauseSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installVendorWakeTriggerSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installAodTriggerDiagnostics(classLoader);
+        PixelAodLifecycleHookInstaller.installBlackFrameDiagnostics(classLoader);
         PixelAodLifecycleHookInstaller.installPowerWakeTriggers();
         PixelAodLifecycleHookInstaller.installDreamDozeStateObserver();
         PixelAodSurfaceHookInstaller.installGlobalStockSuppression(

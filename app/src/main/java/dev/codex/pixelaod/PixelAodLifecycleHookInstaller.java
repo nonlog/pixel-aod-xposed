@@ -63,6 +63,10 @@ final class PixelAodLifecycleHookInstaller {
         PixelAodHook.hookOplusAodTriggerDiagnostics(classLoader);
     }
 
+    static void installBlackFrameDiagnostics(ClassLoader classLoader) {
+        AodBlackFrameDiagnostics.install(classLoader);
+    }
+
     static void installPowerWakeTriggers() {
         PixelAodHook.hookPowerManagerWakeTriggers();
     }

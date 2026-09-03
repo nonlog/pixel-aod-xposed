@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.38-diag1] - 2026-09-04
+### Diagnostic
+- Observation-only black-frame tracing around OPlus AOD display-state requests, AOD mask lifecycle, AodBlackLayout callbacks, DreamService doze-state requests, and Wakefulness lifecycle edges.
+- Diagnostic hooks do not rewrite arguments, return values, display state, mask visibility/alpha, or animation state.
+- Intended for controlled ADB lockscreen-to-AOD cycles before any behavioral experiment.
+
 ## [0.1.37] - 2026-09-03
 ### Fixed
 - Modification model: **GPT-5.6 Sol**.
