@@ -2,7 +2,6 @@ package dev.codex.pixelaod;
 
 import android.os.SystemClock;
 import android.service.dreams.DreamService;
-import android.view.Display;
 import android.view.View;
 
 import java.lang.ref.WeakReference;
@@ -273,8 +272,18 @@ final class AodBlackFrameDiagnostics {
     }
 
     private static String displayState(int state) {
-        try { return Display.stateToString(state) + '(' + state + ')'; }
-        catch (Throwable ignored) { return String.valueOf(state); }
+        String name;
+        switch (state) {
+            case 0: name = "UNKNOWN"; break;
+            case 1: name = "OFF"; break;
+            case 2: name = "ON"; break;
+            case 3: name = "DOZE"; break;
+            case 4: name = "DOZE_SUSPEND"; break;
+            case 5: name = "VR"; break;
+            case 6: name = "ON_SUSPEND"; break;
+            default: name = "STATE_" + state; break;
+        }
+        return name + '(' + state + ')';
     }
 
     private static String signature(Method method) {
