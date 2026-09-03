@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.36] - 2026-09-03
+### Fixed
+- Modification model: **GPT-5.6 Sol**.
+- Prevent intermittent Small-to-Large clock animation during rapid lock/unlock when no user-visible notification exists. Runtime traces showed the non-lockscreen AOD pre-arm sometimes consumed a stale native lockscreen-visible decision for an ordinary service notification even though its Ranking already reported VISIBILITY_SECRET, pre-arming SMALL before the authoritative empty notification set retargeted LARGE.
+- Treat Ranking hard-hide results (importance=NONE, lockscreen override SECRET, or channel visibility SECRET) as authoritative for ordinary notifications even while the native visibility cache temporarily says the row is visible. Preserve the existing narrow system-status and OOS live-alert exceptions.
+- No clock glyph, font, weight, morph, or transition-rendering core is changed.
+
+### Status
+- Candidate version is 0.1.36 / 9027; GitHub CI and JP device validation are required before physical acceptance.
+
 ## [0.1.35] - 2026-09-02
 ### Fixed
 - Modification model: **GPT-5.6 Sol**.

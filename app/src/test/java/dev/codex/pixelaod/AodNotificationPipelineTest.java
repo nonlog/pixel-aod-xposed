@@ -38,6 +38,39 @@ public final class AodNotificationPipelineTest {
     }
 
     @Test
+    public void hardRankingHideCannotBeOverriddenByStaleNativeVisibility() {
+        AodNotificationPipeline.RankingSnapshot overrideSecret =
+                new AodNotificationPipeline.RankingSnapshot(
+                        Notification.VISIBILITY_SECRET, Notification.VISIBILITY_PRIVATE,
+                        AodNotificationPipeline.NotificationManagerImportance.DEFAULT, 0);
+        AodNotificationPipeline.RankingSnapshot channelSecret =
+                new AodNotificationPipeline.RankingSnapshot(
+                        Notification.VISIBILITY_PRIVATE, Notification.VISIBILITY_SECRET,
+                        AodNotificationPipeline.NotificationManagerImportance.DEFAULT, 0);
+        AodNotificationPipeline.RankingSnapshot importanceNone =
+                new AodNotificationPipeline.RankingSnapshot(
+                        Notification.VISIBILITY_PRIVATE, Notification.VISIBILITY_PRIVATE,
+                        AodNotificationPipeline.NotificationManagerImportance.NONE, 0);
+        AodNotificationPipeline.RankingSnapshot visible =
+                new AodNotificationPipeline.RankingSnapshot(
+                        Notification.VISIBILITY_PRIVATE, Notification.VISIBILITY_PRIVATE,
+                        AodNotificationPipeline.NotificationManagerImportance.DEFAULT, 0);
+
+        assertTrue(AodNotificationPipeline.isAuthoritativelyHiddenByRanking(
+                false, false, overrideSecret));
+        assertTrue(AodNotificationPipeline.isAuthoritativelyHiddenByRanking(
+                false, false, channelSecret));
+        assertTrue(AodNotificationPipeline.isAuthoritativelyHiddenByRanking(
+                false, false, importanceNone));
+        assertFalse(AodNotificationPipeline.isAuthoritativelyHiddenByRanking(
+                false, false, visible));
+        assertFalse(AodNotificationPipeline.isAuthoritativelyHiddenByRanking(
+                true, false, overrideSecret));
+        assertFalse(AodNotificationPipeline.isAuthoritativelyHiddenByRanking(
+                false, true, overrideSecret));
+    }
+
+    @Test
     public void oosLockscreenCompatibilityOnlyCorrectsOtherwiseEligibleNotifications() {
         assertTrue(AodNotificationPipeline.isEligibleForOosLockscreenVisibilityCorrection(
                 "com.example", false, true, null,

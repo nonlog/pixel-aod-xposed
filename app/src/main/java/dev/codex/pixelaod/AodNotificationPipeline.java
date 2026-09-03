@@ -84,12 +84,14 @@ final class AodNotificationPipeline {
         RankingSnapshot ranking = rankings != null ? rankings.get(sbn.getKey()) : null;
         LockscreenVisibilityDecision lockscreenDecision =
                 lockscreenDecisions != null ? lockscreenDecisions.get(sbn.getKey()) : null;
-        // Parity: anything still shown on the lockscreen must stay eligible for AOD icons.
-        // Do not apply a stricter silent/low-importance gate than the lockscreen path.
+        // Native row visibility may lag Ranking during rapid lock/unlock. Keep the native
+        // decision for otherwise eligible notifications, but never let a stale visible result
+        // override Ranking's hard lockscreen exclusions (SECRET / importance NONE). Otherwise an
+        // invisible service notification can transiently pre-arm SMALL before AOD reconciles to
+        // the real empty notification set and retargets LARGE.
         boolean lockscreenExplicitlyVisible = isExplicitlyVisibleOnLockscreen(lockscreenDecision);
         String rankingHiddenReason = ranking != null ? ranking.hiddenReason() : null;
-        if (!systemNotification && !lockscreenExplicitlyVisible
-                && rankingHiddenReason != null) {
+        if (isAuthoritativelyHiddenByRanking(systemNotification, oosLiveAlert, ranking)) {
             logFilteredNotification(sbn, rankingHiddenReason + " ranking=" + ranking, trace);
             return false;
         }
@@ -110,6 +112,14 @@ final class AodNotificationPipeline {
                                         ? "lockscreen-explicitly-visible"
                                         : "lockscreen-visible")));
         return true;
+    }
+
+    static boolean isAuthoritativelyHiddenByRanking(boolean systemNotification,
+            boolean oosLiveAlert, RankingSnapshot ranking) {
+        // Preserve the existing narrow system/live-alert exceptions; this precedence fix is for
+        // ordinary notification rows whose native lockscreen visibility cache can lag Ranking.
+        return !systemNotification && !oosLiveAlert
+                && ranking != null && ranking.hiddenReason() != null;
     }
 
     /** True when OOS Keyguard visibility hooks reported the row as not hidden. */
