@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.38-exp-off1] - 2026-09-04
+### Experiment
+- Controlled variable B: keep the vendor AOD mask fully stock, but rewrite only Display OFF requests occurring during the 1.2-second startAodMaskAnim entry window to DOZE.
+- Later UDFPS FP-FadeOut, wake OnScreenTurningOn, AodBlackLayout, mask alpha/visibility, and Pixel clock rendering remain unchanged.
+- Diagnostic-only branch; do not merge to main without explicit acceptance.
+
 ## [0.1.38-diag1] - 2026-09-04
 ### Diagnostic
 - Observation-only black-frame tracing around OPlus AOD display-state requests, AOD mask lifecycle, AodBlackLayout callbacks, DreamService doze-state requests, and Wakefulness lifecycle edges.
