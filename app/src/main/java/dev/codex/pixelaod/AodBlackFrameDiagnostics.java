@@ -33,9 +33,11 @@ final class AodBlackFrameDiagnostics {
         boolean blackLayout = hookBlackLayout(classLoader);
         boolean dream = hookDreamService();
         boolean wakefulness = hookWakefulness(classLoader);
+        boolean maskAlphaExperiment = AodMaskAlphaZeroExperiment.install(classLoader);
         log("install", null, null, "display=" + display + " mask=" + mask
                 + " blackLayout=" + blackLayout + " dream=" + dream
-                + " wakefulness=" + wakefulness);
+                + " wakefulness=" + wakefulness
+                + " maskAlphaExperiment=" + maskAlphaExperiment);
     }
 
     private static boolean hookDisplayUtil(ClassLoader classLoader) {

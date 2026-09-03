@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.38-exp-mask1] - 2026-09-04
+### Experiment
+- Controlled variable A: keep only the tracked OPlus mAODMask View at alpha 0 while preserving its visibility and Animator lifecycle.
+- DreamService/AODDisplayUtil OFF and DOZE requests, AodBlackLayout, UDFPS requests, and Pixel clock rendering remain unchanged.
+- Diagnostic-only branch; do not merge to main without explicit acceptance.
+
 ## [0.1.38-diag1] - 2026-09-04
 ### Diagnostic
 - Observation-only black-frame tracing around OPlus AOD display-state requests, AOD mask lifecycle, AodBlackLayout callbacks, DreamService doze-state requests, and Wakefulness lifecycle edges.
