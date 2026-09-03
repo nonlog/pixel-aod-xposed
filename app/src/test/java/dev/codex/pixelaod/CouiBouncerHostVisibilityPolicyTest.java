@@ -79,6 +79,38 @@ public final class CouiBouncerHostVisibilityPolicyTest {
     }
 
     @Test
+    public void nonLockscreenCanceledGoneEdgeKeepsPreparedHostOwnedByNativeRoot() {
+        NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
+        NativeKeyguardSceneEligibility.Snapshot canceled = gate.observe(
+                "LOCKSCREEN", "GONE", 0.0f, "CANCELED", "owner", "rapid-screen-off");
+
+        assertTrue(CouiBouncerHostVisibilityPolicy.nativeHostOwnsNonLockscreenAodEntryEdge(
+                canceled, true, false));
+        assertFalse(CouiBouncerHostVisibilityPolicy.nativeHostOwnsNonLockscreenAodEntryEdge(
+                canceled, false, false));
+        assertFalse(CouiBouncerHostVisibilityPolicy.nativeHostOwnsNonLockscreenAodEntryEdge(
+                canceled, true, true));
+    }
+
+    @Test
+    public void nonLockscreenGoneToDozingOwnsOnlyStartedEdge() {
+        NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
+        NativeKeyguardSceneEligibility.Snapshot started = gate.observe(
+                "GONE", "DOZING", 0.0f, "STARTED", "owner", "sleep-start");
+        NativeKeyguardSceneEligibility.Snapshot running = gate.observe(
+                "GONE", "DOZING", 0.2f, "RUNNING", "owner", "sleep-running");
+        NativeKeyguardSceneEligibility.Snapshot finished = gate.observe(
+                "GONE", "DOZING", 1.0f, "FINISHED", "owner", "sleep-finish");
+
+        assertTrue(CouiBouncerHostVisibilityPolicy.nativeHostOwnsNonLockscreenAodEntryEdge(
+                started, true, false));
+        assertFalse(CouiBouncerHostVisibilityPolicy.nativeHostOwnsNonLockscreenAodEntryEdge(
+                running, true, false));
+        assertFalse(CouiBouncerHostVisibilityPolicy.nativeHostOwnsNonLockscreenAodEntryEdge(
+                finished, true, false));
+    }
+
+    @Test
     public void unrelatedTransitionsRemainUnderExistingSceneGate() {
         NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
 
