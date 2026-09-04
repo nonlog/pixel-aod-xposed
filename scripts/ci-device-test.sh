@@ -34,7 +34,7 @@ LOCAL_HASH="$(sha256sum "$APK" | awk '{print $1}')"
 START_SEC="$(date +%s)"
 PRE_PID="$(adb -s "$ADB_TARGET" shell pidof com.android.systemui | tr -d '\r' || true)"
 
-adb -s "$ADB_TARGET" install -r "$APK"
+adb -s "$ADB_TARGET" install -r -d "$APK"
 REMOTE_APK="$(adb -s "$ADB_TARGET" shell pm path "$PACKAGE" | sed -n 's/^package://p' | head -n1 | tr -d '\r')"
 if [[ -z "$REMOTE_APK" ]]; then
   echo "Installed package path not found" >&2
