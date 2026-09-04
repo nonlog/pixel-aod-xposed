@@ -45,7 +45,29 @@ LOCAL_HASH="$(sha256sum "$APK" | awk '{print $1}')"
 START_SEC="$(date +%s)"
 PRE_PID="$(adb -s "$ADB_TARGET" shell pidof com.android.systemui | tr -d '\r' || true)"
 
-adb -s "$ADB_TARGET" install -r -d "$APK"
+STAGE_DIR="$(mktemp -d)"
+trap 'rm -rf "$STAGE_DIR"' EXIT
+split -b 4m "$APK" "$STAGE_DIR/apk.part."
+REMOTE_STAGE="/data/local/tmp/pixelaod-ci-${GITHUB_RUN_ID:-manual}.apk"
+adb -s "$ADB_TARGET" shell "rm -f '$REMOTE_STAGE' /data/local/tmp/pixelaod-ci-part-*"
+PART_INDEX=0
+for PART in "$STAGE_DIR"/apk.part.*; do
+  REMOTE_PART="/data/local/tmp/pixelaod-ci-part-$(printf '%02d' "$PART_INDEX")"
+  adb -s "$ADB_TARGET" push "$PART" "$REMOTE_PART"
+  PART_INDEX=$((PART_INDEX + 1))
+done
+adb -s "$ADB_TARGET" shell "cat /data/local/tmp/pixelaod-ci-part-* > '$REMOTE_STAGE' && rm -f /data/local/tmp/pixelaod-ci-part-*"
+STAGED_HASH="$(adb -s "$ADB_TARGET" shell sha256sum "$REMOTE_STAGE" | awk '{print $1}' | tr -d '\r')"
+if [[ "$LOCAL_HASH" != "$STAGED_HASH" ]]; then
+  echo "Staged APK digest mismatch: local=$LOCAL_HASH staged=$STAGED_HASH" >&2
+  exit 1
+fi
+if ! INSTALL_OUTPUT="$(adb -s "$ADB_TARGET" shell pm install -r -d "$REMOTE_STAGE" 2>&1 | tr -d '\r')"; then
+  echo "$INSTALL_OUTPUT" >&2
+  exit 1
+fi
+echo "$INSTALL_OUTPUT"
+adb -s "$ADB_TARGET" shell rm -f "$REMOTE_STAGE"
 REMOTE_APK="$(adb -s "$ADB_TARGET" shell pm path "$PACKAGE" | sed -n 's/^package://p' | head -n1 | tr -d '\r')"
 if [[ -z "$REMOTE_APK" ]]; then
   echo "Installed package path not found" >&2
