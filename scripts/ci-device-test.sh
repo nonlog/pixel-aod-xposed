@@ -14,8 +14,19 @@ if [[ ! -f "$APK" ]]; then
   exit 1
 fi
 
+adb kill-server >/dev/null 2>&1 || true
 adb start-server >/dev/null
+adb disconnect "$ADB_TARGET" >/dev/null 2>&1 || true
+sleep 1
 adb connect "$ADB_TARGET" >/dev/null 2>&1 || true
+for _ in $(seq 1 10); do
+  if [[ "$(adb -s "$ADB_TARGET" get-state 2>/dev/null || true)" == "device" ]]; then
+    break
+  fi
+  adb disconnect "$ADB_TARGET" >/dev/null 2>&1 || true
+  sleep 1
+  adb connect "$ADB_TARGET" >/dev/null 2>&1 || true
+done
 if [[ "$(adb -s "$ADB_TARGET" get-state 2>/dev/null || true)" != "device" ]]; then
   echo "ADB target unavailable: $ADB_TARGET" >&2
   adb devices -l || true
