@@ -6004,7 +6004,14 @@ public final class PixelAodClockView extends FrameLayout {
             return mutated;
         } catch (Throwable t) {
             PixelAodLog.log("failed to load native notification smallIcon", t);
-            return null;
+            try {
+                return loadNotificationFallbackGlyph(context, sbn,
+                        SystemNotificationGlyphDrawable.TYPE_GENERIC_NOTIFICATION,
+                        "smallIcon-exception-" + t.getClass().getSimpleName());
+            } catch (Throwable fallbackError) {
+                PixelAodLog.log("failed to load AOD notification fallback glyph", fallbackError);
+                return null;
+            }
         }
     }
 
