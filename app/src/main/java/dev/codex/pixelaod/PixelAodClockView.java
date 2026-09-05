@@ -383,6 +383,9 @@ public final class PixelAodClockView extends FrameLayout {
         mainHandler().post(() -> {
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
+                    if (pauseSnapshot.resumedPresentation()) {
+                        view.refreshAodContentBeforeVisible("oos-proximity-resume");
+                    }
                     view.updateAodVisibility("oos-proximity");
                 }
             }
@@ -405,6 +408,7 @@ public final class PixelAodClockView extends FrameLayout {
             mainHandler().post(() -> {
                 for (PixelAodClockView view : INSTANCES) {
                     if (view != null) {
+                        view.refreshAodContentBeforeVisible("oos-proximity-reset");
                         view.updateAodVisibility("oos-proximity-reset");
                     }
                 }
