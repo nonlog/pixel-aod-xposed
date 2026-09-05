@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.39
+- Refresh AOD time and content before native proximity/pocket presentation resumes, including reset recovery.
+- Render Phone Services "No SIM card installed" with a recognizable no-SIM glyph.
+- Replace blank or solid-block AOD notification icon failures with an app monochrome or generic notification glyph fallback.
+- Keep vendor AOD and panel power sequencing unchanged.
+
 ## [0.1.37] - 2026-09-03
 ### Fixed
 - Modification model: **GPT-5.6 Sol**.
