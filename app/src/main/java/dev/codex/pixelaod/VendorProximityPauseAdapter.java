@@ -118,6 +118,10 @@ final class VendorProximityPauseAdapter {
             return previousPhase != phase;
         }
 
+        boolean resumedPresentation() {
+            return previousPhase == Phase.PAUSED && phase == Phase.ACTIVE;
+        }
+
         boolean blocksPresentation() {
             return phase == Phase.PAUSED;
         }
