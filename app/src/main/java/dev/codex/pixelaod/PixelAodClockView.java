@@ -5914,17 +5914,29 @@ public final class PixelAodClockView extends FrameLayout {
             }
             Icon icon = notification.getSmallIcon();
             if (icon == null) {
-                PixelAodLog.log("AOD notification icon skipped pkg=" + sbn.getPackageName()
+                PixelAodLog.log("AOD notification icon fallback pkg=" + sbn.getPackageName()
                         + " reason=no-small-icon"
                         + " trace=" + currentAodTraceId());
-                return null;
+                return loadNotificationFallbackGlyph(context, sbn,
+                        SystemNotificationGlyphDrawable.TYPE_GENERIC_NOTIFICATION,
+                        "no-small-icon");
+            }
+            String resourceName = notificationSmallIconResourceName(context, sbn, icon);
+            if (SystemNotificationIconPolicy.isPhoneServicesNoSim(sbn.getPackageName(),
+                    AodNotificationPipeline.systemNotificationText(sbn), resourceName)) {
+                Drawable noSimIcon = loadPhoneServicesNoSimIcon(context);
+                logNotificationIconChoice(sbn.getPackageName(),
+                        "phone-services-no-sim resource=" + resourceName);
+                return noSimIcon;
             }
             Drawable drawable = loadIconDrawable(context, sbn.getPackageName(), icon);
             if (drawable == null) {
-                PixelAodLog.log("AOD notification icon skipped pkg=" + sbn.getPackageName()
+                PixelAodLog.log("AOD notification icon fallback pkg=" + sbn.getPackageName()
                         + " reason=icon-drawable-null"
                         + " trace=" + currentAodTraceId());
-                return null;
+                return loadNotificationFallbackGlyph(context, sbn,
+                        SystemNotificationGlyphDrawable.TYPE_GENERIC_NOTIFICATION,
+                        "icon-drawable-null");
             }
             boolean filledMask = looksLikeFilledNotificationMask(drawable);
             boolean tinyForeground = looksLikeTinyForeground(drawable);
@@ -5935,10 +5947,10 @@ public final class PixelAodClockView extends FrameLayout {
                     return liveAlertIcon;
                 }
                 if (filledMask || tinyForeground) {
-                    logNotificationIconChoice(sbn.getPackageName(),
-                            "dropped-blocky-live-alert-smallIcon filled=" + filledMask
+                    return loadNotificationFallbackGlyph(context, sbn,
+                            SystemNotificationGlyphDrawable.TYPE_LIVE_ALERT,
+                            "blocky-live-alert-smallIcon filled=" + filledMask
                                     + " tiny=" + tinyForeground);
-                    return null;
                 }
             }
             if (AodNotificationPipeline.isSystemNotificationCandidate(sbn)) {
@@ -5948,10 +5960,10 @@ public final class PixelAodClockView extends FrameLayout {
                     return glyph;
                 }
                 if (filledMask || tinyForeground) {
-                    logNotificationIconChoice(sbn.getPackageName(),
-                            "dropped-blocky-system-smallIcon filled=" + filledMask
+                    return loadNotificationFallbackGlyph(context, sbn,
+                            SystemNotificationGlyphDrawable.TYPE_GENERIC_NOTIFICATION,
+                            "blocky-system-smallIcon filled=" + filledMask
                                     + " tiny=" + tinyForeground);
-                    return null;
                 }
                 Drawable mutated = drawable.mutate();
                 mutated.setTint(resolveMaterialInfoColor(context));
@@ -5959,7 +5971,6 @@ public final class PixelAodClockView extends FrameLayout {
                 logNotificationIconChoice(sbn.getPackageName(), "system-smallIcon");
                 return mutated;
             }
-            String resourceName = notificationSmallIconResourceName(context, sbn, icon);
             if (AodNotificationPipeline.isLauncherStyleSmallIconResourceName(resourceName)) {
                 logNotificationIconChoice(sbn.getPackageName(),
                         "notification-launcher-resource-original-color resource=" + resourceName);
@@ -5981,13 +5992,10 @@ public final class PixelAodClockView extends FrameLayout {
                         return appIcon;
                     }
                 }
-                Drawable tinted = drawable.mutate();
-                tinted.setTint(resolveMaterialInfoColor(context));
-                tinted.setTintMode(PorterDuff.Mode.SRC_IN);
-                logNotificationIconChoice(sbn.getPackageName(),
-                        "notification-smallIcon-filled-mask-tint filled=" + filledMask
+                return loadNotificationFallbackGlyph(context, sbn,
+                        SystemNotificationGlyphDrawable.TYPE_GENERIC_NOTIFICATION,
+                        "blocky-notification-smallIcon filled=" + filledMask
                                 + " tiny=" + tinyForeground);
-                return tinted;
             }
             Drawable mutated = drawable.mutate();
             mutated.setTint(resolveMaterialInfoColor(context));
@@ -6053,6 +6061,41 @@ public final class PixelAodClockView extends FrameLayout {
         }
         int type = icon.getType();
         return type == Icon.TYPE_BITMAP || type == Icon.TYPE_ADAPTIVE_BITMAP;
+    }
+
+    private static Drawable loadPhoneServicesNoSimIcon(Context context) {
+        int color = resolveMaterialInfoColor(context);
+        Drawable nativeIcon = loadTintedPackageDrawable(context, color, "com.android.systemui",
+                "stat_sys_no_sim",
+                "ic_signal_cellular_no_sim",
+                "ic_qs_no_sim",
+                "ic_no_sim");
+        if (nativeIcon != null) {
+            return nativeIcon;
+        }
+        nativeIcon = loadTintedSystemDrawable(context, color,
+                "stat_sys_no_sim",
+                "ic_signal_cellular_no_sim",
+                "ic_no_sim");
+        if (nativeIcon != null) {
+            return nativeIcon;
+        }
+        return new SystemNotificationGlyphDrawable(color,
+                SystemNotificationGlyphDrawable.TYPE_NO_SIM);
+    }
+
+    private static Drawable loadNotificationFallbackGlyph(Context context,
+            StatusBarNotification sbn, int glyphType, String reason) {
+        String packageName = sbn != null ? sbn.getPackageName() : "";
+        Drawable monochrome = loadApplicationMonochromeIcon(context, packageName);
+        if (monochrome != null) {
+            logNotificationIconChoice(packageName,
+                    "app-monochrome-fallback reason=" + reason);
+            return monochrome;
+        }
+        logNotificationIconChoice(packageName,
+                "generic-notification-glyph reason=" + reason);
+        return new SystemNotificationGlyphDrawable(resolveMaterialInfoColor(context), glyphType);
     }
 
     private static Drawable loadSystemNotificationIcon(Context context, StatusBarNotification sbn) {
@@ -9202,6 +9245,8 @@ public final class PixelAodClockView extends FrameLayout {
         static final int TYPE_FLASHLIGHT = 3;
         static final int TYPE_TIMER = 4;
         static final int TYPE_LIVE_ALERT = 5;
+        static final int TYPE_NO_SIM = 6;
+        static final int TYPE_GENERIC_NOTIFICATION = 7;
 
         private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -9239,6 +9284,10 @@ public final class PixelAodClockView extends FrameLayout {
                 drawTimer(canvas, size);
             } else if (type == TYPE_LIVE_ALERT) {
                 drawLiveAlert(canvas, size);
+            } else if (type == TYPE_NO_SIM) {
+                drawNoSim(canvas, size);
+            } else if (type == TYPE_GENERIC_NOTIFICATION) {
+                drawGenericNotification(canvas, size);
             } else {
                 drawCheck(canvas, size);
             }
@@ -9292,6 +9341,36 @@ public final class PixelAodClockView extends FrameLayout {
             canvas.drawRoundRect(capsule, size * 0.18f, size * 0.18f, stroke);
             canvas.drawCircle(size * 0.40f, size * 0.50f, size * 0.045f, fill);
             canvas.drawCircle(size * 0.60f, size * 0.50f, size * 0.045f, fill);
+        }
+
+        private void drawNoSim(Canvas canvas, float size) {
+            Path sim = new Path();
+            sim.moveTo(size * 0.30f, size * 0.16f);
+            sim.lineTo(size * 0.60f, size * 0.16f);
+            sim.lineTo(size * 0.76f, size * 0.32f);
+            sim.lineTo(size * 0.76f, size * 0.82f);
+            sim.lineTo(size * 0.24f, size * 0.82f);
+            sim.lineTo(size * 0.24f, size * 0.22f);
+            sim.quadTo(size * 0.24f, size * 0.16f, size * 0.30f, size * 0.16f);
+            sim.close();
+            canvas.drawPath(sim, stroke);
+            canvas.drawLine(size * 0.28f, size * 0.76f,
+                    size * 0.76f, size * 0.28f, stroke);
+        }
+
+        private void drawGenericNotification(Canvas canvas, float size) {
+            Path bell = new Path();
+            bell.moveTo(size * 0.28f, size * 0.66f);
+            bell.quadTo(size * 0.34f, size * 0.58f, size * 0.34f, size * 0.43f);
+            bell.cubicTo(size * 0.34f, size * 0.25f, size * 0.42f, size * 0.18f,
+                    size * 0.50f, size * 0.18f);
+            bell.cubicTo(size * 0.58f, size * 0.18f, size * 0.66f, size * 0.25f,
+                    size * 0.66f, size * 0.43f);
+            bell.quadTo(size * 0.66f, size * 0.58f, size * 0.72f, size * 0.66f);
+            canvas.drawPath(bell, stroke);
+            canvas.drawLine(size * 0.26f, size * 0.70f,
+                    size * 0.74f, size * 0.70f, stroke);
+            canvas.drawCircle(size * 0.50f, size * 0.78f, size * 0.045f, fill);
         }
 
         @Override
