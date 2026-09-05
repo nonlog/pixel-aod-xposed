@@ -15,6 +15,20 @@ public final class SystemNotificationIconPolicyTest {
     }
 
     @Test
+    public void identifiesPhoneServicesNoSimFromTextOrResourceName() {
+        assertTrue(SystemNotificationIconPolicy.isPhoneServicesNoSim(
+                "com.android.phone", "Mobile network No SIM card installed", ""));
+        assertTrue(SystemNotificationIconPolicy.isPhoneServicesNoSim(
+                "com.android.phone", "", "com.android.phone:drawable/stat_sys_no_sim"));
+        assertTrue(SystemNotificationIconPolicy.isPhoneServicesNoSim(
+                "com.android.phone", "SIM card not detected", ""));
+        assertFalse(SystemNotificationIconPolicy.isPhoneServicesNoSim(
+                "com.android.phone", "Voicemail available", "stat_notify_voicemail"));
+        assertFalse(SystemNotificationIconPolicy.isPhoneServicesNoSim(
+                "com.example.phone", "No SIM card installed", "stat_sys_no_sim"));
+    }
+
+    @Test
     public void identifiesTheCurrentOplusDndNoticeForNativeGlyphMapping() {
         assertTrue(SystemNotificationIconPolicy.isOplusDndNotice(
                 "com.android.systemui", "channel_dnd_notice", 10001));
