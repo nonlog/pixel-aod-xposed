@@ -56,12 +56,14 @@ public final class VendorProximityPauseAdapterTest {
                 adapter.observeRawNear(false, "far");
         assertEquals(VendorProximityPauseAdapter.Phase.PAUSED, rawFar.phase);
         assertTrue(rawFar.blocksPresentation());
+        assertFalse(rawFar.resumedPresentation());
 
         VendorProximityPauseAdapter.Snapshot committedFar =
                 adapter.observeCommittedNear(false, "far-commit");
         assertEquals(VendorProximityPauseAdapter.Phase.ACTIVE, committedFar.phase);
         assertFalse(committedFar.blocksPresentation());
         assertFalse(committedFar.blocksNotificationPulse());
+        assertTrue(committedFar.resumedPresentation());
     }
 
     @Test
@@ -90,5 +92,6 @@ public final class VendorProximityPauseAdapterTest {
         VendorProximityPauseAdapter.Snapshot pausedReset = adapter.reset("unregister");
         assertEquals(VendorProximityPauseAdapter.Phase.ACTIVE, pausedReset.phase);
         assertFalse(pausedReset.blocksPresentation());
+        assertTrue(pausedReset.resumedPresentation());
     }
 }
