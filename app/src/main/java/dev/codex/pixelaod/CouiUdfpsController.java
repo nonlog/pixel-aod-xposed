@@ -864,7 +864,11 @@ final class CouiUdfpsController {
             View.OnAttachStateChangeListener listener = new View.OnAttachStateChangeListener() {
                 @Override
                 public void onViewAttachedToWindow(View view) {
-                    configureHdrLayout(pressedIcon);
+                    // The global weak-key map owns this listener. Never capture pressedIcon
+                    // here: that value-to-key reference would retain detached carrier trees.
+                    if (view instanceof ImageView) {
+                        configureHdrLayout((ImageView) view);
+                    }
                 }
                 @Override
                 public void onViewDetachedFromWindow(View view) {

@@ -75,4 +75,21 @@ public class ClockRefreshWiringTest {
         assertTrue(text.contains("record.host.setTag(R.id.coui_clock_host_record, null)"));
         assertFalse(text.contains("new WeakHashMap<ViewGroup, HostRecord>"));
     }
+
+    @Test public void hdrAttachListenerDoesNotCaptureItsWeakMapKey() throws Exception {
+        String listener = section(source("CouiUdfpsController"),
+                "View.OnAttachStateChangeListener listener =", "HDR_ATTACH_LISTENERS.put");
+        assertTrue(listener.contains("configureHdrLayout((ImageView) view)"));
+        assertFalse(listener.contains("configureHdrLayout(pressedIcon)"));
+    }
+
+    @Test public void providerWriteAuthorizationPrecedesPreferenceMutation() throws Exception {
+        String update = section(source("PixelAodSettingsProvider"),
+                "public int update", "private static void putSetting");
+        int authorization = update.indexOf("SettingsWritePolicy.isTrustedUid");
+        assertTrue(authorization >= 0);
+        assertTrue(authorization < update.indexOf("SharedPreferences.Editor"));
+        assertTrue(update.contains("if (spec == null)"));
+        assertFalse(update.contains("editor.putString(key, value)"));
+    }
 }
