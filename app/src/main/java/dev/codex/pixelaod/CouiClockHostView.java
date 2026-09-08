@@ -691,6 +691,13 @@ final class CouiClockHostView extends FrameLayout {
                 // Optional weather/calendar data must not prevent the primary clock update.
                 PixelAodLog.e("COUI clock ancillary refresh failed source=" + source, t);
             }
+            if (previous != null && current.minute - previous.minute > 1L
+                    && presentation.dozing() && isShown()) {
+                // A recovery marker, not proof of a frozen display: pocket sleep can also skip
+                // minutes. Keep only this rare diagnostic when verbose logging is disabled.
+                PixelAodLog.i("COUI clock gap recovered source=" + source
+                        + " missedMinutes=" + (current.minute - previous.minute - 1L));
+            }
             PixelAodLog.log("coui-clock-time", () ->
                     "COUI clock time refreshed source=" + source
                             + " minute=" + current.minute

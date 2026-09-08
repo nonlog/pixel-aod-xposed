@@ -42,7 +42,8 @@
         </activity>
         <receiver
             android:name=".TestNotificationReceiver"
-            android:exported="true">
+            android:exported="true"
+            android:permission="android.permission.DUMP">
             <intent-filter>
                 <action android:name="dev.codex.pixelaod.TEST_NOTIFICATION" />
                 <action android:name="dev.codex.pixelaod.CLEAR_TEST_NOTIFICATION" />

@@ -7,6 +7,8 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
+import android.os.Binder;
+import android.os.Process;
 import android.text.TextUtils;
 
 public final class PixelAodSettingsProvider extends ContentProvider {
@@ -51,6 +53,10 @@ public final class PixelAodSettingsProvider extends ContentProvider {
 
     @Override
     public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) {
+        // Reads are intentionally available to the SystemUI bridge; writes are not public IPC.
+        if (!SettingsWritePolicy.isTrustedUid(Binder.getCallingUid(), Process.myUid())) {
+            throw new SecurityException("Pixel AOD settings writes require module, system, root or shell UID");
+        }
         Context context = getContext();
         if (context == null || values == null) {
             return 0;
@@ -63,38 +69,13 @@ public final class PixelAodSettingsProvider extends ContentProvider {
         if (rawValue == null) {
             return 0;
         }
-        SharedPreferences.Editor editor = PixelAodSettings.getSharedPreferences(context).edit();
         PixelAodSettingsSchema.SettingSpec spec = PixelAodSettingsSchema.spec(key);
-        if (writeKnownSetting(editor, spec, key, rawValue)) {
-            return commitUpdate(context, editor);
+        if (spec == null) {
+            return 0;
         }
-        if (rawValue instanceof Boolean) {
-            editor.putBoolean(key, (Boolean) rawValue);
-        } else if (rawValue instanceof Integer) {
-            editor.putInt(key, (Integer) rawValue);
-        } else if (rawValue instanceof Long) {
-            editor.putLong(key, (Long) rawValue);
-        } else if (rawValue instanceof Float) {
-            editor.putFloat(key, (Float) rawValue);
-        } else if (rawValue instanceof Double) {
-            editor.putFloat(key, ((Double) rawValue).floatValue());
-        } else {
-            String value = String.valueOf(rawValue);
-            if ("true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value)) {
-                editor.putBoolean(key, Boolean.parseBoolean(value));
-            } else {
-                try {
-                    if (value.contains(".")) {
-                        editor.putFloat(key, Float.parseFloat(value));
-                    } else {
-                        editor.putInt(key, Integer.parseInt(value));
-                    }
-                } catch (NumberFormatException ignored) {
-                    editor.putString(key, value);
-                }
-            }
-        }
-        return commitUpdate(context, editor);
+        SharedPreferences.Editor editor = PixelAodSettings.getSharedPreferences(context).edit();
+        return writeKnownSetting(editor, spec, key, rawValue)
+                ? commitUpdate(context, editor) : 0;
     }
 
     private static void putSetting(MatrixCursor cursor, SharedPreferences prefs,
@@ -130,28 +111,11 @@ public final class PixelAodSettingsProvider extends ContentProvider {
             return true;
         }
         if (spec.type == PixelAodSettingsSchema.Type.FLOAT) {
-            editor.putFloat(key, parseFloat(rawValue, spec.defaultFloat()));
+            editor.putFloat(key, SettingsWritePolicy.finiteFloat(rawValue, spec.defaultFloat()));
             return true;
         }
         editor.putString(key, String.valueOf(rawValue));
         return true;
-    }
-
-    private static float parseFloat(Object rawValue, float fallback) {
-        if (rawValue instanceof Float) {
-            return (Float) rawValue;
-        }
-        if (rawValue instanceof Double) {
-            return ((Double) rawValue).floatValue();
-        }
-        if (rawValue instanceof Number) {
-            return ((Number) rawValue).floatValue();
-        }
-        try {
-            return Float.parseFloat(String.valueOf(rawValue));
-        } catch (NumberFormatException ignored) {
-            return fallback;
-        }
     }
 
     private static int commitUpdate(Context context, SharedPreferences.Editor editor) {
