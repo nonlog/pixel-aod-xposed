@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.40] - 2026-09-08
+### Fixed
+- Route native AOD minute callbacks and both vendor proximity recovery paths to the actual COUI clock owner even when the retired legacy view registry is empty. Run an already-main-thread native refresh in the vendor callback's frame instead of always adding another queue hop.
+- Refresh persistent clock hosts before reveal, on ancestor/window visibility recovery, and during semantic refresh. Deduplicate by minute, timezone/offset, locale and 12/24-hour format; refresh Calendar's timezone and commit the cache only after successful digit writes. Optional information refresh errors no longer block the clock update.
+- Break two weak-key/strong-value retention cycles: the COUI host registry and the fingerprint HDR attach listener. A live host now owns its lifecycle record; the global registry is an index with weak values.
+- Restrict exported settings writes to the module/system/root/shell UIDs, reject unknown setting keys, and normalize non-finite numeric input. Protect the test-notification receiver with the platform DUMP permission while retaining same-UID and privileged diagnostics.
+- Guard newer Android APIs by their actual platform levels, keep old-version fallbacks, use valid version-specific display-cutout constants, and move Android 12 splash properties into v31-qualified resources. Fingerprint field-name matching now uses Locale.ROOT.
+
+### Validation and scope
+- Candidate version: **0.1.40 / 9039**. The intermittently frozen physical AOD occurrence was not reproduced during the initial read-only device sampling; do not equate automated tests with physical acceptance.
+- Add policy and source-wiring regression tests, weak-registry lifecycle tests, settings authorization/numeric validation tests, and a mandatory Android lint gate with uploaded XML/HTML reports and explicit test totals.
+- Keep the existing clock geometry, weight/size morph engine, animation durations, native panel power authority, sensor ownership and experimental Live Update pause unchanged. No new minute alarm or polling watchdog is introduced.
+- See [0.1.40 investigation and audit](docs/BUGFIX_AUDIT_0.1.40.md) for evidence, remaining validation, and the narrowly documented pre-API-33 receiver compatibility exceptions.
+
+
 ## 0.1.39
 - Refresh AOD time and content before native proximity/pocket presentation resumes, including reset recovery.
 - Render Phone Services "No SIM card installed" with a recognizable no-SIM glyph.

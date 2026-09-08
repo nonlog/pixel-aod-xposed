@@ -27,3 +27,8 @@ Use **vendor AOD time-tick authority** while dozing.
 
 - Always rely on `ACTION_TIME_TICK`: delivery is not the authoritative low-power AOD scheduler when a stable vendor callback exists.
 - Schedule module exact alarms every minute: duplicates vendor work and increases idle-power risk.
+
+
+## 0.1.40 active-owner correction
+
+Native minute refresh and vendor proximity resume/reset must reach ActiveClockRendererController.onTimeTick even when PixelAodClockView.INSTANCES is empty. Persistent COUI host visibility recovery also checks current wall-clock/format state before reveal. Deduplicate minute plus timezone/offset/locale/hour-format inputs; do not install an independent minute alarm or reset/replay the clock animation engine. See ../BUGFIX_AUDIT_0.1.40.md and ClockRefreshWiringTest for the disconnected-caller regression.

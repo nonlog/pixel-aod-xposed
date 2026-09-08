@@ -1655,7 +1655,7 @@ final class CouiUdfpsController {
         Class<?> current = uiMech.getClass();
         while (current != null) {
             for (Field field : current.getDeclaredFields()) {
-                String name = field.getName().toLowerCase();
+                String name = field.getName().toLowerCase(java.util.Locale.ROOT);
                 if (!ImageView.class.isAssignableFrom(field.getType())
                         || (!name.contains("fp") && !name.contains("finger")
                         && !name.contains("udfps"))) {
@@ -1697,7 +1697,7 @@ final class CouiUdfpsController {
         Class<?> current = uiMech.getClass();
         while (current != null) {
             for (Field field : current.getDeclaredFields()) {
-                String name = field.getName().toLowerCase();
+                String name = field.getName().toLowerCase(java.util.Locale.ROOT);
                 if (!ImageView.class.isAssignableFrom(field.getType())
                         || (!name.contains("pressed") && !name.contains("press"))) {
                     continue;

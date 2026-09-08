@@ -12,7 +12,7 @@ Pixel AOD for OPlus uses GitHub as the canonical development and build environme
 
 ## Build path
 
-`.github/workflows/ci.yml` is the authoritative build gate. It uses a GitHub-hosted Ubuntu runner, JDK 17, Android SDK 36/build-tools 36.1.0, the project Gradle wrapper, unit tests, and `assembleDebug`.
+`.github/workflows/ci.yml` is the authoritative build gate. It uses a GitHub-hosted Ubuntu runner, JDK 17, Android SDK 36/build-tools 36.1.0, the project Gradle wrapper, unit tests, `assembleDebug`, and a blocking `lintDebug` check. JUnit and lint reports are uploaded, and explicit test totals are printed in the job log.
 
 Every CI build uploads the debug APK and its SHA-256 as a workflow artifact. A developer should not need Log to compile or package the module.
 
