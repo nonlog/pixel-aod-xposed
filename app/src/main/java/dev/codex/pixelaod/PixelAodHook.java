@@ -509,6 +509,8 @@ final class PixelAodHook {
         }
     }
 
+    // API 33+ explicitly exports this vendor event; the old-platform branch has no such flag.
+    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
     static void registerTorchRefreshReceiver(Context context) {
         if (context == null || !TORCH_REFRESH_RECEIVER_REGISTERED.compareAndSet(false, true)) {
             return;

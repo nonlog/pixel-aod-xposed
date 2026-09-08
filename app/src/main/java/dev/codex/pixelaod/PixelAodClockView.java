@@ -797,6 +797,8 @@ public final class PixelAodClockView extends FrameLayout {
                 + " aod=" + (aodTypeface != null));
     }
 
+    // The unflagged overload is used only below API 33; newer systems use RECEIVER_EXPORTED.
+    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
     static void ensureBreezyWeatherReceiver(Context context) {
         if (context == null) {
             return;
@@ -5606,7 +5608,7 @@ public final class PixelAodClockView extends FrameLayout {
             overflowView.setBreakStrategy(styleSource.getBreakStrategy());
             overflowView.setHyphenationFrequency(styleSource.getHyphenationFrequency());
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             overflowView.setElegantTextHeight(styleSource.isElegantTextHeight());
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -5995,7 +5997,8 @@ public final class PixelAodClockView extends FrameLayout {
                         logNotificationIconChoice(sbn.getPackageName(),
                                 "oplus-push-bitmap-app-color-fallback filled=" + filledMask
                                         + " tiny=" + tinyForeground
-                                        + " iconType=" + icon.getType());
+                                        + " iconType=" + (Build.VERSION.SDK_INT >= 28
+                                                ? icon.getType() : -1));
                         return appIcon;
                     }
                 }
@@ -6024,7 +6027,8 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static String notificationSmallIconResourceName(Context context,
             StatusBarNotification sbn, Icon icon) {
-        if (context == null || sbn == null || icon == null || icon.getType() != Icon.TYPE_RESOURCE) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P
+                || context == null || sbn == null || icon == null || icon.getType() != Icon.TYPE_RESOURCE) {
             return "";
         }
         try {
@@ -6405,6 +6409,8 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    // Below API 33, require a privileged sender instead of an unavailable NOT_EXPORTED flag.
+    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
     private static void ensureInactiveMediaTimeoutReceiver(Context context) {
         if (context == null) {
             return;
@@ -6423,7 +6429,8 @@ public final class PixelAodClockView extends FrameLayout {
                     receiverContext.registerReceiver(INACTIVE_MEDIA_TIMEOUT_RECEIVER, filter,
                             Context.RECEIVER_NOT_EXPORTED);
                 } else {
-                    receiverContext.registerReceiver(INACTIVE_MEDIA_TIMEOUT_RECEIVER, filter);
+                    receiverContext.registerReceiver(INACTIVE_MEDIA_TIMEOUT_RECEIVER, filter,
+                            android.Manifest.permission.DUMP, null);
                 }
                 inactiveMediaTimeoutReceiverRegistered = true;
             } catch (Throwable t) {

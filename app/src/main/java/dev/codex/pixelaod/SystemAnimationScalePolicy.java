@@ -20,11 +20,32 @@ final class SystemAnimationScalePolicy {
     static Snapshot current() {
         float scale = DEFAULT_SCALE;
         try {
-            scale = ValueAnimator.getDurationScale();
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                scale = ValueAnimator.getDurationScale();
+            } else if (LegacyDurationScale.METHOD != null) {
+                scale = ((Number) LegacyDurationScale.METHOD.invoke(null)).floatValue();
+            } else if (!ValueAnimator.areAnimatorsEnabled()) {
+                scale = 0f;
+            }
         } catch (Throwable ignored) {
             // Preserve the proven 1x presentation path if the runtime input is unavailable.
         }
         return fromRawScale(scale);
+    }
+
+    private static final class LegacyDurationScale {
+        static final java.lang.reflect.Method METHOD = findMethod();
+
+        private static java.lang.reflect.Method findMethod() {
+            try {
+                // This getter existed as a hidden platform method before it became public.
+                java.lang.reflect.Method method = ValueAnimator.class.getDeclaredMethod("getDurationScale");
+                method.setAccessible(true);
+                return method;
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
     }
 
     static boolean animationsEnabled() {

@@ -22,12 +22,12 @@ final class CouiUdfpsPressedIlluminationDrawable extends Drawable {
         float density = context.getResources().getDisplayMetrics().density;
         diameterPx = Math.round(DIAMETER_DP * density);
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.pack(
-                7f,
-                7f,
-                7f,
-                1f,
-                ColorSpace.get(ColorSpace.Named.EXTENDED_SRGB)));
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            paint.setColor(Color.pack(7f, 7f, 7f, 1f,
+                    ColorSpace.get(ColorSpace.Named.EXTENDED_SRGB)));
+        } else {
+            paint.setColor(Color.WHITE);
+        }
         paint.setAlpha(0);
     }
 

@@ -54,9 +54,33 @@ jobs:
 
       - name: Android lint audit
         id: lint
-        continue-on-error: true
         shell: bash
         run: ./gradlew :app:lintDebug --no-daemon --stacktrace
+
+      - name: Summarize verification
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import collections, glob, xml.etree.ElementTree as ET
+          tests = failures = errors = skipped = 0
+          for path in glob.glob('app/build/test-results/testDebugUnitTest/TEST-*.xml'):
+              suite = ET.parse(path).getroot()
+              tests += int(suite.get('tests', 0))
+              failures += int(suite.get('failures', 0))
+              errors += int(suite.get('errors', 0))
+              skipped += int(suite.get('skipped', 0))
+          print(f'UNIT_TEST_SUMMARY tests={tests} failures={failures} errors={errors} skipped={skipped}')
+          for path in glob.glob('app/build/reports/lint-results-debug.xml'):
+              issues = ET.parse(path).getroot().findall('issue')
+              counts = collections.Counter((issue.get('severity'), issue.get('id')) for issue in issues)
+              print('LINT_SUMMARY', dict(counts))
+              for issue in issues:
+                  if issue.get('severity') in ('Error', 'Fatal'):
+                      print('LINT_ERROR', issue.get('id'), issue.get('message'))
+                      for loc in issue.findall('location'):
+                          print(loc.attrib)
+          PY
 
       - name: Upload lint report
         if: always()

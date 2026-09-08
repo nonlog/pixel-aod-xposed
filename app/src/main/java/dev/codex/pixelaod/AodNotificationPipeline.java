@@ -702,8 +702,22 @@ final class AodNotificationPipeline {
                 suppressedEffects = ranking.getSuppressedVisualEffects();
             } catch (Throwable ignored) {
             }
+            int overrideVisibility = NotificationListenerService.Ranking.VISIBILITY_NO_OVERRIDE;
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    overrideVisibility = ranking.getLockscreenVisibilityOverride();
+                } else {
+                    // Older vendor SystemUI may expose the same value through its hidden API.
+                    Object value = ModernHookBridge.callMethod(ranking, "getLockscreenVisibilityOverride");
+                    if (value instanceof Number) {
+                        overrideVisibility = ((Number) value).intValue();
+                    }
+                }
+            } catch (Throwable ignored) {
+                // Keep the independent channel visibility and importance gates authoritative.
+            }
             return new RankingSnapshot(
-                    ranking.getLockscreenVisibilityOverride(),
+                    overrideVisibility,
                     channelVisibility,
                     importance,
                     suppressedEffects);

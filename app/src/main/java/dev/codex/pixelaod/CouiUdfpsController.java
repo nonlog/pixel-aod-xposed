@@ -836,7 +836,8 @@ final class CouiUdfpsController {
     private static float maxHdrHeadroom(ImageView pressedIcon) {
         float ratio = 7f;
         try {
-            if (pressedIcon != null && pressedIcon.getDisplay() != null) {
+            if (android.os.Build.VERSION.SDK_INT >= 36
+                    && pressedIcon != null && pressedIcon.getDisplay() != null) {
                 float reported = pressedIcon.getDisplay().getHighestHdrSdrRatio();
                 if (Float.isFinite(reported) && reported > 1f) {
                     ratio = reported;
@@ -850,7 +851,7 @@ final class CouiUdfpsController {
     }
 
     private static void prepareHdrWindow(ImageView pressedIcon) {
-        if (pressedIcon == null) {
+        if (android.os.Build.VERSION.SDK_INT < 35 || pressedIcon == null) {
             return;
         }
         synchronized (HDR_ATTACH_LISTENERS) {
@@ -884,6 +885,9 @@ final class CouiUdfpsController {
             return;
         }
         pressedIcon.post(() -> {
+            if (android.os.Build.VERSION.SDK_INT < 35) {
+                return;
+            }
             try {
                 if (!(pressedIcon.getLayoutParams() instanceof WindowManager.LayoutParams)) {
                     PixelAodLog.log("COUI UDFPS HDR window skipped reason=non-window-layout-params");
@@ -915,7 +919,7 @@ final class CouiUdfpsController {
     }
 
     private static void updatePressedHdr(ImageView pressedIcon, boolean pressed) {
-        if (pressedIcon == null) {
+        if (android.os.Build.VERSION.SDK_INT < 35 || pressedIcon == null) {
             return;
         }
         boolean enabled = isHdrPressEffectEnabled(pressedIcon.getContext());
@@ -1589,8 +1593,10 @@ final class CouiUdfpsController {
             Object root = ModernHookBridge.callMethod(pressedIcon, "getViewRootImpl");
             Object value = root != null ? ModernHookBridge.callMethod(root, "getSurfaceControl")
                     : null;
-            surfaceValid = value instanceof SurfaceControl
-                    && ((SurfaceControl) value).isValid();
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                surfaceValid = value instanceof SurfaceControl
+                        && ((SurfaceControl) value).isValid();
+            }
         } catch (Throwable ignored) {
         }
         String state = "touchDown=" + liveTouchDown

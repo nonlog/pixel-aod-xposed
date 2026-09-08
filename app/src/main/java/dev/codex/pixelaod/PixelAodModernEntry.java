@@ -80,7 +80,8 @@ public final class PixelAodModernEntry extends XposedModule {
                     }
                     ClassLoader classLoader = context.getClassLoader();
                     logInfo("modern Application.attach package=" + context.getPackageName()
-                            + " process=" + Application.getProcessName()
+                            + " process=" + (android.os.Build.VERSION.SDK_INT >= 28
+                                    ? Application.getProcessName() : context.getApplicationInfo().processName)
                             + " loader=" + classLoader);
                     resolveModulePath(context);
                     PixelAodTypography.prewarmGoogleSansFlex(context);

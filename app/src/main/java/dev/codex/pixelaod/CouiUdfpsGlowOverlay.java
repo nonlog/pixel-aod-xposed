@@ -84,8 +84,12 @@ final class CouiUdfpsGlowOverlay {
                     WINDOW_FLAGS,
                     android.graphics.PixelFormat.TRANSLUCENT);
             params.gravity = Gravity.TOP | Gravity.START;
-            if (android.os.Build.VERSION.SDK_INT >= 28) {
-                params.layoutInDisplayCutoutMode = 3;
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                params.layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
+            } else if (android.os.Build.VERSION.SDK_INT >= 28) {
+                params.layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             }
             if (android.os.Build.VERSION.SDK_INT >= 30) {
                 params.setFitInsetsTypes(0);

@@ -318,7 +318,8 @@ final class PixelPeekNotificationController {
             result.clearColorFilter();
             PixelAodLog.log("Pixel peek icon source=notification-smallIcon tint=none pkg="
                     + sbn.getPackageName() + " key=" + sbn.getKey()
-                    + " iconType=" + smallIcon.getType());
+                    + " iconType=" + (android.os.Build.VERSION.SDK_INT >= 28
+                            ? smallIcon.getType() : -1));
             return result;
         } catch (Throwable t) {
             PixelAodLog.log("failed to load Pixel peek notification smallIcon pkg="
