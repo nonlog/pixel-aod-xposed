@@ -13,7 +13,6 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,8 +43,10 @@ final class CouiClockPluginHostController {
             Collections.newSetFromMap(new WeakHashMap<Method, Boolean>());
     private static final Set<Class<?>> NATIVE_DRAW_HOOKED_CLASSES =
             Collections.newSetFromMap(new WeakHashMap<Class<?>, Boolean>());
-    private static final Map<ViewGroup, HostRecord> HOSTS =
-            Collections.synchronizedMap(new WeakHashMap<ViewGroup, HostRecord>());
+    // A weak-key map with strong HostRecord values still roots the entire view tree through
+    // HostRecord.root/host. The index is weak on both sides; the live host owns its record tag.
+    private static final WeakHostRegistry<ViewGroup, HostRecord> HOSTS =
+            new WeakHostRegistry<>();
     private static final Map<View, WeakReference<HostRecord>> NATIVE_DRAW_BINDINGS =
             Collections.synchronizedMap(new WeakHashMap<View, WeakReference<HostRecord>>());
     private static final Set<Object> ROOT_UNAVAILABLE_LOGGED =
@@ -83,11 +84,9 @@ final class CouiClockPluginHostController {
     }
 
     static boolean hasValidatedHost() {
-        synchronized (HOSTS) {
-            for (HostRecord record : HOSTS.values()) {
-                if (record != null && record.host.getParent() == record.root) {
-                    return true;
-                }
+        for (HostRecord record : snapshotRecords()) {
+            if (record.host.getParent() == record.root) {
+                return true;
             }
         }
         return false;
@@ -628,6 +627,8 @@ final class CouiClockPluginHostController {
         host.setVisibility(View.VISIBLE);
         host.bringToFront();
         HostRecord record = new HostRecord(root, host, plugin, nextGeneration());
+        // This owner is part of the view tree, not a process-global GC root.
+        host.setTag(R.id.coui_clock_host_record, record);
         synchronized (HOSTS) {
             HOSTS.put(root, record);
         }
@@ -994,35 +995,33 @@ final class CouiClockPluginHostController {
             return;
         }
         runOnMain(() -> {
-            synchronized (HOSTS) {
-                Iterator<Map.Entry<ViewGroup, HostRecord>> iterator = HOSTS.entrySet().iterator();
-                while (iterator.hasNext()) {
-                    Map.Entry<ViewGroup, HostRecord> entry = iterator.next();
-                    HostRecord record = entry.getValue();
-                    if (record == null || record.plugin == null || record.plugin.get() != plugin) {
-                        continue;
-                    }
-                    record.suppressNativeDraw = false;
-                    record.aodExitHandoffPending = false;
-                    restoreNativeVisuals(record);
-                    synchronized (NATIVE_DRAW_BINDINGS) {
-                        for (View container : record.nativeDrawContainers) {
-                            WeakReference<HostRecord> reference = NATIVE_DRAW_BINDINGS.get(container);
-                            if (reference != null && reference.get() == record) {
-                                NATIVE_DRAW_BINDINGS.remove(container);
-                            }
+            // Do not hold an iterator over the registry while removing views: detach callbacks
+            // can re-enter the controller. A snapshot also prunes already-collected records.
+            for (HostRecord record : snapshotRecords()) {
+                if (record.plugin == null || record.plugin.get() != plugin) {
+                    continue;
+                }
+                record.suppressNativeDraw = false;
+                record.aodExitHandoffPending = false;
+                restoreNativeVisuals(record);
+                synchronized (NATIVE_DRAW_BINDINGS) {
+                    for (View container : record.nativeDrawContainers) {
+                        WeakReference<HostRecord> reference = NATIVE_DRAW_BINDINGS.get(container);
+                        if (reference != null && reference.get() == record) {
+                            NATIVE_DRAW_BINDINGS.remove(container);
                         }
                     }
-                    record.host.detachLifecycle();
-                    if (record.host.getParent() == entry.getKey()) {
-                        entry.getKey().removeView(record.host);
-                    }
-                    iterator.remove();
-                    PixelAodLog.log("detached COUI clock host rendererMode=COUI_PORT"
-                            + " rootId=" + identity(entry.getKey())
-                            + " hostGeneration=" + record.generation
-                            + " source=" + source);
                 }
+                record.host.detachLifecycle();
+                record.host.setTag(R.id.coui_clock_host_record, null);
+                HOSTS.remove(record.root);
+                if (record.host.getParent() == record.root) {
+                    record.root.removeView(record.host);
+                }
+                PixelAodLog.log("detached COUI clock host rendererMode=COUI_PORT"
+                        + " rootId=" + identity(record.root)
+                        + " hostGeneration=" + record.generation
+                        + " source=" + source);
             }
         });
     }
@@ -1204,9 +1203,7 @@ final class CouiClockPluginHostController {
     }
 
     private static List<HostRecord> snapshotRecords() {
-        synchronized (HOSTS) {
-            return new ArrayList<>(HOSTS.values());
-        }
+        return HOSTS.snapshot();
     }
 
     private static long nextGeneration() {

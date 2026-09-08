@@ -67,4 +67,12 @@ public class ClockRefreshWiringTest {
         assertFalse(tick.contains("present("));
         assertFalse(tick.contains("AlarmManager"));
     }
+
+    @Test public void registryIsAnIndexWhileLiveViewOwnsTheRecord() throws Exception {
+        String text = source("CouiClockPluginHostController");
+        assertTrue(text.contains("WeakHostRegistry<ViewGroup, HostRecord>"));
+        assertTrue(text.contains("host.setTag(R.id.coui_clock_host_record, record)"));
+        assertTrue(text.contains("record.host.setTag(R.id.coui_clock_host_record, null)"));
+        assertFalse(text.contains("new WeakHashMap<ViewGroup, HostRecord>"));
+    }
 }
