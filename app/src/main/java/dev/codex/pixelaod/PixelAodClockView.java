@@ -381,6 +381,9 @@ public final class PixelAodClockView extends FrameLayout {
                 + " pause={" + pauseSnapshot.describe() + "}"
                 + " detail={" + normalizedDetail + "}");
         mainHandler().post(() -> {
+            if (pauseSnapshot.resumedPresentation()) {
+                ActiveClockRendererController.onTimeTick("oos-proximity-resume");
+            }
             for (PixelAodClockView view : INSTANCES) {
                 if (view != null) {
                     if (pauseSnapshot.resumedPresentation()) {
@@ -406,6 +409,7 @@ public final class PixelAodClockView extends FrameLayout {
                 + " state={" + snapshot.describe() + "}");
         if (wasBlocked || snapshot.phaseChanged()) {
             mainHandler().post(() -> {
+                ActiveClockRendererController.onTimeTick("oos-proximity-reset");
                 for (PixelAodClockView view : INSTANCES) {
                     if (view != null) {
                         view.refreshAodContentBeforeVisible("oos-proximity-reset");
@@ -4202,6 +4206,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static void tickAllInstances() {
+        ActiveClockRendererController.onTimeTick("lifecycle-tick");
         for (PixelAodClockView view : INSTANCES) {
             if (view != null) {
                 view.start();
@@ -4218,6 +4223,8 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static void refreshAllForNativeAodTick(String source) {
+        // COUI is the only primary renderer. INSTANCES can legitimately be empty after M8.
+        ActiveClockRendererController.onTimeTick(source);
         for (PixelAodClockView view : INSTANCES) {
             if (view != null) {
                 view.refreshForNativeAodTick(source);

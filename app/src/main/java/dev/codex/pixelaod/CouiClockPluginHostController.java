@@ -104,6 +104,7 @@ final class CouiClockPluginHostController {
                 if (record == null || record.host.getParent() != record.root) {
                     continue;
                 }
+                record.host.onTimeTick(source + "#data-refresh");
                 CouiClockSemanticAdapter.Snapshot semantic =
                         CouiClockSemanticAdapter.snapshot(record.root.getContext());
                 applySemanticData(record, semantic, source + "#semantic-only");
@@ -434,10 +435,9 @@ final class CouiClockPluginHostController {
         runOnMain(() -> {
             for (HostRecord record : snapshotRecords()) {
                 if (record != null && record.host.getParent() == record.root) {
-                    record.host.onTimeTick();
+                    record.host.onTimeTick(source);
                 }
             }
-            PixelAodLog.log("COUI clock time tick rendererMode=COUI_PORT source=" + source);
         });
     }
 
@@ -601,6 +601,7 @@ final class CouiClockPluginHostController {
         }
         if (existing != null && existing.host.getParent() == root) {
             existing.plugin = new WeakReference<>(plugin);
+            existing.host.onTimeTick(source + "#reuse-before-visible");
             existing.host.setVisibility(View.VISIBLE);
             existing.host.bringToFront();
             return existing;
@@ -623,6 +624,7 @@ final class CouiClockPluginHostController {
             root.addView(host, root.getChildCount(), new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
+        host.onTimeTick(source + "#attach-before-visible");
         host.setVisibility(View.VISIBLE);
         host.bringToFront();
         HostRecord record = new HostRecord(root, host, plugin, nextGeneration());

@@ -989,8 +989,15 @@ final class PixelAodHook {
                 ModernHookBridge.hookAfter(targetMethod, param -> {
                     rememberNativeAodClockRefreshTarget(sourceClass, targetMethod,
                             param.thisObject, param.args);
-                    MAIN.post(() -> handleNativeAodRefreshCallback(
-                            source, reassertStockAodSuppression));
+                    // Stay inside the vendor's main-thread refresh window when possible.
+                    // An extra post can miss the low-power frame that this callback is updating.
+                    Runnable refresh = () -> handleNativeAodRefreshCallback(
+                            source, reassertStockAodSuppression);
+                    if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                        refresh.run();
+                    } else {
+                        MAIN.post(refresh);
+                    }
                 });
                 hooked = true;
                 PixelAodLog.log("hooked native AOD refresh callback " + source);

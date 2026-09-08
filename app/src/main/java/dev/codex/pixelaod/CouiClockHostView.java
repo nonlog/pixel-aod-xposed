@@ -113,7 +113,8 @@ final class CouiClockHostView extends FrameLayout {
             CouiClockPresentationModel.Scene.LARGE, false, false,
             CouiClockPresentationModel.AodContent.none());
     private AodData aodData = AodData.empty();
-    private long lastMinute = Long.MIN_VALUE;
+    private CouiClockTimeTickPolicy.ClockState lastClockState;
+    private boolean refreshingClockTime;
     private long pendingEntryToken;
     private boolean aodEntryInProgress;
     private boolean liveCrossfadeInProgress;
@@ -295,8 +296,10 @@ final class CouiClockHostView extends FrameLayout {
             public void onReceive(Context receiverContext, Intent intent) {
                 String action = intent == null ? null : intent.getAction();
                 if (CouiClockTimeTickPolicy.acceptsAction(action)) {
-                    lastMinute = Long.MIN_VALUE;
-                    onTimeTick();
+                    if (CouiClockTimeTickPolicy.invalidatesClockFormat(action)) {
+                        lastClockState = null;
+                    }
+                    onTimeTick("broadcast:" + action);
                 }
             }
         };
@@ -639,31 +642,69 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     void onTimeTick() {
-        long minute = System.currentTimeMillis() / 60000L;
-        if (!CouiClockTimeTickPolicy.shouldRefresh(lastMinute, minute)) {
-            return;
+        onTimeTick("host");
+    }
+
+    /** Refresh data only: never replay present(), reset a morph, or control panel power. */
+    boolean onTimeTick(String source) {
+        if (refreshingClockTime) {
+            return false;
         }
-        lastMinute = minute;
-        calendar.setTimeInMillis(System.currentTimeMillis());
-        boolean is24Hour = SystemPresentationLocalePolicy.is24Hour(getContext());
-        int hour = calendar.get(is24Hour ? Calendar.HOUR_OF_DAY : Calendar.HOUR);
-        if (!is24Hour && hour == 0) {
-            hour = 12;
-        }
-        int minuteOfHour = calendar.get(Calendar.MINUTE);
-        timeText = SystemPresentationLocalePolicy.formatFourDigitTime(
-                SystemPresentationLocalePolicy.resolveLocale(getContext()), hour, minuteOfHour);
-        for (GlyphSet glyphSet : glyphSets) {
-            for (int i = 0; i < glyphSet.digits.length; i++) {
-                glyphSet.digits[i].setText(String.valueOf(timeText.charAt(i)));
+        refreshingClockTime = true;
+        try {
+            long nowMillis = System.currentTimeMillis();
+            java.util.TimeZone zone = java.util.TimeZone.getDefault();
+            java.util.Locale locale = SystemPresentationLocalePolicy.resolveLocale(getContext());
+            boolean is24Hour = SystemPresentationLocalePolicy.is24Hour(getContext());
+            CouiClockTimeTickPolicy.ClockState current =
+                    new CouiClockTimeTickPolicy.ClockState(nowMillis, zone, locale, is24Hour);
+            if (!CouiClockTimeTickPolicy.shouldRefresh(lastClockState, current)) {
+                return false;
             }
+            CouiClockTimeTickPolicy.ClockState previous = lastClockState;
+            // Calendar caches its timezone at construction; TIMEZONE_CHANGED must replace it.
+            calendar.setTimeZone(zone);
+            calendar.setTimeInMillis(nowMillis);
+            int hour = calendar.get(is24Hour ? Calendar.HOUR_OF_DAY : Calendar.HOUR);
+            if (!is24Hour && hour == 0) {
+                hour = 12;
+            }
+            int minuteOfHour = calendar.get(Calendar.MINUTE);
+            timeText = SystemPresentationLocalePolicy.formatFourDigitTime(
+                    locale, hour, minuteOfHour);
+            for (GlyphSet glyphSet : glyphSets) {
+                for (int i = 0; i < glyphSet.digits.length; i++) {
+                    glyphSet.digits[i].setText(String.valueOf(timeText.charAt(i)));
+                }
+            }
+            // Commit only after all clock digits were updated, so a failed update can retry.
+            lastClockState = current;
+            invalidate();
+            try {
+                refreshInformationFromExistingAdapters("time-tick:" + source);
+                if (presentation.dozing() && !manualBurnIn) {
+                    updateBurnInForPresentation();
+                }
+                updateAccessibilitySemantics();
+                scheduleApplyTargets(false);
+            } catch (Throwable t) {
+                // Optional weather/calendar data must not prevent the primary clock update.
+                PixelAodLog.e("COUI clock ancillary refresh failed source=" + source, t);
+            }
+            PixelAodLog.log("coui-clock-time", () ->
+                    "COUI clock time refreshed source=" + source
+                            + " minute=" + current.minute
+                            + " minuteDelta=" + (previous == null ? 0L
+                                    : current.minute - previous.minute)
+                            + " dozing=" + presentation.dozing()
+                            + " shown=" + isShown());
+            return true;
+        } catch (Throwable t) {
+            PixelAodLog.e("COUI clock time refresh failed source=" + source, t);
+            return false;
+        } finally {
+            refreshingClockTime = false;
         }
-        refreshInformationFromExistingAdapters("time-tick");
-        if (presentation.dozing() && !manualBurnIn) {
-            updateBurnInForPresentation();
-        }
-        updateAccessibilitySemantics();
-        scheduleApplyTargets(false);
     }
 
     void setInformation(CharSequence date, CharSequence week, CharSequence weather,
@@ -996,6 +1037,8 @@ final class CouiClockHostView extends FrameLayout {
      */
     void setPrimaryVisible(boolean visible, String source) {
         if (visible) {
+            // A persistent host can return without attach or a minute broadcast (pocket/doze).
+            onTimeTick(source + "#before-visible");
             if (!contextualSurfaceActive) {
                 PixelAodContentState.beginContextualSurfaceEntry(
                         (source == null ? "primary-visible" : source) + "#COUI-visible");
@@ -1044,11 +1087,22 @@ final class CouiClockHostView extends FrameLayout {
         super.onAttachedToWindow();
         registerBatteryReceiver();
         registerTimeReceiver();
-        lastMinute = Long.MIN_VALUE;
-        onTimeTick();
+        lastClockState = null;
+        onTimeTick("attach");
         updateBattery(null);
         requestLayout();
         scheduleApplyTargets(false);
+    }
+
+    @Override
+    public void onVisibilityAggregated(boolean isVisible) {
+        super.onVisibilityAggregated(isVisible);
+        // Ancestor/window reappearance need not change this child's own visibility or attach it.
+        // Framework callbacks can also occur before this subclass has finished construction.
+        if (isVisible && calendar != null && glyphSets != null && dateView != null
+                && batteryView != null && notificationIconRow != null) {
+            onTimeTick("visibility-resume");
+        }
     }
 
     @Override
