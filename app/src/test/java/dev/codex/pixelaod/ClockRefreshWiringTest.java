@@ -43,10 +43,10 @@ public class ClockRefreshWiringTest {
         String text = source("PixelAodClockView");
         assertTrue(section(text, "static void updateProximityFromOos",
                 "private static void clearProximityState").contains(
-                "ActiveClockRendererController.onTimeTick("oos-proximity-resume")"));
+                "ActiveClockRendererController.onTimeTick(\"oos-proximity-resume\")"));
         assertTrue(section(text, "static void resetProximityFromOos",
                 "static boolean isProximityNear").contains(
-                "ActiveClockRendererController.onTimeTick("oos-proximity-reset")"));
+                "ActiveClockRendererController.onTimeTick(\"oos-proximity-reset\")"));
     }
 
     @Test public void persistentHostRefreshesBeforeRevealAndOnAncestorVisibility() throws Exception {
@@ -55,7 +55,7 @@ public class ClockRefreshWiringTest {
         assertTrue(reveal.indexOf("onTimeTick(") >= 0);
         assertTrue(reveal.indexOf("onTimeTick(") < reveal.indexOf("setVisibility(VISIBLE)"));
         assertTrue(section(text, "public void onVisibilityAggregated",
-                "public void onRtlPropertiesChanged").contains("onTimeTick("visibility-resume")"));
+                "public void onRtlPropertiesChanged").contains("onTimeTick(\"visibility-resume\")"));
     }
 
     @Test public void successfulDigitsPrecedeCacheCommitAndAncillaryWork() throws Exception {
