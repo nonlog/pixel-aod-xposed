@@ -187,10 +187,13 @@ final class OosAodLifecycleAdapter {
         boolean shouldDrawPixelOverlay = shouldApplyModuleAod
                 && !proximityBlocked
                 && !expandedShadeBlocked;
-        // M9: presentation policy never grants authority to extend the vendor Doze lifecycle.
-        // Keep the field for diagnostics/compatibility while consumers migrate, but it is now
-        // intentionally always false.
-        boolean shouldKeepNativeDozeAlive = false;
+        // The base M9 policy remains vendor-owned. The only extension is an explicit, gated
+        // Power Saving charging hold supplied by ModulePolicy; proximity and shade suppression
+        // still win immediately.
+        boolean shouldKeepNativeDozeAlive = shouldApplyModuleAod
+                && policy.keepNativeDozeAlive
+                && !proximityBlocked
+                && !expandedShadeBlocked;
         boolean nativeAodTransition = state != null
                 && (state.displayAod
                 || state.entryDelay
@@ -277,7 +280,7 @@ final class OosAodLifecycleAdapter {
     private static String keepDozeReason(boolean shouldKeepNativeDozeAlive,
             boolean lifecycleWantsPixelOverlay, ModulePolicy modulePolicy) {
         if (shouldKeepNativeDozeAlive) {
-            return "deprecated-module-doze-ownership";
+            return "power-saving-charging-hold";
         }
         if (!modulePolicy.allowsDisplay) {
             return modulePolicy.reason;
@@ -316,7 +319,7 @@ final class OosAodLifecycleAdapter {
             return "invalid-module-hide-block";
         }
         if (shouldKeepNativeDozeAlive) {
-            return "deprecated-module-doze-ownership";
+            return "power-saving-charging-doze-hold";
         }
         if (!modulePolicy.allowsDisplay) {
             return modulePolicy.reason;
@@ -871,10 +874,19 @@ final class OosAodLifecycleAdapter {
         final String displayMode;
         final boolean withinSchedule;
         final boolean triggerBriefActive;
+        final boolean keepNativeDozeAlive;
 
         ModulePolicy(boolean allowsDisplay, boolean moduleEnabled,
                 boolean continuousAllowed, boolean triggerBriefAllowed, String reason,
                 String displayMode, boolean withinSchedule, boolean triggerBriefActive) {
+            this(allowsDisplay, moduleEnabled, continuousAllowed, triggerBriefAllowed, reason,
+                    displayMode, withinSchedule, triggerBriefActive, false);
+        }
+
+        ModulePolicy(boolean allowsDisplay, boolean moduleEnabled,
+                boolean continuousAllowed, boolean triggerBriefAllowed, String reason,
+                String displayMode, boolean withinSchedule, boolean triggerBriefActive,
+                boolean keepNativeDozeAlive) {
             this.allowsDisplay = allowsDisplay;
             this.moduleEnabled = moduleEnabled;
             this.continuousAllowed = continuousAllowed;
@@ -883,6 +895,7 @@ final class OosAodLifecycleAdapter {
             this.displayMode = displayMode;
             this.withinSchedule = withinSchedule;
             this.triggerBriefActive = triggerBriefActive;
+            this.keepNativeDozeAlive = keepNativeDozeAlive;
         }
     }
 

@@ -67,7 +67,7 @@ final class PowerSavingAodController {
     static void requestNotificationShow(String source) {
         runOnMain(() -> {
             Context ctx = appContext;
-            if (ctx == null || isChargingHoldRequested(ctx)) {
+            if (ctx == null) {
                 return;
             }
             NativeAodAvailabilityAdapter.Decision nativeAod = NativeAodAvailabilityAdapter.read(
@@ -91,6 +91,11 @@ final class PowerSavingAodController {
     static void onNativeEnergySavingTimeoutHeld(String source) {
         nativeTimeoutHeld = true;
         PixelAodLog.i("held native Power Saving AOD timeout while charging source=" + source);
+    }
+
+    static void onNativeDozeScreenOffHeld(String source) {
+        nativeTimeoutHeld = true;
+        PixelAodLog.i("held native Power Saving AOD screen-off while charging source=" + source);
     }
 
     private static void hookClockLayout(ClassLoader loader) {

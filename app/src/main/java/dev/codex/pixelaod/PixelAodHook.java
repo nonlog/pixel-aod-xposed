@@ -2746,9 +2746,24 @@ final class PixelAodHook {
                     return;
                 }
                 Context context = contextFromHookParam(param);
-                // M9 vendor-delegated lifecycle: keep the proven presentation pre-arm used by
-                // the LS -> AOD animation, but never rewrite the display state requested by the
-                // vendor DreamService. OPlus/SystemUI is the display/Doze lifecycle authority.
+                OosAodLifecycleAdapter.AodPolicyDecision decision =
+                        PixelAodClockView.evaluateAodPolicy(context,
+                                "DreamService#setDozeScreenState(OFF)#screen-state-request");
+                if (decision.shouldKeepNativeDozeAlive) {
+                    // The charging exception is deliberately narrow: keep the existing Dream
+                    // in low-power DOZE_SUSPEND instead of accepting the vendor's terminal OFF.
+                    // No wakeUp(), DisplayPowerController hook, panel/HBM call, or module timer.
+                    param.args[0] = Display.STATE_DOZE_SUSPEND;
+                    PowerSavingAodController.onNativeDozeScreenOffHeld(
+                            "DreamService#setDozeScreenState(OFF)");
+                    PixelAodLog.i("held DreamService AOD screen-off request while charging"
+                            + " requested=OFF replacement=DOZE_SUSPEND"
+                            + " reason=" + decision.keepNativeDozeReason
+                            + " trace=" + decision.trace
+                            + " state={" + PixelAodClockView.describeAodState(context) + "}");
+                    return;
+                }
+                // Outside the explicit charging exception, preserve M9 vendor lifecycle ownership.
                 PixelAodClockView.beginPanelHandoffPresentation(context,
                         "DreamService#setDozeScreenState(OFF)");
                 PixelAodLog.log("observed DreamService doze screen state"

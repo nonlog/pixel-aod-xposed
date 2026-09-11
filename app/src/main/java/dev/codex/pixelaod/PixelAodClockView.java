@@ -1691,7 +1691,7 @@ public final class PixelAodClockView extends FrameLayout {
 
     static boolean startPowerSavingNotificationAod(Context context, String source, String detail) {
         Context ctx = context != null ? context : appContext;
-        if (ctx == null || PowerSavingAodController.isChargingHoldRequested(ctx)) return false;
+        if (ctx == null) return false;
         NativeAodAvailabilityAdapter.Decision nativeAod =
                 NativeAodAvailabilityAdapter.read(ctx, isVendorAmbientSessionActive());
         boolean featureEnabled = PixelAodSettings.getBoolean(ctx,
@@ -2408,11 +2408,12 @@ public final class PixelAodClockView extends FrameLayout {
                     + " state={" + describeAodState(context) + "}");
             return new OosAodLifecycleAdapter.ModulePolicy(true, moduleEnabled, continuousAllowed,
                     true, "trigger-brief-display", displayMode, withinSchedule,
-                    true);
+                    true, chargingContinuous);
         }
         if (continuousAllowed) {
             return new OosAodLifecycleAdapter.ModulePolicy(true, moduleEnabled, true, false,
-                    "continuous-native-aod", displayMode, withinSchedule, false);
+                    "continuous-native-aod", displayMode, withinSchedule, false,
+                    chargingContinuous);
         }
         if (!nativeContinuousReady) {
             String blockedReason = vendorBaseAodSuppressed

@@ -24,6 +24,23 @@ public final class OosAodVendorLifecycleOwnershipTest {
     }
 
     @Test
+    public void explicitChargingPolicyCanKeepVendorDozeAlive() {
+        OosAodLifecycleAdapter.ModulePolicy charging =
+                new OosAodLifecycleAdapter.ModulePolicy(
+                        true, true, true, false,
+                        "continuous-native-aod", "energy-saving", true, false, true);
+        OosAodLifecycleAdapter.AodPolicyDecision allowed =
+                OosAodLifecycleAdapter.evaluatePolicy(
+                        "test#charging", "trace", activeAodState(), charging, false, false);
+        OosAodLifecycleAdapter.AodPolicyDecision proximityBlocked =
+                OosAodLifecycleAdapter.evaluatePolicy(
+                        "test#charging-pocket", "trace", activeAodState(), charging, true, false);
+
+        assertTrue(allowed.shouldKeepNativeDozeAlive);
+        assertFalse(proximityBlocked.shouldKeepNativeDozeAlive);
+    }
+
+    @Test
     public void triggerOnlyPresentationLivesOnlyInsideArmedVendorAodScene() {
         assertTrue(OosAodLifecycleAdapter.shouldPresentVendorTransientScene(
                 true, false, true));

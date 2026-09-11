@@ -49,6 +49,13 @@ public class PowerSavingAodWiringTest {
         assertTrue(hook.contains("PanoramicAodController"));
         assertTrue(hook.contains("onEnergySavingNotifyHide"));
         assertFalse(hook.contains("notifyHideAodFromEnergySavingDirectly"));
+
+        String dreamHook = section(hook,
+                "static void hookDreamServiceDozeScreenStateObserver",
+                "private static String classifyAodTriggerEvent");
+        assertTrue(dreamHook.contains("decision.shouldKeepNativeDozeAlive"));
+        assertTrue(dreamHook.contains("param.args[0] = Display.STATE_DOZE_SUSPEND"));
+        assertTrue(dreamHook.contains("onNativeDozeScreenOffHeld"));
     }
 
     @Test
@@ -72,6 +79,13 @@ public class PowerSavingAodWiringTest {
         assertTrue(peek.contains("endPowerSavingNotificationAod"));
 
         String clock = source("PixelAodClockView");
+        String notificationStart = section(clock, "static boolean startPowerSavingNotificationAod",
+                "static void endPowerSavingNotificationAod");
+        assertFalse(notificationStart.contains("isChargingHoldRequested(ctx)"));
+        String controller = source("PowerSavingAodController");
+        String notificationShow = section(controller, "static void requestNotificationShow",
+                "/** Called only at the vendor's actual energy-saving timeout callback. */");
+        assertFalse(notificationShow.contains("isChargingHoldRequested(ctx)"));
         String start = section(clock, "private static boolean startVendorTransientAodPresentation",
                 "private static boolean isGenericOplusWakeCallback");
         assertTrue(start.contains("nativeNotificationWindow"));

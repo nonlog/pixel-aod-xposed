@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.44] - 2026-09-11
+### Fixed
+- Fix charging Power Saving AOD using the real CPH2573 terminal: OPlus can still issue `DreamService#setDozeScreenState(OFF)` after the earlier energy-saving controller callback. While the explicit charging hold remains eligible, replace only that terminal request with `DOZE_SUSPEND`; proximity, system suppression, power policy, unplug, and non-energy-saving modes still pass the vendor request through.
+- Do not suppress notification-triggered Pixel AOD merely because a charging hold is configured. If the panel is currently off, an OPlus-admitted native Peek window can again start the Pixel transient path and request the native clock surface.
+- Remember a held DreamService OFF as a real vendor deadline so unplug/policy exit can restore native Power Saving hide behavior instead of leaving the extension latched.
+
+### Validation
+- Root cause captured on-device: USB charging was true and module policy allowed display, but `shouldKeepNativeDozeAlive=false`; `DreamService#setDozeScreenState(OFF)` then drove `AODDisplayUtil` from DOZE to OFF. A later notification attached native Peek and drove OFF to DOZE, but the Pixel notification path returned early because charging was requested.
+- No `PowerManager.wakeUp()`, DisplayPowerController/panel/HBM hook, replacement proximity sensor, module alarm, or OPlus Secure Setting write is added. Physical acceptance is still required.
+
+
 ## [0.1.43] - 2026-09-11
 ### Fixed
 - Preserve the existing OPlus Power Saving hide deadline across charging eligibility changes. Plugging in no longer marks the native timeout as already consumed, so unplugging before that timeout leaves the vendor timer untouched instead of restarting it.
