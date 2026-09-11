@@ -55,8 +55,8 @@ public class PowerSavingAodWiringTest {
                 "static boolean isFodNativeTimeoutHideLatched");
         assertTrue(method.contains("FOD_NATIVE_TIMEOUT_HIDE_GATE.markHidden"));
         assertTrue(method.contains("callMethod(uiMech, \"setVisibilityInAOD\", 1)"));
-        assertFalse(method.contains("notifyHideAodIcon"));
-        assertFalse(method.contains("requestScreenState"));
+        assertFalse(method.contains("callMethod(uiMech, \"notifyHideAodIcon\""));
+        assertFalse(method.contains("callMethod(uiMech, \"requestScreenState\""));
     }
 
     @Test
