@@ -56,6 +56,11 @@
     <string name="section_clock">时钟</string>
     <string name="section_behavior">行为</string>
     <string name="section_aod_behavior">AOD 行为</string>
+    <string name="section_power_saving_enhancements">省电模式增强</string>
+    <string name="title_power_saving_notification_aod">新通知时短暂显示 AOD</string>
+    <string name="desc_power_saving_notification_aod">系统 AOD 为“省电”时，跟随 OPlus 原生新通知窗口短暂显示完整 AOD</string>
+    <string name="title_power_saving_charging_aod">充电时持续显示 AOD</string>
+    <string name="desc_power_saving_charging_aod">系统 AOD 为“省电”时，连接电源期间保持 AOD；拔出后恢复系统省电行为</string>
     <string name="title_page_aod">息屏显示</string>
     <string name="section_at_a_glance">At a Glance</string>
     <string name="section_weather">天气</string>
@@ -75,7 +80,7 @@
     <string name="nav_aod">AOD</string>
     <string name="nav_system_ui">System UI</string>
     <string name="system_ui_warning">这些选项会直接影响 SystemUI。仅在需要排查问题时启用调试日志；需要重新加载模块运行时修改时，请使用主页的“重启 SystemUI”。</string>
-    <string name="desc_page_aod">息屏显示模式、显示时间与 AOD 行为</string>
+    <string name="desc_page_aod">AOD 行为与系统省电模式增强</string>
     <string name="desc_page_clock">AOD 与锁屏时钟字重</string>
     <string name="desc_page_fingerprint">OOS 原生指纹、可选图标替换与成功解锁涟漪</string>
     <string name="desc_page_at_a_glance">天气、预报、警报与日历信息</string>

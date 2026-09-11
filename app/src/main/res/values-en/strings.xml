@@ -56,6 +56,11 @@
     <string name="section_clock">Clock</string>
     <string name="section_behavior">Behavior</string>
     <string name="section_aod_behavior">AOD Behavior</string>
+    <string name="section_power_saving_enhancements">Power Saving enhancements</string>
+    <string name="title_power_saving_notification_aod">Show AOD for new notifications</string>
+    <string name="desc_power_saving_notification_aod">When OPlus AOD is in Power Saving, show the full AOD for the native new-notification window</string>
+    <string name="title_power_saving_charging_aod">Keep AOD on while charging</string>
+    <string name="desc_power_saving_charging_aod">When OPlus AOD is in Power Saving, keep AOD visible while connected to power and restore native Power Saving behavior after unplugging</string>
     <string name="title_page_aod">Always-on display</string>
     <string name="section_at_a_glance">At a Glance</string>
     <string name="section_weather">Weather</string>
@@ -75,7 +80,7 @@
     <string name="nav_aod">AOD</string>
     <string name="nav_system_ui">System UI</string>
     <string name="system_ui_warning">These options directly affect SystemUI. Enable debug logging only while troubleshooting; use “Restart SystemUI” on Home when the module runtime must be reloaded.</string>
-    <string name="desc_page_aod">Display mode, schedule, and AOD behavior</string>
+    <string name="desc_page_aod">AOD behavior and system Power Saving enhancements</string>
     <string name="desc_page_clock">AOD and lockscreen clock weights</string>
     <string name="desc_page_fingerprint">Native OOS fingerprint, optional icon replacement, and successful-unlock ripple</string>
     <string name="desc_page_at_a_glance">Weather, forecast, alerts, and calendar information</string>

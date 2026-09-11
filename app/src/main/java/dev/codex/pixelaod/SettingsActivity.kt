@@ -26,11 +26,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Android
+import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Policy
 import androidx.compose.material.icons.outlined.RestartAlt
@@ -204,6 +206,16 @@ private fun SettingsContent(
 
     val moduleEnabled = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_MODULE_ENABLED, true))
+    }
+    val powerSavingNotificationAod = remember {
+        mutableStateOf(
+            prefs.schemaBoolean(PixelAodSettings.KEY_POWER_SAVING_NOTIFICATION_AOD, true)
+        )
+    }
+    val powerSavingChargingAod = remember {
+        mutableStateOf(
+            prefs.schemaBoolean(PixelAodSettings.KEY_POWER_SAVING_CHARGING_AOD, true)
+        )
     }
     val nonLockscreenAodTransition = remember {
         mutableStateOf(
@@ -489,6 +501,34 @@ private fun SettingsContent(
                         subtitle = stringResource(R.string.desc_page_lockscreen),
                         showDivider = false
                     ) { navigate(SettingsPage.LOCKSCREEN) }
+                }
+            }
+            PixelAodSection(stringResource(R.string.section_power_saving_enhancements)) {
+                PixelAodGroup {
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Notifications,
+                        title = stringResource(R.string.title_power_saving_notification_aod),
+                        subtitle = stringResource(R.string.desc_power_saving_notification_aod),
+                        checked = powerSavingNotificationAod.value,
+                        showDivider = true
+                    ) {
+                        powerSavingNotificationAod.value = it
+                        updateModuleBooleanSetting(
+                            context, PixelAodSettings.KEY_POWER_SAVING_NOTIFICATION_AOD, it
+                        )
+                    }
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.BatteryChargingFull,
+                        title = stringResource(R.string.title_power_saving_charging_aod),
+                        subtitle = stringResource(R.string.desc_power_saving_charging_aod),
+                        checked = powerSavingChargingAod.value,
+                        showDivider = false
+                    ) {
+                        powerSavingChargingAod.value = it
+                        updateModuleBooleanSetting(
+                            context, PixelAodSettings.KEY_POWER_SAVING_CHARGING_AOD, it
+                        )
+                    }
                 }
             }
         }
