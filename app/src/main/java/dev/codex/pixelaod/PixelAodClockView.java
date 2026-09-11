@@ -2198,6 +2198,37 @@ public final class PixelAodClockView extends FrameLayout {
                 suppression.baseAodDenied(), powerAllows);
     }
 
+    static boolean shouldKeepPowerSavingNotificationVisible(Context context, String source) {
+        if (context == null || !PixelPeekNotificationController.hasActiveNativeNotificationWindow()) {
+            return false;
+        }
+        AodLifecycleState state = currentAodLifecycleState(context);
+        if (state == null || state.interactive || !state.triggerBriefActive
+                || !PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE.equals(state.triggerBriefType)
+                || isProximityNear()) {
+            return false;
+        }
+        NativeAodAvailabilityAdapter.Decision nativeAod = NativeAodAvailabilityAdapter.read(
+                context, isVendorAmbientSessionActive()
+                        || PixelPeekNotificationController.hasActiveNativeNotificationWindow());
+        boolean featureEnabled = PixelAodSettings.getBoolean(context,
+                PixelAodSettings.KEY_POWER_SAVING_NOTIFICATION_AOD, true);
+        if (!PowerSavingAodPolicy.isNotificationEnhancementConfigured(featureEnabled,
+                nativeAod.displayMode, nativeAod.configuredEligible,
+                NativeOplusPeekSettingAdapter.isEnabled(context))) {
+            return false;
+        }
+        SelectiveBiometricPulseAdapter.Snapshot selectivePulse =
+                PixelAodRuntimeState.selectiveBiometricPulseSnapshot();
+        VendorAmbientSuppressionCapabilities.Snapshot suppression =
+                PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
+        if (selectivePulse.blocksPixelContent() || suppression.baseAodDenied()) {
+            return false;
+        }
+        String trace = ensureAodTrace(source);
+        return isPowerPolicyAllowingAod(context, source, trace, false);
+    }
+
     static boolean isModuleAodPolicyAllowingDisplay(Context context, String source) {
         return evaluateAodPolicy(context, source).modulePolicyAllowsDisplay;
     }

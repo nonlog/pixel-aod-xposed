@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.45] - 2026-09-11
+### Fixed
+- Fix the later Power Saving update-budget terminal that remained after 0.1.44. On CPH2573/OOS 16.0.9-class SystemUI, `WorkshopAodController.needUpdateClock()` eventually sees `AodUpdateManager.isDisplayModeAllowUpdateClock()` return false and calls `AodClockLayout.hideClock(12)`, clearing `mAodIsInShow` before the later DreamService OFF request.
+- While the existing charging hold is eligible, bypass only that native energy-saving update-budget decision so the vendor clock remains updateable instead of entering `hideClock(12)`. The existing 5-second fingerprint timeout remains intact.
+- Apply the same narrow update-budget exception while an OPlus-admitted native Peek notification window is attached and the Pixel Power Saving notification transient is active. This prevents the same budget check from immediately hiding the native clock again after `showClock(0)`.
+
+### Validation
+- Controlled charging reproduction stayed in `DOZE_SUSPEND`; the actual visible frame later went black exactly when OPlus logged `needUpdateClock: display mode not allow update`, `hideClock, hideReason: 12`, and `setAodIsInShow: false`.
+- Controlled dark-state notification reproduction proved OPlus admitted the Nagram notification, Pixel started the `power-saving-notification` transient and called `showClock(0)`, but OPlus immediately re-entered the same exhausted update-budget path.
+- The exception is before `isDisplayModeAllowUpdateClock()` and only exists during an eligible charging hold or the attached native Peek transient. Native AOD enablement, notification admission, proximity, power policy, schedule ownership, alarms, panel/HBM, and DisplayPowerController remain vendor-owned. Physical acceptance is still required.
+
 ## [0.1.44] - 2026-09-11
 ### Fixed
 - Fix charging Power Saving AOD using the real CPH2573 terminal: OPlus can still issue `DreamService#setDozeScreenState(OFF)` after the earlier energy-saving controller callback. While the explicit charging hold remains eligible, replace only that terminal request with `DOZE_SUSPEND`; proximity, system suppression, power policy, unplug, and non-energy-saving modes still pass the vendor request through.

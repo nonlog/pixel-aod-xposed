@@ -98,6 +98,25 @@ final class PowerSavingAodController {
         PixelAodLog.i("held native Power Saving AOD screen-off while charging source=" + source);
     }
 
+    static boolean shouldExtendNativeEnergySavingUpdateBudget(Context context, String source) {
+        Context ctx = context != null ? context : appContext;
+        if (ctx == null) {
+            return false;
+        }
+        boolean chargingVisible = PixelAodClockView.shouldKeepPowerSavingAodVisibleForCharging(
+                ctx, source + "#charging");
+        boolean notificationVisible = PixelAodClockView.shouldKeepPowerSavingNotificationVisible(
+                ctx, source + "#notification");
+        boolean extend = PowerSavingAodPolicy.shouldExtendNativeEnergySavingUpdateBudget(
+                chargingVisible, PixelPeekNotificationController.hasActiveNativeNotificationWindow(),
+                notificationVisible);
+        if (extend) {
+            PixelAodLog.i("extended native Power Saving AOD update budget source=" + source
+                    + " reason=" + (chargingVisible ? "charging" : "notification"));
+        }
+        return extend;
+    }
+
     private static void hookClockLayout(ClassLoader loader) {
         try {
             Class<?> clazz = ModernHookBridge.findClass(CLOCK_LAYOUT, loader);
@@ -120,8 +139,24 @@ final class PowerSavingAodController {
             // at the exact energy-saving display callback, rather than deleting this timer.
             ModernHookBridge.hookAfter(clazz, "setHideAlarm",
                     param -> lastUpdateManager = new WeakReference<>(param.thisObject));
+
+            // OOS performs a second, later Power Saving terminal from needUpdateClock(). Once its
+            // native update budget is exhausted, isDisplayModeAllowUpdateClock() calls the same
+            // energy-saving hide callback and needUpdateClock() follows with hideClock(12). That
+            // terminal is distinct from the 5 s hide alarm. Keep the vendor budget authoritative
+            // everywhere except the two explicit extension windows: charging hold and an attached
+            // native Peek notification transient. Returning true here prevents both the internal
+            // callback and hideClock(12), while preserving native schedule/switch/proximity/power
+            // gates enforced before this narrow seam.
+            ModernHookBridge.hookBefore(clazz, "isDisplayModeAllowUpdateClock", param -> {
+                if (!shouldExtendNativeEnergySavingUpdateBudget(appContext,
+                        "AodUpdateManager#isDisplayModeAllowUpdateClock")) {
+                    return;
+                }
+                param.setResult(Boolean.TRUE);
+            });
         } catch (Throwable t) {
-            PixelAodLog.log("failed Power Saving AOD hide-alarm observer", t);
+            PixelAodLog.log("failed Power Saving AOD hide-alarm/update-budget hooks", t);
         }
     }
 

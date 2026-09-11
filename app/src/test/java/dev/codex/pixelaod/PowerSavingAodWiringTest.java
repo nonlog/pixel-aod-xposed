@@ -36,9 +36,10 @@ public class PowerSavingAodWiringTest {
         String controller = source("PowerSavingAodController");
         String alarmHook = section(controller, "private static void hookUpdateManager",
                 "private static void registerBatteryReceiver");
-        assertTrue(alarmHook.contains("hookAfter"));
-        assertFalse(alarmHook.contains("setResult"));
-        assertFalse(alarmHook.contains("shouldKeepPowerSavingAodVisibleForCharging"));
+        assertTrue(alarmHook.contains("hookAfter(clazz, \"setHideAlarm\""));
+        assertTrue(alarmHook.contains("hookBefore(clazz, \"isDisplayModeAllowUpdateClock\""));
+        assertTrue(alarmHook.contains("shouldExtendNativeEnergySavingUpdateBudget"));
+        assertTrue(alarmHook.contains("param.setResult(Boolean.TRUE)"));
         String reconcile = section(controller, "private static void reconcile",
                 "private static void showNative");
         assertTrue(reconcile.contains("boolean timeoutHeld = nativeTimeoutHeld"));
@@ -95,6 +96,15 @@ public class PowerSavingAodWiringTest {
                 "static final class AodLifecycleState");
         assertTrue(lifecycle.contains("PixelPeekNotificationController.hasActiveNativeNotificationWindow()"));
         assertTrue(lifecycle.contains("vendorTransientSurfaceAvailable"));
+        String notificationBudget = section(clock,
+                "static boolean shouldKeepPowerSavingNotificationVisible",
+                "static boolean isModuleAodPolicyAllowingDisplay");
+        assertTrue(notificationBudget.contains("hasActiveNativeNotificationWindow()"));
+        assertTrue(notificationBudget.contains("NOTIFICATION_TRIGGER_TYPE.equals(state.triggerBriefType)"));
+        assertTrue(notificationBudget.contains("isProximityNear()"));
+        assertTrue(notificationBudget.contains("isNotificationEnhancementConfigured"));
+        assertTrue(notificationBudget.contains("suppression.baseAodDenied()"));
+        assertTrue(notificationBudget.contains("isPowerPolicyAllowingAod"));
     }
 
     @Test

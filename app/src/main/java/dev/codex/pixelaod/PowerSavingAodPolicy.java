@@ -21,6 +21,10 @@ final class PowerSavingAodPolicy {
             boolean notificationWindowAttached, boolean displayAod) {
         return notificationWindowAttached || displayAod;
     }
+    static boolean shouldExtendNativeEnergySavingUpdateBudget(boolean chargingVisible,
+            boolean notificationWindowAttached, boolean notificationBriefActive) {
+        return chargingVisible || (notificationWindowAttached && notificationBriefActive);
+    }
     static boolean shouldReapplyNativeHide(boolean nativeTimeoutHeld, String mode,
             boolean configured, boolean interactive) {
         return nativeTimeoutHeld && !interactive && configured && isEnergySavingMode(mode);

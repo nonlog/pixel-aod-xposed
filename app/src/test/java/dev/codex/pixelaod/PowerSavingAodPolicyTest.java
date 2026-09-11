@@ -43,6 +43,18 @@ public class PowerSavingAodPolicyTest {
     }
 
     @Test
+    public void updateBudgetExtensionIsLimitedToExplicitWindows() {
+        assertTrue(PowerSavingAodPolicy.shouldExtendNativeEnergySavingUpdateBudget(
+                true, false, false));
+        assertTrue(PowerSavingAodPolicy.shouldExtendNativeEnergySavingUpdateBudget(
+                false, true, true));
+        assertFalse(PowerSavingAodPolicy.shouldExtendNativeEnergySavingUpdateBudget(
+                false, true, false));
+        assertFalse(PowerSavingAodPolicy.shouldExtendNativeEnergySavingUpdateBudget(
+                false, false, true));
+    }
+
+    @Test
     public void restoreNativeHideOnlyInEnergySaving() {
         assertTrue(PowerSavingAodPolicy.shouldReapplyNativeHide(
                 true, "energy-saving", true, false));
