@@ -42,6 +42,29 @@ final class PowerSavingAodController {
     }
     static void onPolicyChanged(String source) { runOnMain(() -> reconcile(source)); }
 
+    static void requestNotificationShow(String source) {
+        runOnMain(() -> {
+            Context ctx = appContext;
+            if (ctx == null || isChargingHoldRequested(ctx)) {
+                return;
+            }
+            NativeAodAvailabilityAdapter.Decision nativeAod = NativeAodAvailabilityAdapter.read(
+                    ctx, PixelAodClockView.isVendorAmbientSessionActive());
+            if (!PowerSavingAodPolicy.isEnergySavingMode(nativeAod.displayMode)
+                    || !nativeAod.configuredEligible
+                    || PixelAodClockView.isDeviceInteractive(ctx)) {
+                return;
+            }
+            showNative("notification#" + source);
+        });
+    }
+
+    static boolean shouldSuppressNativeEnergySavingHide(Context context, String source) {
+        Context ctx = context != null ? context : appContext;
+        return ctx != null && PixelAodClockView.shouldKeepPowerSavingAodVisibleForCharging(
+                ctx, "energy-saving-hide#" + source);
+    }
+
     private static void hookClockLayout(ClassLoader loader) {
         try {
             Class<?> c=ModernHookBridge.findClass(CLOCK_LAYOUT, loader);
@@ -87,7 +110,7 @@ final class PowerSavingAodController {
     }
     private static void showNative(String source) {
         Object o=lastClockLayout.get(); if(o==null){ PixelAodLog.log("Power Saving charging AOD waiting for native clock layout"); return; }
-        try { ModernHookBridge.callMethod(o,"showClock",0); PixelAodLog.i("requested native Power Saving AOD show while charging source="+source); }
+        try { ModernHookBridge.callMethod(o,"showClock",0); PixelAodLog.i("requested native Power Saving AOD show source="+source); }
         catch(Throwable t){ PixelAodLog.log("failed native Power Saving AOD show",t); }
     }
     private static void reapplyNativeHide(String source) {

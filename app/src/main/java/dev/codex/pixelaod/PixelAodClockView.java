@@ -1699,8 +1699,13 @@ public final class PixelAodClockView extends FrameLayout {
         if (!PowerSavingAodPolicy.isNotificationEnhancementConfigured(featureEnabled,
                 nativeAod.displayMode, nativeAod.configuredEligible,
                 NativeOplusPeekSettingAdapter.isEnabled(ctx))) return false;
-        return startVendorTransientAodPresentation(PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE,
-                source, detail, SystemClock.uptimeMillis(), currentAodLifecycleState(ctx));
+        boolean started = startVendorTransientAodPresentation(
+                PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE, source, detail,
+                SystemClock.uptimeMillis(), currentAodLifecycleState(ctx));
+        if (started) {
+            PowerSavingAodController.requestNotificationShow(source);
+        }
+        return started;
     }
 
     static void endPowerSavingNotificationAod(String source) {

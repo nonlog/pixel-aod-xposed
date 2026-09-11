@@ -2055,6 +2055,14 @@ final class PixelAodHook {
                 targetMethod.setAccessible(true);
                 ModernHookBridge.hookBefore(targetMethod, param -> {
                     Context context = contextFromHookParam(param);
+                    if (targetMethod.getReturnType() == void.class
+                            && PowerSavingAodController.shouldSuppressNativeEnergySavingHide(
+                                    context, source)) {
+                        param.setResult(null);
+                        PixelAodLog.i("suppressed pending native energy-saving AOD hide while charging"
+                                + " source=" + source);
+                        return;
+                    }
                     observeOplusEnergySavingHide(context, source);
                 });
                 hooked = true;

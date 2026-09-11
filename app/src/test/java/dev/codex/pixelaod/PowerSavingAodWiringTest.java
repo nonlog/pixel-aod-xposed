@@ -33,11 +33,13 @@ public class PowerSavingAodWiringTest {
         assertTrue(text.contains("startPowerSavingNotificationAod"));
         assertTrue(text.contains("endPowerSavingNotificationAod"));
         assertTrue(text.contains("onDetachedFromWindow"));
+        assertTrue(source("PixelAodClockView").contains("requestNotificationShow(source)"));
     }
 
     @Test public void nativeModeIsReadNotRewritten() throws Exception {
         String text = source("PowerSavingAodController");
         assertFalse(text.contains("Settings.Secure.put"));
         assertTrue(source("PowerSavingAodPolicy").contains("energy-saving"));
+        assertTrue(source("PixelAodHook").contains("shouldSuppressNativeEnergySavingHide"));
     }
 }
