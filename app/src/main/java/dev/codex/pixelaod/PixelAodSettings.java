@@ -56,6 +56,10 @@ public final class PixelAodSettings {
     public static final String KEY_DISABLE_BURN_IN_OFFSET =
             PixelAodSettingsSchema.KEY_DISABLE_BURN_IN_OFFSET;
     public static final String KEY_POCKET_MODE = PixelAodSettingsSchema.KEY_POCKET_MODE;
+    public static final String KEY_POWER_SAVING_NOTIFICATION_AOD =
+            PixelAodSettingsSchema.KEY_POWER_SAVING_NOTIFICATION_AOD;
+    public static final String KEY_POWER_SAVING_CHARGING_AOD =
+            PixelAodSettingsSchema.KEY_POWER_SAVING_CHARGING_AOD;
     public static final String KEY_LANGUAGE = PixelAodSettingsSchema.KEY_LANGUAGE;
     public static final String NON_LOCKSCREEN_AOD_TRANSITION_ANIMATED =
             PixelAodSettingsSchema.NON_LOCKSCREEN_AOD_TRANSITION_ANIMATED;

@@ -126,6 +126,11 @@ final class PixelPeekNotificationController {
                 || !NativeOplusPeekSettingAdapter.isEnabled(nativeView.getContext())) {
             return;
         }
+        if (!state.powerSavingAodStarted) {
+            state.powerSavingAodStarted = PixelAodClockView.startPowerSavingNotificationAod(
+                    nativeView.getContext(), "PixelPeek#" + source,
+                    "key=" + state.content.notificationKey + ",pkg=" + state.content.packageName);
+        }
         ViewGroup host = PixelAodHook.currentPixelPresentationHost();
         if (host == null || !PrimaryDisplayPolicy.isPrimary(host)) {
             PixelAodLog.log("Pixel peek delayed reason=no-primary-pixel-host source=" + source
@@ -233,6 +238,10 @@ final class PixelPeekNotificationController {
         }
         PixelPeekNotificationView overlay = state.overlay.get();
         removeOverlay(overlay);
+        if (state.powerSavingAodStarted) {
+            PixelAodClockView.endPowerSavingNotificationAod("PixelPeek#" + source);
+            state.powerSavingAodStarted = false;
+        }
         PixelAodLog.log("Pixel peek presentation cleared source=" + source
                 + " key=" + (state.content != null ? state.content.notificationKey : "none"));
     }
@@ -367,5 +376,6 @@ final class PixelPeekNotificationController {
     private static final class State {
         PixelPeekNotificationContent content;
         WeakReference<PixelPeekNotificationView> overlay = new WeakReference<>(null);
+        boolean powerSavingAodStarted;
     }
 }

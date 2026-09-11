@@ -374,6 +374,7 @@ public final class PixelAodClockView extends FrameLayout {
         if (pauseSnapshot.blocksPresentation()) {
             cancelPanelHandoffPresentation("oos-proximity-near", false);
         }
+        PowerSavingAodController.onPolicyChanged("oos-proximity#" + normalizedSource);
         PixelAodLog.i("OOS proximity state changed: near=" + near
                 + " appliedNear=" + isProximityNear()
                 + " pocketModeEnabled=" + pocketModeEnabled
@@ -407,6 +408,7 @@ public final class PixelAodClockView extends FrameLayout {
                 VENDOR_PROXIMITY_PAUSE.reset(source);
         PixelAodLog.i("OOS proximity pause reset source=" + source
                 + " state={" + snapshot.describe() + "}");
+        PowerSavingAodController.onPolicyChanged("oos-proximity-reset#" + source);
         if (wasBlocked || snapshot.phaseChanged()) {
             mainHandler().post(() -> {
                 ActiveClockRendererController.onTimeTick("oos-proximity-reset");
@@ -1687,6 +1689,29 @@ public final class PixelAodClockView extends FrameLayout {
         return false;
     }
 
+    static boolean startPowerSavingNotificationAod(Context context, String source, String detail) {
+        Context ctx = context != null ? context : appContext;
+        if (ctx == null || PowerSavingAodController.isChargingHoldRequested(ctx)) return false;
+        NativeAodAvailabilityAdapter.Decision nativeAod =
+                NativeAodAvailabilityAdapter.read(ctx, isVendorAmbientSessionActive());
+        boolean featureEnabled = PixelAodSettings.getBoolean(ctx,
+                PixelAodSettings.KEY_POWER_SAVING_NOTIFICATION_AOD, true);
+        if (!PowerSavingAodPolicy.isNotificationEnhancementConfigured(featureEnabled,
+                nativeAod.displayMode, nativeAod.configuredEligible,
+                NativeOplusPeekSettingAdapter.isEnabled(ctx))) return false;
+        return startVendorTransientAodPresentation(PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE,
+                source, detail, SystemClock.uptimeMillis(), currentAodLifecycleState(ctx));
+    }
+
+    static void endPowerSavingNotificationAod(String source) {
+        boolean ended = false;
+        synchronized (PixelAodClockView.class) {
+            if (PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE.equals(briefAodTriggerType))
+                ended = clearBriefAodTriggerLocked();
+        }
+        if (ended) refreshAodPolicyConsumers(source + "#power-saving-notification-ended");
+    }
+
     private static boolean startVendorTransientAodPresentation(
             String type, String source, String detail, long now,
             AodLifecycleState observedState) {
@@ -1734,14 +1759,17 @@ public final class PixelAodClockView extends FrameLayout {
         }
         VendorAmbientSuppressionCapabilities.Snapshot vendorSuppression =
                 PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
-        if (vendorSuppression.wakeGesturesDenied()) {
+        boolean notificationTrigger = PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE.equals(type);
+        boolean vendorTriggerSuppressed = notificationTrigger
+                ? vendorSuppression.notificationPulseDenied() : vendorSuppression.wakeGesturesDenied();
+        if (vendorTriggerSuppressed) {
             PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
                     + " source=" + source
-                    + " reason=" + vendorSuppression.wakeGesturesReasonLabel()
+                    + " reason=" + (notificationTrigger ? "vendor-notification-pulse-suppressed"
+                            : vendorSuppression.wakeGesturesReasonLabel())
                     + " displayMode=" + displayMode
                     + " vendorSuppression={" + vendorSuppression.describe() + "}"
-                    + " trace=" + trace
-                    + " state={" + describeAodState(context) + "}");
+                    + " trace=" + trace + " state={" + describeAodState(context) + "}");
             return false;
         }
         if (isDeviceInteractive(context)) {
@@ -1875,6 +1903,7 @@ public final class PixelAodClockView extends FrameLayout {
 
     static void onVendorAmbientSuppressionChanged(String source) {
         refreshAodPolicyConsumers(source + "#vendor-ambient-suppression");
+        PowerSavingAodController.onPolicyChanged(source + "#vendor-ambient-suppression");
     }
 
     static void onSelectiveBiometricPulseChanged(String source) {
@@ -2128,6 +2157,29 @@ public final class PixelAodClockView extends FrameLayout {
                         context, isVendorAmbientSessionActive()).configuredEligible;
     }
 
+    static boolean isPowerSavingChargingAodRequested(Context context) {
+        if (context == null || !PowerSavingAodController.isPlugged()) return false;
+        NativeAodAvailabilityAdapter.Decision nativeAod =
+                NativeAodAvailabilityAdapter.read(context, isVendorAmbientSessionActive());
+        return PowerSavingAodPolicy.isChargingHoldRequested(
+                PixelAodSettings.getBoolean(context,
+                        PixelAodSettings.KEY_POWER_SAVING_CHARGING_AOD, true),
+                nativeAod.displayMode, nativeAod.configuredEligible, true);
+    }
+
+    static boolean shouldKeepPowerSavingAodVisibleForCharging(Context context, String source) {
+        if (context == null) return false;
+        boolean requested = isPowerSavingChargingAodRequested(context);
+        String trace = ensureAodTrace(source);
+        VendorAmbientSuppressionCapabilities.Snapshot suppression =
+                PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
+        boolean powerAllows = requested
+                && isPowerPolicyAllowingAod(context, source, trace, false);
+        return PowerSavingAodPolicy.shouldKeepChargingVisible(requested,
+                isDeviceInteractive(context), isProximityNear(),
+                suppression.baseAodDenied(), powerAllows);
+    }
+
     static boolean isModuleAodPolicyAllowingDisplay(Context context, String source) {
         return evaluateAodPolicy(context, source).modulePolicyAllowsDisplay;
     }
@@ -2176,39 +2228,41 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static boolean isContinuousAodPolicyAllowingDisplay(Context context, String source) {
-        if (context == null) {
-            return false;
-        }
+        if (context == null) return false;
         String trace = ensureAodTrace(source);
         NativeAodAvailabilityAdapter.Decision nativeAod =
                 NativeAodAvailabilityAdapter.read(context, isVendorAmbientSessionActive());
-        boolean allowed = isModuleEnabled(context)
-                && isPowerPolicyAllowingAod(context, source, trace, false)
-                && nativeAod.continuousEligible;
+        boolean powerAllows = isPowerPolicyAllowingAod(context, source, trace, false);
+        VendorAmbientSuppressionCapabilities.Snapshot suppression =
+                PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
+        boolean chargingOverride = isPowerSavingChargingAodRequested(context)
+                && !isDeviceInteractive(context) && !isProximityNear()
+                && !suppression.baseAodDenied();
+        boolean allowed = isModuleEnabled(context) && powerAllows
+                && (nativeAod.continuousEligible || chargingOverride);
         PixelAodLog.log("AOD continuous policy source=" + source
-                + " allowed=" + allowed
-                + " nativeMode=" + nativeAod.displayMode
+                + " allowed=" + allowed + " nativeMode=" + nativeAod.displayMode
+                + " chargingOverride=" + chargingOverride
                 + " nativeAod={" + nativeAod.describe() + "}"
-                + " trace=" + trace
-                + " state={" + describeAodState(context) + "}");
+                + " trace=" + trace + " state={" + describeAodState(context) + "}");
         return allowed;
     }
 
     static boolean isContinuousAodConfiguredForEntry(Context context, String source) {
-        if (context == null) {
-            return false;
-        }
+        if (context == null) return false;
         String trace = ensureAodTrace(source);
-        NativeAodAvailabilityAdapter.Decision nativeAod =
-                NativeAodAvailabilityAdapter.read(context, false);
+        NativeAodAvailabilityAdapter.Decision nativeAod = NativeAodAvailabilityAdapter.read(context, false);
+        VendorAmbientSuppressionCapabilities.Snapshot suppression =
+                PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
+        boolean chargingEntry = isPowerSavingChargingAodRequested(context)
+                && !isProximityNear() && !suppression.baseAodDenied();
         boolean allowed = isModuleEnabled(context)
                 && isPowerPolicyAllowingAod(context, source, trace, false)
-                && nativeAod.prearmEligible;
+                && (nativeAod.prearmEligible || chargingEntry);
         PixelAodLog.log("AOD entry configuration policy source=" + source
-                + " allowed=" + allowed
-                + " nativeMode=" + nativeAod.displayMode
-                + " nativeAod={" + nativeAod.describe() + "}"
-                + " trace=" + trace);
+                + " allowed=" + allowed + " nativeMode=" + nativeAod.displayMode
+                + " chargingEntry=" + chargingEntry
+                + " nativeAod={" + nativeAod.describe() + "}" + " trace=" + trace);
         return allowed;
     }
 
@@ -2230,7 +2284,8 @@ public final class PixelAodClockView extends FrameLayout {
             hideAllAodOverlays(source + "#provisioning-terminal");
             return;
         }
-        if (active && !nativeAod.continuousEligible) {
+        if (active && !isContinuousAodPolicyAllowingDisplay(
+                context, source + "#continuous-eligibility")) {
             setAodActive(false, source + "#continuous-ineligible");
         }
         refreshAodPolicyConsumers(source + "#native-aod-eligibility");
@@ -2316,7 +2371,9 @@ public final class PixelAodClockView extends FrameLayout {
                 && !state.interactive
                 && !state.active
                 && (state.entryDelay || state.graceWindow);
+        boolean chargingContinuous = isPowerSavingChargingAodRequested(context);
         boolean nativeContinuousReady = nativeAod.continuousEligible
+                || chargingContinuous
                 || (transitionPrearm && nativeAod.prearmEligible);
         nativeContinuousReady = nativeContinuousReady && !vendorBaseAodSuppressed;
         boolean continuousAllowed = nativeContinuousReady;

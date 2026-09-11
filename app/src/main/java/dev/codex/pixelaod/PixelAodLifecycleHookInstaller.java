@@ -51,6 +51,10 @@ final class PixelAodLifecycleHookInstaller {
         PixelAodHook.hookOplusEnergySavingHideObservers(classLoader);
     }
 
+    static void installPowerSavingAodEnhancements(Context context, ClassLoader classLoader) {
+        PowerSavingAodController.install(context, classLoader);
+    }
+
     static void installVendorProximityPauseSemantics(ClassLoader classLoader) {
         PixelAodHook.hookOplusVendorProximityPauseSemantics(classLoader);
     }

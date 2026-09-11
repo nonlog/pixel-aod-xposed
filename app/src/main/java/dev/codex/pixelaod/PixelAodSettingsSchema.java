@@ -35,6 +35,8 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_LOCKSCREEN_WEIGHT = "lockscreen_weight";
     public static final String KEY_DISABLE_BURN_IN_OFFSET = "disable_burn_in_offset";
     public static final String KEY_POCKET_MODE = "pocket_mode";
+    public static final String KEY_POWER_SAVING_NOTIFICATION_AOD = "power_saving_notification_aod";
+    public static final String KEY_POWER_SAVING_CHARGING_AOD = "power_saving_charging_aod";
     public static final String KEY_LANGUAGE = "ui_language";
 
     public static final String NON_LOCKSCREEN_AOD_TRANSITION_ANIMATED = "animated";
@@ -87,6 +89,10 @@ public final class PixelAodSettingsSchema {
     public static final SettingSpec DISABLE_BURN_IN_OFFSET =
             booleanSpec(KEY_DISABLE_BURN_IN_OFFSET, false, false);
     public static final SettingSpec POCKET_MODE = alwaysEnabledBooleanSpec(KEY_POCKET_MODE);
+    public static final SettingSpec POWER_SAVING_NOTIFICATION_AOD =
+            booleanSpec(KEY_POWER_SAVING_NOTIFICATION_AOD, true, false);
+    public static final SettingSpec POWER_SAVING_CHARGING_AOD =
+            booleanSpec(KEY_POWER_SAVING_CHARGING_AOD, true, false);
     public static final SettingSpec LANGUAGE = stringSpec(KEY_LANGUAGE, LANGUAGE_SYSTEM, false);
 
     private PixelAodSettingsSchema() {

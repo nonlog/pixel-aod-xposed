@@ -301,6 +301,7 @@ final class PixelAodHook {
         PixelAodNotificationHookInstaller.installBaseViewHooks(classLoader);
         PixelAodLifecycleHookInstaller.installAodRecord(classLoader);
         PixelAodLifecycleHookInstaller.installEnergySavingObservers(classLoader);
+        PixelAodLifecycleHookInstaller.installPowerSavingAodEnhancements(appContext, classLoader);
         PixelAodUdfpsHookInstaller.install(classLoader);
         PixelAodLifecycleHookInstaller.installVendorProximityPauseSemantics(classLoader);
         PixelAodLifecycleHookInstaller.installVendorWakeTriggerSemantics(classLoader);
@@ -347,6 +348,7 @@ final class PixelAodHook {
                             + " selfChange=" + selfChange
                             + " uri=" + uri);
                     PixelAodClockView.refreshAodPolicyFromSettings("settings-provider-change");
+                    PowerSavingAodController.onPolicyChanged("settings-provider-change");
                     if (PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
                         CouiUdfpsController.refreshLast(appContext, "settings-provider-change");
                     } else {
@@ -395,6 +397,7 @@ final class PixelAodHook {
                     PixelAodClockView.hideAllAodOverlays(source);
                     PixelAodContentState.resetSelectedUserContentState(source);
                     PixelAodSettings.onSelectedUserChanged(appContext, userId, source);
+                    PowerSavingAodController.onPolicyChanged(source);
                     PixelLockscreenClockView.refreshAll(source);
                     ActiveClockRendererController.refreshSemanticData(source);
                     PixelAodLog.i("handled Pixel AOD selected-user switch user=" + userId);
@@ -431,6 +434,7 @@ final class PixelAodHook {
                 public void onChange(boolean selfChange, android.net.Uri uri) {
                     String source = "native-aod-setting-change#" + uri;
                     PixelAodClockView.refreshNativeAodEligibility(source);
+                    PowerSavingAodController.onPolicyChanged(source);
                 }
             };
             appContext.getContentResolver().registerContentObserver(
