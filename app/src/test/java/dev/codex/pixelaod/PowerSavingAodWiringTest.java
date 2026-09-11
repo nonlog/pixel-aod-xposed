@@ -54,7 +54,7 @@ public class PowerSavingAodWiringTest {
                 "static boolean hideFingerprintOnlyForPowerSavingChargingTimeout",
                 "static boolean isFodNativeTimeoutHideLatched");
         assertTrue(method.contains("FOD_NATIVE_TIMEOUT_HIDE_GATE.markHidden"));
-        assertTrue(method.contains("callMethod(uiMech, "setVisibilityInAOD", 1)"));
+        assertTrue(method.contains("callMethod(uiMech, \"setVisibilityInAOD\", 1)"));
         assertFalse(method.contains("notifyHideAodIcon"));
         assertFalse(method.contains("requestScreenState"));
     }
@@ -82,8 +82,8 @@ public class PowerSavingAodWiringTest {
     @Test
     public void extensionDoesNotCreateItsOwnPowerOrTimeoutOwner() throws Exception {
         String controller = source("PowerSavingAodController");
-        assertTrue(controller.contains("callMethod(clockLayout, "showClock", 0)"));
-        assertTrue(controller.contains("callMethod(updateManager, "setHideAlarm")"));
+        assertTrue(controller.contains("callMethod(clockLayout, \"showClock\", 0)"));
+        assertTrue(controller.contains("callMethod(updateManager, \"setHideAlarm\")"));
         assertFalse(controller.contains("PowerManager.wakeUp"));
         assertFalse(controller.contains("AlarmManager"));
         assertFalse(controller.contains("postDelayed"));
