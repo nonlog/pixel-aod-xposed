@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.41] - 2026-09-11
+### Added
+- Extend native OPlus AOD Power Saving mode without restoring a module-owned display schedule. An accepted OPlus new-notification AOD window can temporarily present the full Pixel AOD for the same vendor-owned lifetime.
+- Add Keep AOD on while charging for Power Saving mode. Charging reuses OPlus AodClockLayout.showClock(); the module suppresses only the Power Saving hide scheduling/execution while the charging hold remains valid, then restores native hide scheduling after unplug.
+- Add independent live toggles for notification-triggered AOD and charging AOD under the AOD settings page.
+
+### Safety and ownership
+- Native AOD off, Android/OPlus ambient suppression, pocket/proximity, selected-user state, and OPlus notification privacy/admission remain authoritative.
+- No exact alarm, wake lock, PowerManager.wakeUp, DisplayPowerController hook, custom Doze state machine, or Secure Setting rewrite is introduced.
+- Candidate version: **0.1.41 / 9040**, stacked on the pending 0.1.40 clock-refresh repair.
+
 ## [0.1.40] - 2026-09-08
 ### Fixed
 - Route native AOD minute callbacks and both vendor proximity recovery paths to the actual COUI clock owner even when the retired legacy view registry is empty. Run an already-main-thread native refresh in the vendor callback's frame instead of always adding another queue hop.
