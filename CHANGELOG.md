@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.46] - 2026-09-11
+### Fixed
+- Synchronize the system-owned AOD fingerprint glyph with the native OPlus AOD reveal instead of letting the independent `OnScreenFingerprintIcon` window become fully visible ahead of the clock surface after the black frame.
+- During a real native AOD show, scale only the system fingerprint ImageView alpha by the slower of the `AodClockLayout` setup alpha and the OPlus `workshop_aod_anim_mock` black-mask reveal. The native brightness alpha remains the upper bound and is restored when the reveal completes.
+- A real fingerprint touch cancels the visual synchronization immediately. Fingerprint sensing, touch routing, HBM/local-HBM, native visibility state, wake locks, panel requests, and the existing Power Saving fingerprint timeout remain OPlus-owned.
+
+### Validation
+- Device tracing on CPH2573 showed the fingerprint surface can reach `HAS_DRAWN` independently while the AOD layout is still completing its vendor reveal. The exact OOS `AodClockLayout.setVisibleWithSetupAnimate()` path uses a 400 ms first-appearance alpha animation for Workshop AOD and subsequent black-mask reveal animation, explaining the visible lead.
+- The synchronization is event/frame driven (`postOnAnimation` while the native reveal is incomplete), not a fixed-delay timer, and is disabled when the Pixel replacement fingerprint glyph is selected. Physical acceptance is still required.
+
 ## [0.1.45] - 2026-09-11
 ### Fixed
 - Fix the later Power Saving update-budget terminal that remained after 0.1.44. On CPH2573/OOS 16.0.9-class SystemUI, `WorkshopAodController.needUpdateClock()` eventually sees `AodUpdateManager.isDisplayModeAllowUpdateClock()` return false and calls `AodClockLayout.hideClock(12)`, clearing `mAodIsInShow` before the later DreamService OFF request.

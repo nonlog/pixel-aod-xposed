@@ -2260,6 +2260,7 @@ final class PixelAodHook {
             // they duplicate every optical callback and eagerly build large state/argument dumps
             // on the exact wake/authentication path that must stay frame-safe.
             CouiUdfpsController.install(classLoader);
+            AodFingerprintRevealSyncController.install(classLoader);
             PixelAodLog.i("COUI UDFPS owns replacement path; legacy fingerprint carrier skipped");
             PixelAodLog.i("COUI UDFPS owns FOD callback observation; broad diagnostics skipped");
             return;
