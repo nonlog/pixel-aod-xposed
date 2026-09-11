@@ -1787,7 +1787,8 @@ public final class PixelAodClockView extends FrameLayout {
         }
         AodLifecycleState state = observedState != null
                 ? observedState : currentAodLifecycleState(context);
-        if (state == null || !state.displayAod) {
+        if (state == null || !PowerSavingAodPolicy.hasVendorTransientPresentationWindow(
+                notificationTrigger, state.displayAod)) {
             PixelAodLog.log("deferred trigger-only Pixel AOD presentation"
                     + " source=" + source
                     + " reason=waiting-vendor-transient-scene"

@@ -16,6 +16,11 @@ final class PowerSavingAodPolicy {
             boolean proximityBlocked, boolean baseSuppressed, boolean powerAllows) {
         return requested && !interactive && !proximityBlocked && !baseSuppressed && powerAllows;
     }
+
+    static boolean hasVendorTransientPresentationWindow(
+            boolean notificationWindowAttached, boolean displayAod) {
+        return notificationWindowAttached || displayAod;
+    }
     static boolean shouldReapplyNativeHide(boolean previous, boolean now, String mode,
             boolean configured, boolean interactive) {
         return previous && !now && !interactive && configured && isEnergySavingMode(mode);
