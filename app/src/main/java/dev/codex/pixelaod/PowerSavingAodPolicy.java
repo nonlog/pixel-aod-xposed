@@ -21,8 +21,8 @@ final class PowerSavingAodPolicy {
             boolean notificationWindowAttached, boolean displayAod) {
         return notificationWindowAttached || displayAod;
     }
-    static boolean shouldReapplyNativeHide(boolean previous, boolean now, String mode,
+    static boolean shouldReapplyNativeHide(boolean nativeTimeoutHeld, String mode,
             boolean configured, boolean interactive) {
-        return previous && !now && !interactive && configured && isEnergySavingMode(mode);
+        return nativeTimeoutHeld && !interactive && configured && isEnergySavingMode(mode);
     }
 }

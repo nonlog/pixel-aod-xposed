@@ -39,6 +39,10 @@ public class PowerSavingAodWiringTest {
         assertTrue(alarmHook.contains("hookAfter"));
         assertFalse(alarmHook.contains("setResult"));
         assertFalse(alarmHook.contains("shouldKeepPowerSavingAodVisibleForCharging"));
+        String reconcile = section(controller, "private static void reconcile",
+                "private static void showNative");
+        assertTrue(reconcile.contains("boolean timeoutHeld = nativeTimeoutHeld"));
+        assertFalse(reconcile.contains("nativeTimeoutHeld = hold"));
 
         String hook = source("PixelAodHook");
         assertTrue(hook.contains("BaseAodClockLayoutController"));

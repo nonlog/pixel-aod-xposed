@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.43] - 2026-09-11
+### Fixed
+- Preserve the existing OPlus Power Saving hide deadline across charging eligibility changes. Plugging in no longer marks the native timeout as already consumed, so unplugging before that timeout leaves the vendor timer untouched instead of restarting it.
+- Track a held timeout only after OPlus actually calls the energy-saving controller hide callback and Pixel AOD suppresses that full-display hide. Native hide scheduling is restored only from that state.
+
+### Validation
+- Candidate version: **0.1.43 / 9042**. The 0.1.42 real-device run already confirmed the corrected controller seam and fingerprint-only timeout while SystemUI remained Dozing; notification-window behavior and the final unplug edge still require physical acceptance.
+
 ## [0.1.42] - 2026-09-11
 ### Fixed
 - Correct the rejected 0.1.41 Power Saving notification path. A real attached OPlus Peek surface is now the transient-lifecycle authority, so the full Pixel AOD request is not rejected by the coarser mAodPowerSave notification-suppression bit and the trigger is not cleared merely because the native Peek arrives before Display.STATE_DOZE.

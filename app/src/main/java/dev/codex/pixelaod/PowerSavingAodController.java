@@ -24,7 +24,7 @@ final class PowerSavingAodController {
     private static volatile Context appContext;
     private static volatile boolean batteryStateKnown;
     private static volatile boolean plugged;
-    private static volatile boolean runtimeHoldAllowed;
+    private static volatile boolean nativeTimeoutHeld;
     private static volatile WeakReference<Object> lastClockLayout = new WeakReference<>(null);
     private static volatile WeakReference<Object> lastUpdateManager = new WeakReference<>(null);
 
@@ -89,7 +89,7 @@ final class PowerSavingAodController {
     }
 
     static void onNativeEnergySavingTimeoutHeld(String source) {
-        runtimeHoldAllowed = true;
+        nativeTimeoutHeld = true;
         PixelAodLog.i("held native Power Saving AOD timeout while charging source=" + source);
     }
 
@@ -163,18 +163,20 @@ final class PowerSavingAodController {
         if (ctx == null) {
             return;
         }
-        boolean previous = runtimeHoldAllowed;
+        boolean timeoutHeld = nativeTimeoutHeld;
         boolean hold = PixelAodClockView.shouldKeepPowerSavingAodVisibleForCharging(
                 ctx, "reconcile#" + source);
-        runtimeHoldAllowed = hold;
         if (hold) {
             showNative(source);
             PixelAodClockView.refreshNativeAodEligibility("charging-hold#" + source);
             return;
         }
+        // Eligibility alone must not reset the vendor deadline. Only restore native hide
+        // scheduling after a timeout actually fired and we suppressed its full-AOD hide.
+        nativeTimeoutHeld = false;
         NativeAodAvailabilityAdapter.Decision nativeAod = NativeAodAvailabilityAdapter.read(
                 ctx, PixelAodClockView.isVendorAmbientSessionActive());
-        if (PowerSavingAodPolicy.shouldReapplyNativeHide(previous, false,
+        if (PowerSavingAodPolicy.shouldReapplyNativeHide(timeoutHeld,
                 nativeAod.displayMode, nativeAod.configuredEligible,
                 PixelAodClockView.isDeviceInteractive(ctx))) {
             reapplyNativeHide(source);

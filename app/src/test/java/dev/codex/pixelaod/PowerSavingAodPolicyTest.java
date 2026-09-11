@@ -45,10 +45,12 @@ public class PowerSavingAodPolicyTest {
     @Test
     public void restoreNativeHideOnlyInEnergySaving() {
         assertTrue(PowerSavingAodPolicy.shouldReapplyNativeHide(
-                true, false, "energy-saving", true, false));
+                true, "energy-saving", true, false));
         assertFalse(PowerSavingAodPolicy.shouldReapplyNativeHide(
-                true, false, "all-day", true, false));
+                false, "energy-saving", true, false));
         assertFalse(PowerSavingAodPolicy.shouldReapplyNativeHide(
-                true, false, "energy-saving", true, true));
+                true, "all-day", true, false));
+        assertFalse(PowerSavingAodPolicy.shouldReapplyNativeHide(
+                true, "energy-saving", true, true));
     }
 }
