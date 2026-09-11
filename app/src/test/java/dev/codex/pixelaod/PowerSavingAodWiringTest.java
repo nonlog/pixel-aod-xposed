@@ -1,11 +1,15 @@
 package dev.codex.pixelaod;
 
 import org.junit.Test;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import static org.junit.Assert.*;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 public class PowerSavingAodWiringTest {
     private static String source(String name) throws Exception {
@@ -19,27 +23,70 @@ public class PowerSavingAodWiringTest {
                 StandardCharsets.UTF_8);
     }
 
-    @Test public void chargingUsesVendorLifecycle() throws Exception {
-        String text = source("PowerSavingAodController");
-        assertTrue(text.contains("callMethod(o,\"showClock\",0)"));
-        assertTrue(text.contains("callMethod(o,\"setHideAlarm\")"));
-        assertFalse(text.contains("PowerManager.wakeUp"));
-        assertFalse(text.contains("AlarmManager"));
-        assertFalse(text.contains("postDelayed"));
+    private static String section(String text, String from, String to) {
+        int start = text.indexOf(from);
+        assertTrue("missing start: " + from, start >= 0);
+        int end = text.indexOf(to, start + from.length());
+        assertTrue("missing end: " + to, end > start);
+        return text.substring(start, end);
     }
 
-    @Test public void notificationUsesNativePeekLifetime() throws Exception {
-        String text = source("PixelPeekNotificationController");
-        assertTrue(text.contains("startPowerSavingNotificationAod"));
-        assertTrue(text.contains("endPowerSavingNotificationAod"));
-        assertTrue(text.contains("onDetachedFromWindow"));
-        assertTrue(source("PixelAodClockView").contains("requestNotificationShow(source)"));
+    @Test
+    public void chargingPreservesVendorTimerAndInterceptsActualControllerTimeout() throws Exception {
+        String controller = source("PowerSavingAodController");
+        String alarmHook = section(controller, "private static void hookUpdateManager",
+                "private static void registerBatteryReceiver");
+        assertTrue(alarmHook.contains("hookAfter"));
+        assertFalse(alarmHook.contains("setResult"));
+        assertFalse(alarmHook.contains("shouldKeepPowerSavingAodVisibleForCharging"));
+
+        String hook = source("PixelAodHook");
+        assertTrue(hook.contains("BaseAodClockLayoutController"));
+        assertTrue(hook.contains("PanoramicAodController"));
+        assertTrue(hook.contains("onEnergySavingNotifyHide"));
+        assertFalse(hook.contains("notifyHideAodFromEnergySavingDirectly"));
     }
 
-    @Test public void nativeModeIsReadNotRewritten() throws Exception {
-        String text = source("PowerSavingAodController");
-        assertFalse(text.contains("Settings.Secure.put"));
-        assertTrue(source("PowerSavingAodPolicy").contains("energy-saving"));
-        assertTrue(source("PixelAodHook").contains("shouldSuppressNativeEnergySavingHide"));
+    @Test
+    public void chargingTimeoutHidesOnlyFingerprintWithoutPanelOffRequest() throws Exception {
+        String hook = source("PixelAodHook");
+        String method = section(hook,
+                "static boolean hideFingerprintOnlyForPowerSavingChargingTimeout",
+                "static boolean isFodNativeTimeoutHideLatched");
+        assertTrue(method.contains("FOD_NATIVE_TIMEOUT_HIDE_GATE.markHidden"));
+        assertTrue(method.contains("callMethod(uiMech, "setVisibilityInAOD", 1)"));
+        assertFalse(method.contains("notifyHideAodIcon"));
+        assertFalse(method.contains("requestScreenState"));
+    }
+
+    @Test
+    public void notificationUsesAttachedNativePeekAsTransientAuthority() throws Exception {
+        String peek = source("PixelPeekNotificationController");
+        assertTrue(peek.contains("hasActiveNativeNotificationWindow"));
+        assertTrue(peek.contains("state.nativeAttached = true"));
+        assertTrue(peek.contains("startPowerSavingNotificationAod"));
+        assertTrue(peek.contains("endPowerSavingNotificationAod"));
+
+        String clock = source("PixelAodClockView");
+        String start = section(clock, "private static boolean startVendorTransientAodPresentation",
+                "private static boolean isGenericOplusWakeCallback");
+        assertTrue(start.contains("nativeNotificationWindow"));
+        assertTrue(start.contains("!ambientSessionActive && !nativeNotificationWindow"));
+        assertTrue(start.contains("!nativeNotificationWindow && vendorSuppression.notificationPulseDenied()"));
+        String lifecycle = section(clock, "private static AodLifecycleState currentAodLifecycleState",
+                "static final class AodLifecycleState");
+        assertTrue(lifecycle.contains("PixelPeekNotificationController.hasActiveNativeNotificationWindow()"));
+        assertTrue(lifecycle.contains("vendorTransientSurfaceAvailable"));
+    }
+
+    @Test
+    public void extensionDoesNotCreateItsOwnPowerOrTimeoutOwner() throws Exception {
+        String controller = source("PowerSavingAodController");
+        assertTrue(controller.contains("callMethod(clockLayout, "showClock", 0)"));
+        assertTrue(controller.contains("callMethod(updateManager, "setHideAlarm")"));
+        assertFalse(controller.contains("PowerManager.wakeUp"));
+        assertFalse(controller.contains("AlarmManager"));
+        assertFalse(controller.contains("postDelayed"));
+        assertFalse(controller.contains("Settings.Secure.put"));
     }
 }

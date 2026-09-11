@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.42] - 2026-09-11
+### Fixed
+- Correct the rejected 0.1.41 Power Saving notification path. A real attached OPlus Peek surface is now the transient-lifecycle authority, so the full Pixel AOD request is not rejected by the coarser mAodPowerSave notification-suppression bit and the trigger is not cleared merely because the native Peek arrives before Display.STATE_DOZE.
+- Correct charging AOD fingerprint timeout semantics. Keep OPlus AodUpdateManager.setHideAlarm() intact, intercept the actual Base/Panoramic/Zen onEnergySavingNotifyHide() controller seam only while the charging hold is valid, and apply the vendor setVisibilityInAOD(1) fingerprint-only endpoint without executing notifyHideAodIcon(), which also requests panel-off state.
+- Wire the existing FOD native-timeout latch to that charging timeout and avoid re-running charging reconciliation for battery broadcasts whose plugged state did not change.
+
+### Review and ownership
+- Re-audited the current CPH2573/OOS SystemUI implementation rather than relying on guessed method names: AodUpdateManager/AodSensorManager dispatch through OplusOSAodManager.IAodDisplayStateChange#onEnergySavingNotifyHide(), implemented by BaseAodClockLayoutController and selected overrides.
+- No module timer, wake lock, PowerManager.wakeUp(), DisplayPowerController hook, Secure Setting rewrite, or replacement proximity sensor is introduced.
+- Candidate version: **0.1.42 / 9041**. Physical acceptance is still required; automated tests do not prove the two reported runtime defects are fixed.
+
 ## [0.1.41] - 2026-09-11
 ### Added
 - Extend native OPlus AOD Power Saving mode without restoring a module-owned display schedule. An accepted OPlus new-notification AOD window can temporarily present the full Pixel AOD for the same vendor-owned lifetime.

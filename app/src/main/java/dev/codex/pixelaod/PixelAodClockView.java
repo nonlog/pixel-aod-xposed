@@ -1722,7 +1722,11 @@ public final class PixelAodClockView extends FrameLayout {
             AodLifecycleState observedState) {
         Context context = appContext;
         String trace = currentAodTraceId();
-        if (!isVendorAmbientSessionActive()) {
+        boolean notificationTrigger = PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE.equals(type);
+        boolean nativeNotificationWindow = notificationTrigger
+                && PixelPeekNotificationController.hasActiveNativeNotificationWindow();
+        boolean ambientSessionActive = isVendorAmbientSessionActive();
+        if (!ambientSessionActive && !nativeNotificationWindow) {
             PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
                     + " source=" + source
                     + " reason=vendor-ambient-session-inactive"
@@ -1738,8 +1742,12 @@ public final class PixelAodClockView extends FrameLayout {
                     + " state={" + describeAodState(null) + "}");
             return false;
         }
+        // An attached OPlus incoming-notification surface is itself a native ambient lifecycle
+        // seam. It may lead Display.STATE_DOZE by a frame and is stronger evidence than our
+        // generic ambient-session marker for this one notification-only path.
         NativeAodAvailabilityAdapter.Decision nativeAod =
-                NativeAodAvailabilityAdapter.read(context, true);
+                NativeAodAvailabilityAdapter.read(context,
+                        ambientSessionActive || nativeNotificationWindow);
         String displayMode = nativeAod.displayMode;
         if (!isModuleEnabled(context) || !nativeAod.configuredEligible) {
             PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
@@ -1764,9 +1772,12 @@ public final class PixelAodClockView extends FrameLayout {
         }
         VendorAmbientSuppressionCapabilities.Snapshot vendorSuppression =
                 PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
-        boolean notificationTrigger = PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE.equals(type);
+        // mAodPowerSave is a generic pulse suppressor. In Power Saving mode the vendor may still
+        // explicitly admit OplusAodCurvedDisplayView. Once that real native Peek surface is
+        // attached, do not reject the same event using the coarser suppression bit.
         boolean vendorTriggerSuppressed = notificationTrigger
-                ? vendorSuppression.notificationPulseDenied() : vendorSuppression.wakeGesturesDenied();
+                ? (!nativeNotificationWindow && vendorSuppression.notificationPulseDenied())
+                : vendorSuppression.wakeGesturesDenied();
         if (vendorTriggerSuppressed) {
             PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
                     + " source=" + source
@@ -1788,7 +1799,7 @@ public final class PixelAodClockView extends FrameLayout {
         AodLifecycleState state = observedState != null
                 ? observedState : currentAodLifecycleState(context);
         if (state == null || !PowerSavingAodPolicy.hasVendorTransientPresentationWindow(
-                notificationTrigger, state.displayAod)) {
+                nativeNotificationWindow, state.displayAod)) {
             PixelAodLog.log("deferred trigger-only Pixel AOD presentation"
                     + " source=" + source
                     + " reason=waiting-vendor-transient-scene"
@@ -1829,6 +1840,7 @@ public final class PixelAodClockView extends FrameLayout {
                 + " type=" + type
                 + " detail={" + detail + "}"
                 + " displayMode=" + displayMode
+                + " nativeNotificationWindow=" + nativeNotificationWindow
                 + " lifetime=vendor-scene"
                 + " trace=" + trace
                 + " state={" + describeAodState(context) + "}");
@@ -2765,9 +2777,14 @@ public final class PixelAodClockView extends FrameLayout {
         boolean displayAod = displayState == Display.STATE_DOZE
                 || displayState == Display.STATE_DOZE_SUSPEND;
         boolean triggerBriefArmed = briefTriggerStartedAt > 0L;
+        boolean nativeNotificationWindow = triggerBriefArmed
+                && PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE.equals(briefTriggerType)
+                && PixelPeekNotificationController.hasActiveNativeNotificationWindow();
+        boolean vendorTransientSurfaceAvailable = displayAod || nativeNotificationWindow;
         boolean triggerBriefActive = OosAodLifecycleAdapter.shouldPresentVendorTransientScene(
-                triggerBriefArmed, interactive, displayAod);
-        if (triggerBriefArmed && !triggerBriefActive && (interactive || !displayAod)) {
+                triggerBriefArmed, interactive, vendorTransientSurfaceAvailable);
+        if (triggerBriefArmed && !triggerBriefActive
+                && (interactive || !vendorTransientSurfaceAvailable)) {
             synchronized (PixelAodClockView.class) {
                 if (briefAodTriggerStartedAt == briefTriggerStartedAt) {
                     clearBriefAodTriggerLocked();

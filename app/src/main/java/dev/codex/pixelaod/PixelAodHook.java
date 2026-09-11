@@ -2019,25 +2019,27 @@ final class PixelAodHook {
     }
 
     static void hookOplusEnergySavingHideObservers(ClassLoader classLoader) {
+        String[] controllerClasses = {
+                "com.oplus.systemui.aod.controller.BaseAodClockLayoutController",
+                "com.oplus.systemui.aod.controller.PanoramicAodController",
+                "com.oplus.systemui.aod.controller.ZenAodController"
+        };
         boolean hooked = false;
-        try {
-            Class<?> recordClass = ModernHookBridge.findClass(AOD_RECORD, classLoader);
-            hooked |= hookEnergySavingHideMethods(recordClass, "onEnergySavingNotifyHide",
-                    "AodRecord");
-        } catch (Throwable t) {
-            PixelAodLog.log("failed to hook AodRecord energy-saving hide guard", t);
+        for (String className : controllerClasses) {
+            try {
+                Class<?> controllerClass = ModernHookBridge.findClass(className, classLoader);
+                hooked |= hookEnergySavingHideMethods(controllerClass,
+                        "onEnergySavingNotifyHide", controllerClass.getSimpleName());
+            } catch (ClassNotFoundException ignored) {
+                PixelAodLog.log("OPlus AOD energy-saving controller absent class=" + className);
+            } catch (Throwable t) {
+                PixelAodLog.log("failed to hook OPlus AOD energy-saving controller class="
+                        + className, t);
+            }
         }
-        try {
-            Class<?> updateManagerClass = ModernHookBridge.findClass(AOD_UPDATE_MANAGER, classLoader);
-            hooked |= hookEnergySavingHideMethods(updateManagerClass,
-                    "notifyHideAodFromEnergySavingDirectly", "AodUpdateManager");
-        } catch (Throwable t) {
-            PixelAodLog.log("failed to hook AodUpdateManager energy-saving hide guard", t);
-        }
-        // OplusWakeUpController#notifyHideCallback is a local wake/sensor/timeout callback fanout,
-        // not a Dream/AOD terminal. It can fire while the display remains in DOZE_SUSPEND, so it
-        // must never invalidate the ambient session or restore stock AOD views. DREAM_STOP and
-        // DREAM_DESTROY from AodRecord are the terminal lifecycle seams.
+        // Current OOS dispatches AodUpdateManager/AodSensorManager ->
+        // OplusOSAodManager.IAodDisplayStateChange#onEnergySavingNotifyHide(). Hook that concrete
+        // controller seam rather than guessed AodRecord/AodUpdateManager method names.
         PixelAodLog.log("installed OPlus AOD energy-saving hide observers hooked=" + hooked);
     }
 
@@ -2046,7 +2048,8 @@ final class PixelAodHook {
         boolean hooked = false;
         for (Method method : clazz.getDeclaredMethods()) {
             if (Modifier.isAbstract(method.getModifiers())
-                    || !methodName.equals(method.getName())) {
+                    || !methodName.equals(method.getName())
+                    || method.getParameterCount() != 0) {
                 continue;
             }
             final Method targetMethod = method;
@@ -2055,12 +2058,18 @@ final class PixelAodHook {
                 targetMethod.setAccessible(true);
                 ModernHookBridge.hookBefore(targetMethod, param -> {
                     Context context = contextFromHookParam(param);
-                    if (targetMethod.getReturnType() == void.class
-                            && PowerSavingAodController.shouldSuppressNativeEnergySavingHide(
-                                    context, source)) {
+                    if (PowerSavingAodController.shouldHoldNativeEnergySavingTimeout(
+                            context, source)) {
+                        boolean fingerprintHidden =
+                                hideFingerprintOnlyForPowerSavingChargingTimeout(context, source);
+                        PowerSavingAodController.onNativeEnergySavingTimeoutHeld(source);
+                        // The vendor timeout itself remains scheduled and is allowed to fire.
+                        // Suppress only the controller's message-3 full-AOD hide after preserving
+                        // the fingerprint timeout endpoint.
                         param.setResult(null);
-                        PixelAodLog.i("suppressed pending native energy-saving AOD hide while charging"
-                                + " source=" + source);
+                        PixelAodLog.i("held native energy-saving AOD display timeout while charging"
+                                + " source=" + source
+                                + " fingerprintHidden=" + fingerprintHidden);
                         return;
                     }
                     observeOplusEnergySavingHide(context, source);
@@ -3635,6 +3644,47 @@ final class PixelAodHook {
         pendingSleepOriginLatchedAt = Long.MIN_VALUE;
         if (had) {
             PixelAodLog.log("cleared pre-Keyguard sleep origin source=" + source);
+        }
+    }
+
+    /**
+     * Preserve the native fingerprint timeout endpoint without executing notifyHideAodIcon(),
+     * whose OOS implementation also requests display state OFF for the whole panel.
+     */
+    static boolean hideFingerprintOnlyForPowerSavingChargingTimeout(
+            Context context, String source) {
+        Context checkContext = context != null ? context : systemUiContext;
+        if (checkContext == null || PixelAodClockView.isDeviceInteractive(checkContext)) {
+            return false;
+        }
+        Object uiMech = lastOnScreenFingerprintUiMech.get();
+        if (uiMech == null && PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
+            uiMech = CouiUdfpsController.lastUiMech();
+        }
+        if (uiMech == null) {
+            PixelAodLog.log("FOD-only charging timeout skipped source=" + source
+                    + " reason=no-ui-mech");
+            return false;
+        }
+        String trace = PixelAodClockView.currentAodTraceId();
+        boolean newlyLatched = FOD_NATIVE_TIMEOUT_HIDE_GATE.markHidden(
+                trace, SystemClock.uptimeMillis());
+        try {
+            // This is the final visibility step used by OOS notifyHideAodIcon(), but unlike that
+            // method it does not request AODDisplayUtil screen state 1. The panel/AOD stays on.
+            ModernHookBridge.callMethod(uiMech, "setVisibilityInAOD", 1);
+            PixelAodLog.i("applied FOD-only Power Saving timeout while charging"
+                    + " source=" + source
+                    + " trace=" + trace
+                    + " newlyLatched=" + newlyLatched);
+            return true;
+        } catch (Throwable t) {
+            if (newlyLatched) {
+                FOD_NATIVE_TIMEOUT_HIDE_GATE.clearIfTrace(trace);
+            }
+            PixelAodLog.log("failed FOD-only Power Saving timeout while charging"
+                    + " source=" + source + " trace=" + trace, t);
+            return false;
         }
     }
 

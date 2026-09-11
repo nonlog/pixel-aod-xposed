@@ -54,6 +54,7 @@ final class PixelPeekNotificationController {
                 }
                 State state = state(nativeView);
                 state.content = content;
+                state.nativeAttached = nativeView.isAttachedToWindow();
                 PixelAodLog.log("Pixel peek captured vendor-safe notification"
                         + " pkg=" + content.packageName
                         + " key=" + content.notificationKey
@@ -72,6 +73,7 @@ final class PixelPeekNotificationController {
                     return;
                 }
                 State state = state(nativeView);
+                state.nativeAttached = true;
                 PixelAodLog.log("Pixel peek native surface attached"
                         + " parent=" + parentChain(nativeView)
                         + " hasContent=" + (state.content != null));
@@ -119,6 +121,18 @@ final class PixelPeekNotificationController {
             }
             return state;
         }
+    }
+
+    /** Native OPlus Peek attachment is the authority for the transient notification window. */
+    static boolean hasActiveNativeNotificationWindow() {
+        synchronized (STATES) {
+            for (State state : STATES.values()) {
+                if (state != null && state.nativeAttached && state.content != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static void show(View nativeView, State state, String source) {
@@ -236,11 +250,12 @@ final class PixelPeekNotificationController {
         if (state == null) {
             return;
         }
+        state.nativeAttached = false;
         PixelPeekNotificationView overlay = state.overlay.get();
         removeOverlay(overlay);
-        if (state.powerSavingAodStarted) {
+        state.powerSavingAodStarted = false;
+        if (!hasActiveNativeNotificationWindow()) {
             PixelAodClockView.endPowerSavingNotificationAod("PixelPeek#" + source);
-            state.powerSavingAodStarted = false;
         }
         PixelAodLog.log("Pixel peek presentation cleared source=" + source
                 + " key=" + (state.content != null ? state.content.notificationKey : "none"));
@@ -376,6 +391,7 @@ final class PixelPeekNotificationController {
     private static final class State {
         PixelPeekNotificationContent content;
         WeakReference<PixelPeekNotificationView> overlay = new WeakReference<>(null);
+        boolean nativeAttached;
         boolean powerSavingAodStarted;
     }
 }
