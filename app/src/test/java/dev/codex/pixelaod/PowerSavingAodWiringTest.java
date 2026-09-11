@@ -1,9 +1,43 @@
 package dev.codex.pixelaod;
+
 import org.junit.Test;
-import java.nio.charset.StandardCharsets; import java.nio.file.*; import static org.junit.Assert.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import static org.junit.Assert.*;
+
 public class PowerSavingAodWiringTest {
- private static String source(String n)throws Exception{Path r=Paths.get(System.getProperty("user.dir")).toAbsolutePath();while(r!=null&&!Files.exists(r.resolve("settings.gradle")))r=r.getParent();assertNotNull(r);return new String(Files.readAllBytes(r.resolve("app/src/main/java/dev/codex/pixelaod/"+n+".java")),StandardCharsets.UTF_8);}
- @Test public void chargingUsesVendorLifecycle()throws Exception{String t=source("PowerSavingAodController");assertTrue(t.contains("callMethod(o,"showClock",0)"));assertTrue(t.contains("callMethod(o,"setHideAlarm")"));assertFalse(t.contains("PowerManager.wakeUp"));assertFalse(t.contains("AlarmManager"));assertFalse(t.contains("postDelayed"));}
- @Test public void notificationUsesNativePeekLifetime()throws Exception{String t=source("PixelPeekNotificationController");assertTrue(t.contains("startPowerSavingNotificationAod"));assertTrue(t.contains("endPowerSavingNotificationAod"));assertTrue(t.contains("onDetachedFromWindow"));}
- @Test public void nativeModeIsReadNotRewritten()throws Exception{String t=source("PowerSavingAodController");assertFalse(t.contains("Settings.Secure.put"));assertTrue(source("PowerSavingAodPolicy").contains("energy-saving"));}
+    private static String source(String name) throws Exception {
+        Path root = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
+        while (root != null && !Files.exists(root.resolve("settings.gradle"))) {
+            root = root.getParent();
+        }
+        assertNotNull(root);
+        return new String(Files.readAllBytes(root.resolve(
+                "app/src/main/java/dev/codex/pixelaod/" + name + ".java")),
+                StandardCharsets.UTF_8);
+    }
+
+    @Test public void chargingUsesVendorLifecycle() throws Exception {
+        String text = source("PowerSavingAodController");
+        assertTrue(text.contains("callMethod(o,\"showClock\",0)"));
+        assertTrue(text.contains("callMethod(o,\"setHideAlarm\")"));
+        assertFalse(text.contains("PowerManager.wakeUp"));
+        assertFalse(text.contains("AlarmManager"));
+        assertFalse(text.contains("postDelayed"));
+    }
+
+    @Test public void notificationUsesNativePeekLifetime() throws Exception {
+        String text = source("PixelPeekNotificationController");
+        assertTrue(text.contains("startPowerSavingNotificationAod"));
+        assertTrue(text.contains("endPowerSavingNotificationAod"));
+        assertTrue(text.contains("onDetachedFromWindow"));
+    }
+
+    @Test public void nativeModeIsReadNotRewritten() throws Exception {
+        String text = source("PowerSavingAodController");
+        assertFalse(text.contains("Settings.Secure.put"));
+        assertTrue(source("PowerSavingAodPolicy").contains("energy-saving"));
+    }
 }
