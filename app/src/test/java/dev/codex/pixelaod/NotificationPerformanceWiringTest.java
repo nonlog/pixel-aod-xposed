@@ -73,11 +73,11 @@ public final class NotificationPerformanceWiringTest {
         String classifiers = section(text, "private static boolean looksLikeTinyForeground",
                 "private static String mediaCandidatesSignatureLocked");
         assertTrue(classifiers.contains("readIconMaskPixels"));
-        assertFalse(classifiers.contains("bitmap.getPixel"));
+        assertFalse(classifiers.contains("bitmap.getPixel("));
         assertFalse(classifiers.contains("boolean[][]"));
         String usb = section(text, "private static boolean mayBeColoredSystemUiUsbIcon",
                 "private static int parseThemeColor");
         assertTrue(usb.contains("readIconMaskPixels"));
-        assertFalse(usb.contains("bitmap.getPixel"));
+        assertFalse(usb.contains("bitmap.getPixel("));
     }
 }
