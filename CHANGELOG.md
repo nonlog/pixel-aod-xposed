@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.47] - 2026-09-13
+### Changed
+- Port COUI Expressive 2.7 compact-clock anchoring into the persistent COUI clock host. Compact/immersed clocks now center against a stable four-`8` reference width while retaining the per-digit `0`/`1` optical corrections, so times containing narrow or corrected digits no longer pull the whole clock left or right relative to the native notification card.
+- Port COUI 2.7 width-based design metrics (`538 dpi` at `1272 px` reference width) for the COUI clock host. Clock information typography, weather/contextual/media/notification icon geometry, offsets, and burn-in amplitudes now scale from the measured host width instead of following a user density override independently.
+- Recompute design metrics after configuration changes and whenever the host measure width changes. Pixel-specific contextual/weather additions are updated in the same transaction so the upstream DPI fix does not leave mixed coordinate systems.
+
+### Review
+- Pulled and decompiled the installed COUI Expressive `2.7.260912` APK from the physical CPH2573 as local-only reference material. The reference APK/source remains untracked and must not be uploaded to GitHub.
+- The provided lockscreen captures showed the module compact clock beginning about 12-13 px left of the native notification card, while COUI 2.7 aligned the clock/card starts. The 2.7 fixed-width compact anchor is the relevant upstream change; this patch does not add a device-specific pixel offset.
+- COUI 2.7 notification-style rewrite, notification Monet background, row snapping/scroll physics, media seekbar waveform hooks, and XSharedPreferences migration are not copied because Pixel AOD does not own those native surfaces/configuration paths. The notification-heavy lockscreen batching/icon-cache and newer UDFPS HDR/glow fixes remain separate candidates for targeted review rather than being mixed into this geometry correction.
+- This candidate is stacked on the pending 0.1.46 system-UDFPS/AOD reveal synchronization and still requires physical acceptance before merging to `main`.
+
 ## [0.1.46] - 2026-09-11
 ### Fixed
 - Synchronize the system-owned AOD fingerprint glyph with the native OPlus AOD reveal instead of letting the independent `OnScreenFingerprintIcon` window become fully visible ahead of the clock surface after the black frame.

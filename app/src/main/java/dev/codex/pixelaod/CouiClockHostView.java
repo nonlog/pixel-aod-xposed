@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -138,6 +139,7 @@ final class CouiClockHostView extends FrameLayout {
     private int lastBatteryLevel = -1;
     private CouiBatteryStatusPolicy.State lastBatteryState;
     private int clockBaseWidth;
+    private int designWidthPx;
     private String timeText = "0000";
     private int monetColor = Integer.MIN_VALUE;
     private int aodMonetColor = Integer.MIN_VALUE;
@@ -1133,10 +1135,22 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     @Override
+    protected void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // COUI 2.7 derives visual dp from the measured design width instead of the current
+        // density override. Force one new measure pass so DPI/display changes recompute every
+        // dependent metric as a single geometry transaction.
+        clockBaseWidth = 0;
+        requestLayout();
+        scheduleApplyTargets(false);
+    }
+
+    @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int width = MeasureSpec.getSize(widthMeasureSpec);
         if (width > 0 && width != clockBaseWidth) {
             clockBaseWidth = width;
+            applyDesignMetrics(width);
             stableLargeForecastContentWidthPx = Float.NaN;
             setClockBaseSize(width * CouiClockGeometryPolicy.LS_LARGE.baseWidthRatio);
             int mediaWidth = Math.max(0, width - dp(64));
@@ -1146,6 +1160,72 @@ final class CouiClockHostView extends FrameLayout {
             contextualGroup.getLayoutParams().width = mediaWidth;
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+    }
+
+    private void applyDesignMetrics(int width) {
+        designWidthPx = width;
+        setInformationTextSize(dateView, 18f);
+        setInformationTextSize(weekView, 18f);
+        setInformationTextSize(weatherView, 18f);
+        setInformationTextSize(contextualView,
+                PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP);
+        setInformationTextSize(notificationOverflowView, 16f);
+        setInformationTextSize(batteryView, 16f);
+        setInformationTextSize(mediaTitleView, 18f);
+        setInformationTextSize(mediaArtistView, 15f);
+
+        int weatherIconInset = dp(CouiClockGeometryPolicy.WEATHER_ICON_CONTENT_INSET_DP);
+        weatherIconView.setPadding(weatherIconInset, weatherIconInset, weatherIconInset,
+                weatherIconInset);
+        ViewGroup.LayoutParams weatherParams = weatherIconView.getLayoutParams();
+        if (weatherParams instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) weatherParams;
+            params.width = dp(CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP);
+            params.height = dp(CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP);
+            params.setMarginEnd(dp(CouiClockGeometryPolicy.WEATHER_ICON_GAP_DP));
+        }
+
+        ViewGroup.LayoutParams contextualIconParams = contextualIconView.getLayoutParams();
+        if (contextualIconParams instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) contextualIconParams;
+            params.width = dp(PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP);
+            params.height = dp(PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP);
+            params.setMarginEnd(dp(PixelAodVisualStyle.CALENDAR_ICON_SPACING_DP));
+        }
+
+        ViewGroup.LayoutParams subtitleParams = mediaSubtitleRow.getLayoutParams();
+        if (subtitleParams instanceof LinearLayout.LayoutParams) {
+            ((LinearLayout.LayoutParams) subtitleParams).topMargin = dp(4);
+        }
+        ViewGroup.LayoutParams mediaIconParams = mediaAppIconView.getLayoutParams();
+        if (mediaIconParams instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) mediaIconParams;
+            params.width = dp(18);
+            params.height = dp(18);
+            params.setMarginEnd(dp(6));
+        }
+
+        int visibleIconIndex = 0;
+        for (int i = 0; i < notificationIconRow.getChildCount(); i++) {
+            View child = notificationIconRow.getChildAt(i);
+            ViewGroup.LayoutParams childParams = child.getLayoutParams();
+            if (!(childParams instanceof LinearLayout.LayoutParams)) {
+                continue;
+            }
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) childParams;
+            if (child == notificationOverflowView) {
+                params.setMarginStart(dp(16));
+                continue;
+            }
+            params.width = dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP);
+            params.height = dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP);
+            params.setMarginStart(visibleIconIndex++ > 0
+                    ? dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_GAP_DP) : 0);
+        }
+    }
+
+    private void setInformationTextSize(TextView view, float designDp) {
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpFloat(designDp));
     }
 
     @Override
@@ -1882,17 +1962,17 @@ final class CouiClockHostView extends FrameLayout {
         float[] advances = new float[4];
         float[] leftCorrections = new float[4];
         float[] rightCorrections = new float[4];
-        float measured = 0f;
         for (int i = 0; i < 4; i++) {
             advances[i] = glyphWidth(glyphSet, i) * surface.scale;
             char digit = timeText.charAt(i);
             leftCorrections[i] = CouiClockGlyphCorrection.leftTrimOffset(digit, lineWidth);
             rightCorrections[i] = CouiClockGlyphCorrection.rightSideExpansion(digit, lineWidth);
-            measured += advances[i] - leftCorrections[i] - rightCorrections[i];
         }
         float colonWidth = glyphSet.colon.getPaint().measureText(COLON) * surface.scale;
-        float start = xCenter - ((colonWidth + colonTracking * 2f + tracking * 2f + measured)
-                / 2f);
+        float anchorDigitWidth = glyphSet.digits[0].getPaint().measureText(
+                CouiCompactClockAnchorPolicy.ANCHOR_DIGIT) * surface.scale;
+        float start = CouiCompactClockAnchorPolicy.centeredStart(
+                xCenter, anchorDigitWidth, colonWidth, tracking, colonTracking);
         float x0 = start - leftCorrections[0];
         float after0 = start + advances[0] - leftCorrections[0] - rightCorrections[0] + tracking;
         float x1 = after0 - leftCorrections[1];
@@ -2243,7 +2323,7 @@ final class CouiClockHostView extends FrameLayout {
 
     private TextView informationText(float sizeSp, int weight, boolean rounded) {
         TextView view = new TextView(getContext());
-        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, sizeSp);
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpFloat(sizeSp));
         view.setTextColor(INFORMATION_COLOR);
         view.setGravity(android.view.Gravity.CENTER_VERTICAL);
         view.setIncludeFontPadding(false);
@@ -2307,8 +2387,13 @@ final class CouiClockHostView extends FrameLayout {
         return params;
     }
 
+    private float dpFloat(float value) {
+        int fallbackWidth = getResources().getDisplayMetrics().widthPixels;
+        return CouiDesignMetricsPolicy.toPixels(value, designWidthPx, fallbackWidth);
+    }
+
     private int dp(float value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+        return Math.round(dpFloat(value));
     }
 
     private static final class GlyphSet {
