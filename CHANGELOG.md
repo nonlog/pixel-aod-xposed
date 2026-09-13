@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.48] - 2026-09-13
+### Changed
+- Port COUI Expressive 2.7 notification refresh batching to the existing live-alert/torch reconciliation path. The `40/280/900 ms` passes now keep at most one pending runnable per delay, newer events replace pending work, and the final `900 ms` pass moves to the trailing edge of a burst instead of accumulating another three callbacks for every event.
+- Add a bounded 64-entry notification icon snapshot cache modeled after COUI 2.7. Cache hits require the same notification instance, small-icon identity, configuration, and current Material tint; notification removal and content reset invalidate the corresponding snapshots.
+- Reuse one thread-local pixel buffer for notification silhouette/color classification and avoid the previous per-pixel `Bitmap.getPixel()` hot loops. Drawable bounds are restored after sampling and monochrome fallback classification no longer rasterizes the same icon twice.
+
+### Scope and validation
+- The existing `NotificationSnapshotRefreshGate`, notification ranking/visibility policy, lockscreen/AOD lifecycle gates, capsule icon ownership, and native OPlus notification admission remain unchanged. This is a scheduling/allocation optimization, not a notification-policy rewrite.
+- COUI 2.7 notification-card Monet styling, list spacing/snap behavior, and scroll physics remain vendor-owned and are not copied into Pixel AOD.
+- The COUI 2.7 UDFPS HDR/press-glow lifecycle repair remains a separate candidate so notification performance can be validated independently.
+
 ## [0.1.47] - 2026-09-13
 ### Changed
 - Port COUI Expressive 2.7 compact-clock anchoring into the persistent COUI clock host. Compact/immersed clocks now center against a stable four-`8` reference width while retaining the per-digit `0`/`1` optical corrections, so times containing narrow or corrected digits no longer pull the whole clock left or right relative to the native notification card.

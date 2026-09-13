@@ -176,6 +176,9 @@ final class PixelAodHook {
     private static final long[] SCREEN_OFF_STOCK_SUPPRESSION_REASSERT_DELAYS_MILLIS = {
             0L, 160L, 620L
     };
+    private static final long[] LIVE_ALERT_NOTIFICATION_REFRESH_DELAYS_MILLIS = {
+            40L, 280L, 900L
+    };
     private static final long NATIVE_AOD_TICK_STOCK_SUPPRESSION_DEBOUNCE_MILLIS = 250L;
     private static final long NATIVE_AOD_TICK_STOCK_SUPPRESSION_RECHECK_DELAY_MILLIS = 56L;
     private static final long NATIVE_AOD_FRAME_KICK_MIN_INTERVAL_MILLIS = 1200L;
@@ -184,6 +187,19 @@ final class PixelAodHook {
     private static final boolean ENABLE_NOTIFICATION_VIEW_REFLECTION_DUMP = false;
     private static final boolean ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS = false;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final NotificationRefreshBatch LIVE_ALERT_NOTIFICATION_REFRESH_BATCH =
+            new NotificationRefreshBatch(LIVE_ALERT_NOTIFICATION_REFRESH_DELAYS_MILLIS,
+                    new NotificationRefreshBatch.Scheduler() {
+                        @Override
+                        public void postDelayed(Runnable runnable, long delayMillis) {
+                            MAIN.postDelayed(runnable, delayMillis);
+                        }
+
+                        @Override
+                        public void removeCallbacks(Runnable runnable) {
+                            MAIN.removeCallbacks(runnable);
+                        }
+                    });
     private static final Set<String> LOGGED_INSPECTION_CLASSES = java.util.Collections.synchronizedSet(new HashSet<>());
     private static final Set<Class<?>> HOOKED_KEYGUARD_SLEEP_BINDERS =
             Collections.synchronizedSet(new HashSet<>());
@@ -551,14 +567,7 @@ final class PixelAodHook {
                 + " enabled=" + enabled
                 + " trace=" + PixelAodClockView.currentAodTraceId()
                 + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
-        scheduleTorchNotificationRefresh(source, cameraId, enabled, 40L);
-        scheduleTorchNotificationRefresh(source, cameraId, enabled, 280L);
-        scheduleTorchNotificationRefresh(source, cameraId, enabled, 900L);
-    }
-
-    private static void scheduleTorchNotificationRefresh(String source, String cameraId,
-            boolean enabled, long delayMillis) {
-        MAIN.postDelayed(() -> {
+        LIVE_ALERT_NOTIFICATION_REFRESH_BATCH.request(delayMillis -> {
             String refreshSource = "torch-state-" + (enabled ? "on" : "off")
                     + "#" + source + "#" + delayMillis + "ms";
             refreshNotificationsFromLastListener(refreshSource);
@@ -570,18 +579,11 @@ final class PixelAodHook {
                     + " delayMs=" + delayMillis
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
-        }, delayMillis);
+        });
     }
 
     private static void scheduleLiveAlertNotificationRefresh(String source, String reason) {
-        scheduleLiveAlertNotificationRefresh(source, reason, 40L);
-        scheduleLiveAlertNotificationRefresh(source, reason, 280L);
-        scheduleLiveAlertNotificationRefresh(source, reason, 900L);
-    }
-
-    private static void scheduleLiveAlertNotificationRefresh(String source, String reason,
-            long delayMillis) {
-        MAIN.postDelayed(() -> {
+        LIVE_ALERT_NOTIFICATION_REFRESH_BATCH.request(delayMillis -> {
             String refreshSource = "live-alert#" + source + "#" + delayMillis + "ms";
             refreshNotificationsFromLastListener(refreshSource);
             PixelAodClockView.forceRefreshNotificationIcons(refreshSource);
@@ -592,7 +594,7 @@ final class PixelAodHook {
                     + " delayMs=" + delayMillis
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
-        }, delayMillis);
+        });
     }
 
     private static void requestNativeAodFrameRefreshKickForLiveAlert(String source,
@@ -1382,6 +1384,7 @@ final class PixelAodHook {
                 cacheSize = NOTIFICATION_CACHE.size();
             }
             NOTIFICATION_CAPSULE_ICON_POLICY.removeFinalDrawable(sbn.getKey());
+            PixelAodClockView.invalidateNotificationIconSnapshot(sbn.getKey());
             scheduleCachedNotificationSnapshotRefresh(source);
             PixelAodLog.log("removed notification from " + source
                     + " pkg=" + sbn.getPackageName()
