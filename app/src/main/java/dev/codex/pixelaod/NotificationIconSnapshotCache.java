@@ -8,16 +8,16 @@ import java.util.Objects;
 /** Bounded per-notification snapshot cache modeled after COUI 2.7's 64-entry icon cache. */
 final class NotificationIconSnapshotCache<T> {
     private final int maxEntries;
-    private final LinkedHashMap<String, Entry<T>> entries;
+    private final LinkedHashMap<String, SnapshotEntry<T>> entries;
 
     NotificationIconSnapshotCache(int maxEntries) {
         if (maxEntries <= 0) {
             throw new IllegalArgumentException("maxEntries must be positive");
         }
         this.maxEntries = maxEntries;
-        this.entries = new LinkedHashMap<String, Entry<T>>(16, 0.75f, true) {
+        this.entries = new LinkedHashMap<String, SnapshotEntry<T>>(16, 0.75f, true) {
             @Override
-            protected boolean removeEldestEntry(Map.Entry<String, Entry<T>> eldest) {
+            protected boolean removeEldestEntry(Map.Entry<String, SnapshotEntry<T>> eldest) {
                 return size() > NotificationIconSnapshotCache.this.maxEntries;
             }
         };
@@ -28,7 +28,7 @@ final class NotificationIconSnapshotCache<T> {
         if (key == null || key.isEmpty() || owner == null || iconToken == null) {
             return null;
         }
-        Entry<T> entry = entries.get(key);
+        SnapshotEntry<T> entry = entries.get(key);
         if (entry == null) {
             return null;
         }
@@ -47,7 +47,8 @@ final class NotificationIconSnapshotCache<T> {
         if (key == null || key.isEmpty() || owner == null || iconToken == null || value == null) {
             return;
         }
-        entries.put(key, new Entry<>(owner, iconToken, configurationToken, tintColor, value));
+        entries.put(key, new SnapshotEntry<>(
+                owner, iconToken, configurationToken, tintColor, value));
     }
 
     synchronized void remove(String key) {
@@ -64,14 +65,15 @@ final class NotificationIconSnapshotCache<T> {
         return entries.size();
     }
 
-    private static final class Entry<T> {
+    private static final class SnapshotEntry<T> {
         final WeakReference<Object> owner;
         final Object iconToken;
         final Object configurationToken;
         final int tintColor;
         final T value;
 
-        Entry(Object owner, Object iconToken, Object configurationToken, int tintColor, T value) {
+        SnapshotEntry(Object owner, Object iconToken, Object configurationToken, int tintColor,
+                T value) {
             this.owner = new WeakReference<>(owner);
             this.iconToken = iconToken;
             this.configurationToken = configurationToken;
