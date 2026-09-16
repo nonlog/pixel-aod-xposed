@@ -429,6 +429,8 @@ public final class PixelAodClockView extends FrameLayout {
         PixelAodLog.i("OOS proximity pause reset source=" + source
                 + " state={" + snapshot.describe() + "}");
         PowerSavingAodController.onPolicyChanged("oos-proximity-reset#" + source);
+        PixelPeekNotificationController.onPocketGuardChanged(false,
+                "oos-proximity-reset#" + source);
         if (wasBlocked || snapshot.phaseChanged()) {
             mainHandler().post(() -> {
                 ActiveClockRendererController.onTimeTick("oos-proximity-reset");

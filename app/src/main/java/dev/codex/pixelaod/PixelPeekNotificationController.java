@@ -143,13 +143,15 @@ final class PixelPeekNotificationController {
                 if (nativeView == null || state == null) {
                     continue;
                 }
-                if (blocked) {
-                    removeOverlay(state.overlay.get());
-                    state.powerSavingAodStarted = false;
-                    nativeView.invalidate();
-                } else if (state.nativeAttached && state.content != null) {
-                    nativeView.post(() -> show(nativeView, state, "pocket-release"));
-                }
+                nativeView.post(() -> {
+                    if (blocked) {
+                        removeOverlay(state.overlay.get());
+                        state.powerSavingAodStarted = false;
+                        nativeView.invalidate();
+                    } else if (state.nativeAttached && state.content != null) {
+                        show(nativeView, state, "pocket-release");
+                    }
+                });
             }
         }
         if (blocked) {

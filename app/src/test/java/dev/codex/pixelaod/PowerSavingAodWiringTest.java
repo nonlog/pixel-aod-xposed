@@ -119,7 +119,11 @@ public class PowerSavingAodWiringTest {
 
         String peek = source("PixelPeekNotificationController");
         assertTrue(peek.contains("onPocketGuardChanged"));
+        assertTrue(peek.contains("nativeView.post(() ->"));
         assertTrue(peek.contains("Pixel peek suppressed by pocket/proximity guard"));
+        String reset = section(clock, "static void resetProximityFromOos",
+                "static boolean isProximityNear");
+        assertTrue(reset.contains("onPocketGuardChanged(false"));
     }
     @Test
     public void notificationUsesAttachedNativePeekAsTransientAuthority() throws Exception {
