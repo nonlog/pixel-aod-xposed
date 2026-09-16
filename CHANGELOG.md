@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.50] - 2026-09-16
+### Fixed
+- Restore pocket/proximity authority while the optional Power Saving charging AOD hold is active. The default AOD lifecycle evaluation now carries the live OPlus proximity state, so a pocket-mode `DreamService#setDozeScreenState(OFF)` request can no longer be converted back to `DOZE_SUSPEND` merely because the phone is charging.
+- Remove the thin-to-bold clock flash when returning from an OPlus full-screen alarm, call, or bouncer to the lockscreen. At the native transient-scene `STARTED -> LOCKSCREEN` edge, the already-hidden persistent COUI child is synchronously preloaded with its lockscreen scene and variable-font weight before the native `ClockViewRoot` reveals it. The current vendor clock-size tracker is preferred, with the last real lockscreen scene used only when that tracker is transiently unavailable.
+
+### Ownership and validation
+- OPlus continues to own the proximity sensor/dwell timer, pocket decision, native root visibility, panel/doze state, alarm/call occlusion, and ClockPlugin scene transition. The module only stops its charging exception when proximity is blocked and restyles its own hidden clock child before native reveal.
+- Local unit tests: **599 tests, 0 failures, 0 errors, 0 skipped**. Physical acceptance still needs a charging-pocket reproduction and a real full-screen alarm/call return on CPH2573.
+
 ## [0.1.49] - 2026-09-16
 ### Changed
 - Port the safe COUI Expressive 2.7 UDFPS HDR transition optimization without taking over OPlus AOD power state. Repeated refresh callbacks now skip an identical module-owned `SurfaceControl` HDR transaction when both press state and exact surface identity are unchanged.

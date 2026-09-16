@@ -2347,7 +2347,12 @@ public final class PixelAodClockView extends FrameLayout {
 
     static OosAodLifecycleAdapter.AodPolicyDecision evaluateAodPolicy(
             Context context, String source) {
-        return evaluateAodPolicy(context, source, false, false);
+        // Every lifecycle consumer must observe the same live pocket/proximity authority. The
+        // visual overlay path already passed this explicitly, but default callers such as the
+        // DreamService OFF interceptor previously hard-coded proximityBlocked=false. During the
+        // Power Saving charging hold that could turn a vendor pocket-mode OFF request back into
+        // DOZE_SUSPEND and leave AOD visible in a pocket.
+        return evaluateAodPolicy(context, source, isProximityNear(), false);
     }
 
     private static OosAodLifecycleAdapter.AodPolicyDecision evaluateAodPolicy(

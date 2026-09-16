@@ -3486,6 +3486,10 @@ final class PixelAodHook {
             NativeDozeTransitionProgressAdapter.Snapshot progressAfter =
                     NATIVE_DOZE_TRANSITION_PROGRESS.observe(
                             fromName, toName, transitionValue, phaseName, ownerName, source);
+            if (CouiBouncerHostVisibilityPolicy.shouldPreloadLockscreenReturn(after)) {
+                ActiveClockRendererController.prepareNativeLockscreenReturn(
+                        source + "#native-lockscreen-return-started");
+            }
             if (NativeKeyguardSceneEligibility.becameIneligible(
                     before.presentationAllowed, after.presentationAllowed)) {
                 ActiveClockRendererController.suppressForNativeScene(source + "#ineligible");

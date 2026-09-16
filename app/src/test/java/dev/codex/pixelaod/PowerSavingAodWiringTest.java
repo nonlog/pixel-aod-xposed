@@ -72,6 +72,24 @@ public class PowerSavingAodWiringTest {
     }
 
     @Test
+    public void defaultAodPolicyCarriesLivePocketStateIntoChargingDozeDecision() throws Exception {
+        String clock = source("PixelAodClockView");
+        String policy = section(clock,
+                "static OosAodLifecycleAdapter.AodPolicyDecision evaluateAodPolicy(\n"
+                        + "            Context context, String source)",
+                "private static OosAodLifecycleAdapter.AodPolicyDecision evaluateAodPolicy(");
+        assertTrue(policy.contains("isProximityNear()"));
+        assertFalse(policy.contains("source, false, false"));
+
+        String hook = source("PixelAodHook");
+        String dreamHook = section(hook,
+                "static void hookDreamServiceDozeScreenStateObserver",
+                "private static String classifyAodTriggerEvent");
+        assertTrue(dreamHook.contains("PixelAodClockView.evaluateAodPolicy(context"));
+        assertTrue(dreamHook.contains("decision.shouldKeepNativeDozeAlive"));
+    }
+
+    @Test
     public void notificationUsesAttachedNativePeekAsTransientAuthority() throws Exception {
         String peek = source("PixelPeekNotificationController");
         assertTrue(peek.contains("hasActiveNativeNotificationWindow"));

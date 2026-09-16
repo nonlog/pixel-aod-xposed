@@ -392,6 +392,32 @@ final class CouiClockHostView extends FrameLayout {
         applyClockColors();
         applyTargets(false, 0L);
     }
+
+    /**
+     * Synchronously restore a hidden persistent host to its lockscreen presentation before the
+     * native ClockViewRoot reveals it after a full-screen alarm/call or bouncer. This changes no
+     * native visibility state; it only guarantees that the child's first drawable frame already
+     * has lockscreen geometry and variable-font weight.
+     */
+    void preloadLockscreenReturn(CouiClockPresentationModel next, String source) {
+        if (next == null || next.dozing()) {
+            return;
+        }
+        diagnosticSource = source == null ? "preload-lockscreen-return" : source;
+        cancelAodEntryTransaction();
+        cancelPendingLiveAodRetarget(true);
+        cancelLiveAodCrossfade();
+        cancelScheduledTargetApply();
+        cancelRunningPropertyAnimations();
+        CouiClockPresentationModel.AodContent content = normalizeContent(next.content());
+        presentation = new CouiClockPresentationModel(next.requestedScene(), false, false, content);
+        refreshContextualFromExistingAdapters(diagnosticSource + "#preload", false);
+        applyDataForContent(content);
+        updateBurnInForPresentation();
+        applyClockColors();
+        applyTargets(false, 0L);
+    }
+
     /** Begins an AOD entry with one deferred finalization frame, as in the reference host. */
     void beginAodEntry(CouiClockPresentationModel next, boolean animate, String source) {
         if (next == null || !next.dozing()) {

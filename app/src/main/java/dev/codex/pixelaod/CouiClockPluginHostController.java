@@ -225,6 +225,60 @@ final class CouiClockPluginHostController {
         refreshAll(source + "#pre-lockscreen-data");
     }
 
+    /**
+     * Native OCCLUDED/bouncer -> LOCKSCREEN is an authoritative return to the lockscreen, but the
+     * ClockPlugin rendered ui-state can remain transient until the transition finishes. Normalize
+     * only the module-owned persistent child while the native ClockViewRoot still owns visibility,
+     * so its first revealed frame cannot expose a stale AOD weight.
+     */
+    static void prepareNativeLockscreenReturn(String source) {
+        runOnMain(() -> {
+            int prepared = 0;
+            int rememberedSceneFallbacks = 0;
+            int held = 0;
+            for (HostRecord record : snapshotRecords()) {
+                if (record == null || record.host.getParent() != record.root) {
+                    continue;
+                }
+                Object plugin = record.plugin != null ? record.plugin.get() : null;
+                if (plugin == null) {
+                    continue;
+                }
+                RenderState renderState = readRenderState(plugin, false);
+                Integer clockSizeState = renderState != null
+                        ? renderState.clockSizeState : null;
+                CouiClockPluginPresentationMapper.Mapping mapping =
+                        CouiClockPluginPresentationMapper.forcedLockscreenEntry(
+                                clockSizeState, false, DEFAULT_AOD_CONTENT);
+                CouiClockPresentationModel next = mapping.presentation();
+                if ((mapping.action() != CouiClockPluginPresentationMapper.Action.PRESENT
+                        || next == null) && record.lastLockscreenScene != null) {
+                    // Clock-size trackers can be transiently unavailable while the native root is
+                    // occluded. The last real non-AOD ClockPlugin scene is still authoritative for
+                    // this return and avoids guessing from an AOD content-derived visual scene.
+                    next = new CouiClockPresentationModel(record.lastLockscreenScene,
+                            false, false, DEFAULT_AOD_CONTENT);
+                    rememberedSceneFallbacks++;
+                }
+                if (next == null) {
+                    held++;
+                    continue;
+                }
+                record.lastLockscreenScene = next.requestedScene();
+                record.host.preloadLockscreenReturn(next,
+                        source + "#native-lockscreen-return");
+                prepared++;
+            }
+            PixelAodLog.i("COUI native lockscreen return preloaded rendererMode=COUI_PORT"
+                    + " preparedHosts=" + prepared
+                    + " rememberedSceneFallbacks=" + rememberedSceneFallbacks
+                    + " heldHosts=" + held
+                    + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility()
+                    + "}"
+                    + " source=" + source);
+        });
+    }
+
     static void suppressForDirectGone(String source) {
         runOnMain(() -> {
             int hidden = 0;

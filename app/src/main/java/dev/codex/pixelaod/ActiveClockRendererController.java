@@ -52,6 +52,10 @@ final class ActiveClockRendererController {
         CouiClockPluginHostController.prepareLockscreenEntry(source);
     }
 
+    static void prepareNativeLockscreenReturn(String source) {
+        CouiClockPluginHostController.prepareNativeLockscreenReturn(source);
+    }
+
     static void suppressForDirectGone(String source) {
         CouiClockPluginHostController.suppressForDirectGone(source);
     }
