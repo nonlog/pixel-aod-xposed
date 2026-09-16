@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.51] - 2026-09-16
+### Fixed
+- Give pocket/proximity suppression strict priority over both Power Saving charging AOD hold and incoming-notification temporary AOD. Pixel AOD now observes OPlus' already-registered AOD gesture-proximity listener (sensor type 33171066), so a raw NEAR can stop module-owned keep-alive/re-show behavior even when the vendor ProximityTask commit path is not emitted during the charging extension.
+- While the hard pocket guard is active, cancel the module notification brief without clearing proximity state, hide the Pixel Peek overlay, block native notification showClock(), and release the charging/update-budget extensions. FAR can resume an attached native notification window only after the vendor proximity pause state no longer blocks it.
+
+### Ownership and validation
+- OPlus still owns sensor registration, debounce/dwell, committed pocket state, native notification-window lifetime, Dream/doze/panel OFF, fingerprint optical state, and HBM. Pixel AOD only observes the existing listener and refuses to override native decisions while the hard guard is active.
+- Candidate is based on remote 0.1.50 commit 37d148e; build/test validation is GitHub CI only. Physical charging-pocket and notification-in-pocket acceptance remains required.
+
 ## [0.1.50] - 2026-09-16
 ### Fixed
 - Restore pocket/proximity authority while the optional Power Saving charging AOD hold is active. The default AOD lifecycle evaluation now carries the live OPlus proximity state, so a pocket-mode `DreamService#setDozeScreenState(OFF)` request can no longer be converted back to `DOZE_SUSPEND` merely because the phone is charging.
