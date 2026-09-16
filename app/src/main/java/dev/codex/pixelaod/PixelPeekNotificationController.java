@@ -135,9 +135,38 @@ final class PixelPeekNotificationController {
         return false;
     }
 
+    static void onPocketGuardChanged(boolean blocked, String source) {
+        synchronized (STATES) {
+            for (Map.Entry<View, State> entry : STATES.entrySet()) {
+                View nativeView = entry.getKey();
+                State state = entry.getValue();
+                if (nativeView == null || state == null) {
+                    continue;
+                }
+                if (blocked) {
+                    removeOverlay(state.overlay.get());
+                    state.powerSavingAodStarted = false;
+                    nativeView.invalidate();
+                } else if (state.nativeAttached && state.content != null) {
+                    nativeView.post(() -> show(nativeView, state, "pocket-release"));
+                }
+            }
+        }
+        if (blocked) {
+            PixelAodClockView.endPowerSavingNotificationAod("PixelPeek#pocket-guard#" + source);
+        }
+        PixelAodLog.log("Pixel peek pocket guard changed blocked=" + blocked
+                + " source=" + source);
+    }
     private static void show(View nativeView, State state, String source) {
         if (nativeView == null || state == null || state.content == null
                 || !NativeOplusPeekSettingAdapter.isEnabled(nativeView.getContext())) {
+            return;
+        }
+        if (PixelAodClockView.isPocketGuardActive()) {
+            removeOverlay(state.overlay.get());
+            state.powerSavingAodStarted = false;
+            PixelAodLog.log("Pixel peek suppressed by pocket/proximity guard source=" + source);
             return;
         }
         if (!state.powerSavingAodStarted) {

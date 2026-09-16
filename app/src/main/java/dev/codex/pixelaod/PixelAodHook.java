@@ -12,6 +12,7 @@ import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.hardware.SensorEvent;
 import android.hardware.camera2.CameraManager;
 import android.os.Build;
 import android.os.Handler;
@@ -75,6 +76,9 @@ final class PixelAodHook {
     };
     private static final String OPLUS_WAKE_UP_PROXIMITY_TASK =
             "com.oplus.systemui.aod.display.OplusWakeUpController$ProximityTask";
+    private static final String OPLUS_WAKE_UP_SENSOR_LISTENER =
+            "com.oplus.systemui.aod.display.OplusWakeUpController$amdSensorListener$1";
+    private static final int OPLUS_GESTURE_PROXIMITY_SENSOR_TYPE = 33171066;
     private static final String[] OPLUS_WAKE_CALLBACK_CANDIDATES = {
             "com.oplus.systemui.aod.display.OplusWakeUpController$AodSingleClickWakeUpCallback",
             "com.oplus.systemui.aod.scene.AodViewSingleClickWakeUpHolder$AodSingleClickWakeUpCallback",
@@ -2481,8 +2485,40 @@ final class PixelAodHook {
     }
 
     static void hookOplusVendorProximityPauseSemantics(ClassLoader classLoader) {
+        boolean sensorHooked = false;
         boolean taskHooked = false;
         boolean unregisterHooked = false;
+        // Observe OPlus' existing AOD gesture-proximity listener. Do not register another sensor
+        // and do not replace the vendor dwell/commit decision. CPH2573 reports 0.0=NEAR, 5.0=FAR.
+        try {
+            Class<?> listenerClass = ModernHookBridge.findClass(
+                    OPLUS_WAKE_UP_SENSOR_LISTENER, classLoader);
+            Method onSensorChanged = ModernHookBridge.findMethod(
+                    listenerClass, "onSensorChanged", SensorEvent.class);
+            ModernHookBridge.hookAfter(onSensorChanged, param -> {
+                if (param.args == null || param.args.length == 0
+                        || !(param.args[0] instanceof SensorEvent)) {
+                    return;
+                }
+                SensorEvent event = (SensorEvent) param.args[0];
+                if (event.sensor == null
+                        || event.sensor.getType() != OPLUS_GESTURE_PROXIMITY_SENSOR_TYPE
+                        || event.values == null || event.values.length == 0) {
+                    return;
+                }
+                float value = event.values[0];
+                if (Float.isNaN(value)) {
+                    return;
+                }
+                PixelAodClockView.observeRawProximityFromOos(
+                        value == 0.0f,
+                        "OplusWakeUpController$amdSensorListener$1#onSensorChanged",
+                        "authority=gesture-prox,value=" + value);
+            });
+            sensorHooked = true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook OPlus live gesture proximity listener", t);
+        }
         try {
             Class<?> taskClass = ModernHookBridge.findClass(
                     OPLUS_WAKE_UP_PROXIMITY_TASK, classLoader);
@@ -2527,11 +2563,11 @@ final class PixelAodHook {
             PixelAodLog.log("failed to hook OPlus proximity lifecycle reset", t);
         }
         PixelAodLog.i("installed OPlus vendor proximity pause semantics"
+                + " liveSensor=" + sensorHooked
                 + " task=" + taskHooked
                 + " unregister=" + unregisterHooked
                 + " dwellOwner=OplusWakeUpController$ProximityTask");
     }
-
     static void hookOplusVendorWakeTriggerSemantics(ClassLoader classLoader) {
         boolean hooked = false;
         String authorityClass = "none";

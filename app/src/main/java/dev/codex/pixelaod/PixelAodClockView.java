@@ -345,14 +345,23 @@ public final class PixelAodClockView extends FrameLayout {
             PROXIMITY_AUTHORITY_GATE.reset();
             snapshot = VENDOR_PROXIMITY_PAUSE.reset(normalizedSource + "#pocket-mode-disabled");
         }
-        if (snapshot.phaseChanged()) {
-            PixelAodLog.i("OOS proximity pause raw edge near=" + near
-                    + " pocketModeEnabled=" + pocketModeEnabled
-                    + " state={" + snapshot.describe() + "}"
-                    + " detail={" + normalizedDetail + "}");
+        if (!snapshot.phaseChanged()) {
+            return;
         }
+        boolean blocked = snapshot.blocksNotificationPulse();
+        if (blocked) {
+            cancelBriefAodTriggerPreservingProximity(
+                    "oos-pocket-guard#" + normalizedSource, "pocket-or-proximity-near");
+        }
+        PowerSavingAodController.onPolicyChanged("oos-pocket-guard#" + normalizedSource);
+        PixelPeekNotificationController.onPocketGuardChanged(blocked, normalizedSource);
+        refreshAodPolicyConsumers("oos-pocket-guard#" + normalizedSource);
+        PixelAodLog.i("OOS proximity pause raw edge near=" + near
+                + " pocketModeEnabled=" + pocketModeEnabled
+                + " hardGuard=" + blocked
+                + " state={" + snapshot.describe() + "}"
+                + " detail={" + normalizedDetail + "}");
     }
-
     static void updateProximityFromOos(boolean near, String source, String detail) {
         String normalizedSource = TextUtils.isEmpty(source) ? "unknown" : source;
         String normalizedDetail = TextUtils.isEmpty(detail) ? "" : detail;
@@ -379,7 +388,13 @@ public final class PixelAodClockView extends FrameLayout {
         if (pauseSnapshot.blocksPresentation()) {
             cancelPanelHandoffPresentation("oos-proximity-near", false);
         }
+        boolean pocketGuard = pauseSnapshot.blocksNotificationPulse();
+        if (pocketGuard) {
+            cancelBriefAodTriggerPreservingProximity(
+                    "oos-proximity#" + normalizedSource, "pocket-or-proximity-near");
+        }
         PowerSavingAodController.onPolicyChanged("oos-proximity#" + normalizedSource);
+        PixelPeekNotificationController.onPocketGuardChanged(pocketGuard, normalizedSource);
         PixelAodLog.i("OOS proximity state changed: near=" + near
                 + " appliedNear=" + isProximityNear()
                 + " pocketModeEnabled=" + pocketModeEnabled
@@ -431,8 +446,12 @@ public final class PixelAodClockView extends FrameLayout {
         return PROXIMITY_AUTHORITY_GATE.isNear();
     }
 
-    static boolean isNotificationPulseProximityBlocked() {
+    static boolean isPocketGuardActive() {
         return VENDOR_PROXIMITY_PAUSE.blocksNotificationPulse();
+    }
+
+    static boolean isNotificationPulseProximityBlocked() {
+        return isPocketGuardActive();
     }
 
     static VendorProximityPauseAdapter.Snapshot vendorProximityPauseSnapshot() {
@@ -1823,7 +1842,7 @@ public final class PixelAodClockView extends FrameLayout {
                     + " state={" + describeAodState(context) + "}");
             return false;
         }
-        if (isProximityNear()) {
+        if (isPocketGuardActive()) {
             PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
                     + " source=" + source
                     + " reason=proximity-near"
@@ -1885,6 +1904,24 @@ public final class PixelAodClockView extends FrameLayout {
         return hadBriefTrigger;
     }
 
+    private static boolean cancelBriefAodTriggerPreservingProximity(
+            String source, String reason) {
+        boolean hadBriefTrigger;
+        synchronized (PixelAodClockView.class) {
+            hadBriefTrigger = clearBriefAodTriggerLocked();
+        }
+        PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
+                + " source=" + source
+                + " reason=" + reason
+                + " hadBriefTrigger=" + hadBriefTrigger
+                + " preserveProximity=true"
+                + " trace=" + currentAodTraceId()
+                + " state={" + describeAodState(appContext) + "}");
+        if (hadBriefTrigger) {
+            refreshAodPolicyConsumers(source + "#trigger-brief-blocked");
+        }
+        return hadBriefTrigger;
+    }
     private static boolean clearBriefAodTriggerLocked() {
         boolean hadBriefTrigger = briefAodTriggerStartedAt > 0L
                 || !"none".equals(briefAodTriggerType);
@@ -2199,7 +2236,7 @@ public final class PixelAodClockView extends FrameLayout {
         boolean powerAllows = requested
                 && isPowerPolicyAllowingAod(context, source, trace, false);
         return PowerSavingAodPolicy.shouldKeepChargingVisible(requested,
-                isDeviceInteractive(context), isProximityNear(),
+                isDeviceInteractive(context), isPocketGuardActive(),
                 suppression.baseAodDenied(), powerAllows);
     }
 
@@ -2210,7 +2247,7 @@ public final class PixelAodClockView extends FrameLayout {
         AodLifecycleState state = currentAodLifecycleState(context);
         if (state == null || state.interactive || !state.triggerBriefActive
                 || !PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE.equals(state.triggerBriefType)
-                || isProximityNear()) {
+                || isPocketGuardActive()) {
             return false;
         }
         NativeAodAvailabilityAdapter.Decision nativeAod = NativeAodAvailabilityAdapter.read(
@@ -2290,7 +2327,7 @@ public final class PixelAodClockView extends FrameLayout {
         VendorAmbientSuppressionCapabilities.Snapshot suppression =
                 PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
         boolean chargingOverride = isPowerSavingChargingAodRequested(context)
-                && !isDeviceInteractive(context) && !isProximityNear()
+                && !isDeviceInteractive(context) && !isPocketGuardActive()
                 && !suppression.baseAodDenied();
         boolean allowed = isModuleEnabled(context) && powerAllows
                 && (nativeAod.continuousEligible || chargingOverride);
@@ -2309,7 +2346,7 @@ public final class PixelAodClockView extends FrameLayout {
         VendorAmbientSuppressionCapabilities.Snapshot suppression =
                 PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
         boolean chargingEntry = isPowerSavingChargingAodRequested(context)
-                && !isProximityNear() && !suppression.baseAodDenied();
+                && !isPocketGuardActive() && !suppression.baseAodDenied();
         boolean allowed = isModuleEnabled(context)
                 && isPowerPolicyAllowingAod(context, source, trace, false)
                 && (nativeAod.prearmEligible || chargingEntry);
@@ -2352,7 +2389,7 @@ public final class PixelAodClockView extends FrameLayout {
         // DreamService OFF interceptor previously hard-coded proximityBlocked=false. During the
         // Power Saving charging hold that could turn a vendor pocket-mode OFF request back into
         // DOZE_SUSPEND and leave AOD visible in a pocket.
-        return evaluateAodPolicy(context, source, isProximityNear(), false);
+        return evaluateAodPolicy(context, source, isPocketGuardActive(), false);
     }
 
     private static OosAodLifecycleAdapter.AodPolicyDecision evaluateAodPolicy(
