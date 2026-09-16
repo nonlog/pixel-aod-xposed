@@ -36,6 +36,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Let the explicit sdkmanager step below accept the runner's current license set.
+          # setup-android's automatic acceptance can become interactive when Google adds licenses.
+          accept-android-sdk-licenses: false
+          packages: ''
 
       - name: Install Android SDK components
         shell: bash
