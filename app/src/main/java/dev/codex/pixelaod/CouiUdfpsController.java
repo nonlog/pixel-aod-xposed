@@ -136,7 +136,8 @@ final class CouiUdfpsController {
     private static final Map<ImageView, ValueAnimator> EXIT_ANIMATORS = new WeakHashMap<>();
     private static final Map<ImageView, CouiUdfpsGlowOverlay> GLOW_OVERLAYS = new WeakHashMap<>();
     private static final Map<ImageView, View.OnAttachStateChangeListener> HDR_ATTACH_LISTENERS = new WeakHashMap<>();
-    private static final Map<ImageView, Boolean> LAST_HDR_PRESS_STATES = new WeakHashMap<>();
+    private static final Map<ImageView, HdrSurfaceState> LAST_HDR_SURFACE_STATES =
+            new WeakHashMap<>();
     private static final Map<Object, String> LAST_PRESSED_CARRIER_LOGS = new WeakHashMap<>();
     private static volatile WeakReference<Object> lastUiMech = new WeakReference<>(null);
 
@@ -913,7 +914,7 @@ final class CouiUdfpsController {
                 // SurfaceControl can be recreated after updateViewLayout(); re-read live touch
                 // on the next frame so idle attach never inherits stale max HDR headroom.
                 pressedIcon.postOnAnimation(() -> updatePressedHdr(
-                        pressedIcon, isPressedTouchActive(pressedIcon)));
+                        pressedIcon, isPressedTouchActive(pressedIcon), true));
                 PixelAodLog.i("COUI UDFPS HDR window prepared headroom=" + headroom
                         + " touchDown=" + liveTouchDown);
             } catch (Throwable throwable) {
@@ -923,6 +924,10 @@ final class CouiUdfpsController {
     }
 
     private static void updatePressedHdr(ImageView pressedIcon, boolean pressed) {
+        updatePressedHdr(pressedIcon, pressed, false);
+    }
+
+    private static void updatePressedHdr(ImageView pressedIcon, boolean pressed, boolean force) {
         if (android.os.Build.VERSION.SDK_INT < 35 || pressedIcon == null) {
             return;
         }
@@ -930,10 +935,14 @@ final class CouiUdfpsController {
         if (!enabled) {
             // Native optical mode owns all brightness/HBM surface state. In particular, do not
             // force desired HDR headroom back to 1 here: that transaction races OPlus optical
-            // illumination and was correlated with real-finger authentication failure.
+            // illumination and was correlated with real-finger authentication failure. Drop our
+            // dedupe record as well so a future HDR re-enable must establish fresh surface state.
+            synchronized (LAST_HDR_SURFACE_STATES) {
+                LAST_HDR_SURFACE_STATES.remove(pressedIcon);
+            }
             return;
         }
-        boolean active = enabled && pressed;
+        boolean active = pressed;
         if (!pressedIcon.isAttachedToWindow()) {
             return;
         }
@@ -946,19 +955,32 @@ final class CouiUdfpsController {
                 return;
             }
             SurfaceControl surface = (SurfaceControl) value;
+            HdrSurfaceState previous;
+            synchronized (LAST_HDR_SURFACE_STATES) {
+                previous = LAST_HDR_SURFACE_STATES.get(pressedIcon);
+                if (!CouiUdfpsHdrUpdatePolicy.shouldApply(
+                        previous != null,
+                        previous != null && previous.active,
+                        previous != null && previous.surface.get() == surface,
+                        active,
+                        force)) {
+                    return;
+                }
+            }
             try (SurfaceControl.Transaction transaction = new SurfaceControl.Transaction()) {
                 transaction.setDesiredHdrHeadroom(surface, headroom);
                 transaction.setExtendedRangeBrightness(surface, active ? 7f : 1f, headroom);
                 transaction.apply();
             }
-            boolean shouldLog;
-            synchronized (LAST_HDR_PRESS_STATES) {
-                Boolean previous = LAST_HDR_PRESS_STATES.put(pressedIcon, active);
-                shouldLog = previous == null || previous.booleanValue() != active;
+            synchronized (LAST_HDR_SURFACE_STATES) {
+                LAST_HDR_SURFACE_STATES.put(pressedIcon,
+                        new HdrSurfaceState(active, surface));
             }
-            if (shouldLog) {
-                PixelAodLog.i("COUI UDFPS HDR surface pressed=" + active + " headroom=" + headroom);
-            }
+            boolean surfaceChanged = previous != null && previous.surface.get() != surface;
+            PixelAodLog.i("COUI UDFPS HDR surface pressed=" + active
+                    + " headroom=" + headroom
+                    + " surfaceChanged=" + surfaceChanged
+                    + " forced=" + force);
         } catch (Throwable throwable) {
             PixelAodLog.log("COUI UDFPS HDR surface update failed", throwable);
         }
@@ -1145,6 +1167,9 @@ final class CouiUdfpsController {
         }
         synchronized (PRESSED_TOUCH_STATES) {
             PRESSED_TOUCH_STATES.remove(pressedIcon);
+        }
+        synchronized (LAST_HDR_SURFACE_STATES) {
+            LAST_HDR_SURFACE_STATES.remove(pressedIcon);
         }
         PixelAodLog.log("COUI UDFPS restored native pressed icon source=" + source);
     }
@@ -1917,6 +1942,16 @@ final class CouiUdfpsController {
     private static String simpleClassName(String className) {
         int index = className.lastIndexOf('.');
         return index >= 0 ? className.substring(index + 1) : className;
+    }
+
+    private static final class HdrSurfaceState {
+        final boolean active;
+        final WeakReference<SurfaceControl> surface;
+
+        HdrSurfaceState(boolean active, SurfaceControl surface) {
+            this.active = active;
+            this.surface = new WeakReference<>(surface);
+        }
     }
 
     private static final class PendingRefresh {

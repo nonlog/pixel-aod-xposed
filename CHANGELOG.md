@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.49] - 2026-09-16
+### Changed
+- Port the safe COUI Expressive 2.7 UDFPS HDR transition optimization without taking over OPlus AOD power state. Repeated refresh callbacks now skip an identical module-owned `SurfaceControl` HDR transaction when both press state and exact surface identity are unchanged.
+- Reapply HDR state after `WindowManager.updateViewLayout()` and whenever the pressed carrier receives a different `SurfaceControl`, so transaction dedupe cannot suppress the existing post-layout/surface-recreation repair.
+- Clear the dedupe record when HDR replacement ownership is disabled or the pressed carrier is restored, ensuring native optical mode remains untouched and a later HDR re-enable starts from fresh state.
+
+### Scope and review
+- COUI 2.7's new `AODDisplayUtil.requestScreenState(view, state, true)` path is intentionally not ported. Its state constants are `1 = OFF` and `3 = DOZE`, which makes it an AOD/panel lifecycle request rather than a visual-only optimization.
+- COUI 2.7's AOD-only forced visibility of the vendor pressed carrier is also not ported without a reproduced CPH2573 defect. OPlus continues to own pressed-carrier visibility, AOD power state, HBM/local-HBM, optical sensing, and fingerprint touch routing.
+- The existing next-frame live-touch recheck remains in place and now explicitly forces a surface reapply after HDR window layout work.
+
 ## [0.1.48] - 2026-09-13
 ### Changed
 - Port COUI Expressive 2.7 notification refresh batching to the existing live-alert/torch reconciliation path. The `40/280/900 ms` passes now keep at most one pending runnable per delay, newer events replace pending work, and the final `900 ms` pass moves to the trailing edge of a burst instead of accumulating another three callbacks for every event.
