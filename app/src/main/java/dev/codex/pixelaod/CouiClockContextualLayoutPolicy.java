@@ -10,6 +10,11 @@ final class CouiClockContextualLayoutPolicy {
         return dozing;
     }
 
+    static boolean deferSmallAodContextualReveal(boolean aodEntryInProgress,
+            boolean dozing, boolean smallScene, boolean cardVisible) {
+        return aodEntryInProgress && dozing && smallScene && cardVisible;
+    }
+
     static float largeContextualStart(float containerWidthPx, float visibleContentWidthPx) {
         float container = Math.max(0f, containerWidthPx);
         float content = Math.max(0f, visibleContentWidthPx);

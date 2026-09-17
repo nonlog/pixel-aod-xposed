@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.55] - 2026-09-17
+### Fixed
+- Remove the last visible Small-AOD forecast-row drift by separating layout ownership from pixel visibility during the lockscreen-to-AOD transaction. Forecast/contextual content is prepared immediately and continues reserving its final slot for media/notification layout, but its parent row stays fully transparent while the Small clock is moving.
+- Reveal the prepared contextual row only after the AOD entry transaction has completed and its final AOD X/Y has been re-primed. The reveal is alpha-only, so the first visible forecast pixel is already at the settled AOD endpoint; the accepted clock geometry and media spacing are unchanged.
+
 ## [0.1.54] - 2026-09-17
 ### Fixed
 - Stabilize Small AOD forecast-row Y before the next Android measure/layout pass. Compact date/weather row heights are now derived from current visible TextView line metrics and icon geometry, so an async forecast reveal cannot first use stale lockscreen measurements and then drift to a second position one frame later.

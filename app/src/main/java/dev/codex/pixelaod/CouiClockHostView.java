@@ -148,6 +148,7 @@ final class CouiClockHostView extends FrameLayout {
     private String lastTargetDiagnosticSignature;
     private float contextualTargetTopPx;
     private boolean contextualSurfaceActive;
+    private boolean deferredSmallContextualReveal;
 
     CouiClockHostView(Context context) {
         this(context, context != null ? context.getClassLoader() : null);
@@ -544,11 +545,13 @@ final class CouiClockHostView extends FrameLayout {
         deferredAodData = null;
         if (deferred == null
                 || CouiClockAodTransitionPolicy.sameContent(deferred, presentation.content())) {
+            revealDeferredSmallContextualAfterEntry();
             return;
         }
         boolean sceneChanges = presentation.partialAod()
                 && partialSceneFor(presentation.content()) != partialSceneFor(deferred);
         if (sceneChanges) {
+            deferredSmallContextualReveal = false;
             startLiveAodCrossfade(deferred);
             return;
         }
@@ -558,6 +561,7 @@ final class CouiClockHostView extends FrameLayout {
         updateBurnInForPresentation();
         applyClockColors();
         applyTargets(false, 0L);
+        revealDeferredSmallContextualAfterEntry();
     }
 
     private void scheduleLiveAodRetarget(final CouiClockPresentationModel.AodContent content,
@@ -804,10 +808,16 @@ final class CouiClockHostView extends FrameLayout {
         applyContextualIconGeometry(ContextualAtAGlancePresentation.displayed(contextualGroup));
         int contextualAccent = CouiClockVisualStylePolicy.contextualAccentColor(
                 presentation.visualScene(), presentation.dozing(), monetColor, aodMonetColor);
+        boolean deferSmallEntryReveal =
+                CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                        aodEntryInProgress, presentation.dozing(),
+                        presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL,
+                        card.isVisible());
         boolean changed = ContextualAtAGlancePresentation.apply(
                 getContext(), contextualGroup, contextualIconView, contextualView, card,
                 contextualAccent, contextualAccent, textSizeDp, infoWeight,
-                animate && surfaceVisible, this::onContextualDisplayedContentChanged,
+                animate && surfaceVisible && !deferSmallEntryReveal,
+                this::onContextualDisplayedContentChanged,
                 source == null ? "coui-contextual" : source);
         ContextualAtAGlancePresentation.restyleDisplayed(
                 contextualGroup, contextualIconView, contextualView,
@@ -820,6 +830,16 @@ final class CouiClockHostView extends FrameLayout {
             contextualIconView.setAlpha(contentAlpha);
         }
         updateStableLargeForecastCard(displayedCard);
+        if (deferSmallEntryReveal && displayedCard.isVisible()) {
+            // Reserve the row and let lower content use its final geometry, but do not expose
+            // contextual pixels while the Small clock is still moving to its AOD endpoint.
+            contextualGroup.animate().cancel();
+            contextualGroup.setVisibility(VISIBLE);
+            contextualGroup.setAlpha(0f);
+            deferredSmallContextualReveal = true;
+        } else if (!aodEntryInProgress) {
+            deferredSmallContextualReveal = false;
+        }
         if (changed) {
             contextualGroup.requestLayout();
             // Lower AOD rows use the COUI snap-geometry contract, so re-evaluate them in the
@@ -827,6 +847,33 @@ final class CouiClockHostView extends FrameLayout {
             scheduleApplyTargets(false);
         }
         updateAccessibilitySemantics();
+    }
+
+    /** Reveals Small AOD contextual pixels only after the clock entry transaction is final. */
+    private void revealDeferredSmallContextualAfterEntry() {
+        if (!deferredSmallContextualReveal) {
+            return;
+        }
+        deferredSmallContextualReveal = false;
+        ContextualAtAGlanceCard displayedCard =
+                ContextualAtAGlancePresentation.displayed(contextualGroup);
+        if (!presentation.dozing()
+                || presentation.visualScene() != CouiClockPresentationModel.Scene.SMALL
+                || !displayedCard.isVisible()) {
+            return;
+        }
+        // Re-prime from the now-final AOD scene before any pixels are allowed to appear.
+        primeContextualGeometryTarget(displayedCard);
+        contextualGroup.animate().cancel();
+        contextualGroup.setVisibility(VISIBLE);
+        contextualGroup.setAlpha(0f);
+        if (!SystemAnimationScalePolicy.animationsEnabled()) {
+            contextualGroup.setAlpha(1f);
+            return;
+        }
+        contextualGroup.animate().alpha(1f)
+                .setDuration(ContextualAtAGlanceCard.ENTER_LEAVE_FADE_MILLIS)
+                .start();
     }
 
     /** Re-evaluates geometry only when the row's rendered pixels actually switch cards. */
@@ -1467,6 +1514,11 @@ final class CouiClockHostView extends FrameLayout {
         }
         pendingEntryToken = 0L;
         aodEntryInProgress = false;
+        if (deferredSmallContextualReveal) {
+            contextualGroup.animate().cancel();
+            contextualGroup.setAlpha(0f);
+            deferredSmallContextualReveal = false;
+        }
         deferredAodContent = null;
         deferredAodData = null;
     }

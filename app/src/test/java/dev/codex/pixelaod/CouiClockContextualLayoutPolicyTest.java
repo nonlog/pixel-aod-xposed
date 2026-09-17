@@ -76,4 +76,18 @@ public final class CouiClockContextualLayoutPolicyTest {
         assertEquals(200f, CouiClockContextualLayoutPolicy.compactContentTopWithoutContextual(
                 200f, 220f, 12f), 0.001f);
     }
+
+    @Test
+    public void smallAodEntryDefersVisibleContextualPixelsUntilEndpoint() {
+        assertTrue(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                true, true, true, true));
+        assertFalse(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                false, true, true, true));
+        assertFalse(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                true, false, true, true));
+        assertFalse(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                true, true, false, true));
+        assertFalse(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                true, true, true, false));
+    }
 }

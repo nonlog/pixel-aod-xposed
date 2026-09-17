@@ -13,8 +13,8 @@ android {
         applicationId "dev.codex.pixelaod"
         minSdk 26
         targetSdk 36
-        versionCode 9053
-        versionName "0.1.54"
+        versionCode 9054
+        versionName "0.1.55"
     }
 
     buildTypes {

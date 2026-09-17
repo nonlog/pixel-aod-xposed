@@ -78,4 +78,19 @@ public final class CouiClockContextualGeometryWiringTest {
         assertTrue(content.contains("Scene.SMALL"));
         assertTrue(content.contains("compactContentTopWithoutContextual"));
     }
+
+    @Test
+    public void smallAodEntryKeepsContextualRowTransparentUntilFinalEndpoint() throws Exception {
+        String host = source("CouiClockHostView");
+        String refresh = section(host,
+                "private void refreshContextualFromExistingAdapters",
+                "private void revealDeferredSmallContextualAfterEntry");
+        assertTrue(refresh.contains("deferSmallAodContextualReveal"));
+        assertTrue(refresh.contains("contextualGroup.setAlpha(0f)"));
+        String reveal = section(host,
+                "private void revealDeferredSmallContextualAfterEntry",
+                "private void onContextualDisplayedContentChanged");
+        assertTrue(reveal.contains("primeContextualGeometryTarget(displayedCard)"));
+        assertTrue(reveal.contains("contextualGroup.animate().alpha(1f)"));
+    }
 }
