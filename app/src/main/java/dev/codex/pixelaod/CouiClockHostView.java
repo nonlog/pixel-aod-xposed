@@ -838,31 +838,60 @@ final class CouiClockHostView extends FrameLayout {
                 ContextualAtAGlancePresentation.displayed(contextualGroup);
         applyContextualIconGeometry(displayedCard);
         updateStableLargeForecastCard(displayedCard);
-        primeLargeContextualHorizontalTarget(displayedCard);
+        primeContextualGeometryTarget(displayedCard);
         contextualGroup.requestLayout();
         scheduleApplyTargets(false);
     }
 
     /**
-     * Commits Large contextual X before newly prepared pixels can become visible. The normal
-     * posted target pass still owns complete geometry/Y; this only closes the one-frame window
-     * where a fresh forecast could inherit the previous START translation.
+     * Commits contextual geometry after freshly prepared pixels exist but before the row becomes
+     * visible. Large needs its forecast-centering X; Small needs both its AOD leading edge and
+     * final stack Y so a NONE -> forecast update cannot expose the previous lockscreen anchor for
+     * one frame. The normal posted target pass still owns complete geometry for the full host.
      */
-    private void primeLargeContextualHorizontalTarget(ContextualAtAGlanceCard displayedCard) {
-        if (presentation.visualScene() != CouiClockPresentationModel.Scene.LARGE
-                || displayedCard == null || !displayedCard.isVisible() || getWidth() <= 0) {
+    private void primeContextualGeometryTarget(ContextualAtAGlanceCard displayedCard) {
+        if (displayedCard == null || !displayedCard.isVisible()
+                || getWidth() <= 0 || getHeight() <= 0) {
             return;
         }
-        boolean displayedForecast =
-                displayedCard.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST;
-        float defaultContextualX = PresentationLayoutDirectionPolicy.startAlignedX(
+        if (presentation.visualScene() == CouiClockPresentationModel.Scene.LARGE) {
+            boolean displayedForecast =
+                    displayedCard.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST;
+            float defaultContextualX = PresentationLayoutDirectionPolicy.startAlignedX(
+                    getWidth(), contextualGroup.getMeasuredWidth(),
+                    dp(PixelAodVisualStyle.EDGE_DP), isRtl());
+            float contextualX =
+                    CouiClockContextualLayoutPolicy.largeContextualStartForDisplayedCard(
+                            getWidth(), contextualVisibleContentWidthPx(), defaultContextualX,
+                            displayedForecast);
+            contextualGroup.setTranslationX(
+                    contextualX + (presentation.dozing() ? burnInX : 0f));
+            return;
+        }
+        if (presentation.visualScene() != CouiClockPresentationModel.Scene.SMALL) {
+            return;
+        }
+
+        float top = getHeight() * CouiClockGeometryPolicy.INFO_Y_RATIO
+                + dp(CouiClockGeometryPolicy.INFO_Y_OFFSET_DP);
+        if (presentation.dozing()) {
+            top += compactAodVerticalOffsetPx();
+        }
+        float weatherY = top + dateGroup.getMeasuredHeight()
+                + dp(CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP);
+        float contextualY = CouiClockContextualLayoutPolicy.contextualTop(
+                top, dateGroup.getMeasuredHeight(), weatherView.getVisibility() == VISIBLE,
+                weatherY, weatherGroup.getMeasuredHeight(),
+                dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP));
+        float contextualX = PresentationLayoutDirectionPolicy.startAlignedX(
                 getWidth(), contextualGroup.getMeasuredWidth(),
-                dp(PixelAodVisualStyle.EDGE_DP), isRtl());
-        float contextualX = CouiClockContextualLayoutPolicy.largeContextualStartForDisplayedCard(
-                getWidth(), contextualVisibleContentWidthPx(), defaultContextualX,
-                displayedForecast);
-        contextualGroup.setTranslationX(
-                contextualX + (presentation.dozing() ? burnInX : 0f));
+                CouiCompactLayout.couiHostContentLeft(
+                        getResources().getDisplayMetrics().density), isRtl());
+        float xOffset = presentation.dozing() ? burnInX : 0f;
+        float yOffset = presentation.dozing() ? burnInY : 0f;
+        contextualTargetTopPx = contextualY + yOffset;
+        contextualGroup.setTranslationX(contextualX + xOffset);
+        contextualGroup.setTranslationY(contextualTargetTopPx);
     }
 
     private void applyContextualIconGeometry(ContextualAtAGlanceCard displayedCard) {
