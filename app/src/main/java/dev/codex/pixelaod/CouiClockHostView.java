@@ -310,9 +310,6 @@ final class CouiClockHostView extends FrameLayout {
         updateMonetColor();
         updateAccessibilitySemantics();
         scheduleApplyTargets(false);
-        if (morphRuntime != null) {
-            morphRuntime.prewarmAsync(motionInterpolator);
-        }
     }
 
     /** Applies the canonical scene/content state through the host's sole target path. */

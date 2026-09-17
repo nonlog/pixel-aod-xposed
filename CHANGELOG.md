@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.53] - 2026-09-17
+### Fixed
+- Commit Small AOD contextual/weather geometry in the same frame that freshly prepared forecast pixels become visible. The row now receives its final 32 dp leading edge, compact AOD vertical offset, and burn-in translation before visibility, preventing the occasional lockscreen-position flash before the final AOD position.
+- Reduce ROM TextAnimator variable-font cache expansion from 384 to 96 entries and stop the constructor-time 279-sample offscreen prewarm. The real ROM variable-font morph, timing, geometry, and animation curve remain unchanged while avoiding unnecessary Typeface/cache pressure inside SystemUI.
+
+### Validation
+- Performance fix is intentionally limited to cache/prewarm policy; it does not change clock target geometry, transition duration, font variations, or the accepted 0.1.52 compact AOD alignment. GitHub CI and physical SystemUI A/B validation are required before acceptance.
+
 ## [0.1.52] - 2026-09-17
 ### Fixed
 - Recalibrate the compact AOD endpoint so its painted clock leading edge lands on the same 32 dp column used by AOD contextual, media, and notification rows instead of drifting left when the AOD font weight changes. Burn-in X remains shared, so the alignment is preserved while the ambient surface moves.
