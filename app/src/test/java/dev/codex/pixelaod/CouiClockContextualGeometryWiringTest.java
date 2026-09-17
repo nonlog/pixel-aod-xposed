@@ -61,12 +61,28 @@ public final class CouiClockContextualGeometryWiringTest {
     public void smallGeometryUsesPrelayoutStableRowHeights() throws Exception {
         String host = source("CouiClockHostView");
         assertTrue(host.contains("stableCompactDateRowHeightPx()"));
-        assertTrue(host.contains("stableCompactWeatherRowHeightPx()"));
+        assertTrue(host.contains("stableCompactWeatherRowHeightPx(boolean reserveWeatherSlot)"));
         String prime = section(host,
                 "private void primeContextualGeometryTarget",
                 "private int stableCompactDateRowHeightPx");
         assertTrue(prime.contains("int dateHeight = stableCompactDateRowHeightPx()"));
-        assertTrue(prime.contains("int weatherHeight = stableCompactWeatherRowHeightPx()"));
+        assertTrue(prime.contains("stableCompactWeatherRowHeightPx(reserveWeatherSlot)"));
+    }
+
+    @Test
+    public void smallAodForecastAnchorReservesWeatherSlotInPrimeAndNormalTargetPaths()
+            throws Exception {
+        String host = source("CouiClockHostView");
+        String prime = section(host,
+                "private void primeContextualGeometryTarget",
+                "private int stableCompactDateRowHeightPx");
+        String normal = section(host,
+                "private void applyInformationTargets",
+                "private void updateStableLargeForecastCard");
+        assertTrue(prime.contains("reserveSmallAodWeatherSlot"));
+        assertTrue(prime.contains("stableCompactWeatherRowHeightPx(reserveWeatherSlot)"));
+        assertTrue(normal.contains("reserveSmallAodWeatherSlot"));
+        assertTrue(normal.contains("stableCompactWeatherRowHeightPx(reserveWeatherSlot)"));
     }
 
     @Test

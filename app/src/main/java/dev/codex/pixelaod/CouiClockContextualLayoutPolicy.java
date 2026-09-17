@@ -15,6 +15,11 @@ final class CouiClockContextualLayoutPolicy {
         return aodEntryInProgress && dozing && smallScene && cardVisible;
     }
 
+    /** Keep the forecast Y invariant while current-weather content arrives asynchronously. */
+    static boolean reserveSmallAodWeatherSlot(boolean dozing, boolean smallScene) {
+        return dozing && smallScene;
+    }
+
     static float largeContextualStart(float containerWidthPx, float visibleContentWidthPx) {
         float container = Math.max(0f, containerWidthPx);
         float content = Math.max(0f, visibleContentWidthPx);

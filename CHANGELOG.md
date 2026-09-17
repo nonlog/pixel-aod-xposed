@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.56] - 2026-09-17
+### Fixed
+- Freeze the Small AOD tomorrow-forecast vertical anchor across asynchronous current-weather refreshes. The dozing Small scene now reserves the current-weather row slot from its first geometry transaction, even when weather text/icon has not arrived yet, so later weather availability cannot push the forecast row to a second Y position.
+- Preserve the accepted 0.1.52 compact AOD right/up clock endpoint, 32 dp leading-edge alignment, and final steady-state spacing. The 0.1.55 deferred alpha reveal remains as entry-time protection; this change removes the late post-entry reflow that it could not cover.
+
 ## [0.1.55] - 2026-09-17
 ### Fixed
 - Remove the last visible Small-AOD forecast-row drift by separating layout ownership from pixel visibility during the lockscreen-to-AOD transaction. Forecast/contextual content is prepared immediately and continues reserving its final slot for media/notification layout, but its parent row stays fully transparent while the Small clock is moving.

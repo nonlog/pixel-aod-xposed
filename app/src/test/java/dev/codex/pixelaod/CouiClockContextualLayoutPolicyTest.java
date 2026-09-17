@@ -78,6 +78,13 @@ public final class CouiClockContextualLayoutPolicyTest {
     }
 
     @Test
+    public void smallAodReservesWeatherSlotAcrossAsyncWeatherArrival() {
+        assertTrue(CouiClockContextualLayoutPolicy.reserveSmallAodWeatherSlot(true, true));
+        assertFalse(CouiClockContextualLayoutPolicy.reserveSmallAodWeatherSlot(false, true));
+        assertFalse(CouiClockContextualLayoutPolicy.reserveSmallAodWeatherSlot(true, false));
+    }
+
+    @Test
     public void smallAodEntryDefersVisibleContextualPixelsUntilEndpoint() {
         assertTrue(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
                 true, true, true, true));

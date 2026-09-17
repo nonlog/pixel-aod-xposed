@@ -921,9 +921,13 @@ final class CouiClockHostView extends FrameLayout {
         if (presentation.dozing()) {
             top += compactAodVerticalOffsetPx();
         }
+        boolean reserveWeatherSlot =
+                CouiClockContextualLayoutPolicy.reserveSmallAodWeatherSlot(
+                        presentation.dozing(), true);
         int dateHeight = stableCompactDateRowHeightPx();
-        int weatherHeight = stableCompactWeatherRowHeightPx();
-        boolean weatherVisible = weatherView.getVisibility() == VISIBLE
+        int weatherHeight = stableCompactWeatherRowHeightPx(reserveWeatherSlot);
+        boolean weatherVisible = reserveWeatherSlot
+                || weatherView.getVisibility() == VISIBLE
                 || weatherIconView.getVisibility() == VISIBLE;
         float weatherY = top + dateHeight
                 + dp(CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP);
@@ -953,14 +957,17 @@ final class CouiClockHostView extends FrameLayout {
         return Math.max(0, height);
     }
 
-    private int stableCompactWeatherRowHeightPx() {
-        int height = weatherView.getVisibility() == VISIBLE
+    private int stableCompactWeatherRowHeightPx(boolean reserveWeatherSlot) {
+        int height = weatherView.getVisibility() == VISIBLE || reserveWeatherSlot
                 ? Math.max(0, weatherView.getLineHeight()) : 0;
         if (weatherIconView.getVisibility() == VISIBLE) {
             ViewGroup.LayoutParams params = weatherIconView.getLayoutParams();
             if (params != null) {
                 height = Math.max(height, Math.max(0, params.height));
             }
+        }
+        if (reserveWeatherSlot) {
+            height = Math.max(height, dp(CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP));
         }
         return height;
     }
@@ -1796,9 +1803,14 @@ final class CouiClockHostView extends FrameLayout {
             dateY = top;
             weatherX = dateX;
             if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL) {
+                boolean reserveWeatherSlot =
+                        CouiClockContextualLayoutPolicy.reserveSmallAodWeatherSlot(
+                                presentation.dozing(), true);
                 contextualDateHeight = stableCompactDateRowHeightPx();
-                contextualWeatherHeight = stableCompactWeatherRowHeightPx();
-                contextualWeatherVisible = weatherView.getVisibility() == VISIBLE
+                contextualWeatherHeight =
+                        stableCompactWeatherRowHeightPx(reserveWeatherSlot);
+                contextualWeatherVisible = reserveWeatherSlot
+                        || weatherView.getVisibility() == VISIBLE
                         || weatherIconView.getVisibility() == VISIBLE;
             }
             weatherY = top + contextualDateHeight
