@@ -56,4 +56,26 @@ public final class CouiClockContextualGeometryWiringTest {
         assertTrue(method.contains("contextualGroup.setTranslationX"));
         assertTrue(method.contains("contextualGroup.setTranslationY"));
     }
+
+    @Test
+    public void smallGeometryUsesPrelayoutStableRowHeights() throws Exception {
+        String host = source("CouiClockHostView");
+        assertTrue(host.contains("stableCompactDateRowHeightPx()"));
+        assertTrue(host.contains("stableCompactWeatherRowHeightPx()"));
+        String prime = section(host,
+                "private void primeContextualGeometryTarget",
+                "private int stableCompactDateRowHeightPx");
+        assertTrue(prime.contains("int dateHeight = stableCompactDateRowHeightPx()"));
+        assertTrue(prime.contains("int weatherHeight = stableCompactWeatherRowHeightPx()"));
+    }
+
+    @Test
+    public void hiddenSmallContextualLetsMediaReclaimTheSlot() throws Exception {
+        String host = source("CouiClockHostView");
+        String content = section(host,
+                "private void applyContentTargets",
+                "private void applyContentViewTarget");
+        assertTrue(content.contains("Scene.SMALL"));
+        assertTrue(content.contains("compactContentTopWithoutContextual"));
+    }
 }

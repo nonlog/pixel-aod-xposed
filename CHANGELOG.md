@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.54] - 2026-09-17
+### Fixed
+- Stabilize Small AOD forecast-row Y before the next Android measure/layout pass. Compact date/weather row heights are now derived from current visible TextView line metrics and icon geometry, so an async forecast reveal cannot first use stale lockscreen measurements and then drift to a second position one frame later.
+- When the Small AOD forecast/contextual row is absent, media and notification content now reclaim that row's slot instead of falling back to the older fixed partial-content Y. This removes the large empty band between the raised compact clock and media while leaving the accepted clock endpoint unchanged.
+
 ## [0.1.53] - 2026-09-17
 ### Fixed
 - Commit Small AOD contextual/weather geometry in the same frame that freshly prepared forecast pixels become visible. The row now receives its final 32 dp leading edge, compact AOD vertical offset, and burn-in translation before visibility, preventing the occasional lockscreen-position flash before the final AOD position.

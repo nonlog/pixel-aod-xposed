@@ -43,6 +43,12 @@ final class CouiClockContextualLayoutPolicy {
         return infoBottom + Math.max(0f, gapPx);
     }
 
+    static float compactContentTopWithoutContextual(float defaultTopPx,
+            float contextualTopPx, float gapPx) {
+        return Math.min(defaultTopPx,
+                contextualTopPx + Math.max(0f, gapPx));
+    }
+
     static float lowerContentTop(float defaultTopPx, boolean contextualVisible,
             float contextualTopPx, int contextualMeasuredHeightPx,
             float contextualFallbackHeightPx, float gapPx) {

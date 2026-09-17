@@ -874,11 +874,14 @@ final class CouiClockHostView extends FrameLayout {
         if (presentation.dozing()) {
             top += compactAodVerticalOffsetPx();
         }
-        float weatherY = top + dateGroup.getMeasuredHeight()
+        int dateHeight = stableCompactDateRowHeightPx();
+        int weatherHeight = stableCompactWeatherRowHeightPx();
+        boolean weatherVisible = weatherView.getVisibility() == VISIBLE
+                || weatherIconView.getVisibility() == VISIBLE;
+        float weatherY = top + dateHeight
                 + dp(CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP);
         float contextualY = CouiClockContextualLayoutPolicy.contextualTop(
-                top, dateGroup.getMeasuredHeight(), weatherView.getVisibility() == VISIBLE,
-                weatherY, weatherGroup.getMeasuredHeight(),
+                top, dateHeight, weatherVisible, weatherY, weatherHeight,
                 dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP));
         float contextualX = PresentationLayoutDirectionPolicy.startAlignedX(
                 getWidth(), contextualGroup.getMeasuredWidth(),
@@ -889,6 +892,30 @@ final class CouiClockHostView extends FrameLayout {
         contextualTargetTopPx = contextualY + yOffset;
         contextualGroup.setTranslationX(contextualX + xOffset);
         contextualGroup.setTranslationY(contextualTargetTopPx);
+    }
+
+    /** Stable compact info geometry that is valid before the next measure/layout pass. */
+    private int stableCompactDateRowHeightPx() {
+        int height = 0;
+        if (dateView.getVisibility() == VISIBLE) {
+            height = Math.max(height, dateView.getLineHeight());
+        }
+        if (weekView.getVisibility() == VISIBLE) {
+            height = Math.max(height, weekView.getLineHeight());
+        }
+        return Math.max(0, height);
+    }
+
+    private int stableCompactWeatherRowHeightPx() {
+        int height = weatherView.getVisibility() == VISIBLE
+                ? Math.max(0, weatherView.getLineHeight()) : 0;
+        if (weatherIconView.getVisibility() == VISIBLE) {
+            ViewGroup.LayoutParams params = weatherIconView.getLayoutParams();
+            if (params != null) {
+                height = Math.max(height, Math.max(0, params.height));
+            }
+        }
+        return height;
     }
 
     private void applyContextualIconGeometry(ContextualAtAGlanceCard displayedCard) {
@@ -1650,6 +1677,9 @@ final class CouiClockHostView extends FrameLayout {
         float contextualX;
         float contextualY;
         float contextualGapPx;
+        int contextualDateHeight = dateGroup.getMeasuredHeight();
+        int contextualWeatherHeight = weatherGroup.getMeasuredHeight();
+        boolean contextualWeatherVisible = weatherView.getVisibility() == VISIBLE;
         boolean rtl = isRtl();
         if (presentation.visualScene() == CouiClockPresentationModel.Scene.LARGE) {
             float dozingScale = presentation.dozing() ? surface.scale : 1f;
@@ -1713,7 +1743,13 @@ final class CouiClockHostView extends FrameLayout {
             }
             dateY = top;
             weatherX = dateX;
-            weatherY = top + dateGroup.getMeasuredHeight()
+            if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL) {
+                contextualDateHeight = stableCompactDateRowHeightPx();
+                contextualWeatherHeight = stableCompactWeatherRowHeightPx();
+                contextualWeatherVisible = weatherView.getVisibility() == VISIBLE
+                        || weatherIconView.getVisibility() == VISIBLE;
+            }
+            weatherY = top + contextualDateHeight
                     + dp(CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP);
             contextualX = PresentationLayoutDirectionPolicy.startAlignedX(
                     getWidth(), contextualGroup.getMeasuredWidth(),
@@ -1722,8 +1758,8 @@ final class CouiClockHostView extends FrameLayout {
             contextualGapPx = dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
         }
         contextualY = CouiClockContextualLayoutPolicy.contextualTop(
-                dateY, dateGroup.getMeasuredHeight(), weatherView.getVisibility() == VISIBLE,
-                weatherY, weatherGroup.getMeasuredHeight(), contextualGapPx);
+                dateY, contextualDateHeight, contextualWeatherVisible,
+                weatherY, contextualWeatherHeight, contextualGapPx);
         float xOffset = presentation.dozing() ? burnInX : 0f;
         float yOffset = presentation.dozing() ? burnInY : 0f;
         applyInformationTarget(dateGroup, dateX + xOffset, dateY + yOffset, animate, duration);
@@ -1839,9 +1875,18 @@ final class CouiClockHostView extends FrameLayout {
                 == CouiClockPresentationModel.Scene.SMALL
                 ? PixelAodVisualStyle.COMPACT_CONTEXTUAL_TO_NOTIFICATION_GAP_DP
                 : PixelAodVisualStyle.LARGE_INFO_ROW_GAP_DP);
-        baseY = CouiClockContextualLayoutPolicy.lowerContentTop(baseY, contextualVisible,
-                contextualTargetTopPx, contextualGroup.getMeasuredHeight(),
-                contextualFallbackHeightPx, contextualToContentGapPx);
+        if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL
+                && !contextualVisible) {
+            // Once the forecast/event row is gone, let media/notification content reclaim its
+            // slot instead of falling back to the old fixed partial-content ratio and leaving a
+            // large empty band below the newly raised compact AOD clock.
+            baseY = CouiClockContextualLayoutPolicy.compactContentTopWithoutContextual(
+                    baseY, contextualTargetTopPx, contextualToContentGapPx);
+        } else {
+            baseY = CouiClockContextualLayoutPolicy.lowerContentTop(baseY, contextualVisible,
+                    contextualTargetTopPx, contextualGroup.getMeasuredHeight(),
+                    contextualFallbackHeightPx, contextualToContentGapPx);
+        }
         float mediaY = baseY;
         float notificationY = mediaVisible
                 ? baseY + mediaGroup.getMeasuredHeight()
