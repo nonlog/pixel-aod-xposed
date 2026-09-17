@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.52] - 2026-09-17
+### Fixed
+- Recalibrate the compact AOD endpoint so its painted clock leading edge lands on the same 32 dp column used by AOD contextual, media, and notification rows instead of drifting left when the AOD font weight changes. Burn-in X remains shared, so the alignment is preserved while the ambient surface moves.
+- Move the complete compact AOD upper stack 16 dp upward relative to the lockscreen baseline. The lockscreen geometry is unchanged; the lockscreen-to-AOD handoff now resolves toward the right/up endpoint instead of the previous left/down drift, while date/weather/contextual/media/notification spacing remains internally consistent.
+
 ## [0.1.51] - 2026-09-16
 ### Fixed
 - Give pocket/proximity suppression strict priority over both Power Saving charging AOD hold and incoming-notification temporary AOD. Pixel AOD now observes OPlus' already-registered AOD gesture-proximity listener (sensor type 33171066), so a raw NEAR can stop module-owned keep-alive/re-show behavior even when the vendor ProximityTask commit path is not emitted during the charging extension.

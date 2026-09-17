@@ -1667,6 +1667,10 @@ final class CouiClockHostView extends FrameLayout {
                     : CouiClockGeometryPolicy.INFO_Y_RATIO)
                     + dp(immersed && !presentation.dozing()
                     ? 30f : CouiClockGeometryPolicy.INFO_Y_OFFSET_DP);
+            if (presentation.dozing()
+                    && presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL) {
+                top += compactAodVerticalOffsetPx();
+            }
             float centeredInformationStart = centerX - maximumWidth / 2f;
             dateX = centeredInformationStart;
             if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL
@@ -1793,6 +1797,10 @@ final class CouiClockHostView extends FrameLayout {
         float mediaBaseX = PresentationLayoutDirectionPolicy.startAlignedX(
                 getWidth(), mediaGroup.getMeasuredWidth(), startInset, rtl) + burnInX;
         float baseY = getHeight() * CouiClockGeometryPolicy.PARTIAL_CONTENT_TOP_RATIO + burnInY;
+        if (presentation.dozing()
+                && presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL) {
+            baseY += compactAodVerticalOffsetPx();
+        }
         ContextualAtAGlanceCard contextualCard =
                 ContextualAtAGlancePresentation.current(contextualGroup);
         boolean contextualVisible = contextualCard.isVisible();
@@ -2010,13 +2018,47 @@ final class CouiClockHostView extends FrameLayout {
         float x3 = after2 - leftCorrections[3];
         float burnX = presentation.dozing() ? burnInX : 0f;
         float burnY = presentation.dozing() ? burnInY : 0f;
-        return new GlyphTarget[]{
+        GlyphTarget[] targets = new GlyphTarget[]{
                 new GlyphTarget(x0 + burnX, y + burnY, surface.scale, 1f),
                 new GlyphTarget(x1 + burnX, y + burnY, surface.scale, 1f),
                 new GlyphTarget(x2 + burnX, y + burnY, surface.scale, 1f),
                 new GlyphTarget(x3 + burnX, y + burnY, surface.scale, 1f),
                 new GlyphTarget(colonX + burnX, y + burnY, surface.scale, 1f)
         };
+        return alignCompactAodClockTargets(glyphSet, targets, burnX);
+    }
+
+    private GlyphTarget[] alignCompactAodClockTargets(GlyphSet glyphSet,
+            GlyphTarget[] targets, float burnX) {
+        if (!presentation.dozing()
+                || presentation.visualScene() != CouiClockPresentationModel.Scene.SMALL
+                || targets == null || targets.length == 0) {
+            return targets;
+        }
+        float clockLeft = compactClockLeft(glyphSet, targets, burnX);
+        float clockRight = compactClockRight(glyphSet, targets, burnX);
+        float shiftX = CouiClockGeometryPolicy.resolveCompactAodClockAlignmentShift(
+                getWidth(), clockLeft, clockRight,
+                dp(PixelAodVisualStyle.COMPACT_CLOCK_GLYPH_LEADING_INSET_DP),
+                dp(CouiClockGeometryPolicy.AOD_SMALL_PAINTED_LEADING_DP), isRtl());
+        if (Math.abs(shiftX) < 0.01f) {
+            return targets;
+        }
+        GlyphTarget[] aligned = new GlyphTarget[targets.length];
+        for (int i = 0; i < targets.length; i++) {
+            GlyphTarget target = targets[i];
+            aligned[i] = new GlyphTarget(target.x + shiftX, target.y, target.scale, target.alpha);
+        }
+        return aligned;
+    }
+
+    private float compactAodVerticalOffsetPx() {
+        if (!presentation.dozing()
+                || presentation.visualScene() != CouiClockPresentationModel.Scene.SMALL) {
+            return 0f;
+        }
+        return dp(CouiClockGeometryPolicy.AOD_SMALL.topDp
+                - CouiClockGeometryPolicy.LS_SMALL.topDp);
     }
 
     private float compactClockRight(GlyphSet glyphSet, GlyphTarget[] targets, float burnX) {

@@ -21,6 +21,10 @@ public final class CouiClockGeometryPolicy {
     public static final float WEATHER_ICON_GAP_DP = 4f;
     public static final float PARTIAL_CONTENT_TOP_RATIO = .255f;
     public static final float PARTIAL_CONTENT_X_DP = 32f;
+    /** Small AOD moves the entire upper content stack 16 dp above the lockscreen baseline. */
+    public static final float AOD_SMALL_VERTICAL_SHIFT_DP = -16f;
+    /** Painted AOD clock edge shares the contextual/media/notification content column. */
+    public static final float AOD_SMALL_PAINTED_LEADING_DP = PARTIAL_CONTENT_X_DP;
     public static final float MEDIA_TO_NOTIFICATION_GAP_DP = 28f;
     public static final float NOTIFICATION_ICON_SIZE_DP = 18f;
     public static final float NOTIFICATION_ICON_GAP_DP = 15f;
@@ -90,7 +94,7 @@ public final class CouiClockGeometryPolicy {
             0f, .105f, 25f, .36170214f, .25f, 8f, 500f, 96f, -.09f,
             0f, 0f, false);
     public static final SurfaceTarget AOD_SMALL = new SurfaceTarget(
-            0f, .105f, 25f, .36170214f, .25f, 10f, 180f, 96f, -.09f,
+            0f, .105f, 25f + AOD_SMALL_VERTICAL_SHIFT_DP, .36170214f, .25f, 10f, 180f, 96f, -.09f,
             0f, 0f, true);
     public static final SurfaceTarget LS_IMMERSED = new SurfaceTarget(
             0f, .072f, 30f, .32978722f, .25f, 8f, 500f, 96f, -.09f,
@@ -101,6 +105,23 @@ public final class CouiClockGeometryPolicy {
         float requiredStart = Math.max(centeredStart, clockRight + Math.max(0f, minimumGap));
         float safeMaximumStart = Math.max(centeredStart, maximumStart);
         return Math.min(requiredStart, safeMaximumStart);
+    }
+
+    /**
+     * Aligns the compact AOD clock's painted start edge to the shared AOD content column.
+     * The caller supplies the optical glyph inset separately so the target remains stable across
+     * the AOD variable-font weight change and mirrors correctly for RTL.
+     */
+    static float resolveCompactAodClockAlignmentShift(float containerWidth, float clockLeft,
+            float clockRight, float paintedLeadingInset, float targetPaintedLeading,
+            boolean rtl) {
+        float safeInset = Math.max(0f, paintedLeadingInset);
+        float safeTarget = Math.max(0f, targetPaintedLeading);
+        if (!rtl) {
+            return safeTarget - safeInset - clockLeft;
+        }
+        float desiredClockRight = Math.max(0f, containerWidth) - safeTarget + safeInset;
+        return desiredClockRight - clockRight;
     }
 
     private CouiClockGeometryPolicy() {

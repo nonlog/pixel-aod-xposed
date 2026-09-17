@@ -67,7 +67,7 @@ public final class CouiClockGeometryPolicyTest {
         assertEquals(.25f, target.centerRatio, EPSILON);
         assertEquals(10f, target.centerDp, EPSILON);
         assertEquals(.105f, target.topRatio, EPSILON);
-        assertEquals(25f, target.topDp, EPSILON);
+        assertEquals(9f, target.topDp, EPSILON);
         assertEquals(180f, target.weight, EPSILON);
         assertEquals(96f, target.opsz, EPSILON);
         assertEquals(-.09f, target.trackingFactor, EPSILON);
@@ -108,6 +108,8 @@ public final class CouiClockGeometryPolicyTest {
         assertEquals(4f, CouiClockGeometryPolicy.WEATHER_ICON_GAP_DP, EPSILON);
         assertEquals(.255f, CouiClockGeometryPolicy.PARTIAL_CONTENT_TOP_RATIO, EPSILON);
         assertEquals(32f, CouiClockGeometryPolicy.PARTIAL_CONTENT_X_DP, EPSILON);
+        assertEquals(-16f, CouiClockGeometryPolicy.AOD_SMALL_VERTICAL_SHIFT_DP, EPSILON);
+        assertEquals(32f, CouiClockGeometryPolicy.AOD_SMALL_PAINTED_LEADING_DP, EPSILON);
         assertEquals(28f, CouiClockGeometryPolicy.MEDIA_TO_NOTIFICATION_GAP_DP, EPSILON);
         assertEquals(18f, CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP, EPSILON);
         assertEquals(15f, CouiClockGeometryPolicy.NOTIFICATION_ICON_GAP_DP, EPSILON);
@@ -117,6 +119,32 @@ public final class CouiClockGeometryPolicyTest {
         assertEquals(.75f, CouiClockGeometryPolicy.BATTERY_BURN_IN_X_SCALE, EPSILON);
         assertEquals(.5f, CouiClockGeometryPolicy.BATTERY_BURN_IN_Y_SCALE, EPSILON);
         assertEquals(64f, CouiClockGeometryPolicy.BATTERY_BOTTOM_MARGIN_DP, EPSILON);
+    }
+
+    @Test
+    public void compactAodMovesUpRelativeToTheLockscreenBaseline() {
+        assertEquals(-16f, CouiClockGeometryPolicy.AOD_SMALL.topDp
+                - CouiClockGeometryPolicy.LS_SMALL.topDp, EPSILON);
+        assertTrue(CouiClockGeometryPolicy.AOD_SMALL.topDp
+                < CouiClockGeometryPolicy.LS_SMALL.topDp);
+    }
+
+    @Test
+    public void compactAodClockAlignmentLocksPaintedLeadingEdgeToContentColumnLtr() {
+        float shift = CouiClockGeometryPolicy.resolveCompactAodClockAlignmentShift(
+                1440f, 92f, 408f, 20f, 128f, false);
+
+        assertEquals(16f, shift, EPSILON);
+        assertEquals(128f, 92f + shift + 20f, EPSILON);
+    }
+
+    @Test
+    public void compactAodClockAlignmentMirrorsTheContentColumnForRtl() {
+        float shift = CouiClockGeometryPolicy.resolveCompactAodClockAlignmentShift(
+                1440f, 982f, 1290f, 20f, 128f, true);
+
+        assertEquals(42f, shift, EPSILON);
+        assertEquals(128f, 1440f - (1290f + shift - 20f), EPSILON);
     }
 
     @Test
