@@ -149,6 +149,8 @@ final class CouiClockHostView extends FrameLayout {
     private float contextualTargetTopPx;
     private boolean contextualSurfaceActive;
     private boolean deferredSmallContextualReveal;
+    private boolean smallAodContextualTransitionInProgress;
+    private Runnable finishSmallAodContextualTransitionRunnable;
 
     CouiClockHostView(Context context) {
         this(context, context != null ? context.getClassLoader() : null);
@@ -327,16 +329,33 @@ final class CouiClockHostView extends FrameLayout {
             deferredLiveAodContent = normalizeContent(next.content());
             return;
         }
+        CouiClockPresentationModel previous = presentation;
+        boolean animatedSmallAodEntry = previous != null
+                && !previous.dozing()
+                && next.dozing()
+                && next.visualScene() == CouiClockPresentationModel.Scene.SMALL
+                && SystemAnimationScalePolicy.shouldAnimate(animate);
         cancelAodEntryTransaction();
         if (!next.dozing() || !next.partialAod()) {
             cancelLiveAodCrossfade();
         }
+        if (!next.dozing() || next.visualScene() != CouiClockPresentationModel.Scene.SMALL) {
+            cancelSmallAodContextualTransition();
+        }
+        if (animatedSmallAodEntry) {
+            beginSmallAodContextualTransition();
+        }
         presentation = next;
+        // Geometry priming must consume the same burn-in owner/value as the target transaction.
+        // Resolving it after contextual pixels were prepared allowed a second X/Y write.
+        updateBurnInForPresentation();
         refreshContextualFromExistingAdapters(diagnosticSource + "#presentation", false);
         applyDataForContent(next.content());
-        updateBurnInForPresentation();
         applyClockColors();
         scheduleApplyTargets(animate);
+        if (animatedSmallAodEntry) {
+            scheduleSmallAodContextualTransitionFinish();
+        }
     }
 
     /**
@@ -423,6 +442,7 @@ final class CouiClockHostView extends FrameLayout {
         }
         diagnosticSource = source == null ? "begin-aod" : source;
         cancelAodEntryTransaction();
+        cancelSmallAodContextualTransition();
         cancelPendingLiveAodRetarget(true);
         cancelLiveAodCrossfade();
         cancelRunningPropertyAnimations();
@@ -810,7 +830,8 @@ final class CouiClockHostView extends FrameLayout {
                 presentation.visualScene(), presentation.dozing(), monetColor, aodMonetColor);
         boolean deferSmallEntryReveal =
                 CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
-                        aodEntryInProgress, presentation.dozing(),
+                        aodEntryInProgress || smallAodContextualTransitionInProgress,
+                        presentation.dozing(),
                         presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL,
                         card.isVisible());
         boolean changed = ContextualAtAGlancePresentation.apply(
@@ -837,7 +858,7 @@ final class CouiClockHostView extends FrameLayout {
             contextualGroup.setVisibility(VISIBLE);
             contextualGroup.setAlpha(0f);
             deferredSmallContextualReveal = true;
-        } else if (!aodEntryInProgress) {
+        } else if (!aodEntryInProgress && !smallAodContextualTransitionInProgress) {
             deferredSmallContextualReveal = false;
         }
         if (changed) {
@@ -847,6 +868,40 @@ final class CouiClockHostView extends FrameLayout {
             scheduleApplyTargets(false);
         }
         updateAccessibilitySemantics();
+    }
+
+    private void beginSmallAodContextualTransition() {
+        cancelSmallAodContextualTransition();
+        smallAodContextualTransitionInProgress = true;
+        contextualGroup.animate().cancel();
+        contextualGroup.setAlpha(0f);
+    }
+
+    private void scheduleSmallAodContextualTransitionFinish() {
+        if (!smallAodContextualTransitionInProgress) {
+            return;
+        }
+        if (finishSmallAodContextualTransitionRunnable != null) {
+            removeCallbacks(finishSmallAodContextualTransitionRunnable);
+        }
+        finishSmallAodContextualTransitionRunnable = () -> {
+            finishSmallAodContextualTransitionRunnable = null;
+            if (!smallAodContextualTransitionInProgress) {
+                return;
+            }
+            smallAodContextualTransitionInProgress = false;
+            revealDeferredSmallContextualAfterEntry();
+        };
+        postDelayed(finishSmallAodContextualTransitionRunnable,
+                SystemAnimationScalePolicy.scaledNonAnimatorDelayMillis(TARGET_TRANSITION_MS));
+    }
+
+    private void cancelSmallAodContextualTransition() {
+        if (finishSmallAodContextualTransitionRunnable != null) {
+            removeCallbacks(finishSmallAodContextualTransitionRunnable);
+            finishSmallAodContextualTransitionRunnable = null;
+        }
+        smallAodContextualTransitionInProgress = false;
     }
 
     /** Reveals Small AOD contextual pixels only after the clock entry transaction is final. */
@@ -1140,6 +1195,16 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     void setBurnInTranslation(float x, float y, long durationMillis) {
+        if (OosAodHandoffProfile.usesSystemManagedBurnIn(Build.DISPLAY)) {
+            manualBurnIn = false;
+            if (burnInX == 0f && burnInY == 0f) {
+                return;
+            }
+            burnInX = 0f;
+            burnInY = 0f;
+            applyTargets(false, 0L);
+            return;
+        }
         manualBurnIn = true;
         if (burnInX == x && burnInY == y) {
             return;
@@ -1199,6 +1264,7 @@ final class CouiClockHostView extends FrameLayout {
 
     void cancelTransitions() {
         cancelAodEntryTransaction();
+        cancelSmallAodContextualTransition();
         cancelPendingLiveAodRetarget(true);
         cancelLiveAodCrossfade();
         transitionGeneration.invalidate();
@@ -1219,7 +1285,8 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     boolean isTransitionActive() {
-        return aodEntryInProgress || liveCrossfadeInProgress;
+        return aodEntryInProgress || smallAodContextualTransitionInProgress
+                || liveCrossfadeInProgress;
     }
 
     private boolean batteryEnabled = true;
@@ -2406,12 +2473,13 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     private void updateBurnInForPresentation() {
-        if (manualBurnIn) {
-            return;
-        }
-        if (!presentation.dozing()) {
+        if (!presentation.dozing()
+                || OosAodHandoffProfile.usesSystemManagedBurnIn(Build.DISPLAY)) {
             burnInX = 0f;
             burnInY = 0f;
+            return;
+        }
+        if (manualBurnIn) {
             return;
         }
         long minute = System.currentTimeMillis() / 60000L;

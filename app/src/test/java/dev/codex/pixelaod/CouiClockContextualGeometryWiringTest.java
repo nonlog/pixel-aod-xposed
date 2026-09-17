@@ -96,6 +96,33 @@ public final class CouiClockContextualGeometryWiringTest {
     }
 
     @Test
+    public void normalLockscreenToSmallAodPresentAlsoDefersContextualPixels() throws Exception {
+        String host = source("CouiClockHostView");
+        String present = section(host,
+                "void present(CouiClockPresentationModel next, boolean animate, String source)",
+                "/**\n     * Synchronously parks");
+        assertTrue(present.contains("beginSmallAodContextualTransition()"));
+        assertTrue(present.contains("scheduleSmallAodContextualTransitionFinish()"));
+        assertTrue(present.indexOf("updateBurnInForPresentation()")
+                < present.indexOf("refreshContextualFromExistingAdapters"));
+        String refresh = section(host,
+                "private void refreshContextualFromExistingAdapters",
+                "private void beginSmallAodContextualTransition");
+        assertTrue(refresh.contains("aodEntryInProgress || smallAodContextualTransitionInProgress"));
+    }
+
+    @Test
+    public void systemManagedBurnInProfileOverridesCouiChildTranslation() throws Exception {
+        String host = source("CouiClockHostView");
+        String update = section(host,
+                "private void updateBurnInForPresentation()",
+                "private static float centeredBurnInOffset");
+        assertTrue(update.contains("OosAodHandoffProfile.usesSystemManagedBurnIn(Build.DISPLAY)"));
+        assertTrue(update.contains("burnInX = 0f"));
+        assertTrue(update.contains("burnInY = 0f"));
+    }
+
+    @Test
     public void smallAodEntryKeepsContextualRowTransparentUntilFinalEndpoint() throws Exception {
         String host = source("CouiClockHostView");
         String refresh = section(host,

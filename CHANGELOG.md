@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.57] - 2026-09-18
+### Fixed
+- Fix the real Lockscreen -> Small AOD forecast drift path instead of only the screen-off-from-unlocked entry helper. Normal ClockPlugin transitions use present(); their contextual row now reserves geometry while staying transparent through the same 550 ms clock target transaction, then re-primes the settled AOD endpoint and reveals with alpha only.
+- Resolve burn-in ownership before contextual geometry is prepared and restore the established OOS 16.0.9+ ownership boundary: when OosAodHandoffProfile says the native ClockPlugin owns burn-in, the COUI child applies zero module X/Y burn-in. This removes a second two-axis coordinate writer without changing the accepted 0.1.52 right/up AOD endpoint.
+- Keep 0.1.56's stable current-weather slot reservation, so late weather data also cannot move the tomorrow-forecast Y anchor after the transition.
+
 ## [0.1.56] - 2026-09-17
 ### Fixed
 - Freeze the Small AOD tomorrow-forecast vertical anchor across asynchronous current-weather refreshes. The dozing Small scene now reserves the current-weather row slot from its first geometry transaction, even when weather text/icon has not arrived yet, so later weather availability cannot push the forecast row to a second Y position.
