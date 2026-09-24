@@ -3526,6 +3526,10 @@ final class PixelAodHook {
                 ActiveClockRendererController.prepareNativeLockscreenReturn(
                         source + "#native-lockscreen-return-started");
             }
+            if (CouiClockAodExitTransitionPolicy.shouldRepairFinishedNativeExit(after)) {
+                ActiveClockRendererController.repairFinishedAodToLockscreen(
+                        source + "#native-aod-lockscreen-finished");
+            }
             if (NativeKeyguardSceneEligibility.becameIneligible(
                     before.presentationAllowed, after.presentationAllowed)) {
                 ActiveClockRendererController.suppressForNativeScene(source + "#ineligible");

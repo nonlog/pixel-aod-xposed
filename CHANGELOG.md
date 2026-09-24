@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.58] - 2026-09-24
+### Fixed
+- Fix the notification-peek wake race that could leave the persistent COUI host on its last AOD frame after the native DOZING/AOD -> LOCKSCREEN transition had already finished. ClockPlugin render remains the primary handoff owner; only a FINISHED transition whose host is still dozing triggers the synchronous safety net.
+- The safety net restores the remembered real lockscreen scene before consulting the transient AOD clock-size tracker, commits a non-dozing/non-partial presentation, and clears AOD-only content. This removes both the thin AOD clock weight and lingering AOD notification icons without changing the accepted clock geometry, animation curve, weather layout, or notification spacing.
+
 ## [0.1.57] - 2026-09-18
 ### Fixed
 - Fix the real Lockscreen -> Small AOD forecast drift path instead of only the screen-off-from-unlocked entry helper. Normal ClockPlugin transitions use present(); their contextual row now reserves geometry while staying transparent through the same 550 ms clock target transaction, then re-primes the settled AOD endpoint and reveals with alpha only.

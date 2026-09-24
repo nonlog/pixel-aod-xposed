@@ -121,9 +121,10 @@ final class CouiClockPluginHostController {
     }
 
     /**
-     * ClockPlugin render owns the AOD-to-lockscreen presentation handoff. Waking before a
-     * pre-armed non-lockscreen AOD has reached a real AOD state also cancels that pre-arm so a
-     * later normal lockscreen render cannot inherit it.
+     * ClockPlugin render remains the primary AOD-to-lockscreen presentation owner. Waking before
+     * a pre-armed non-lockscreen AOD has reached a real AOD state also cancels that pre-arm so a
+     * later normal lockscreen render cannot inherit it. Native LOCKSCREEN FINISHED is only a
+     * safety net for the proven case where that render is late or absent.
      */
     static void prepareAodToLockscreenTransition(String source) {
         runOnMain(() -> {
@@ -152,6 +153,72 @@ final class CouiClockPluginHostController {
      * stale UNLOCKED/KEYGUARD renders between dispatchStartedGoingToSleep and the real AOD render;
      * those renders must not animate the parked host away from this baseline.
      */
+    /**
+     * Native DOZING/AOD -> LOCKSCREEN FINISHED is authoritative enough to repair a stale
+     * persistent child after the normal ClockPlugin render missed its deadline. Do nothing when
+     * the host already settled: the regular render keeps full ownership of the accepted exit
+     * animation. Prefer the last real lockscreen scene over the current AOD clock-size tracker,
+     * because notification content can transiently force the AOD visual scene to SMALL.
+     */
+    static void repairFinishedAodToLockscreen(String source) {
+        runOnMain(() -> {
+            int repaired = 0;
+            int alreadySettled = 0;
+            int held = 0;
+            int rememberedScene = 0;
+            int trackerFallback = 0;
+            for (HostRecord record : snapshotRecords()) {
+                if (record == null || record.host.getParent() != record.root) {
+                    continue;
+                }
+                if (!record.host.presentation().dozing()) {
+                    alreadySettled++;
+                    continue;
+                }
+
+                CouiClockPresentationModel.Scene scene = record.lastLockscreenScene;
+                if (scene != null) {
+                    rememberedScene++;
+                } else {
+                    Object plugin = record.plugin != null ? record.plugin.get() : null;
+                    RenderState renderState = plugin != null
+                            ? readRenderState(plugin, false) : null;
+                    Integer clockSizeState = renderState != null
+                            ? renderState.clockSizeState : null;
+                    CouiClockPluginPresentationMapper.Mapping mapping =
+                            CouiClockPluginPresentationMapper.forcedLockscreenEntry(
+                                    clockSizeState, false, DEFAULT_AOD_CONTENT);
+                    CouiClockPresentationModel mapped = mapping.presentation();
+                    if (mapping.action() == CouiClockPluginPresentationMapper.Action.PRESENT
+                            && mapped != null) {
+                        scene = mapped.requestedScene();
+                        trackerFallback++;
+                    }
+                }
+
+                if (scene == null) {
+                    held++;
+                    continue;
+                }
+
+                CouiClockPresentationModel next = new CouiClockPresentationModel(
+                        scene, false, false, DEFAULT_AOD_CONTENT);
+                record.lastLockscreenScene = scene;
+                record.aodExitHandoffPending = false;
+                record.host.preloadLockscreenReturn(
+                        next, source + "#native-finished-stale-aod");
+                repaired++;
+            }
+            PixelAodLog.i("COUI finished AOD exit safety-net rendererMode=COUI_PORT"
+                    + " repairedHosts=" + repaired
+                    + " alreadySettledHosts=" + alreadySettled
+                    + " heldHosts=" + held
+                    + " rememberedScene=" + rememberedScene
+                    + " trackerFallback=" + trackerFallback
+                    + " source=" + source);
+        });
+    }
+
     static void prepareNonLockscreenAodEntry(String source) {
         runOnMain(() -> prepareNonLockscreenAodEntryOnMain(source));
     }

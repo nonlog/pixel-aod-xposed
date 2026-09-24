@@ -79,4 +79,34 @@ public final class CouiClockAodExitTransitionPolicyTest {
         assertFalse(CouiClockAodExitTransitionPolicy.animationAllowed(true, false));
         assertFalse(CouiClockAodExitTransitionPolicy.animationAllowed(false, true));
     }
+    @Test
+    public void finishedDozingToLockscreenRequestsStaleHostRepair() {
+        NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
+
+        assertTrue(CouiClockAodExitTransitionPolicy.shouldRepairFinishedNativeExit(
+                gate.observe("DOZING", "LOCKSCREEN", 1.0f, "FINISHED",
+                        "owner", "doze-finish")));
+        assertTrue(CouiClockAodExitTransitionPolicy.shouldRepairFinishedNativeExit(
+                gate.observe("AOD", "LOCKSCREEN", 1.0f, "FINISHED",
+                        "owner", "aod-finish")));
+    }
+
+    @Test
+    public void nativeExitRepairNeverStealsRunningAnimationOrOtherReturns() {
+        NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
+
+        assertFalse(CouiClockAodExitTransitionPolicy.shouldRepairFinishedNativeExit(
+                gate.observe("DOZING", "LOCKSCREEN", 0.0f, "STARTED",
+                        "owner", "start")));
+        assertFalse(CouiClockAodExitTransitionPolicy.shouldRepairFinishedNativeExit(
+                gate.observe("DOZING", "LOCKSCREEN", 0.7f, "RUNNING",
+                        "owner", "running")));
+        assertFalse(CouiClockAodExitTransitionPolicy.shouldRepairFinishedNativeExit(
+                gate.observe("DOZING", "LOCKSCREEN", 0.7f, "CANCELED",
+                        "owner", "cancel")));
+        assertFalse(CouiClockAodExitTransitionPolicy.shouldRepairFinishedNativeExit(
+                gate.observe("OCCLUDED", "LOCKSCREEN", 1.0f, "FINISHED",
+                        "owner", "alarm-return")));
+    }
+
 }

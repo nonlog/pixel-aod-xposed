@@ -40,6 +40,10 @@ final class ActiveClockRendererController {
         CouiClockPluginHostController.prepareAodToLockscreenTransition(source);
     }
 
+    static void repairFinishedAodToLockscreen(String source) {
+        CouiClockPluginHostController.repairFinishedAodToLockscreen(source);
+    }
+
     static void prepareNonLockscreenAodEntry(String source) {
         CouiClockPluginHostController.prepareNonLockscreenAodEntry(source);
     }

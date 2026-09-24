@@ -24,4 +24,15 @@ final class CouiClockAodExitTransitionPolicy {
     static boolean animationAllowed(boolean renderDriven, boolean rawUiStateAnimating) {
         return renderDriven && rawUiStateAnimating;
     }
+
+    static boolean shouldRepairFinishedNativeExit(
+            NativeKeyguardSceneEligibility.Snapshot scene) {
+        if (scene == null
+                || scene.phase != NativeKeyguardSceneEligibility.Phase.FINISHED
+                || scene.to != NativeKeyguardSceneEligibility.Scene.LOCKSCREEN) {
+            return false;
+        }
+        return scene.from == NativeKeyguardSceneEligibility.Scene.DOZING
+                || scene.from == NativeKeyguardSceneEligibility.Scene.AOD;
+    }
 }
