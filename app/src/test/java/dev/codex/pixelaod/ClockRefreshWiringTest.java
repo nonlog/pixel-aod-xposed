@@ -62,6 +62,24 @@ public class ClockRefreshWiringTest {
                 "public void onRtlPropertiesChanged").contains("onTimeTick(\"visibility-resume\")"));
     }
 
+    @Test public void everyPrimaryRevealHonorsLivePocketGuard() throws Exception {
+        String reveal = section(source("CouiClockHostView"),
+                "void setPrimaryVisible", "void cancelTransitions");
+        int guard = reveal.indexOf("PixelAodClockView.isPocketGuardActive()");
+        assertTrue("all render and prearm reveals must check the pocket guard", guard >= 0);
+        assertTrue(guard < reveal.indexOf("if (visible)"));
+        assertTrue(reveal.contains("PixelAodRuntimeState.isDeviceInteractive(getContext())"));
+    }
+
+    @Test public void cachedProximityGettersCannotOverrideDwellEvents() throws Exception {
+        String hook = source("PixelAodHook");
+        String getters = section(hook, "if (\"getProxNear\".equals",
+                "} else if (vendorWakeTriggerAuthorityHooked");
+        assertEquals("both cached getter paths must defer to the installed task hooks", 2,
+                getters.split("!vendorProximityPauseAuthorityHooked", -1).length - 1);
+        assertTrue(hook.contains("vendorProximityPauseAuthorityHooked = taskHooked"));
+    }
+
     @Test public void successfulDigitsPrecedeCacheCommitAndAncillaryWork() throws Exception {
         String tick = section(source("CouiClockHostView"),
                 "boolean onTimeTick(String source)", "void setInformation");
