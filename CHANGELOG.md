@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.60] - 2026-10-01
+### Fixed
+- Do not copy the Android `Hotspot turned off` status notification into AOD. Active Wi-Fi sharing status notifications remain eligible for the existing system-status icon path.
+- Apply the pocket/proximity guard to the active COUI host as soon as the vendor raw NEAR edge arrives, so charging Power Saving AOD cannot keep the clock visible while the proximity sensor is covered. Restore the host only after FAR and an active AOD session.
+
 ## [0.1.59] - 2026-10-01
 ### Fixed
 - Repair a native `DOZING/AOD -> LOCKSCREEN` exit when ClockPlugin has already published the lockscreen model but its target animation is still exposing the previous AOD frame. The existing FINISHED safety-net now cancels only that still-pending exit animation and commits the remembered lockscreen scene, clearing AOD-only media and notification presentation without changing geometry or animation parameters.

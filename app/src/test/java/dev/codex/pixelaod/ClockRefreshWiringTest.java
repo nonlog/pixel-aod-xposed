@@ -41,12 +41,16 @@ public class ClockRefreshWiringTest {
 
     @Test public void bothPocketRecoveryPathsReachPrimary() throws Exception {
         String text = source("PixelAodClockView");
-        assertTrue(section(text, "static void updateProximityFromOos",
-                "private static void clearProximityState").contains(
+        String update = section(text, "static void updateProximityFromOos",
+                "private static void clearProximityState");
+        assertTrue(update.contains(
                 "ActiveClockRendererController.onTimeTick(\"oos-proximity-resume\")"));
-        assertTrue(section(text, "static void resetProximityFromOos",
-                "static boolean isProximityNear").contains(
+        assertTrue(update.contains("ActiveClockRendererController.setPocketGuard"));
+        String reset = section(text, "static void resetProximityFromOos",
+                "static boolean isProximityNear");
+        assertTrue(reset.contains(
                 "ActiveClockRendererController.onTimeTick(\"oos-proximity-reset\")"));
+        assertTrue(reset.contains("ActiveClockRendererController.setPocketGuard(false"));
     }
 
     @Test public void persistentHostRefreshesBeforeRevealAndOnAncestorVisibility() throws Exception {

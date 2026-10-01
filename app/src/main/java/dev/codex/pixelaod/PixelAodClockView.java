@@ -355,6 +355,7 @@ public final class PixelAodClockView extends FrameLayout {
         }
         PowerSavingAodController.onPolicyChanged("oos-pocket-guard#" + normalizedSource);
         PixelPeekNotificationController.onPocketGuardChanged(blocked, normalizedSource);
+        ActiveClockRendererController.setPocketGuard(blocked, normalizedSource);
         refreshAodPolicyConsumers("oos-pocket-guard#" + normalizedSource);
         PixelAodLog.i("OOS proximity pause raw edge near=" + near
                 + " pocketModeEnabled=" + pocketModeEnabled
@@ -395,6 +396,7 @@ public final class PixelAodClockView extends FrameLayout {
         }
         PowerSavingAodController.onPolicyChanged("oos-proximity#" + normalizedSource);
         PixelPeekNotificationController.onPocketGuardChanged(pocketGuard, normalizedSource);
+        ActiveClockRendererController.setPocketGuard(pocketGuard, normalizedSource);
         PixelAodLog.i("OOS proximity state changed: near=" + near
                 + " appliedNear=" + isProximityNear()
                 + " pocketModeEnabled=" + pocketModeEnabled
@@ -431,6 +433,7 @@ public final class PixelAodClockView extends FrameLayout {
         PowerSavingAodController.onPolicyChanged("oos-proximity-reset#" + source);
         PixelPeekNotificationController.onPocketGuardChanged(false,
                 "oos-proximity-reset#" + source);
+        ActiveClockRendererController.setPocketGuard(false, "oos-proximity-reset#" + source);
         if (wasBlocked || snapshot.phaseChanged()) {
             mainHandler().post(() -> {
                 ActiveClockRendererController.onTimeTick("oos-proximity-reset");

@@ -36,6 +36,10 @@ final class ActiveClockRendererController {
         CouiClockPluginHostController.refreshAll(source);
     }
 
+    static void setPocketGuard(boolean blocked, String source) {
+        CouiClockPluginHostController.setPocketGuard(blocked, source);
+    }
+
     static void prepareAodToLockscreenTransition(String source) {
         CouiClockPluginHostController.prepareAodToLockscreenTransition(source);
     }

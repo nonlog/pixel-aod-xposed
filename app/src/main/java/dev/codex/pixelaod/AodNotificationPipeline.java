@@ -53,6 +53,11 @@ final class AodNotificationPipeline {
         }
         Notification notification = sbn.getNotification();
         boolean testNotification = isTestNotification(sbn);
+        if (isSystemNetworkStatusNotification(sbn)
+                && isHotspotDisabledNotificationText(systemNotificationText(sbn))) {
+            logFilteredNotification(sbn, "hotspot-disabled", trace);
+            return false;
+        }
         if (MODULE_PACKAGE.equals(sbn.getPackageName()) && !testNotification) {
             logFilteredNotification(sbn, "module-package-not-test-notification", trace);
             return false;
@@ -433,6 +438,20 @@ final class AodNotificationPipeline {
                 || joined.contains("wifi sharing")
                 || joined.contains("hotspot")
                 || joined.contains("tether");
+    }
+
+    static boolean isHotspotDisabledNotificationText(String text) {
+        if (text == null) {
+            return false;
+        }
+        String normalized = text.toLowerCase(Locale.US);
+        return normalized.contains("hotspot turned off")
+                || normalized.contains("hotspot is off")
+                || normalized.contains("hotspot disabled")
+                || normalized.contains("personal hotspot turned off")
+                || normalized.contains("personal hotspot is off")
+                || normalized.contains("个人热点已关闭")
+                || normalized.contains("热点已关闭");
     }
 
     static boolean isSystemUiDndNotification(StatusBarNotification sbn) {

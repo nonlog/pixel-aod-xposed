@@ -120,6 +120,35 @@ final class CouiClockPluginHostController {
         });
     }
 
+    static void setPocketGuard(boolean blocked, String source) {
+        runOnMain(() -> {
+            int hidden = 0;
+            int restored = 0;
+            for (HostRecord record : snapshotRecords()) {
+                if (record == null || record.host.getParent() != record.root) {
+                    continue;
+                }
+                if (blocked) {
+                    record.host.setPrimaryVisible(false, source + "#pocket-near");
+                    hidden++;
+                    continue;
+                }
+                Context context = record.root.getContext();
+                if (context == null || PixelAodRuntimeState.isDeviceInteractive(context)
+                        || !PixelAodClockView.isAodActive()) {
+                    continue;
+                }
+                record.host.setPrimaryVisible(true, source + "#pocket-far");
+                restored++;
+            }
+            PixelAodLog.i("COUI pocket guard presentation"
+                    + " blocked=" + blocked
+                    + " hiddenHosts=" + hidden
+                    + " restoredHosts=" + restored
+                    + " source=" + source);
+        });
+    }
+
     /**
      * ClockPlugin render remains the primary AOD-to-lockscreen presentation owner. Waking before
      * a pre-armed non-lockscreen AOD has reached a real AOD state also cancels that pre-arm so a
