@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.61] - 2026-10-01
+### Fixed
+- Keep the pocket guard effective across charging AOD ClockPlugin render/prearm refreshes. Every primary-host reveal now checks the live guard while the device is non-interactive.
+- When OPlus proximity task hooks are installed, cached proximity getters no longer overwrite raw/dwell events. This prevents a stale FAR read during the native NEAR dwell from releasing the guard and re-enabling charging AOD. Getter fallback remains available on unsupported vendor task seams.
+
 ## [0.1.60] - 2026-10-01
 ### Fixed
 - Do not copy the Android `Hotspot turned off` status notification into AOD. Active Wi-Fi sharing status notifications remain eligible for the existing system-status icon path.

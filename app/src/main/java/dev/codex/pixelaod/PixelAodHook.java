@@ -59,6 +59,7 @@ final class PixelAodHook {
     private static final AtomicBoolean TORCH_CALLBACK_REGISTERED = new AtomicBoolean(false);
     private static final AtomicBoolean TORCH_REFRESH_RECEIVER_REGISTERED = new AtomicBoolean(false);
     private static volatile boolean vendorWakeTriggerAuthorityHooked;
+    private static volatile boolean vendorProximityPauseAuthorityHooked;
     private static final String ACTION_SWITCH_FLASHLIGHT =
             "com.android.systemui.ACTION_SWITCH_FLASHLIGHT";
     private static final String ACTION_USER_SWITCHED = "android.intent.action.USER_SWITCHED";
@@ -2562,6 +2563,7 @@ final class PixelAodHook {
         } catch (Throwable t) {
             PixelAodLog.log("failed to hook OPlus proximity lifecycle reset", t);
         }
+        vendorProximityPauseAuthorityHooked = taskHooked;
         PixelAodLog.i("installed OPlus vendor proximity pause semantics"
                 + " liveSensor=" + sensorHooked
                 + " task=" + taskHooked
@@ -2664,12 +2666,18 @@ final class PixelAodHook {
                             + ",result=" + summarizeValue(param.getResult());
                     if ("getProxNear".equals(targetMethod.getName())
                             && param.getResult() instanceof Boolean) {
-                        observeCommittedOosProximity(
-                                (Boolean) param.getResult(), source, detail);
+                        // A getter can still report FAR during the vendor's NEAR dwell.
+                        // Only use cached values as a fallback when task hooks are unavailable.
+                        if (!vendorProximityPauseAuthorityHooked) {
+                            observeCommittedOosProximity(
+                                    (Boolean) param.getResult(), source, detail);
+                        }
                     } else if ("getProxNearForLuxAod".equals(targetMethod.getName())
                             && param.getResult() instanceof Boolean) {
-                        PixelAodClockView.observeRawProximityFromOos(
-                                (Boolean) param.getResult(), source, detail);
+                        if (!vendorProximityPauseAuthorityHooked) {
+                            PixelAodClockView.observeRawProximityFromOos(
+                                    (Boolean) param.getResult(), source, detail);
+                        }
                     } else if (vendorWakeTriggerAuthorityHooked
                             && isDisplayTriggerType(triggerType)) {
                         PixelAodLog.log("observed subordinate OPlus wake-trigger seam"

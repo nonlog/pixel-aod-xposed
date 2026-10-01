@@ -1254,6 +1254,9 @@ final class CouiClockHostView extends FrameLayout {
      * revealing a legacy module clock.</p>
      */
     void setPrimaryVisible(boolean visible, String source) {
+        // Render/prearm refreshes must not undo a NEAR edge's presentation suppression.
+        visible = visible && (PixelAodRuntimeState.isDeviceInteractive(getContext())
+                || !PixelAodClockView.isPocketGuardActive());
         if (visible) {
             // A persistent host can return without attach or a minute broadcast (pocket/doze).
             onTimeTick(source + "#before-visible");
