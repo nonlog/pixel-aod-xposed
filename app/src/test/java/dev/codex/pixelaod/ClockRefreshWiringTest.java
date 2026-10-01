@@ -76,6 +76,27 @@ public class ClockRefreshWiringTest {
         assertTrue(attach.contains("host.setPrimaryVisible(true"));
     }
 
+    @Test public void interruptedTargetsAreReappliedBeforeHiddenHostReturns() throws Exception {
+        String text = source("CouiClockHostView");
+        String cancel = section(text, "private void cancelRunningPropertyAnimations",
+                "private void applyTargets");
+        assertTrue("cancelled glyph animations cannot retain completed endpoint snapshots",
+                cancel.contains("appliedGlyphTargets.clear()"));
+        assertTrue("cancelled information animations cannot retain endpoint snapshots",
+                cancel.contains("appliedInformationTargets.clear()"));
+        String reveal = section(text, "void setPrimaryVisible", "void cancelTransitions");
+        int snap = reveal.indexOf("applyTargets(false, 0L)");
+        assertTrue("an interrupted hidden host must settle before it is visible",
+                snap >= 0 && snap < reveal.indexOf("setVisibility(VISIBLE)"));
+        assertTrue("a running visible animation must keep its normal ownership",
+                reveal.contains("getVisibility() != VISIBLE && appliedGlyphTargets.isEmpty()"));
+        String apply = section(text, "private void applyGlyphTarget",
+                "private void applyMorphColonTarget");
+        assertTrue("normal refreshes must retain target deduplication",
+                apply.indexOf("applied.equals(appliedGlyphTargets.get(view))")
+                        < apply.indexOf("view.animate().cancel()"));
+    }
+
     @Test public void cachedProximityGettersCannotOverrideDwellEvents() throws Exception {
         String hook = source("PixelAodHook");
         String getters = section(hook, "if (\"getProxNear\".equals",
