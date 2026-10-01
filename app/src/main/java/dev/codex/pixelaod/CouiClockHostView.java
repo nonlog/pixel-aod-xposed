@@ -1076,10 +1076,9 @@ final class CouiClockHostView extends FrameLayout {
             ImageView iconView = new ImageView(getContext());
             iconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
             iconView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(18), dp(18));
-            if (notificationIconCount() > 0) {
-                params.setMarginStart(dp(15));
-            }
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP),
+                    dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP));
             int overflowIndex = notificationIconRow.indexOfChild(notificationOverflowView);
             notificationIconRow.addView(iconView, overflowIndex < 0
                     ? notificationIconRow.getChildCount() : overflowIndex, params);
@@ -1098,6 +1097,7 @@ final class CouiClockHostView extends FrameLayout {
         }
         notificationOverflowView.setText(plan.overflowText());
         notificationOverflowView.setVisibility(plan.hasOverflow() ? VISIBLE : GONE);
+        applyNotificationIconMetrics();
         notificationIconRow.requestLayout();
         updateAccessibilitySemantics();
         scheduleApplyTargets(false);
@@ -1425,6 +1425,10 @@ final class CouiClockHostView extends FrameLayout {
             params.setMarginEnd(dp(6));
         }
 
+        applyNotificationIconMetrics();
+    }
+
+    private void applyNotificationIconMetrics() {
         int visibleIconIndex = 0;
         for (int i = 0; i < notificationIconRow.getChildCount(); i++) {
             View child = notificationIconRow.getChildAt(i);
@@ -1435,12 +1439,14 @@ final class CouiClockHostView extends FrameLayout {
             LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) childParams;
             if (child == notificationOverflowView) {
                 params.setMarginStart(dp(16));
-                continue;
+            } else {
+                params.width = dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP);
+                params.height = dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP);
+                params.setMarginStart(visibleIconIndex++ > 0
+                        ? dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_GAP_DP) : 0);
             }
-            params.width = dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP);
-            params.height = dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP);
-            params.setMarginStart(visibleIconIndex++ > 0
-                    ? dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_GAP_DP) : 0);
+            // Commit relative margins so old resolved OPlus margins match newly added icons.
+            child.setLayoutParams(params);
         }
     }
 

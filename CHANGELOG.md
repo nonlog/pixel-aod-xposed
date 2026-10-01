@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.62] - 2026-10-01
+### Fixed
+- Reapply and commit notification icon layout parameters for both existing and newly added slots. This resolves stale physical margins after width-based design metrics change, preventing mixed AOD icon gaps without changing the accepted icon size or spacing.
+
 ## [0.1.61] - 2026-10-01
 ### Fixed
 - Keep the pocket guard effective across charging AOD ClockPlugin render/prearm refreshes. Every primary-host reveal now checks the live guard while the device is non-interactive.

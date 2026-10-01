@@ -80,4 +80,20 @@ public final class NotificationPerformanceWiringTest {
         assertTrue(usb.contains("readIconMaskPixels"));
         assertFalse(usb.contains("bitmap.getPixel("));
     }
+
+    @Test
+    public void oldAndNewNotificationSlotsCommitTheSameResolvedMetrics() throws Exception {
+        String text = source("CouiClockHostView");
+        String update = section(text, "void setNotificationIcons", "private int notificationIconCount");
+        assertTrue(update.contains("applyNotificationIconMetrics()"));
+        String design = section(text, "private void applyDesignMetrics",
+                "private void applyNotificationIconMetrics");
+        assertTrue(design.contains("applyNotificationIconMetrics()"));
+        String metrics = section(text, "private void applyNotificationIconMetrics",
+                "private void setInformationTextSize");
+        assertTrue(metrics.contains("NOTIFICATION_ICON_SIZE_DP"));
+        assertTrue(metrics.contains("NOTIFICATION_ICON_GAP_DP"));
+        assertTrue(metrics.indexOf("child.setLayoutParams(params)")
+                > metrics.lastIndexOf("params.setMarginStart"));
+    }
 }
