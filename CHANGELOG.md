@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.59] - 2026-10-01
+### Fixed
+- Repair a native `DOZING/AOD -> LOCKSCREEN` exit when ClockPlugin has already published the lockscreen model but its target animation is still exposing the previous AOD frame. The existing FINISHED safety-net now cancels only that still-pending exit animation and commits the remembered lockscreen scene, clearing AOD-only media and notification presentation without changing geometry or animation parameters.
+
 ## [0.1.58] - 2026-09-24
 ### Fixed
 - Fix the notification-peek wake race that could leave the persistent COUI host on its last AOD frame after the native DOZING/AOD -> LOCKSCREEN transition had already finished. ClockPlugin render remains the primary handoff owner; only a FINISHED transition whose host is still dozing triggers the synchronous safety net.

@@ -19,6 +19,7 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.BatteryManager;
 import android.os.Build;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -118,6 +119,8 @@ final class CouiClockHostView extends FrameLayout {
     private boolean refreshingClockTime;
     private long pendingEntryToken;
     private boolean aodEntryInProgress;
+    // Native FINISHED can arrive while the normal 550 ms lockscreen target is still settling.
+    private long aodExitAnimationDeadlineUptimeMillis;
     private boolean liveCrossfadeInProgress;
     private AodData deferredAodData;
     private CouiClockPresentationModel.AodContent deferredAodContent;
@@ -335,6 +338,13 @@ final class CouiClockHostView extends FrameLayout {
                 && next.dozing()
                 && next.visualScene() == CouiClockPresentationModel.Scene.SMALL
                 && SystemAnimationScalePolicy.shouldAnimate(animate);
+        boolean exitingAod = previous != null && previous.dozing() && !next.dozing();
+        if (exitingAod && SystemAnimationScalePolicy.shouldAnimate(animate)) {
+            aodExitAnimationDeadlineUptimeMillis = SystemClock.uptimeMillis()
+                    + TARGET_TRANSITION_MS;
+        } else if (next.dozing()) {
+            aodExitAnimationDeadlineUptimeMillis = 0L;
+        }
         cancelAodEntryTransaction();
         if (!next.dozing() || !next.partialAod()) {
             cancelLiveAodCrossfade();
@@ -421,6 +431,7 @@ final class CouiClockHostView extends FrameLayout {
             return;
         }
         diagnosticSource = source == null ? "preload-lockscreen-return" : source;
+        aodExitAnimationDeadlineUptimeMillis = 0L;
         cancelAodEntryTransaction();
         cancelPendingLiveAodRetarget(true);
         cancelLiveAodCrossfade();
@@ -1263,6 +1274,7 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     void cancelTransitions() {
+        aodExitAnimationDeadlineUptimeMillis = 0L;
         cancelAodEntryTransaction();
         cancelSmallAodContextualTransition();
         cancelPendingLiveAodRetarget(true);
@@ -1287,6 +1299,11 @@ final class CouiClockHostView extends FrameLayout {
     boolean isTransitionActive() {
         return aodEntryInProgress || smallAodContextualTransitionInProgress
                 || liveCrossfadeInProgress;
+    }
+
+    boolean hasPendingAodToLockscreenAnimation() {
+        return !presentation.dozing()
+                && aodExitAnimationDeadlineUptimeMillis > SystemClock.uptimeMillis();
     }
 
     private boolean batteryEnabled = true;

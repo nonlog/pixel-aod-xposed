@@ -109,4 +109,11 @@ public final class CouiClockAodExitTransitionPolicyTest {
                         "owner", "alarm-return")));
     }
 
+    @Test
+    public void staleHostRepairIncludesAnIncompleteAodExitAnimation() {
+        assertTrue(CouiClockAodExitTransitionPolicy.shouldRepairStaleHost(true, false));
+        assertTrue(CouiClockAodExitTransitionPolicy.shouldRepairStaleHost(false, true));
+        assertFalse(CouiClockAodExitTransitionPolicy.shouldRepairStaleHost(false, false));
+    }
+
 }

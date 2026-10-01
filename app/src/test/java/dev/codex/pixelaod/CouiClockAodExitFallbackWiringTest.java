@@ -50,7 +50,9 @@ public final class CouiClockAodExitFallbackWiringTest {
         String method = section(source("CouiClockPluginHostController"),
                 "static void repairFinishedAodToLockscreen",
                 "static void prepareNonLockscreenAodEntry");
-        assertTrue(method.contains("if (!record.host.presentation().dozing())"));
+        assertTrue(method.contains("boolean hostDozing = record.host.presentation().dozing()"));
+        assertTrue(method.contains("hasPendingAodToLockscreenAnimation"));
+        assertTrue(method.contains("shouldRepairStaleHost"));
         int remembered = method.indexOf(
                 "CouiClockPresentationModel.Scene scene = record.lastLockscreenScene");
         int tracker = method.indexOf("readRenderState(plugin, false)");

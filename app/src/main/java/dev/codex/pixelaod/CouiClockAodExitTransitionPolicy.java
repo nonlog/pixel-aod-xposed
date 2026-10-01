@@ -35,4 +35,9 @@ final class CouiClockAodExitTransitionPolicy {
         return scene.from == NativeKeyguardSceneEligibility.Scene.DOZING
                 || scene.from == NativeKeyguardSceneEligibility.Scene.AOD;
     }
+
+    static boolean shouldRepairStaleHost(boolean hostDozing,
+            boolean aodExitAnimationPending) {
+        return hostDozing || aodExitAnimationPending;
+    }
 }

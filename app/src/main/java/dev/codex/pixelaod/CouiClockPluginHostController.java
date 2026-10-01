@@ -167,13 +167,20 @@ final class CouiClockPluginHostController {
             int held = 0;
             int rememberedScene = 0;
             int trackerFallback = 0;
+            int pendingExitAnimation = 0;
             for (HostRecord record : snapshotRecords()) {
                 if (record == null || record.host.getParent() != record.root) {
                     continue;
                 }
-                if (!record.host.presentation().dozing()) {
+                boolean hostDozing = record.host.presentation().dozing();
+                boolean exitAnimationPending = record.host.hasPendingAodToLockscreenAnimation();
+                if (!CouiClockAodExitTransitionPolicy.shouldRepairStaleHost(
+                        hostDozing, exitAnimationPending)) {
                     alreadySettled++;
                     continue;
+                }
+                if (exitAnimationPending) {
+                    pendingExitAnimation++;
                 }
 
                 CouiClockPresentationModel.Scene scene = record.lastLockscreenScene;
@@ -215,6 +222,7 @@ final class CouiClockPluginHostController {
                     + " heldHosts=" + held
                     + " rememberedScene=" + rememberedScene
                     + " trackerFallback=" + trackerFallback
+                    + " pendingExitAnimation=" + pendingExitAnimation
                     + " source=" + source);
         });
     }
