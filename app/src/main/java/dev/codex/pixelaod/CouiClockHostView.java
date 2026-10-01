@@ -437,6 +437,17 @@ final class CouiClockHostView extends FrameLayout {
         cancelLiveAodCrossfade();
         cancelScheduledTargetApply();
         cancelRunningPropertyAnimations();
+        // A cancelled animator can be between frames even though its target is cached.
+        appliedGlyphTargets.clear();
+        appliedInformationTargets.clear();
+        for (TextView digit : largeSet.digits) {
+            if (digit instanceof CouiClockMorphingGlyphView) {
+                ((CouiClockMorphingGlyphView) digit).resetMorphStyleTarget();
+            }
+        }
+        if (largeSet.colon instanceof CouiClockMorphingGlyphView) {
+            ((CouiClockMorphingGlyphView) largeSet.colon).resetMorphStyleTarget();
+        }
         CouiClockPresentationModel.AodContent content = normalizeContent(next.content());
         presentation = new CouiClockPresentationModel(next.requestedScene(), false, false, content);
         refreshContextualFromExistingAdapters(diagnosticSource + "#preload", false);

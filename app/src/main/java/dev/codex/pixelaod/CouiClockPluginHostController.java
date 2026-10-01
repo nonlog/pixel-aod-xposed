@@ -758,8 +758,7 @@ final class CouiClockPluginHostController {
         }
         if (existing != null && existing.host.getParent() == root) {
             existing.plugin = new WeakReference<>(plugin);
-            existing.host.onTimeTick(source + "#reuse-before-visible");
-            existing.host.setVisibility(View.VISIBLE);
+            existing.host.setPrimaryVisible(true, source + "#reuse");
             existing.host.bringToFront();
             return existing;
         }
@@ -781,8 +780,7 @@ final class CouiClockPluginHostController {
             root.addView(host, root.getChildCount(), new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
-        host.onTimeTick(source + "#attach-before-visible");
-        host.setVisibility(View.VISIBLE);
+        host.setPrimaryVisible(true, source + "#attach");
         host.bringToFront();
         HostRecord record = new HostRecord(root, host, plugin, nextGeneration());
         // This owner is part of the view tree, not a process-global GC root.

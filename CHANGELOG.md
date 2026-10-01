@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.63] - 2026-10-01
+### Fixed
+- Invalidate cached glyph, information and ROM font-style targets before an explicit synchronous lockscreen return. Cancelling a pending AOD exit animation no longer skips the matching lockscreen endpoint because it was already cached when the animation started. Normal ClockPlugin animation deduplication remains active.
+- Apply the shared pocket guard when attaching or reusing a COUI host as well as when rendering it, eliminating direct visibility writes that could reveal a covered AOD host.
+
 ## [0.1.62] - 2026-10-01
 ### Fixed
 - Reapply and commit notification icon layout parameters for both existing and newly added slots. This resolves stale physical margins after width-based design metrics change, preventing mixed AOD icon gaps without changing the accepted icon size or spacing.

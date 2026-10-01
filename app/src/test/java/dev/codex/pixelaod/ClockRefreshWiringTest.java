@@ -69,6 +69,11 @@ public class ClockRefreshWiringTest {
         assertTrue("all render and prearm reveals must check the pocket guard", guard >= 0);
         assertTrue(guard < reveal.indexOf("if (visible)"));
         assertTrue(reveal.contains("PixelAodRuntimeState.isDeviceInteractive(getContext())"));
+        String attach = section(source("CouiClockPluginHostController"),
+                "private static HostRecord ensureHost", "private static void syncHost");
+        assertFalse(attach.contains("setVisibility(View.VISIBLE)"));
+        assertTrue(attach.contains("existing.host.setPrimaryVisible(true"));
+        assertTrue(attach.contains("host.setPrimaryVisible(true"));
     }
 
     @Test public void cachedProximityGettersCannotOverrideDwellEvents() throws Exception {
