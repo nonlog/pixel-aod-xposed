@@ -437,9 +437,6 @@ final class CouiClockHostView extends FrameLayout {
         cancelLiveAodCrossfade();
         cancelScheduledTargetApply();
         cancelRunningPropertyAnimations();
-        // A cancelled animator can be between frames even though its target is cached.
-        appliedGlyphTargets.clear();
-        appliedInformationTargets.clear();
         for (TextView digit : largeSet.digits) {
             if (digit instanceof CouiClockMorphingGlyphView) {
                 ((CouiClockMorphingGlyphView) digit).resetMorphStyleTarget();
@@ -1271,6 +1268,9 @@ final class CouiClockHostView extends FrameLayout {
         if (visible) {
             // A persistent host can return without attach or a minute broadcast (pocket/doze).
             onTimeTick(source + "#before-visible");
+            if (getVisibility() != VISIBLE && appliedGlyphTargets.isEmpty()) {
+                applyTargets(false, 0L);
+            }
             if (!contextualSurfaceActive) {
                 PixelAodContentState.beginContextualSurfaceEntry(
                         (source == null ? "primary-visible" : source) + "#COUI-visible");
@@ -1659,6 +1659,9 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     private void cancelRunningPropertyAnimations() {
+        // Cancelled animations can stop between frames; their cached endpoints are not applied.
+        appliedGlyphTargets.clear();
+        appliedInformationTargets.clear();
         for (GlyphSet glyphSet : glyphSets) {
             for (TextView digit : glyphSet.digits) {
                 digit.animate().cancel();

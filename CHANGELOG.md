@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.64] - 2026-10-01
+### Fixed
+- Invalidate glyph and information endpoint snapshots whenever a COUI property animation is cancelled, including pocket hiding and live-content retargets. A cancelled animation can no longer leave unchanged digits at an intermediate position while the next minute moves only the changed digit to its final position.
+- Settle interrupted positions before revealing a hidden persistent host. Normal visible animation deduplication, clock geometry, font styles, curves and durations remain unchanged.
+
 ## [0.1.63] - 2026-10-01
 ### Fixed
 - Invalidate cached glyph, information and ROM font-style targets before an explicit synchronous lockscreen return. Cancelling a pending AOD exit animation no longer skips the matching lockscreen endpoint because it was already cached when the animation started. Normal ClockPlugin animation deduplication remains active.
