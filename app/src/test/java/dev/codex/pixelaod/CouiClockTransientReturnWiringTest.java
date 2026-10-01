@@ -62,4 +62,20 @@ public final class CouiClockTransientReturnWiringTest {
         assertTrue(method.contains("applyTargets(false, 0L)"));
         assertFalse(method.contains("setVisibility("));
     }
+
+    @Test
+    public void explicitLockscreenSnapInvalidatesPreviouslyAnimatedEndpoints() throws Exception {
+        String method = section(source("CouiClockHostView"),
+                "void preloadLockscreenReturn", "/** Begins an AOD entry");
+        int snap = method.indexOf("applyTargets(false, 0L)");
+        int glyphs = method.indexOf("appliedGlyphTargets.clear()");
+        int info = method.indexOf("appliedInformationTargets.clear()");
+        int font = method.indexOf("resetMorphStyleTarget()");
+        assertTrue("cancelled property endpoints must be reapplied", glyphs >= 0 && glyphs < snap);
+        assertTrue("cancelled information endpoints must be reapplied", info >= 0 && info < snap);
+        assertTrue("ROM font animator must receive a non-animated endpoint", font >= 0 && font < snap);
+        String reset = section(source("CouiClockMorphingGlyphView"),
+                "void resetMorphStyleTarget", "private static boolean isAodVariation");
+        assertTrue(reset.contains("targetVariation = null"));
+    }
 }
