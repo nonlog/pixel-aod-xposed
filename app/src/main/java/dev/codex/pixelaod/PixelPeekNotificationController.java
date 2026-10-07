@@ -117,6 +117,43 @@ final class PixelPeekNotificationController {
                 param.setResult(null);
             }, Canvas.class);
 
+            ModernHookBridge.hookAfter(peekClass, "onDraw", param -> {
+                if (!(param.thisObject instanceof View)
+                        || param.args == null || param.args.length == 0
+                        || !(param.args[0] instanceof Canvas)) {
+                    return;
+                }
+                View nativeView = (View) param.thisObject;
+                if (isSettingPreview(nativeView)) {
+                    return;
+                }
+                State state = STATES.get(nativeView);
+                if (state == null) {
+                    return;
+                }
+                Context context = nativeView.getContext();
+                boolean customEnabled = PixelAodSettings.getBoolean(context,
+                        PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, true);
+                boolean nativeEnabled = NativeOplusPeekSettingAdapter.isEnabled(context);
+                boolean composite =
+                        PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
+                                customEnabled, nativeEnabled, state.nativeAttached,
+                                state.nativeAodCompositeRequested);
+                if (!composite) {
+                    state.nativeAodCompositeLogged = false;
+                    return;
+                }
+                boolean drawn = ActiveClockRendererController.drawAodIntoNativePeekSurface(
+                        (Canvas) param.args[0], nativeView, "PixelPeek#native-onDraw");
+                if (drawn && !state.nativeAodCompositeLogged) {
+                    state.nativeAodCompositeLogged = true;
+                    PixelAodLog.log("composited module AOD over native OPlus Peek"
+                            + " nativeView=" + nativeView.getClass().getName()
+                            + " nativeSize=" + nativeView.getWidth() + "x"
+                            + nativeView.getHeight());
+                }
+            }, Canvas.class);
+
             PixelAodLog.log("installed optional Pixel peek presentation class=" + OPLUS_PEEK_VIEW);
         } catch (Throwable t) {
             PixelAodLog.log("failed to install optional Pixel peek presentation", t);
@@ -206,6 +243,8 @@ final class PixelPeekNotificationController {
         if (!NativeOplusPeekSettingAdapter.isEnabled(context)) {
             removeOverlay(state.overlay.get());
             state.powerSavingAodStarted = false;
+            state.nativeAodCompositeRequested = false;
+            state.nativeAodCompositeLogged = false;
             nativeView.invalidate();
             PixelAodClockView.onNativeNotificationWindowChanged(
                     "PixelPeek#" + source + "#native-disabled");
@@ -214,6 +253,8 @@ final class PixelPeekNotificationController {
         if (PixelAodClockView.isPocketGuardActive()) {
             removeOverlay(state.overlay.get());
             state.powerSavingAodStarted = false;
+            state.nativeAodCompositeRequested = false;
+            state.nativeAodCompositeLogged = false;
             nativeView.invalidate();
             PixelAodLog.log("Pixel peek suppressed by pocket/proximity guard source=" + source);
             PixelAodClockView.onNativeNotificationWindowChanged(
@@ -230,6 +271,13 @@ final class PixelPeekNotificationController {
 
         boolean customEnabled = PixelAodSettings.getBoolean(context,
                 PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, true);
+        boolean moduleAodWanted = !customEnabled
+                && PixelAodClockView.shouldApplyModuleAodNow(
+                        context, "PixelPeek#" + source + "#native-surface-composite");
+        state.nativeAodCompositeRequested =
+                PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
+                        customEnabled, true, true, moduleAodWanted);
+        state.nativeAodCompositeLogged = false;
         if (PixelPeekPresentationPolicy.shouldUsePixelPeek(customEnabled, true)
                 && state.content != null) {
             showPixelPeek(nativeView, state, source);
@@ -354,6 +402,8 @@ final class PixelPeekNotificationController {
             return;
         }
         state.nativeAttached = false;
+        state.nativeAodCompositeRequested = false;
+        state.nativeAodCompositeLogged = false;
         PixelPeekNotificationView overlay = state.overlay.get();
         removeOverlay(overlay);
         state.powerSavingAodStarted = false;
@@ -497,5 +547,7 @@ final class PixelPeekNotificationController {
         WeakReference<PixelPeekNotificationView> overlay = new WeakReference<>(null);
         boolean nativeAttached;
         boolean powerSavingAodStarted;
+        boolean nativeAodCompositeRequested;
+        boolean nativeAodCompositeLogged;
     }
 }

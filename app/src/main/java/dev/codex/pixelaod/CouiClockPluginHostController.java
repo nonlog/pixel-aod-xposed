@@ -93,6 +93,57 @@ final class CouiClockPluginHostController {
     }
 
     /**
+     * The stock OPlus notification Peek owns a transient full-screen drawing surface. On current
+     * OOS it can replace or occlude the ordinary AOD surface even while the canonical COUI host
+     * remains logically dozing. Mirror only that ambient host after OPlus draws its own card.
+     * No View is reparented and no second AOD lifecycle is created.
+     */
+    static boolean drawAodIntoNativePeekSurface(
+            Canvas canvas, View nativeSurface, String source) {
+        if (canvas == null || nativeSurface == null) {
+            return false;
+        }
+        HostRecord candidate = null;
+        for (HostRecord record : snapshotRecords()) {
+            if (record == null || record.host.getParent() != record.root
+                    || !PrimaryDisplayPolicy.isPrimary(record.root)
+                    || record.host.getWidth() <= 0 || record.host.getHeight() <= 0
+                    || record.host.presentation() == null
+                    || !record.host.presentation().dozing()) {
+                continue;
+            }
+            if (isSameOrAncestor(record.host, nativeSurface)
+                    || isSameOrAncestor(nativeSurface, record.host)) {
+                continue;
+            }
+            if (candidate == null || record.generation > candidate.generation) {
+                candidate = record;
+            }
+        }
+        if (candidate == null) {
+            return false;
+        }
+
+        int[] nativeLocation = new int[2];
+        int[] hostLocation = new int[2];
+        int saveCount = canvas.save();
+        try {
+            nativeSurface.getLocationOnScreen(nativeLocation);
+            candidate.host.getLocationOnScreen(hostLocation);
+            canvas.translate(hostLocation[0] - nativeLocation[0],
+                    hostLocation[1] - nativeLocation[1]);
+            candidate.host.draw(canvas);
+            return true;
+        } catch (Throwable failure) {
+            PixelAodLog.log("failed to composite module AOD into native OPlus Peek"
+                    + " source=" + source, failure);
+            return false;
+        } finally {
+            canvas.restoreToCount(saveCount);
+        }
+    }
+
+    /**
      * Data refresh only. COUI 2.5 never re-runs ClockPlugin presentation state from unrelated
      * notification/weather/policy callbacks; presentation changes belong to loadPluginReal/render.
      */

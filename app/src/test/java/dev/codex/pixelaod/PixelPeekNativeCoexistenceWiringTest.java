@@ -39,4 +39,19 @@ public final class PixelPeekNativeCoexistenceWiringTest {
         assertTrue(peek.contains("PixelPeekPresentationPolicy.shouldSuppressNativeDraw"));
         assertTrue(peek.contains("state.nativeAttached"));
     }
+    @Test
+    public void stockPeekCompositesCanonicalAodAfterNativeDrawing() throws Exception {
+        String peek = source("PixelPeekNotificationController");
+        String facade = source("ActiveClockRendererController");
+        String controller = source("CouiClockPluginHostController");
+
+        assertTrue(peek.contains("hookAfter(peekClass, \"onDraw\""));
+        assertTrue(peek.contains("shouldCompositeModuleAodOverNativePeek"));
+        assertTrue(peek.contains("drawAodIntoNativePeekSurface"));
+        assertTrue(facade.contains("CouiClockPluginHostController.drawAodIntoNativePeekSurface"));
+        assertTrue(controller.contains("getLocationOnScreen"));
+        assertTrue(controller.contains("candidate.host.draw(canvas)"));
+        assertTrue(controller.contains("candidate.host.presentation().dozing()"));
+    }
+
 }

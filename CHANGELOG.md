@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.66] - 2026-10-07
+### Fixed
+- Keep module AOD pixels visible with the stock OPlus notification Peek on ROMs where OplusAodCurvedDisplayView uses a separate full-screen transient surface. When Pixel Peek is disabled and the existing AOD policy already authorizes module pixels, draw the canonical dozing COUI host into the native Peek canvas after OPlus draws its own card.
+- The coexistence compositor reuses the existing host without reparenting it, creating another AOD lifecycle, changing Peek timing/privacy, or touching the accepted clock/weather/notification geometry. Power Saving mode still requires Show AOD for new notifications before any module AOD pixels are composited.
+
 ## [0.1.65] - 2026-10-07
 ### Added
 - Add a live **Use Pixel notification Peek** switch. Disable it to keep the OPlus native Peek card without disabling the separate Power Saving **Show AOD for new notifications** enhancement.

@@ -1,7 +1,9 @@
 package dev.codex.pixelaod;
 
 import android.content.Context;
+import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
+import android.view.View;
 
 import java.util.List;
 
@@ -34,6 +36,12 @@ final class ActiveClockRendererController {
 
     static void refreshAll(String source) {
         CouiClockPluginHostController.refreshAll(source);
+    }
+
+    static boolean drawAodIntoNativePeekSurface(
+            Canvas canvas, View nativeSurface, String source) {
+        return CouiClockPluginHostController.drawAodIntoNativePeekSurface(
+                canvas, nativeSurface, source);
     }
 
     static void setPocketGuard(boolean blocked, String source) {

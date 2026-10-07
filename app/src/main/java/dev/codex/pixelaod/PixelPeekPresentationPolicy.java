@@ -17,6 +17,11 @@ final class PixelPeekPresentationPolicy {
                 && hasSafeContent && pixelOverlayAttached;
     }
 
+    static boolean shouldCompositeModuleAodOverNativePeek(boolean customEnabled,
+            boolean nativePeekEnabled, boolean nativeAttached, boolean moduleAodWanted) {
+        return !customEnabled && nativePeekEnabled && nativeAttached && moduleAodWanted;
+    }
+
     static boolean shouldPreserveContinuousAod(boolean nativeWindowAttached,
             boolean configuredEligible, String displayMode, boolean scheduleWindowEligible,
             boolean alwaysOnSuppressed) {

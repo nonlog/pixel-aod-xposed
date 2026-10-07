@@ -38,4 +38,18 @@ public final class PixelPeekPresentationPolicyTest {
         assertFalse(PixelPeekPresentationPolicy.shouldPreserveContinuousAod(
                 true, true, "all-day", true, true));
     }
+    @Test
+    public void nativeSurfaceCompositeRunsOnlyForStockPeekWhenModuleAodIsWanted() {
+        assertTrue(PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
+                false, true, true, true));
+        assertFalse(PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
+                true, true, true, true));
+        assertFalse(PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
+                false, false, true, true));
+        assertFalse(PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
+                false, true, false, true));
+        assertFalse(PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
+                false, true, true, false));
+    }
+
 }

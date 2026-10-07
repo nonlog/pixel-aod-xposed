@@ -26,10 +26,18 @@ Two requirements now need separate ownership:
    user AOD enablement, and schedule boundaries remain authoritative.
 8. The native OPlus Peek view and ancestor containers that own it are excluded from generic
    stock-AOD suppression while the notification surface is attached.
+9. Current OOS can still replace or occlude the ordinary AOD drawing surface while native Peek is
+   attached. When the stock Peek visual is selected and module policy says AOD pixels should be
+   visible, the canonical dozing CouiClockHostView is composited after native
+   OplusAodCurvedDisplayView.onDraw using screen-coordinate alignment. OPlus still draws its
+   own card first; the module does not reparent views, create a bitmap snapshot, start a second
+   AOD surface, or alter the vendor notification lifetime.
 
 ## Consequences
 
 - Pixel Peek on/off is independent from Power Saving full-AOD-on-notification on/off.
-- Stock Peek can render over module continuous AOD instead of replacing ambient presentation.
+- Stock Peek can render together with module AOD even when OPlus places Peek on a separate
+  transient full-screen surface; the module ambient foreground is mirrored into that surface
+  only for the lifetime of the native window.
 - Missing safe notification content or a missing Pixel host fails open to the native Peek.
 - OPlus continues to own notification admission, privacy, timing, attach/detach, and interaction.
