@@ -1,5 +1,6 @@
 package dev.codex.pixelaod;
 
+import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
@@ -46,21 +47,27 @@ final class PixelPeekNotificationController {
                     clear(nativeView, "native-update-null");
                     return;
                 }
+                State state = state(nativeView);
+                state.nativeAttached = nativeView.isAttachedToWindow();
                 PixelPeekNotificationContent content = contentFromVendorPaint(nativeView, sbn);
                 if (content == null || !content.hasRenderableText()) {
+                    state.content = null;
+                    removeOverlay(state.overlay.get());
+                    nativeView.invalidate();
                     PixelAodLog.log("Pixel peek kept native presentation reason=no-safe-content"
                             + " pkg=" + sbn.getPackageName() + " key=" + sbn.getKey());
+                    if (state.nativeAttached) {
+                        onNativeWindowActive(nativeView, state, "native-update-no-safe-content");
+                    }
                     return;
                 }
-                State state = state(nativeView);
                 state.content = content;
-                state.nativeAttached = nativeView.isAttachedToWindow();
                 PixelAodLog.log("Pixel peek captured vendor-safe notification"
                         + " pkg=" + content.packageName
                         + " key=" + content.notificationKey
-                        + " attached=" + nativeView.isAttachedToWindow());
-                if (nativeView.isAttachedToWindow()) {
-                    show(nativeView, state, "native-update");
+                        + " attached=" + state.nativeAttached);
+                if (state.nativeAttached) {
+                    onNativeWindowActive(nativeView, state, "native-update");
                 }
             }, StatusBarNotification.class);
 
@@ -77,7 +84,7 @@ final class PixelPeekNotificationController {
                 PixelAodLog.log("Pixel peek native surface attached"
                         + " parent=" + parentChain(nativeView)
                         + " hasContent=" + (state.content != null));
-                show(nativeView, state, "native-attach");
+                onNativeWindowActive(nativeView, state, "native-attach");
             });
 
             ModernHookBridge.hookAfter(peekClass, "onDetachedFromWindow", param -> {
@@ -93,22 +100,26 @@ final class PixelPeekNotificationController {
                     return;
                 }
                 View nativeView = (View) param.thisObject;
-                if (isSettingPreview(nativeView)
-                        || !NativeOplusPeekSettingAdapter.isEnabled(nativeView.getContext())) {
+                if (isSettingPreview(nativeView)) {
                     return;
                 }
                 State state = STATES.get(nativeView);
-                if (state == null || state.content == null || state.overlay.get() == null) {
+                boolean customEnabled = PixelAodSettings.getBoolean(nativeView.getContext(),
+                        PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, true);
+                boolean nativeEnabled =
+                        NativeOplusPeekSettingAdapter.isEnabled(nativeView.getContext());
+                if (!PixelPeekPresentationPolicy.shouldSuppressNativeDraw(
+                        customEnabled, nativeEnabled,
+                        state != null && state.content != null,
+                        state != null && state.overlay.get() != null)) {
                     return;
                 }
-                // Keep this vendor View attached so its animator/end listener still owns the
-                // notification window. Suppress only its OPlus full-screen/curved drawing.
                 param.setResult(null);
             }, Canvas.class);
 
-            PixelAodLog.log("installed Pixel peek presentation takeover class=" + OPLUS_PEEK_VIEW);
+            PixelAodLog.log("installed optional Pixel peek presentation class=" + OPLUS_PEEK_VIEW);
         } catch (Throwable t) {
-            PixelAodLog.log("failed to install Pixel peek presentation takeover", t);
+            PixelAodLog.log("failed to install optional Pixel peek presentation", t);
         }
     }
 
@@ -127,12 +138,37 @@ final class PixelPeekNotificationController {
     static boolean hasActiveNativeNotificationWindow() {
         synchronized (STATES) {
             for (State state : STATES.values()) {
-                if (state != null && state.nativeAttached && state.content != null) {
+                if (state != null && state.nativeAttached) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    static void onSettingsChanged(Context context, String source) {
+        synchronized (STATES) {
+            for (Map.Entry<View, State> entry : STATES.entrySet()) {
+                View nativeView = entry.getKey();
+                State state = entry.getValue();
+                if (nativeView == null || state == null) {
+                    continue;
+                }
+                nativeView.post(() -> {
+                    if (state.nativeAttached) {
+                        onNativeWindowActive(nativeView, state, "settings#" + source);
+                    } else {
+                        removeOverlay(state.overlay.get());
+                        nativeView.invalidate();
+                    }
+                });
+            }
+        }
+        if (context != null && !NativeOplusPeekSettingAdapter.isEnabled(context)) {
+            PixelAodClockView.endPowerSavingNotificationAod(
+                    "PixelPeek#native-setting-disabled#" + source);
+        }
+        PixelAodClockView.onNativeNotificationWindowChanged("PixelPeek#settings#" + source);
     }
 
     static void onPocketGuardChanged(boolean blocked, String source) {
@@ -148,8 +184,8 @@ final class PixelPeekNotificationController {
                         removeOverlay(state.overlay.get());
                         state.powerSavingAodStarted = false;
                         nativeView.invalidate();
-                    } else if (state.nativeAttached && state.content != null) {
-                        show(nativeView, state, "pocket-release");
+                    } else if (state.nativeAttached) {
+                        onNativeWindowActive(nativeView, state, "pocket-release");
                     }
                 });
             }
@@ -157,24 +193,60 @@ final class PixelPeekNotificationController {
         if (blocked) {
             PixelAodClockView.endPowerSavingNotificationAod("PixelPeek#pocket-guard#" + source);
         }
+        PixelAodClockView.onNativeNotificationWindowChanged("PixelPeek#pocket-guard#" + source);
         PixelAodLog.log("Pixel peek pocket guard changed blocked=" + blocked
                 + " source=" + source);
     }
-    private static void show(View nativeView, State state, String source) {
-        if (nativeView == null || state == null || state.content == null
-                || !NativeOplusPeekSettingAdapter.isEnabled(nativeView.getContext())) {
+
+    private static void onNativeWindowActive(View nativeView, State state, String source) {
+        if (nativeView == null || state == null || !state.nativeAttached) {
+            return;
+        }
+        Context context = nativeView.getContext();
+        if (!NativeOplusPeekSettingAdapter.isEnabled(context)) {
+            removeOverlay(state.overlay.get());
+            state.powerSavingAodStarted = false;
+            nativeView.invalidate();
+            PixelAodClockView.onNativeNotificationWindowChanged(
+                    "PixelPeek#" + source + "#native-disabled");
             return;
         }
         if (PixelAodClockView.isPocketGuardActive()) {
             removeOverlay(state.overlay.get());
             state.powerSavingAodStarted = false;
+            nativeView.invalidate();
             PixelAodLog.log("Pixel peek suppressed by pocket/proximity guard source=" + source);
+            PixelAodClockView.onNativeNotificationWindowChanged(
+                    "PixelPeek#" + source + "#pocket-blocked");
             return;
         }
         if (!state.powerSavingAodStarted) {
+            String detail = state.content != null
+                    ? "key=" + state.content.notificationKey + ",pkg=" + state.content.packageName
+                    : "native-window-attached";
             state.powerSavingAodStarted = PixelAodClockView.startPowerSavingNotificationAod(
-                    nativeView.getContext(), "PixelPeek#" + source,
-                    "key=" + state.content.notificationKey + ",pkg=" + state.content.packageName);
+                    context, "PixelPeek#" + source, detail);
+        }
+
+        boolean customEnabled = PixelAodSettings.getBoolean(context,
+                PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, true);
+        if (PixelPeekPresentationPolicy.shouldUsePixelPeek(customEnabled, true)
+                && state.content != null) {
+            showPixelPeek(nativeView, state, source);
+        } else {
+            removeOverlay(state.overlay.get());
+            nativeView.invalidate();
+            PixelAodLog.log("Pixel peek preserving native presentation"
+                    + " source=" + source
+                    + " customEnabled=" + customEnabled
+                    + " hasContent=" + (state.content != null));
+        }
+        PixelAodClockView.onNativeNotificationWindowChanged("PixelPeek#" + source);
+    }
+
+    private static void showPixelPeek(View nativeView, State state, String source) {
+        if (nativeView == null || state == null || state.content == null) {
+            return;
         }
         ViewGroup host = PixelAodHook.currentPixelPresentationHost();
         if (host == null || !PrimaryDisplayPolicy.isPrimary(host)) {
@@ -288,6 +360,7 @@ final class PixelPeekNotificationController {
         if (!hasActiveNativeNotificationWindow()) {
             PixelAodClockView.endPowerSavingNotificationAod("PixelPeek#" + source);
         }
+        PixelAodClockView.onNativeNotificationWindowChanged("PixelPeek#" + source);
         PixelAodLog.log("Pixel peek presentation cleared source=" + source
                 + " key=" + (state.content != null ? state.content.notificationKey : "none"));
     }

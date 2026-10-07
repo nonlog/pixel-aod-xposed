@@ -171,4 +171,30 @@ public class PowerSavingAodWiringTest {
         assertFalse(controller.contains("postDelayed"));
         assertFalse(controller.contains("Settings.Secure.put"));
     }
+    @Test
+    public void customPeekSkinIsIndependentFromNotificationAodAndNativeWindowContinuity()
+            throws Exception {
+        String peek = source("PixelPeekNotificationController");
+        String nativeActive = section(peek, "private static void onNativeWindowActive",
+                "private static void showPixelPeek");
+        assertTrue(nativeActive.contains("startPowerSavingNotificationAod"));
+        assertTrue(nativeActive.contains("KEY_PIXEL_NOTIFICATION_PEEK"));
+        assertTrue(nativeActive.contains("showPixelPeek"));
+        assertTrue(peek.contains("PixelPeekPresentationPolicy.shouldSuppressNativeDraw"));
+        assertTrue(peek.contains("state != null && state.nativeAttached"));
+
+        String clock = source("PixelAodClockView");
+        String lifecycle = section(clock,
+                "private static AodLifecycleState currentAodLifecycleState",
+                "static final class AodLifecycleState");
+        assertTrue(lifecycle.contains("nativeNotificationWindow ="));
+        assertTrue(lifecycle.contains("nativePeekContinuousWindow"));
+        assertTrue(lifecycle.contains("displayAod || nativePeekContinuousWindow"));
+
+        String modulePolicy = section(clock,
+                "private static OosAodLifecycleAdapter.ModulePolicy",
+                "private static boolean maybeStartNativeShortWakeTrigger");
+        assertTrue(modulePolicy.contains("nativePeekContinuous"));
+        assertTrue(modulePolicy.contains("continuous-native-aod-native-peek"));
+    }
 }

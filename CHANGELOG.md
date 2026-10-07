@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.65] - 2026-10-07
+### Added
+- Add a live **Use Pixel notification Peek** switch. Disable it to keep the OPlus native Peek card without disabling the separate Power Saving **Show AOD for new notifications** enhancement.
+
+### Fixed
+- Keep the module AOD background visible while the native OPlus notification Peek is attached in all-day AOD or an active scheduled-AOD window. The native notification surface remains the lifecycle/privacy authority; Power Saving mode still requires its existing brief-AOD option and is never promoted to continuous AOD.
+- Track native Peek attachment independently from privacy-safe custom-card content, and exclude the OPlus Peek surface/subtree from generic stock-AOD suppression so custom Peek failures or a disabled custom skin fail open to the system card.
+
 ## [0.1.64] - 2026-10-01
 ### Fixed
 - Invalidate glyph and information endpoint snapshots whenever a COUI property animation is cancelled, including pocket hiding and live-content retargets. A cancelled animation can no longer leave unchanged digits at an intermediate position while the next minute moves only the changed digit to its final position.

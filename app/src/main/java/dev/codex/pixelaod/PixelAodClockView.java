@@ -2467,7 +2467,14 @@ public final class PixelAodClockView extends FrameLayout {
         }
         VendorAmbientSuppressionCapabilities.Snapshot vendorSuppression =
                 PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
-        boolean vendorBaseAodSuppressed = vendorSuppression.baseAodDenied();
+        boolean nativePeekContinuous = PixelPeekPresentationPolicy.shouldPreserveContinuousAod(
+                PixelPeekNotificationController.hasActiveNativeNotificationWindow()
+                        && NativeOplusPeekSettingAdapter.isEnabled(context),
+                nativeAod.configuredEligible, nativeAod.displayMode,
+                nativeAod.scheduleWindowEligible,
+                Boolean.TRUE.equals(vendorSuppression.alwaysOnSuppressed));
+        boolean vendorBaseAodSuppressed = vendorSuppression.baseAodDenied()
+                && !nativePeekContinuous;
         boolean transitionPrearm = state != null
                 && !state.interactive
                 && !state.active
@@ -2475,6 +2482,7 @@ public final class PixelAodClockView extends FrameLayout {
         boolean chargingContinuous = isPowerSavingChargingAodRequested(context);
         boolean nativeContinuousReady = nativeAod.continuousEligible
                 || chargingContinuous
+                || nativePeekContinuous
                 || (transitionPrearm && nativeAod.prearmEligible);
         nativeContinuousReady = nativeContinuousReady && !vendorBaseAodSuppressed;
         boolean continuousAllowed = nativeContinuousReady;
@@ -2495,8 +2503,9 @@ public final class PixelAodClockView extends FrameLayout {
         }
         if (continuousAllowed) {
             return new OosAodLifecycleAdapter.ModulePolicy(true, moduleEnabled, true, false,
-                    "continuous-native-aod", displayMode, withinSchedule, false,
-                    chargingContinuous);
+                    nativePeekContinuous ? "continuous-native-aod-native-peek"
+                            : "continuous-native-aod",
+                    displayMode, withinSchedule, false, chargingContinuous);
         }
         if (!nativeContinuousReady) {
             String blockedReason = vendorBaseAodSuppressed
@@ -2770,6 +2779,26 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    static void onNativeNotificationWindowChanged(String source) {
+        refreshAodPolicyConsumers(source + "#native-notification-window");
+    }
+
+    private static boolean shouldPreserveContinuousAodDuringNativePeek(
+            Context context, boolean nativeWindowAttached) {
+        if (context == null || !nativeWindowAttached
+                || !NativeOplusPeekSettingAdapter.isEnabled(context)) {
+            return false;
+        }
+        NativeAodAvailabilityAdapter.Decision nativeAod =
+                NativeAodAvailabilityAdapter.read(context, isVendorAmbientSessionActive());
+        VendorAmbientSuppressionCapabilities.Snapshot suppression =
+                PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
+        return PixelPeekPresentationPolicy.shouldPreserveContinuousAod(
+                true, nativeAod.configuredEligible, nativeAod.displayMode,
+                nativeAod.scheduleWindowEligible,
+                Boolean.TRUE.equals(suppression.alwaysOnSuppressed));
+    }
+
     private static AodLifecycleState currentAodLifecycleState(Context context) {
         long now = SystemClock.uptimeMillis();
         boolean active;
@@ -2861,10 +2890,13 @@ public final class PixelAodClockView extends FrameLayout {
         boolean displayAod = displayState == Display.STATE_DOZE
                 || displayState == Display.STATE_DOZE_SUSPEND;
         boolean triggerBriefArmed = briefTriggerStartedAt > 0L;
-        boolean nativeNotificationWindow = triggerBriefArmed
+        boolean nativeNotificationWindow =
+                PixelPeekNotificationController.hasActiveNativeNotificationWindow();
+        boolean nativeNotificationBriefWindow = triggerBriefArmed
                 && PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE.equals(briefTriggerType)
-                && PixelPeekNotificationController.hasActiveNativeNotificationWindow();
-        boolean vendorTransientSurfaceAvailable = displayAod || nativeNotificationWindow;
+                && nativeNotificationWindow;
+        boolean vendorTransientSurfaceAvailable =
+                displayAod || nativeNotificationBriefWindow;
         boolean triggerBriefActive = OosAodLifecycleAdapter.shouldPresentVendorTransientScene(
                 triggerBriefArmed, interactive, vendorTransientSurfaceAvailable);
         if (triggerBriefArmed && !triggerBriefActive
@@ -2881,10 +2913,13 @@ public final class PixelAodClockView extends FrameLayout {
                 || isAllowedAodEntryAge(now, aodActivatedAt);
         boolean recentOverlayVisible =
                 isRecentUptime(now, overlayVisibleAt, AOD_FORCE_DOZE_RECENT_OVERLAY_MILLIS);
+        boolean nativePeekContinuousWindow =
+                shouldPreserveContinuousAodDuringNativePeek(context, nativeNotificationWindow);
         boolean rawShouldDrawPixelAod = context != null
                 && !interactive
                 && NonLockscreenAodVisibilityGate.shouldDraw(screenOffFromInteractiveLockscreen,
-                displayAod, entryDelay, triggerBriefActive, active, graceWindow);
+                displayAod || nativePeekContinuousWindow, entryDelay, triggerBriefActive,
+                active, graceWindow);
         boolean revealBlocked = rawShouldDrawPixelAod
                 && revealBlockedUntilAt > 0L
                 && now >= screenOffAt

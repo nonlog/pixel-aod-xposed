@@ -36,6 +36,8 @@ public final class PixelAodSettings {
             PixelAodSettingsSchema.KEY_CALENDAR_ICON_PACKAGE;
     public static final String KEY_NOTIFICATION_ICONS =
             PixelAodSettingsSchema.KEY_NOTIFICATION_ICONS;
+    public static final String KEY_PIXEL_NOTIFICATION_PEEK =
+            PixelAodSettingsSchema.KEY_PIXEL_NOTIFICATION_PEEK;
     public static final String KEY_PIXEL_FINGERPRINT_ICON =
             PixelAodSettingsSchema.KEY_PIXEL_FINGERPRINT_ICON;
     public static final String KEY_UDFPS_HDR_PRESS_EFFECT =

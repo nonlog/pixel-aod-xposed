@@ -370,6 +370,8 @@ final class PixelAodHook {
                             + " uri=" + uri);
                     PixelAodClockView.refreshAodPolicyFromSettings("settings-provider-change");
                     PowerSavingAodController.onPolicyChanged("settings-provider-change");
+                    PixelPeekNotificationController.onSettingsChanged(
+                            appContext, "settings-provider-change");
                     if (PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
                         CouiUdfpsController.refreshLast(appContext, "settings-provider-change");
                     } else {
@@ -456,6 +458,7 @@ final class PixelAodHook {
                     String source = "native-aod-setting-change#" + uri;
                     PixelAodClockView.refreshNativeAodEligibility(source);
                     PowerSavingAodController.onPolicyChanged(source);
+                    PixelPeekNotificationController.onSettingsChanged(appContext, source);
                 }
             };
             appContext.getContentResolver().registerContentObserver(
@@ -493,6 +496,10 @@ final class PixelAodHook {
             appContext.getContentResolver().registerContentObserver(
                     Settings.Secure.getUriFor(
                             NativeAodAvailabilityAdapter.OPLUS_AOD_END_MINUTE_SETTING),
+                    false, observer);
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(
+                            NativeOplusPeekSettingAdapter.OPLUS_NEW_NOTIFICATION_SETTING),
                     false, observer);
             appContext.getContentResolver().registerContentObserver(
                     Settings.Secure.getUriFor("user_setup_complete"), false, observer);
@@ -856,6 +863,9 @@ final class PixelAodHook {
     }
 
     private static boolean isStockAodDrawCandidate(String marker, View view) {
+        if (looksLikeNativeOplusPeekView(marker)) {
+            return false;
+        }
         if (looksLikeSystemAodMediaView(marker)) {
             return false;
         }
@@ -4599,6 +4609,12 @@ final class PixelAodHook {
             }
 
             String marker = markerFor(view);
+            if (looksLikeNativeOplusPeekView(marker)) {
+                return false;
+            }
+            if (view instanceof ViewGroup && containsNativeOplusPeekView((ViewGroup) view)) {
+                return true;
+            }
             if (looksLikeSystemAodMediaView(marker)) {
                 return false;
             }
@@ -5074,6 +5090,9 @@ final class PixelAodHook {
             }
 
             String marker = markerFor(view);
+            if (looksLikeNativeOplusPeekView(marker)) {
+                return false;
+            }
             if (looksLikeSystemAodMediaView(marker)) {
                 stats[0]++;
                 StockAodVisibilityController.hideView(view, marker, false);
@@ -5083,6 +5102,12 @@ final class PixelAodHook {
             if (view instanceof ViewGroup) {
                 if (looksLikeStockAodClockContainer(marker)
                         || looksLikeGenericStockAodVisual(marker, view)) {
+                    if (containsNativeOplusPeekView((ViewGroup) view)) {
+                        stats[1]++;
+                        PixelAodLog.log("preserved stock AOD container with native Peek subtree "
+                                + marker);
+                        return true;
+                    }
                     if (containsSystemAodMediaView((ViewGroup) view)) {
                         stats[1]++;
                         PixelAodLog.log("preserved stock AOD container with media subtree " + marker
@@ -5147,6 +5172,12 @@ final class PixelAodHook {
             }
 
             String marker = markerFor(view);
+            if (looksLikeNativeOplusPeekView(marker)) {
+                return false;
+            }
+            if (view instanceof ViewGroup && containsNativeOplusPeekView((ViewGroup) view)) {
+                return true;
+            }
             if (looksLikeSystemAodMediaView(marker)) {
                 return false;
             }
@@ -5516,7 +5547,7 @@ final class PixelAodHook {
     }
 
     private static void hideView(View view, String marker) {
-        if (containsPersistentClockPluginHost(view)) {
+        if (containsPersistentClockPluginHost(view) || looksLikeNativeOplusPeekView(marker)) {
             return;
         }
         StockAodVisibilityController.hideView(view, marker, looksLikeSystemAodMediaView(marker));
@@ -5661,7 +5692,7 @@ final class PixelAodHook {
     }
 
     private static boolean looksLikeGenericStockAodVisual(String marker, View view) {
-        if (view == null) {
+        if (view == null || looksLikeNativeOplusPeekView(marker)) {
             return false;
         }
         String m = marker.toLowerCase(Locale.US);
@@ -5985,6 +6016,33 @@ final class PixelAodHook {
 
     private static boolean looksLikePluginBatteryView(String marker) {
         return marker.toLowerCase(Locale.US).startsWith("com.oplus.egview.widget.batteryview");
+    }
+
+    private static boolean looksLikeNativeOplusPeekView(String marker) {
+        if (marker == null) {
+            return false;
+        }
+        String m = marker.toLowerCase(Locale.US);
+        return m.contains("com.oplus.systemui.aod.surface.oplusaodcurveddisplayview")
+                || m.contains("oplusaodcurveddisplayview");
+    }
+
+    private static boolean containsNativeOplusPeekView(ViewGroup root) {
+        if (root == null) {
+            return false;
+        }
+        int childCount = Math.min(root.getChildCount(), 120);
+        for (int i = 0; i < childCount; i++) {
+            View child = root.getChildAt(i);
+            if (looksLikeNativeOplusPeekView(markerFor(child))) {
+                return true;
+            }
+            if (child instanceof ViewGroup
+                    && containsNativeOplusPeekView((ViewGroup) child)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean looksLikePluginNotificationView(String marker) {
