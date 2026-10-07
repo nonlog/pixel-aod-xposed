@@ -58,7 +58,7 @@
     <string name="section_aod_behavior">AOD Behavior</string>
     <string name="section_power_saving_enhancements">Power Saving enhancements</string>
     <string name="title_pixel_notification_peek">Use Pixel notification Peek</string>
-    <string name="desc_pixel_notification_peek">Replace the OPlus native new-notification Peek with the module's Pixel-style card; turn off to keep the system Peek</string>
+    <string name="desc_pixel_notification_peek">Replace the OPlus native new-notification Peek with the module Pixel-style card; turn off to keep the system Peek</string>
     <string name="title_power_saving_notification_aod">Show AOD for new notifications</string>
     <string name="desc_power_saving_notification_aod">When OPlus AOD is in Power Saving, briefly show the full module AOD during the native notification window; independent of the Peek style switch</string>
     <string name="title_power_saving_charging_aod">Keep AOD on while charging</string>
