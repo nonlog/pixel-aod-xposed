@@ -51,7 +51,7 @@ public final class PixelPeekNativeCoexistenceWiringTest {
         assertTrue(facade.contains("CouiClockPluginHostController.drawAodIntoNativePeekSurface"));
         assertTrue(controller.contains("getLocationOnScreen"));
         assertTrue(controller.contains("candidate.host.draw(canvas)"));
-        assertTrue(controller.contains("candidate.host.presentation().dozing()"));
+        assertTrue(controller.contains("record.host.presentation().dozing()"));
     }
 
 }
