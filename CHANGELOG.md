@@ -12,14 +12,16 @@
 - Remove 7 unreferenced legacy pre-M8 policy classes and their 7 orphan test suites (`ClockPluginHostValidation`, `ClockPluginNonLockscreenEntryGate`, `ClockPluginPresentationGate`, `CouiClockAodEntryScenePolicy`, `CouiClockAodExitContinuityPolicy`, `CouiClockAodExitTransitionPolicy`, `CouiUdfpsPressedAnimationPolicy`).
 - Remove 14 unused legacy string resources from `values/strings.xml` and `values-en/strings.xml`, wire `ic_launcher_monochrome` into adaptive launcher icons (moved from `mipmap-anydpi-v26` to `mipmap-anydpi`), remove redundant `SettingsActivity` label and obsolete `minSdk 26` SDK guards, and eliminate remaining trailing whitespace across `app/src/`.
 - Synchronize `README.md` with the current OPlus AOD architecture (native display-mode ownership, Power Saving extensions, Pixel Peek) and GitHub-first `main` branch workflow.
+- Add environment-driven release signing support in `app/build.gradle`, a one-command signed release script (`scripts/build_release.sh`), and an automated GitHub Actions release workflow (`.github/workflows/release.yml`) that signs with configured secrets or an auto-generated ephemeral key and publishes GitHub Releases with SHA-256 checksums.
 - Bump release metadata to **0.1.46 / 9045** across `app/build.gradle` and `META-INF/xposed/module.prop` while keeping all 7 protected animation-core files (`M9_ANIMATION_NON_REGRESSION.md`) strictly untouched.
 
 ### Validation
 - Automated Gradle gate (`:app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease`): **BUILD SUCCESSFUL**.
 - Unit tests: **107 suites, 534 tests, 0 failures, 0 errors, 0 skipped** (including new bounded GZIP decompression regression coverage in `BreezyWeatherRelayReceiverTest`).
 - Android Lint: **0 errors, 58 warnings** (reduced from 91 warnings; remaining warnings are expected Xposed reflection/private-API hooks, dynamically loaded AOSP drawables, and untouched protected animation-core code).
-- Modern libxposed packaging verified in both `app-debug.apk` (`SHA-256: dcfd327abd99ce109ac28618450e3520de14e0997c34e105143318d4b7056cc8`) and `app-release-unsigned.apk` (`SHA-256: 4b99d8b6b1874f102b83960ffe4e628bb6fd22b637dde39cffb1ccd065faf5e0`): `version=0.1.46`, `versionCode=9045`, `minApiVersion=101`, `targetApiVersion=101`, `staticScope=true`, sole scope `com.android.systemui`, no legacy `assets/xposed_init`.
-- **Device verification not performed in this environment**: physical acceptance on OPlus/OnePlus hardware (CPH2573 / OxygenOS 16.0.9) and release signing/GitHub release publication remain required before promoting to end users.
+- Signed Release APK verified with `apksigner verify --verbose --print-certs` (V2/V3 schemes): `PixelAOD-v0.1.46-release.apk` (`SHA-256: 9c3bdcba9cfcc0c070718a8b215efedc6a177e60785ff3a928a899b394afe493`, cert `SHA-256: 5217e423759527ad1bd71f314fedc33d8de844c0bd538b9b735b5bbe988a3eca`).
+- Modern libxposed packaging verified in both `app-debug.apk` (`SHA-256: dcfd327abd99ce109ac28618450e3520de14e0997c34e105143318d4b7056cc8`) and `PixelAOD-v0.1.46-release.apk`: `version=0.1.46`, `versionCode=9045`, `minApiVersion=101`, `targetApiVersion=101`, `staticScope=true`, sole scope `com.android.systemui`, no legacy `assets/xposed_init`.
+- **Device verification not performed in this environment**: physical acceptance on OPlus/OnePlus hardware (CPH2573 / OxygenOS 16.0.9) remains required before promoting to end users.
 
 ## [0.1.45] - 2026-09-11
 ### Fixed

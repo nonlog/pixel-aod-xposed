@@ -1,0 +1,249 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (defaults to v<versionName> from app/build.gradle)'
+        required: false
+        default: ''
+      prerelease:
+        description: 'Mark GitHub Release as pre-release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, sign, and publish release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.1.0'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Validate release version metadata
+        id: version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+
+          gradle_text = open('app/build.gradle', encoding='utf-8').read()
+          prop_text = open('app/src/main/resources/META-INF/xposed/module.prop', encoding='utf-8').read()
+
+          g_ver = re.search(r'versionName\s+"([^"]+)"', gradle_text).group(1)
+          g_code = re.search(r'versionCode\s+(\d+)', gradle_text).group(1)
+          p_ver = re.search(r'^version=(.+)$', prop_text, re.M).group(1).strip()
+          p_code = re.search(r'^versionCode=(\d+)$', prop_text, re.M).group(1).strip()
+
+          if g_ver != p_ver or g_code != p_code:
+              sys.exit(f'Version mismatch: build.gradle=({g_ver}/{g_code}) vs module.prop=({p_ver}/{p_code})')
+
+          ref_name = os.environ.get('GITHUB_REF_NAME', '')
+          ref_type = os.environ.get('GITHUB_REF_TYPE', '')
+          input_tag = os.environ.get('INPUT_RELEASE_TAG', '').strip()
+          tag = ref_name if ref_type == 'tag' else (input_tag or f'v{g_ver}')
+
+          if ref_type == 'tag' and tag != f'v{g_ver}':
+              sys.exit(f'Tag {tag} does not match app versionName v{g_ver}')
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as out:
+              out.write(f'version_name={g_ver}\n')
+              out.write(f'version_code={g_code}\n')
+              out.write(f'tag={tag}\n')
+          print(f'Verified release metadata: tag={tag} version={g_ver} ({g_code})')
+          PY
+        env:
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+
+      - name: Run unit tests and Android lint
+        shell: bash
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon --stacktrace
+
+      - name: Prepare signing keystore
+        id: signing
+        shell: bash
+        env:
+          SECRET_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          SECRET_STORE_PASS: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          SECRET_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          SECRET_KEY_PASS: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          KEYSTORE_PATH="$RUNNER_TEMP/pixel-aod-release.p12"
+          if [[ -n "$SECRET_KEYSTORE_B64" && -n "$SECRET_STORE_PASS" && -n "$SECRET_KEY_ALIAS" && -n "$SECRET_KEY_PASS" ]]; then
+            printf '%s' "$SECRET_KEYSTORE_B64" | base64 -d > "$KEYSTORE_PATH"
+            chmod 600 "$KEYSTORE_PATH"
+            echo "PIXEL_AOD_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+            echo "PIXEL_AOD_KEYSTORE_PASSWORD=$SECRET_STORE_PASS" >> "$GITHUB_ENV"
+            echo "PIXEL_AOD_KEY_ALIAS=$SECRET_KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "PIXEL_AOD_KEY_PASSWORD=$SECRET_KEY_PASS" >> "$GITHUB_ENV"
+            echo "mode=configured-secret" >> "$GITHUB_OUTPUT"
+          else
+            EPHEMERAL_PASS="$(openssl rand -hex 24)"
+            echo "::add-mask::$EPHEMERAL_PASS"
+            keytool -genkeypair \
+              -storetype PKCS12 \
+              -keystore "$KEYSTORE_PATH" \
+              -storepass "$EPHEMERAL_PASS" \
+              -keypass "$EPHEMERAL_PASS" \
+              -alias pixel-aod-release \
+              -keyalg RSA \
+              -keysize 4096 \
+              -validity 10000 \
+              -dname "CN=Pixel AOD for OPlus, OU=Release, O=PixelAOD, C=US"
+            chmod 600 "$KEYSTORE_PATH"
+            echo "PIXEL_AOD_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+            echo "PIXEL_AOD_KEYSTORE_PASSWORD=$EPHEMERAL_PASS" >> "$GITHUB_ENV"
+            echo "PIXEL_AOD_KEY_ALIAS=pixel-aod-release" >> "$GITHUB_ENV"
+            echo "PIXEL_AOD_KEY_PASSWORD=$EPHEMERAL_PASS" >> "$GITHUB_ENV"
+            echo "mode=ephemeral-generated" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build signed release APK
+        shell: bash
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Verify signed APK and package release artifacts
+        id: package
+        shell: bash
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+        run: |
+          SIGNED_APK="app/build/outputs/apk/release/app-release.apk"
+          test -f "$SIGNED_APK"
+
+          APKSIGNER="${ANDROID_HOME}/build-tools/36.1.0/apksigner"
+          CERT_INFO="$("$APKSIGNER" verify --verbose --print-certs "$SIGNED_APK")"
+          echo "$CERT_INFO"
+          CERT_SHA256="$(printf '%s\n' "$CERT_INFO" | sed -nE 's/.*certificate SHA-256 digest: ([0-9a-fA-F]+).*/\1/p' | head -n 1)"
+
+          python3 - <<'PY'
+          import os, sys, zipfile
+          apk = 'app/build/outputs/apk/release/app-release.apk'
+          with zipfile.ZipFile(apk) as zf:
+              names = set(zf.namelist())
+              if 'assets/xposed_init' in names:
+                  sys.exit('Legacy assets/xposed_init must not be present')
+              prop = zf.read('META-INF/xposed/module.prop').decode('utf-8')
+              init_cls = zf.read('META-INF/xposed/java_init.list').decode('utf-8').strip()
+              scope = zf.read('META-INF/xposed/scope.list').decode('utf-8').strip()
+              assert f"version={os.environ['VERSION_NAME']}" in prop, prop
+              assert f"versionCode={os.environ['VERSION_CODE']}" in prop, prop
+              assert 'staticScope=true' in prop, prop
+              assert init_cls == 'dev.codex.pixelaod.PixelAodModernEntry', init_cls
+              assert scope == 'com.android.systemui', scope
+          print('Modern libxposed metadata verified.')
+          PY
+
+          mkdir -p dist
+          ASSET_APK="dist/PixelAOD-v${VERSION_NAME}-release.apk"
+          cp "$SIGNED_APK" "$ASSET_APK"
+          (cd dist && sha256sum "$(basename "$ASSET_APK")" > "$(basename "$ASSET_APK").sha256")
+          APK_SHA256="$(awk '{print $1}' "${ASSET_APK}.sha256")"
+
+          {
+            echo "asset_apk=$ASSET_APK"
+            echo "asset_sha=${ASSET_APK}.sha256"
+            echo "apk_sha256=$APK_SHA256"
+            echo "cert_sha256=$CERT_SHA256"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        shell: bash
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+          APK_SHA256: ${{ steps.package.outputs.apk_sha256 }}
+          CERT_SHA256: ${{ steps.package.outputs.cert_sha256 }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+
+          ver = os.environ['VERSION_NAME']
+          code = os.environ['VERSION_CODE']
+          mode = os.environ['SIGNING_MODE']
+          apk_sha = os.environ['APK_SHA256']
+          cert_sha = os.environ['CERT_SHA256']
+
+          changelog = open('CHANGELOG.md', encoding='utf-8').read()
+          pattern = rf'^## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=^## \[|\Z)'
+          m = re.search(pattern, changelog, re.M | re.S)
+          body = m.group(1).strip() if m else f'Release v{ver} (versionCode {code}).'
+
+          notes = [
+              f'## Pixel AOD for OPlus v{ver} (`versionCode {code}`)',
+              '',
+              body,
+              '',
+              '### Package & Signature',
+              f'- **APK**: `PixelAOD-v{ver}-release.apk`',
+              f'- **APK SHA-256**: `{apk_sha}`',
+              f'- **Signing Certificate SHA-256**: `{cert_sha}`',
+              f'- **Signing Mode**: `{mode}`',
+          ]
+          if mode == 'ephemeral-generated':
+              notes.append(
+                  '- **Install Note**: Signed with a freshly generated release key. If a previously installed build used a different signature, uninstall the old app first before installing this APK.'
+              )
+          open('dist/RELEASE_NOTES.md', 'w', encoding='utf-8').write('\n'.join(notes) + '\n')
+          PY
+
+      - name: Publish GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          ASSET_APK: ${{ steps.package.outputs.asset_apk }}
+          ASSET_SHA: ${{ steps.package.outputs.asset_sha }}
+          PRERELEASE: ${{ inputs.prerelease || false }}
+        run: |
+          FLAGS=(--title "Pixel AOD for OPlus v${VERSION_NAME}" --notes-file dist/RELEASE_NOTES.md)
+          if [[ "$PRERELEASE" == "true" ]]; then
+            FLAGS+=(--prerelease)
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET_APK" "$ASSET_SHA" --clobber
+            gh release edit "$TAG" "${FLAGS[@]}"
+          else
+            gh release create "$TAG" "$ASSET_APK" "$ASSET_SHA" "${FLAGS[@]}"
+          fi
+
+      - name: Cleanup temporary keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/pixel-aod-release.p12"

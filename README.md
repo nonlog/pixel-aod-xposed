@@ -49,9 +49,26 @@ The debug APK is written to:
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
+### Release Build & GitHub Release
+
+Build a signed release APK locally (uses `PIXEL_AOD_KEYSTORE_*` environment variables when provided, or generates an ephemeral release signing key automatically):
+
+```bash
+bash scripts/build_release.sh
+```
+
+The verified signed release APK and checksum are written to:
+
+```text
+app/build/outputs/apk/release/PixelAOD-v<version>-release.apk
+app/build/outputs/apk/release/PixelAOD-v<version>-release.apk.sha256
+```
+
+To publish a GitHub Release automatically, push a matching version tag (e.g. `git tag v0.1.46 && git push origin v0.1.46`) or run the **Release** workflow manually in GitHub Actions (`.github/workflows/release.yml`). If repository signing secrets (`RELEASE_KEYSTORE_BASE64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`) are not configured, the workflow automatically generates an ephemeral signing key for the release APK.
+
 ## Install
 
-Install as an upgrade to preserve the module configuration:
+Install as an upgrade to preserve the module configuration (if switching to a build with a different signature, uninstall the previous package first):
 
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
