@@ -60,9 +60,7 @@ import android.widget.TextView;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -75,7 +73,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
-import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.time.ZoneId;
@@ -3374,22 +3371,18 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static String firstWeatherJsonFromGzip(byte[] compressed) {
-        if (compressed == null || compressed.length == 0) {
+        String decompressed = BreezyWeatherRelayReceiver.decompressWeatherGz(
+                compressed, BreezyWeatherRelayReceiver.MAX_WEATHER_GZ_CHARS);
+        if (decompressed == null || decompressed.isEmpty()) {
             return null;
         }
-        try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(compressed));
-             InputStreamReader reader = new InputStreamReader(gzip, StandardCharsets.UTF_8)) {
-            StringBuilder builder = new StringBuilder();
-            char[] buffer = new char[1024];
-            int read;
-            while ((read = reader.read(buffer)) >= 0) {
-                builder.append(buffer, 0, read);
-            }
-            JSONArray array = new JSONArray(builder.toString());
+        try {
+            JSONArray array = new JSONArray(decompressed);
             if (array.length() == 0) {
                 return null;
             }
-            return array.optJSONObject(0).toString();
+            JSONObject first = array.optJSONObject(0);
+            return first != null ? first.toString() : null;
         } catch (Throwable t) {
             PixelAodLog.log("failed to parse Breezy WeatherGz payload", t);
             return null;
@@ -5716,16 +5709,12 @@ public final class PixelAodClockView extends FrameLayout {
         overflowView.setMinLines(styleSource.getMinLines());
         overflowView.setMinHeight(styleSource.getMinHeight());
         overflowView.setMinWidth(styleSource.getMinWidth());
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            overflowView.setBreakStrategy(styleSource.getBreakStrategy());
-            overflowView.setHyphenationFrequency(styleSource.getHyphenationFrequency());
-        }
+        overflowView.setBreakStrategy(styleSource.getBreakStrategy());
+        overflowView.setHyphenationFrequency(styleSource.getHyphenationFrequency());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             overflowView.setElegantTextHeight(styleSource.isElegantTextHeight());
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            overflowView.setFontVariationSettings(styleSource.getFontVariationSettings());
-        }
+        overflowView.setFontVariationSettings(styleSource.getFontVariationSettings());
         float parentAlpha = parent != null ? parent.getAlpha() : 1f;
         float sourceAlpha = styleSource.getAlpha();
         overflowView.setAlpha(parentAlpha > 0.01f
@@ -8682,7 +8671,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static Typeface resolveClockTypeface(Context context, int weight) {
-        if (context == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        if (context == null) {
             return null;
         }
         weight = normalizeClockWeight(weight);
@@ -8935,7 +8924,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static void applyFontVariation(TextView textView, int weight) {
-        if (textView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        if (textView == null) {
             return;
         }
         try {
@@ -8946,7 +8935,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static void clearTextViewFontVariation(TextView textView) {
-        if (textView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        if (textView == null) {
             return;
         }
         try {
@@ -9080,15 +9069,15 @@ public final class PixelAodClockView extends FrameLayout {
             java.util.Calendar now = java.util.Calendar.getInstance();
             now.setTimeInMillis(nowMillis);
             int nowMins = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE);
-            
+
             java.util.Calendar sunrise = java.util.Calendar.getInstance();
             sunrise.setTimeInMillis(sunriseMillis);
             int sunRiseMins = sunrise.get(java.util.Calendar.HOUR_OF_DAY) * 60 + sunrise.get(java.util.Calendar.MINUTE);
-            
+
             java.util.Calendar sunset = java.util.Calendar.getInstance();
             sunset.setTimeInMillis(sunsetMillis);
             int sunSetMins = sunset.get(java.util.Calendar.HOUR_OF_DAY) * 60 + sunset.get(java.util.Calendar.MINUTE);
-            
+
             return nowMins < sunRiseMins || nowMins >= sunSetMins;
         }
 

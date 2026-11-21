@@ -3,7 +3,6 @@ package dev.codex.pixelaod;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.database.Cursor;
-import android.os.Build;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -251,8 +250,8 @@ public final class PixelAodSettings {
     }
 
     private static Context storageContext(Context context) {
-        if (context == null || Build.VERSION.SDK_INT < 24) {
-            return context;
+        if (context == null) {
+            return null;
         }
         Context directBootContext = context.createDeviceProtectedStorageContext();
         if (directBootContext == null) {

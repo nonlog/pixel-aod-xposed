@@ -208,7 +208,8 @@ final class PixelAodHook {
             Pattern.compile("(?i)(?:\\bjust now\\b|\\b\\d+\\s*(?:min|mins|minute|minutes|hr|hrs|hour|hours)\\s+ago\\b|刚刚|\\d+\\s*(?:分钟|小时)前)");
     private static final Pattern NOTIFICATION_CLOCK_TIME_PATTERN =
             Pattern.compile("\\b\\d{1,2}:\\d{2}\\b");
-    private static NotificationListenerService lastNotificationListener;
+    private static volatile WeakReference<NotificationListenerService> lastNotificationListener =
+            new WeakReference<>(null);
     private static volatile boolean pendingSleepFromUnlocked;
     private static volatile boolean pendingSleepOriginAuthoritative;
     private static volatile long pendingSleepOriginLatchedAt = Long.MIN_VALUE;
@@ -1307,7 +1308,7 @@ final class PixelAodHook {
         if (!(candidate instanceof NotificationListenerService)) {
             return;
         }
-        lastNotificationListener = (NotificationListenerService) candidate;
+        lastNotificationListener = new WeakReference<>((NotificationListenerService) candidate);
         PixelAodLog.log("remembered notification listener from " + source
                 + " class=" + candidate.getClass().getName()
                 + " trace=" + PixelAodClockView.currentAodTraceId()
@@ -1315,7 +1316,7 @@ final class PixelAodHook {
     }
 
     private static void refreshNotificationsFromLastListener(String source) {
-        NotificationListenerService service = lastNotificationListener;
+        NotificationListenerService service = lastNotificationListener.get();
         if (service == null) {
             PixelAodLog.log("no cached notification listener for " + source
                     + " trace=" + PixelAodClockView.currentAodTraceId());
@@ -1837,7 +1838,7 @@ final class PixelAodHook {
             }
             StatusBarNotification[] notifications = (StatusBarNotification[]) param.args[index];
             StatusBarNotification[] snapshot = mergeCachedNotifications(notifications);
-            if (lastNotificationListener != null) {
+            if (lastNotificationListener.get() != null) {
                 refreshNotificationsFromLastListener(source + "#merged-oplus-subset");
             } else {
                 PixelAodClockView.setActiveNotifications(snapshot, source);
@@ -1881,7 +1882,7 @@ final class PixelAodHook {
 
     private static void clearCachedNotifications(String source) {
         try {
-            if (lastNotificationListener != null) {
+            if (lastNotificationListener.get() != null) {
                 refreshNotificationsFromLastListener(source);
                 PixelAodLog.log("refreshed fallback native AOD notification icons from " + source
                         + " trace=" + PixelAodClockView.currentAodTraceId()
@@ -4615,7 +4616,7 @@ final class PixelAodHook {
             if (!notifications.isEmpty()) {
                 StatusBarNotification[] array = notifications.toArray(new StatusBarNotification[0]);
                 StatusBarNotification[] snapshot = mergeCachedNotifications(array);
-                if (lastNotificationListener != null) {
+                if (lastNotificationListener.get() != null) {
                     refreshNotificationsFromLastListener("runtime-NotificationView#merged-oplus-subset");
                 } else {
                     PixelAodClockView.setActiveNotifications(snapshot,

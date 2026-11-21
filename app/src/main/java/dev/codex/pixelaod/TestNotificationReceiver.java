@@ -23,8 +23,12 @@ public final class TestNotificationReceiver extends BroadcastReceiver {
             return;
         }
         String action = intent.getAction();
+        NotificationManager manager = notificationManager(context);
+        if (manager == null) {
+            return;
+        }
         if (ACTION_CLEAR.equals(action)) {
-            notificationManager(context).cancel(TEST_TAG, NOTIFICATION_ID);
+            manager.cancel(TEST_TAG, NOTIFICATION_ID);
             return;
         }
         if (!ACTION_POST.equals(action)) {
@@ -36,14 +40,10 @@ public final class TestNotificationReceiver extends BroadcastReceiver {
             PixelAodLog.log("test notification skipped; POST_NOTIFICATIONS is not granted");
             return;
         }
-        NotificationManager manager = notificationManager(context);
         ensureChannel(manager);
         String title = intent.getStringExtra("title");
         String text = intent.getStringExtra("text");
-        Notification.Builder builder = Build.VERSION.SDK_INT >= 26
-                ? new Notification.Builder(context, CHANNEL_ID)
-                : new Notification.Builder(context);
-        Notification notification = builder
+        Notification notification = new Notification.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_pixel_aod_test)
                 .setContentTitle(title != null ? title : "Pixel AOD test")
                 .setContentText(text != null ? text : "Lockscreen notification")
@@ -61,7 +61,7 @@ public final class TestNotificationReceiver extends BroadcastReceiver {
     }
 
     private static void ensureChannel(NotificationManager manager) {
-        if (Build.VERSION.SDK_INT < 26 || manager == null) {
+        if (manager == null) {
             return;
         }
         NotificationChannel channel = new NotificationChannel(

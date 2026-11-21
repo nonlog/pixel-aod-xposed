@@ -36,6 +36,8 @@ final class PixelPeekNotificationView extends View {
     private final TextPaint headerPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint titlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint messagePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF cardRect = new RectF();
+    private final Rect oldIconBounds = new Rect();
     private PixelPeekNotificationContent content;
     private float cardTopPx = Float.NaN;
 
@@ -111,18 +113,18 @@ final class PixelPeekNotificationView extends View {
                 dp(CARD_MIN_HEIGHT_DP), dp(CARD_MAX_HEIGHT_DP));
         float bottom = Math.min(getHeight() - side, top + cardHeight);
 
-        RectF card = new RectF(left, top, right, bottom);
-        canvas.drawRoundRect(card, dp(CARD_RADIUS_DP), dp(CARD_RADIUS_DP), cardPaint);
+        cardRect.set(left, top, right, bottom);
+        canvas.drawRoundRect(cardRect, dp(CARD_RADIUS_DP), dp(CARD_RADIUS_DP), cardPaint);
 
         Drawable icon = current.appIcon;
         if (icon != null) {
             int iconLeft = Math.round(left + padding);
             int iconTop = Math.round(top + ((bottom - top - iconSize) / 2f));
             int size = Math.round(iconSize);
-            Rect old = icon.copyBounds();
+            oldIconBounds.set(icon.getBounds());
             icon.setBounds(iconLeft, iconTop, iconLeft + size, iconTop + size);
             icon.draw(canvas);
-            icon.setBounds(old);
+            icon.setBounds(oldIconBounds);
         }
 
         float y = top + padding - headerPaint.getFontMetrics().top;

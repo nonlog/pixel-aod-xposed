@@ -670,6 +670,8 @@ final class AodNotificationPipeline {
     }
 
     static final class RankingSnapshot {
+        // Matches NotificationListenerService.Ranking.VISIBILITY_NO_OVERRIDE (added in API 31).
+        private static final int VISIBILITY_NO_OVERRIDE = -1000;
         final int overrideVisibility;
         final int channelVisibility;
         final int importance;
@@ -684,7 +686,7 @@ final class AodNotificationPipeline {
         }
 
         static RankingSnapshot from(NotificationListenerService.Ranking ranking) {
-            int channelVisibility = NotificationListenerService.Ranking.VISIBILITY_NO_OVERRIDE;
+            int channelVisibility = VISIBILITY_NO_OVERRIDE;
             try {
                 NotificationChannel channel = ranking.getChannel();
                 if (channel != null) {
@@ -702,7 +704,7 @@ final class AodNotificationPipeline {
                 suppressedEffects = ranking.getSuppressedVisualEffects();
             } catch (Throwable ignored) {
             }
-            int overrideVisibility = NotificationListenerService.Ranking.VISIBILITY_NO_OVERRIDE;
+            int overrideVisibility = VISIBILITY_NO_OVERRIDE;
             try {
                 if (android.os.Build.VERSION.SDK_INT >= 31) {
                     overrideVisibility = ranking.getLockscreenVisibilityOverride();

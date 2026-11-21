@@ -29,7 +29,7 @@ final class ContextualAtAGlanceStateStore {
 
     ContextualAtAGlanceStateStore(Context context) {
         Context storage = context;
-        if (storage != null && android.os.Build.VERSION.SDK_INT >= 24) {
+        if (storage != null) {
             Context directBoot = storage.createDeviceProtectedStorageContext();
             if (directBoot != null) {
                 storage = directBoot;

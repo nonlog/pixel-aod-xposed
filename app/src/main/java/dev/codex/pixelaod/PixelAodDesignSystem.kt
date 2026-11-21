@@ -75,6 +75,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -398,7 +399,7 @@ private fun PixelAodSwitch(checked: Boolean, enabled: Boolean = true) {
     ) {
         Box(
             modifier = Modifier
-                .offset(x = thumbOffset, y = 3.dp)
+                .offset { IntOffset(thumbOffset.roundToPx(), 3.dp.roundToPx()) }
                 .size(30.dp)
                 .clip(CircleShape)
                 .background(thumbColor),

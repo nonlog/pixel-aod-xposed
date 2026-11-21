@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.46] - 2026-11-21
+### Security & Stability Hardening
+- Bound GZIP decompression on the exported `BreezyWeatherRelayReceiver` (`MAX_WEATHER_GZ_BYTES = 256 KiB`, `MAX_WEATHER_GZ_CHARS = 1 MiB`) and reuse that bounded helper in `PixelAodClockView` to prevent oversized or corrupted compressed weather payloads from exhausting memory.
+- Replace raw `Intent.putExtras(extras)` forwarding in `BreezyWeatherRelayReceiver` with an explicit weather-extra allowlist when relaying snapshots to `com.android.systemui`.
+- Store `PixelAodHook.lastNotificationListener` via a `WeakReference<NotificationListenerService>` to avoid retaining a destroyed listener service across SystemUI lifecycle transitions.
+- Add defensive `NotificationManager` null checks in `TestNotificationReceiver`.
+- Preallocate reusable `RectF`/`Rect` objects in `PixelPeekNotificationView` instead of allocating inside `onDraw()`, and switch the animated Compose switch thumb in `PixelAodDesignSystem.kt` to the lambda `Modifier.offset { ... }` overload.
+
+### Cleanup & Packaging
+- Remove 7 unreferenced legacy pre-M8 policy classes and their 7 orphan test suites (`ClockPluginHostValidation`, `ClockPluginNonLockscreenEntryGate`, `ClockPluginPresentationGate`, `CouiClockAodEntryScenePolicy`, `CouiClockAodExitContinuityPolicy`, `CouiClockAodExitTransitionPolicy`, `CouiUdfpsPressedAnimationPolicy`).
+- Remove 14 unused legacy string resources from `values/strings.xml` and `values-en/strings.xml`, wire `ic_launcher_monochrome` into adaptive launcher icons (moved from `mipmap-anydpi-v26` to `mipmap-anydpi`), remove redundant `SettingsActivity` label and obsolete `minSdk 26` SDK guards, and eliminate remaining trailing whitespace across `app/src/`.
+- Synchronize `README.md` with the current OPlus AOD architecture (native display-mode ownership, Power Saving extensions, Pixel Peek) and GitHub-first `main` branch workflow.
+- Bump release metadata to **0.1.46 / 9045** across `app/build.gradle` and `META-INF/xposed/module.prop` while keeping all 7 protected animation-core files (`M9_ANIMATION_NON_REGRESSION.md`) strictly untouched.
+
+### Validation
+- Automated Gradle gate (`:app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease`): **BUILD SUCCESSFUL**.
+- Unit tests: **107 suites, 534 tests, 0 failures, 0 errors, 0 skipped** (including new bounded GZIP decompression regression coverage in `BreezyWeatherRelayReceiverTest`).
+- Android Lint: **0 errors, 58 warnings** (reduced from 91 warnings; remaining warnings are expected Xposed reflection/private-API hooks, dynamically loaded AOSP drawables, and untouched protected animation-core code).
+- Modern libxposed packaging verified in both `app-debug.apk` (`SHA-256: dcfd327abd99ce109ac28618450e3520de14e0997c34e105143318d4b7056cc8`) and `app-release-unsigned.apk` (`SHA-256: 4b99d8b6b1874f102b83960ffe4e628bb6fd22b637dde39cffb1ccd065faf5e0`): `version=0.1.46`, `versionCode=9045`, `minApiVersion=101`, `targetApiVersion=101`, `staticScope=true`, sole scope `com.android.systemui`, no legacy `assets/xposed_init`.
+- **Device verification not performed in this environment**: physical acceptance on OPlus/OnePlus hardware (CPH2573 / OxygenOS 16.0.9) and release signing/GitHub release publication remain required before promoting to end users.
+
 ## [0.1.45] - 2026-09-11
 ### Fixed
 - Fix the later Power Saving update-budget terminal that remained after 0.1.44. On CPH2573/OOS 16.0.9-class SystemUI, `WorkshopAodController.needUpdateClock()` eventually sees `AodUpdateManager.isDisplayModeAllowUpdateClock()` return false and calls `AodClockLayout.hideClock(12)`, clearing `mAodIsInShow` before the later DreamService OFF request.

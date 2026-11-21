@@ -12,8 +12,11 @@ leaving the platform's display, biometric, and power-management ownership intact
 - Persistent OPlus ClockPlugin host integration for smoother lockscreen-to-AOD handoff.
 - AOD notification icons, live alert icons, notification overflow labels, media metadata,
   and media timeout handling.
-- Schedule, continuous, and trigger-oriented AOD display policies with proximity and
-  power-policy awareness.
+- Native OPlus AOD display-mode ownership (Power Saving / Scheduled / All day) with optional
+  Power Saving extensions for OPlus-admitted notification windows and charging hold, keeping
+  proximity, power policy, and panel/HBM authority vendor-owned.
+- Optional Pixel Peek Material You notification card presentation on AOD while keeping
+  OPlus notification admission and privacy rules intact.
 - OPlus-native fingerprint icon/press/HBM ownership with an optional Pixel AOD success-ripple overlay;
   experimental icon replacement remains available but is not the release-default path.
 - Structured diagnostic logging for AOD lifecycle, native suppression, notifications,
@@ -88,13 +91,11 @@ See `docs/M8_ARCHITECTURE_CONVERGENCE.md` for convergence gates and rationale. C
 
 ## Development Branches
 
-- `master`: stable integration branch.
-- `agent/m9-implementation`: current Android 17 parity/M9 implementation branch until integration.
-- `agent/coui-port`: validated COUI-port development/history branch.
-- Other `agent/*` branches may be used for isolated experiments.
+- `main`: canonical GitHub integration branch (see `docs/GITHUB_FIRST_DEVELOPMENT.md`).
+- `master`: historical branch retained for lineage.
+- `agent/*` / feature branches: isolated implementation branches merged back to `main` via PRs.
 
-The branches are synchronized when a validated integration is ready. Local device logs,
-screenshots, IDE files, and build outputs are intentionally ignored.
+Local device logs, screenshots, IDE files, and build outputs are intentionally ignored.
 
 ## License
 
