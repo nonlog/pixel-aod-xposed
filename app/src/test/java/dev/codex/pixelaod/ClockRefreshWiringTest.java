@@ -41,12 +41,16 @@ public class ClockRefreshWiringTest {
 
     @Test public void bothPocketRecoveryPathsReachPrimary() throws Exception {
         String text = source("PixelAodClockView");
-        assertTrue(section(text, "static void updateProximityFromOos",
-                "private static void clearProximityState").contains(
+        String update = section(text, "static void updateProximityFromOos",
+                "private static void clearProximityState");
+        assertTrue(update.contains(
                 "ActiveClockRendererController.onTimeTick(\"oos-proximity-resume\")"));
-        assertTrue(section(text, "static void resetProximityFromOos",
-                "static boolean isProximityNear").contains(
+        assertTrue(update.contains("ActiveClockRendererController.setPocketGuard"));
+        String reset = section(text, "static void resetProximityFromOos",
+                "static boolean isProximityNear");
+        assertTrue(reset.contains(
                 "ActiveClockRendererController.onTimeTick(\"oos-proximity-reset\")"));
+        assertTrue(reset.contains("ActiveClockRendererController.setPocketGuard(false"));
     }
 
     @Test public void persistentHostRefreshesBeforeRevealAndOnAncestorVisibility() throws Exception {
@@ -56,6 +60,50 @@ public class ClockRefreshWiringTest {
         assertTrue(reveal.indexOf("onTimeTick(") < reveal.indexOf("setVisibility(VISIBLE)"));
         assertTrue(section(text, "public void onVisibilityAggregated",
                 "public void onRtlPropertiesChanged").contains("onTimeTick(\"visibility-resume\")"));
+    }
+
+    @Test public void everyPrimaryRevealHonorsLivePocketGuard() throws Exception {
+        String reveal = section(source("CouiClockHostView"),
+                "void setPrimaryVisible", "void cancelTransitions");
+        int guard = reveal.indexOf("PixelAodClockView.isPocketGuardActive()");
+        assertTrue("all render and prearm reveals must check the pocket guard", guard >= 0);
+        assertTrue(guard < reveal.indexOf("if (visible)"));
+        assertTrue(reveal.contains("PixelAodRuntimeState.isDeviceInteractive(getContext())"));
+        String attach = section(source("CouiClockPluginHostController"),
+                "private static HostRecord ensureHost", "private static void syncHost");
+        assertFalse(attach.contains("setVisibility(View.VISIBLE)"));
+        assertTrue(attach.contains("existing.host.setPrimaryVisible(true"));
+        assertTrue(attach.contains("host.setPrimaryVisible(true"));
+    }
+
+    @Test public void interruptedTargetsAreReappliedBeforeHiddenHostReturns() throws Exception {
+        String text = source("CouiClockHostView");
+        String cancel = section(text, "private void cancelRunningPropertyAnimations",
+                "private void applyTargets");
+        assertTrue("cancelled glyph animations cannot retain completed endpoint snapshots",
+                cancel.contains("appliedGlyphTargets.clear()"));
+        assertTrue("cancelled information animations cannot retain endpoint snapshots",
+                cancel.contains("appliedInformationTargets.clear()"));
+        String reveal = section(text, "void setPrimaryVisible", "void cancelTransitions");
+        int snap = reveal.indexOf("applyTargets(false, 0L)");
+        assertTrue("an interrupted hidden host must settle before it is visible",
+                snap >= 0 && snap < reveal.indexOf("setVisibility(VISIBLE)"));
+        assertTrue("a running visible animation must keep its normal ownership",
+                reveal.contains("getVisibility() != VISIBLE && appliedGlyphTargets.isEmpty()"));
+        String apply = section(text, "private void applyGlyphTarget",
+                "private void applyMorphColonTarget");
+        assertTrue("normal refreshes must retain target deduplication",
+                apply.indexOf("applied.equals(appliedGlyphTargets.get(view))")
+                        < apply.indexOf("view.animate().cancel()"));
+    }
+
+    @Test public void cachedProximityGettersCannotOverrideDwellEvents() throws Exception {
+        String hook = source("PixelAodHook");
+        String getters = section(hook, "if (\"getProxNear\".equals",
+                "} else if (vendorWakeTriggerAuthorityHooked");
+        assertEquals("both cached getter paths must defer to the installed task hooks", 2,
+                getters.split("!vendorProximityPauseAuthorityHooked", -1).length - 1);
+        assertTrue(hook.contains("vendorProximityPauseAuthorityHooked = taskHooked"));
     }
 
     @Test public void successfulDigitsPrecedeCacheCommitAndAncillaryWork() throws Exception {

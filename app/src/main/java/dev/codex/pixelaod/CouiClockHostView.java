@@ -419,6 +419,41 @@ final class CouiClockHostView extends FrameLayout {
         applyClockColors();
         applyTargets(false, 0L);
     }
+
+    /**
+     * Synchronously restore a hidden persistent host to its lockscreen presentation before the
+     * native ClockViewRoot reveals it after a full-screen alarm/call or bouncer. This changes no
+     * native visibility state; it only guarantees that the child's first drawable frame already
+     * has lockscreen geometry and variable-font weight.
+     */
+    void preloadLockscreenReturn(CouiClockPresentationModel next, String source) {
+        if (next == null || next.dozing()) {
+            return;
+        }
+        diagnosticSource = source == null ? "preload-lockscreen-return" : source;
+        aodExitAnimationDeadlineUptimeMillis = 0L;
+        cancelAodEntryTransaction();
+        cancelPendingLiveAodRetarget(true);
+        cancelLiveAodCrossfade();
+        cancelScheduledTargetApply();
+        cancelRunningPropertyAnimations();
+        for (TextView digit : largeSet.digits) {
+            if (digit instanceof CouiClockMorphingGlyphView) {
+                ((CouiClockMorphingGlyphView) digit).resetMorphStyleTarget();
+            }
+        }
+        if (largeSet.colon instanceof CouiClockMorphingGlyphView) {
+            ((CouiClockMorphingGlyphView) largeSet.colon).resetMorphStyleTarget();
+        }
+        CouiClockPresentationModel.AodContent content = normalizeContent(next.content());
+        presentation = new CouiClockPresentationModel(next.requestedScene(), false, false, content);
+        refreshContextualFromExistingAdapters(diagnosticSource + "#preload", false);
+        applyDataForContent(content);
+        updateBurnInForPresentation();
+        applyClockColors();
+        applyTargets(false, 0L);
+    }
+
     /** Begins an AOD entry with one deferred finalization frame, as in the reference host. */
     void beginAodEntry(CouiClockPresentationModel next, boolean animate, String source) {
         if (next == null || !next.dozing()) {
@@ -426,6 +461,7 @@ final class CouiClockHostView extends FrameLayout {
         }
         diagnosticSource = source == null ? "begin-aod" : source;
         cancelAodEntryTransaction();
+        cancelSmallAodContextualTransition();
         cancelPendingLiveAodRetarget(true);
         cancelLiveAodCrossfade();
         cancelRunningPropertyAnimations();
@@ -548,11 +584,13 @@ final class CouiClockHostView extends FrameLayout {
         deferredAodData = null;
         if (deferred == null
                 || CouiClockAodTransitionPolicy.sameContent(deferred, presentation.content())) {
+            revealDeferredSmallContextualAfterEntry();
             return;
         }
         boolean sceneChanges = presentation.partialAod()
                 && partialSceneFor(presentation.content()) != partialSceneFor(deferred);
         if (sceneChanges) {
+            deferredSmallContextualReveal = false;
             startLiveAodCrossfade(deferred);
             return;
         }
@@ -562,6 +600,7 @@ final class CouiClockHostView extends FrameLayout {
         updateBurnInForPresentation();
         applyClockColors();
         applyTargets(false, 0L);
+        revealDeferredSmallContextualAfterEntry();
     }
 
     private void scheduleLiveAodRetarget(final CouiClockPresentationModel.AodContent content,
@@ -831,6 +870,16 @@ final class CouiClockHostView extends FrameLayout {
             contextualIconView.setAlpha(contentAlpha);
         }
         updateStableLargeForecastCard(displayedCard);
+        if (deferSmallEntryReveal && displayedCard.isVisible()) {
+            // Reserve the row and let lower content use its final geometry, but do not expose
+            // contextual pixels while the Small clock is still moving to its AOD endpoint.
+            contextualGroup.animate().cancel();
+            contextualGroup.setVisibility(VISIBLE);
+            contextualGroup.setAlpha(0f);
+            deferredSmallContextualReveal = true;
+        } else if (!aodEntryInProgress && !smallAodContextualTransitionInProgress) {
+            deferredSmallContextualReveal = false;
+        }
         if (changed) {
             contextualGroup.requestLayout();
             // Lower AOD rows use the COUI snap-geometry contract, so re-evaluate them in the
@@ -840,37 +889,160 @@ final class CouiClockHostView extends FrameLayout {
         updateAccessibilitySemantics();
     }
 
+    private void beginSmallAodContextualTransition() {
+        cancelSmallAodContextualTransition();
+        smallAodContextualTransitionInProgress = true;
+        contextualGroup.animate().cancel();
+        contextualGroup.setAlpha(0f);
+    }
+
+    private void scheduleSmallAodContextualTransitionFinish() {
+        if (!smallAodContextualTransitionInProgress) {
+            return;
+        }
+        if (finishSmallAodContextualTransitionRunnable != null) {
+            removeCallbacks(finishSmallAodContextualTransitionRunnable);
+        }
+        finishSmallAodContextualTransitionRunnable = () -> {
+            finishSmallAodContextualTransitionRunnable = null;
+            if (!smallAodContextualTransitionInProgress) {
+                return;
+            }
+            smallAodContextualTransitionInProgress = false;
+            revealDeferredSmallContextualAfterEntry();
+        };
+        postDelayed(finishSmallAodContextualTransitionRunnable,
+                SystemAnimationScalePolicy.scaledNonAnimatorDelayMillis(TARGET_TRANSITION_MS));
+    }
+
+    private void cancelSmallAodContextualTransition() {
+        if (finishSmallAodContextualTransitionRunnable != null) {
+            removeCallbacks(finishSmallAodContextualTransitionRunnable);
+            finishSmallAodContextualTransitionRunnable = null;
+        }
+        smallAodContextualTransitionInProgress = false;
+    }
+
+    /** Reveals Small AOD contextual pixels only after the clock entry transaction is final. */
+    private void revealDeferredSmallContextualAfterEntry() {
+        if (!deferredSmallContextualReveal) {
+            return;
+        }
+        deferredSmallContextualReveal = false;
+        ContextualAtAGlanceCard displayedCard =
+                ContextualAtAGlancePresentation.displayed(contextualGroup);
+        if (!presentation.dozing()
+                || presentation.visualScene() != CouiClockPresentationModel.Scene.SMALL
+                || !displayedCard.isVisible()) {
+            return;
+        }
+        // Re-prime from the now-final AOD scene before any pixels are allowed to appear.
+        primeContextualGeometryTarget(displayedCard);
+        contextualGroup.animate().cancel();
+        contextualGroup.setVisibility(VISIBLE);
+        contextualGroup.setAlpha(0f);
+        if (!SystemAnimationScalePolicy.animationsEnabled()) {
+            contextualGroup.setAlpha(1f);
+            return;
+        }
+        contextualGroup.animate().alpha(1f)
+                .setDuration(ContextualAtAGlanceCard.ENTER_LEAVE_FADE_MILLIS)
+                .start();
+    }
+
     /** Re-evaluates geometry only when the row's rendered pixels actually switch cards. */
     private void onContextualDisplayedContentChanged() {
         ContextualAtAGlanceCard displayedCard =
                 ContextualAtAGlancePresentation.displayed(contextualGroup);
         applyContextualIconGeometry(displayedCard);
         updateStableLargeForecastCard(displayedCard);
-        primeLargeContextualHorizontalTarget(displayedCard);
+        primeContextualGeometryTarget(displayedCard);
         contextualGroup.requestLayout();
         scheduleApplyTargets(false);
     }
 
     /**
-     * Commits Large contextual X before newly prepared pixels can become visible. The normal
-     * posted target pass still owns complete geometry/Y; this only closes the one-frame window
-     * where a fresh forecast could inherit the previous START translation.
+     * Commits contextual geometry after freshly prepared pixels exist but before the row becomes
+     * visible. Large needs its forecast-centering X; Small needs both its AOD leading edge and
+     * final stack Y so a NONE -> forecast update cannot expose the previous lockscreen anchor for
+     * one frame. The normal posted target pass still owns complete geometry for the full host.
      */
-    private void primeLargeContextualHorizontalTarget(ContextualAtAGlanceCard displayedCard) {
-        if (presentation.visualScene() != CouiClockPresentationModel.Scene.LARGE
-                || displayedCard == null || !displayedCard.isVisible() || getWidth() <= 0) {
+    private void primeContextualGeometryTarget(ContextualAtAGlanceCard displayedCard) {
+        if (displayedCard == null || !displayedCard.isVisible()
+                || getWidth() <= 0 || getHeight() <= 0) {
             return;
         }
-        boolean displayedForecast =
-                displayedCard.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST;
-        float defaultContextualX = PresentationLayoutDirectionPolicy.startAlignedX(
+        if (presentation.visualScene() == CouiClockPresentationModel.Scene.LARGE) {
+            boolean displayedForecast =
+                    displayedCard.kind == ContextualAtAGlanceCard.Kind.WEATHER_FORECAST;
+            float defaultContextualX = PresentationLayoutDirectionPolicy.startAlignedX(
+                    getWidth(), contextualGroup.getMeasuredWidth(),
+                    dp(PixelAodVisualStyle.EDGE_DP), isRtl());
+            float contextualX =
+                    CouiClockContextualLayoutPolicy.largeContextualStartForDisplayedCard(
+                            getWidth(), contextualVisibleContentWidthPx(), defaultContextualX,
+                            displayedForecast);
+            contextualGroup.setTranslationX(
+                    contextualX + (presentation.dozing() ? burnInX : 0f));
+            return;
+        }
+        if (presentation.visualScene() != CouiClockPresentationModel.Scene.SMALL) {
+            return;
+        }
+        float top = getHeight() * CouiClockGeometryPolicy.INFO_Y_RATIO
+                + dp(CouiClockGeometryPolicy.INFO_Y_OFFSET_DP);
+        if (presentation.dozing()) {
+            top += compactAodVerticalOffsetPx();
+        }
+        boolean reserveWeatherSlot =
+                CouiClockContextualLayoutPolicy.reserveSmallAodWeatherSlot(
+                        presentation.dozing(), true);
+        int dateHeight = stableCompactDateRowHeightPx();
+        int weatherHeight = stableCompactWeatherRowHeightPx(reserveWeatherSlot);
+        boolean weatherVisible = reserveWeatherSlot
+                || weatherView.getVisibility() == VISIBLE
+                || weatherIconView.getVisibility() == VISIBLE;
+        float weatherY = top + dateHeight
+                + dp(CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP);
+        float contextualY = CouiClockContextualLayoutPolicy.contextualTop(
+                top, dateHeight, weatherVisible, weatherY, weatherHeight,
+                dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP));
+        float contextualX = PresentationLayoutDirectionPolicy.startAlignedX(
                 getWidth(), contextualGroup.getMeasuredWidth(),
-                dp(PixelAodVisualStyle.EDGE_DP), isRtl());
-        float contextualX = CouiClockContextualLayoutPolicy.largeContextualStartForDisplayedCard(
-                getWidth(), contextualVisibleContentWidthPx(), defaultContextualX,
-                displayedForecast);
-        contextualGroup.setTranslationX(
-                contextualX + (presentation.dozing() ? burnInX : 0f));
+                CouiCompactLayout.couiHostContentLeft(
+                        getResources().getDisplayMetrics().density), isRtl());
+        float xOffset = presentation.dozing() ? burnInX : 0f;
+        float yOffset = presentation.dozing() ? burnInY : 0f;
+        contextualTargetTopPx = contextualY + yOffset;
+        contextualGroup.setTranslationX(contextualX + xOffset);
+        contextualGroup.setTranslationY(contextualTargetTopPx);
+    }
+
+    /** Stable compact info geometry that is valid before the next measure/layout pass. */
+    private int stableCompactDateRowHeightPx() {
+        int height = 0;
+        if (dateView.getVisibility() == VISIBLE) {
+            height = Math.max(height, dateView.getLineHeight());
+        }
+        if (weekView.getVisibility() == VISIBLE) {
+            height = Math.max(height, weekView.getLineHeight());
+        }
+        return Math.max(0, height);
+    }
+
+    private int stableCompactWeatherRowHeightPx(boolean reserveWeatherSlot) {
+        int height = weatherView.getVisibility() == VISIBLE || reserveWeatherSlot
+                ? Math.max(0, weatherView.getLineHeight()) : 0;
+        if (weatherIconView.getVisibility() == VISIBLE) {
+            ViewGroup.LayoutParams params = weatherIconView.getLayoutParams();
+            if (params != null) {
+                height = Math.max(height, Math.max(0, params.height));
+            }
+        }
+        if (reserveWeatherSlot) {
+            height = Math.max(height, dp(CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP));
+        }
+        return height;
     }
 
     private void applyContextualIconGeometry(ContextualAtAGlanceCard displayedCard) {
@@ -1115,7 +1287,9 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     void cancelTransitions() {
+        aodExitAnimationDeadlineUptimeMillis = 0L;
         cancelAodEntryTransaction();
+        cancelSmallAodContextualTransition();
         cancelPendingLiveAodRetarget(true);
         cancelLiveAodCrossfade();
         transitionGeneration.invalidate();
@@ -1136,7 +1310,13 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     boolean isTransitionActive() {
-        return aodEntryInProgress || liveCrossfadeInProgress;
+        return aodEntryInProgress || smallAodContextualTransitionInProgress
+                || liveCrossfadeInProgress;
+    }
+
+    boolean hasPendingAodToLockscreenAnimation() {
+        return !presentation.dozing()
+                && aodExitAnimationDeadlineUptimeMillis > SystemClock.uptimeMillis();
     }
 
     private boolean batteryEnabled = true;
@@ -1185,10 +1365,22 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     @Override
+    protected void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // COUI 2.7 derives visual dp from the measured design width instead of the current
+        // density override. Force one new measure pass so DPI/display changes recompute every
+        // dependent metric as a single geometry transaction.
+        clockBaseWidth = 0;
+        requestLayout();
+        scheduleApplyTargets(false);
+    }
+
+    @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int width = MeasureSpec.getSize(widthMeasureSpec);
         if (width > 0 && width != clockBaseWidth) {
             clockBaseWidth = width;
+            applyDesignMetrics(width);
             stableLargeForecastContentWidthPx = Float.NaN;
             setClockBaseSize(width * CouiClockGeometryPolicy.LS_LARGE.baseWidthRatio);
             int mediaWidth = Math.max(0, width - dp(64));
@@ -1198,6 +1390,78 @@ final class CouiClockHostView extends FrameLayout {
             contextualGroup.getLayoutParams().width = mediaWidth;
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+    }
+
+    private void applyDesignMetrics(int width) {
+        designWidthPx = width;
+        setInformationTextSize(dateView, 18f);
+        setInformationTextSize(weekView, 18f);
+        setInformationTextSize(weatherView, 18f);
+        setInformationTextSize(contextualView,
+                PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP);
+        setInformationTextSize(notificationOverflowView, 16f);
+        setInformationTextSize(batteryView, 16f);
+        setInformationTextSize(mediaTitleView, 18f);
+        setInformationTextSize(mediaArtistView, 15f);
+
+        int weatherIconInset = dp(CouiClockGeometryPolicy.WEATHER_ICON_CONTENT_INSET_DP);
+        weatherIconView.setPadding(weatherIconInset, weatherIconInset, weatherIconInset,
+                weatherIconInset);
+        ViewGroup.LayoutParams weatherParams = weatherIconView.getLayoutParams();
+        if (weatherParams instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) weatherParams;
+            params.width = dp(CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP);
+            params.height = dp(CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP);
+            params.setMarginEnd(dp(CouiClockGeometryPolicy.WEATHER_ICON_GAP_DP));
+        }
+
+        ViewGroup.LayoutParams contextualIconParams = contextualIconView.getLayoutParams();
+        if (contextualIconParams instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) contextualIconParams;
+            params.width = dp(PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP);
+            params.height = dp(PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP);
+            params.setMarginEnd(dp(PixelAodVisualStyle.CALENDAR_ICON_SPACING_DP));
+        }
+
+        ViewGroup.LayoutParams subtitleParams = mediaSubtitleRow.getLayoutParams();
+        if (subtitleParams instanceof LinearLayout.LayoutParams) {
+            ((LinearLayout.LayoutParams) subtitleParams).topMargin = dp(4);
+        }
+        ViewGroup.LayoutParams mediaIconParams = mediaAppIconView.getLayoutParams();
+        if (mediaIconParams instanceof LinearLayout.LayoutParams) {
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) mediaIconParams;
+            params.width = dp(18);
+            params.height = dp(18);
+            params.setMarginEnd(dp(6));
+        }
+
+        applyNotificationIconMetrics();
+    }
+
+    private void applyNotificationIconMetrics() {
+        int visibleIconIndex = 0;
+        for (int i = 0; i < notificationIconRow.getChildCount(); i++) {
+            View child = notificationIconRow.getChildAt(i);
+            ViewGroup.LayoutParams childParams = child.getLayoutParams();
+            if (!(childParams instanceof LinearLayout.LayoutParams)) {
+                continue;
+            }
+            LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) childParams;
+            if (child == notificationOverflowView) {
+                params.setMarginStart(dp(16));
+            } else {
+                params.width = dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP);
+                params.height = dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP);
+                params.setMarginStart(visibleIconIndex++ > 0
+                        ? dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_GAP_DP) : 0);
+            }
+            // Commit relative margins so old resolved OPlus margins match newly added icons.
+            child.setLayoutParams(params);
+        }
+    }
+
+    private void setInformationTextSize(TextView view, float designDp) {
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpFloat(designDp));
     }
 
     @Override
@@ -1644,7 +1908,18 @@ final class CouiClockHostView extends FrameLayout {
             }
             dateY = top;
             weatherX = dateX;
-            weatherY = top + dateGroup.getMeasuredHeight()
+            if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL) {
+                boolean reserveWeatherSlot =
+                        CouiClockContextualLayoutPolicy.reserveSmallAodWeatherSlot(
+                                presentation.dozing(), true);
+                contextualDateHeight = stableCompactDateRowHeightPx();
+                contextualWeatherHeight =
+                        stableCompactWeatherRowHeightPx(reserveWeatherSlot);
+                contextualWeatherVisible = reserveWeatherSlot
+                        || weatherView.getVisibility() == VISIBLE
+                        || weatherIconView.getVisibility() == VISIBLE;
+            }
+            weatherY = top + contextualDateHeight
                     + dp(CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP);
             contextualX = PresentationLayoutDirectionPolicy.startAlignedX(
                     getWidth(), contextualGroup.getMeasuredWidth(),
@@ -1653,8 +1928,8 @@ final class CouiClockHostView extends FrameLayout {
             contextualGapPx = dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
         }
         contextualY = CouiClockContextualLayoutPolicy.contextualTop(
-                dateY, dateGroup.getMeasuredHeight(), weatherView.getVisibility() == VISIBLE,
-                weatherY, weatherGroup.getMeasuredHeight(), contextualGapPx);
+                dateY, contextualDateHeight, contextualWeatherVisible,
+                weatherY, contextualWeatherHeight, contextualGapPx);
         float xOffset = presentation.dozing() ? burnInX : 0f;
         float yOffset = presentation.dozing() ? burnInY : 0f;
         applyInformationTarget(dateGroup, dateX + xOffset, dateY + yOffset, animate, duration);
@@ -1754,6 +2029,10 @@ final class CouiClockHostView extends FrameLayout {
         float mediaBaseX = PresentationLayoutDirectionPolicy.startAlignedX(
                 getWidth(), mediaGroup.getMeasuredWidth(), startInset, rtl) + burnInX;
         float baseY = getHeight() * CouiClockGeometryPolicy.PARTIAL_CONTENT_TOP_RATIO + burnInY;
+        if (presentation.dozing()
+                && presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL) {
+            baseY += compactAodVerticalOffsetPx();
+        }
         ContextualAtAGlanceCard contextualCard =
                 ContextualAtAGlancePresentation.current(contextualGroup);
         boolean contextualVisible = contextualCard.isVisible();
@@ -1766,9 +2045,18 @@ final class CouiClockHostView extends FrameLayout {
                 == CouiClockPresentationModel.Scene.SMALL
                 ? PixelAodVisualStyle.COMPACT_CONTEXTUAL_TO_NOTIFICATION_GAP_DP
                 : PixelAodVisualStyle.LARGE_INFO_ROW_GAP_DP);
-        baseY = CouiClockContextualLayoutPolicy.lowerContentTop(baseY, contextualVisible,
-                contextualTargetTopPx, contextualGroup.getMeasuredHeight(),
-                contextualFallbackHeightPx, contextualToContentGapPx);
+        if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL
+                && !contextualVisible) {
+            // Once the forecast/event row is gone, let media/notification content reclaim its
+            // slot instead of falling back to the old fixed partial-content ratio and leaving a
+            // large empty band below the newly raised compact AOD clock.
+            baseY = CouiClockContextualLayoutPolicy.compactContentTopWithoutContextual(
+                    baseY, contextualTargetTopPx, contextualToContentGapPx);
+        } else {
+            baseY = CouiClockContextualLayoutPolicy.lowerContentTop(baseY, contextualVisible,
+                    contextualTargetTopPx, contextualGroup.getMeasuredHeight(),
+                    contextualFallbackHeightPx, contextualToContentGapPx);
+        }
         float mediaY = baseY;
         float notificationY = mediaVisible
                 ? baseY + mediaGroup.getMeasuredHeight()
@@ -1949,17 +2237,17 @@ final class CouiClockHostView extends FrameLayout {
         float[] advances = new float[4];
         float[] leftCorrections = new float[4];
         float[] rightCorrections = new float[4];
-        float measured = 0f;
         for (int i = 0; i < 4; i++) {
             advances[i] = glyphWidth(glyphSet, i) * surface.scale;
             char digit = timeText.charAt(i);
             leftCorrections[i] = CouiClockGlyphCorrection.leftTrimOffset(digit, lineWidth);
             rightCorrections[i] = CouiClockGlyphCorrection.rightSideExpansion(digit, lineWidth);
-            measured += advances[i] - leftCorrections[i] - rightCorrections[i];
         }
         float colonWidth = glyphSet.colon.getPaint().measureText(COLON) * surface.scale;
-        float start = xCenter - ((colonWidth + colonTracking * 2f + tracking * 2f + measured)
-                / 2f);
+        float anchorDigitWidth = glyphSet.digits[0].getPaint().measureText(
+                CouiCompactClockAnchorPolicy.ANCHOR_DIGIT) * surface.scale;
+        float start = CouiCompactClockAnchorPolicy.centeredStart(
+                xCenter, anchorDigitWidth, colonWidth, tracking, colonTracking);
         float x0 = start - leftCorrections[0];
         float after0 = start + advances[0] - leftCorrections[0] - rightCorrections[0] + tracking;
         float x1 = after0 - leftCorrections[1];
@@ -1971,13 +2259,47 @@ final class CouiClockHostView extends FrameLayout {
         float x3 = after2 - leftCorrections[3];
         float burnX = presentation.dozing() ? burnInX : 0f;
         float burnY = presentation.dozing() ? burnInY : 0f;
-        return new GlyphTarget[]{
+        GlyphTarget[] targets = new GlyphTarget[]{
                 new GlyphTarget(x0 + burnX, y + burnY, surface.scale, 1f),
                 new GlyphTarget(x1 + burnX, y + burnY, surface.scale, 1f),
                 new GlyphTarget(x2 + burnX, y + burnY, surface.scale, 1f),
                 new GlyphTarget(x3 + burnX, y + burnY, surface.scale, 1f),
                 new GlyphTarget(colonX + burnX, y + burnY, surface.scale, 1f)
         };
+        return alignCompactAodClockTargets(glyphSet, targets, burnX);
+    }
+
+    private GlyphTarget[] alignCompactAodClockTargets(GlyphSet glyphSet,
+            GlyphTarget[] targets, float burnX) {
+        if (!presentation.dozing()
+                || presentation.visualScene() != CouiClockPresentationModel.Scene.SMALL
+                || targets == null || targets.length == 0) {
+            return targets;
+        }
+        float clockLeft = compactClockLeft(glyphSet, targets, burnX);
+        float clockRight = compactClockRight(glyphSet, targets, burnX);
+        float shiftX = CouiClockGeometryPolicy.resolveCompactAodClockAlignmentShift(
+                getWidth(), clockLeft, clockRight,
+                dp(PixelAodVisualStyle.COMPACT_CLOCK_GLYPH_LEADING_INSET_DP),
+                dp(CouiClockGeometryPolicy.AOD_SMALL_PAINTED_LEADING_DP), isRtl());
+        if (Math.abs(shiftX) < 0.01f) {
+            return targets;
+        }
+        GlyphTarget[] aligned = new GlyphTarget[targets.length];
+        for (int i = 0; i < targets.length; i++) {
+            GlyphTarget target = targets[i];
+            aligned[i] = new GlyphTarget(target.x + shiftX, target.y, target.scale, target.alpha);
+        }
+        return aligned;
+    }
+
+    private float compactAodVerticalOffsetPx() {
+        if (!presentation.dozing()
+                || presentation.visualScene() != CouiClockPresentationModel.Scene.SMALL) {
+            return 0f;
+        }
+        return dp(CouiClockGeometryPolicy.AOD_SMALL.topDp
+                - CouiClockGeometryPolicy.LS_SMALL.topDp);
     }
 
     private float compactClockRight(GlyphSet glyphSet, GlyphTarget[] targets, float burnX) {

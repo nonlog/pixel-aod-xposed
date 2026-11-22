@@ -11,6 +11,16 @@ import static org.junit.Assert.assertTrue;
 
 public final class AodNotificationPipelineTest {
     @Test
+    public void filtersHotspotDisabledStatusButKeepsActiveStatusText() {
+        assertTrue(AodNotificationPipeline.isHotspotDisabledNotificationText(
+                "Hotspot turned off No devices connected"));
+        assertTrue(AodNotificationPipeline.isHotspotDisabledNotificationText(
+                "个人热点已关闭"));
+        assertFalse(AodNotificationPipeline.isHotspotDisabledNotificationText(
+                "1 device is connected via Wi-Fi sharing"));
+    }
+
+    @Test
     public void rejectsOnlySyntheticAndroidAutogroupSummaryCarriers() {
         assertTrue(AodNotificationPipeline.isSyntheticAutogroupSummaryFlags(0x00000200 | 0x00000400));
         assertFalse(AodNotificationPipeline.isSyntheticAutogroupSummaryFlags(0x00000200));
