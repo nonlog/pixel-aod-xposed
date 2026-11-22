@@ -57,7 +57,8 @@ final class CouiUdfpsController {
             "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$fpIconShow$2",
             "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$restoreIconDrawable$1",
             "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$touchEvent$2",
-            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$updateFpColor$1"
+            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$updateFpColor$1",
+            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$updateFpColor$3"
     };
     // Exact COUI Expressive 2.5 state-refresh surface for OnScreenFingerprintUiMech.
     private static final String[] VISUAL_METHODS = {

@@ -1,5 +1,7 @@
 package dev.codex.pixelaod;
 
+import android.os.Bundle;
+
 import org.junit.Test;
 
 import java.lang.reflect.Method;
@@ -67,5 +69,49 @@ public final class CouiClockPluginLoadSignatureTest {
                 new Object[]{"com.oplus.keyguard.clock.other"}));
         assertFalse(CouiClockPluginHostController.isBigClockLoad(new Object[0]));
         assertFalse(CouiClockPluginHostController.isBigClockLoad(null));
+    }
+
+    @SuppressWarnings("unused")
+    private static final class FakeKeyguardPlugin {
+        void setUp(int userId, int scope) {
+        }
+
+        void setUp(int scope) {
+        }
+
+        Bundle sendCommand(String command, Bundle bundle) {
+            return null;
+        }
+
+        Bundle sendCommand(String command) {
+            return null;
+        }
+
+        static void reload$default(FakeKeyguardPlugin plugin, int userId) {
+        }
+
+        void reload$default(int userId) {
+        }
+    }
+
+    @Test
+    public void matchesColorOs17KeyguardPluginSignatures() throws Exception {
+        Method setUpTwoArg = FakeKeyguardPlugin.class.getDeclaredMethod("setUp", int.class, int.class);
+        Method setUpOneArg = FakeKeyguardPlugin.class.getDeclaredMethod("setUp", int.class);
+        Method sendCmdTwoArg = FakeKeyguardPlugin.class.getDeclaredMethod(
+                "sendCommand", String.class, Bundle.class);
+        Method sendCmdOneArg = FakeKeyguardPlugin.class.getDeclaredMethod("sendCommand", String.class);
+        Method reloadStatic = FakeKeyguardPlugin.class.getDeclaredMethod(
+                "reload$default", FakeKeyguardPlugin.class, int.class);
+        Method reloadInstance = FakeKeyguardPlugin.class.getDeclaredMethod("reload$default", int.class);
+
+        assertTrue(CouiClockPluginHostController.matchesKeyguardPluginSetUpSignature(setUpTwoArg));
+        assertFalse(CouiClockPluginHostController.matchesKeyguardPluginSetUpSignature(setUpOneArg));
+        assertTrue(CouiClockPluginHostController.matchesKeyguardPluginSendCommandSignature(sendCmdTwoArg));
+        assertFalse(CouiClockPluginHostController.matchesKeyguardPluginSendCommandSignature(sendCmdOneArg));
+        assertTrue(CouiClockPluginHostController.matchesKeyguardPluginReloadSignature(
+                reloadStatic, FakeKeyguardPlugin.class));
+        assertFalse(CouiClockPluginHostController.matchesKeyguardPluginReloadSignature(
+                reloadInstance, FakeKeyguardPlugin.class));
     }
 }

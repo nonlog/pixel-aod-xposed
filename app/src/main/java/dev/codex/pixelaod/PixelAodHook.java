@@ -133,7 +133,8 @@ final class PixelAodHook {
             "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$fpIconShow$2",
             "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$restoreIconDrawable$1",
             "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$touchEvent$2",
-            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$updateFpColor$1"
+            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$updateFpColor$1",
+            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintUiMech$updateFpColor$3"
     };
     private static final String SHADE_WINDOW_VIEW =
             "com.android.systemui.shade.NotificationShadeWindowView";
@@ -664,6 +665,9 @@ final class PixelAodHook {
     }
 
     private static boolean shouldSuppressStockClockDraw(View view) {
+        if (!CouiClockPluginHostController.isHookInstalled()) {
+            return false;
+        }
         if (isPixelClockOverlay(view) || hasCustomClockAncestor(view)) {
             return false;
         }
@@ -753,6 +757,9 @@ final class PixelAodHook {
     }
 
     private static boolean shouldSuppressStockClockByHook(View view) {
+        if (!CouiClockPluginHostController.isHookInstalled()) {
+            return false;
+        }
         if (isPixelClockOverlay(view) || hasCustomClockAncestor(view)) {
             return false;
         }
@@ -951,7 +958,8 @@ final class PixelAodHook {
         return KEYGUARD_STYLE_CLOCK.equals(className)
                 || KEYGUARD_CLOCK_VIEW_ROOT.equals(className)
                 || className.contains("CustomOplusKeyguardStyleClock")
-                || className.contains("ClockViewRoot");
+                || className.contains("ClockViewRoot")
+                || className.contains("KeyguardPluginViewRoot");
     }
 
     static void hookLockscreenClockProbeClass(ClassLoader classLoader, String className) {
@@ -960,6 +968,8 @@ final class PixelAodHook {
             ModernHookBridge.hookAfter(clazz, "onAttachedToWindow",
                     param -> MAIN.post(() -> inspectLockscreenClockCandidate(param.thisObject, className)));
             PixelAodLog.log("hooked lockscreen clock probe " + className);
+        } catch (ClassNotFoundException ignored) {
+            PixelAodLog.log("lockscreen clock probe class not present in SystemUI loader " + className);
         } catch (Throwable t) {
             PixelAodLog.log("failed to hook lockscreen clock probe " + className, t);
         }
@@ -4220,7 +4230,8 @@ final class PixelAodHook {
                     .append(source)
                     .append(" view=").append(markerFor(view))
                     .append(" parentRoot=").append(markerFor(highestParentGroup(view)));
-            if (PixelLockscreenClockView.shouldShowOnLockscreen(view.getContext())) {
+            if (CouiClockPluginHostController.isHookInstalled()
+                    && PixelLockscreenClockView.shouldShowOnLockscreen(view.getContext())) {
                 hideStockKeyguardClockViews(highestParentGroup(view));
                 if (!containsPersistentClockPluginHost(view)) {
                     hideView(view, markerFor(view));
@@ -5077,6 +5088,9 @@ final class PixelAodHook {
     }
 
     private static void hideStockClockViews(ViewGroup root) {
+        if (!CouiClockPluginHostController.isHookInstalled()) {
+            return;
+        }
         if (!PrimaryDisplayPolicy.isPrimary(root)) {
             return;
         }
@@ -5159,6 +5173,9 @@ final class PixelAodHook {
     }
 
     private static void hideStockKeyguardClockViews(ViewGroup root) {
+        if (!CouiClockPluginHostController.isHookInstalled()) {
+            return;
+        }
         if (!PrimaryDisplayPolicy.isPrimary(root)) {
             return;
         }

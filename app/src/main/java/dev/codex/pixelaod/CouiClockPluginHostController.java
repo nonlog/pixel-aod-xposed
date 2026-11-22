@@ -3,6 +3,7 @@ package dev.codex.pixelaod;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
+import android.os.Bundle;
 import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
@@ -29,6 +30,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 final class CouiClockPluginHostController {
     private static final String CLOCK_PLUGIN_CLASS = "com.oplus.keyguard.plugin.ClockPlugin";
+    private static final String KEYGUARD_PLUGIN_CLASS = "com.oplus.keyguard.plugin.KeyguardPlugin";
+    private static final String KEYGUARD_PLUGIN_CMD_CLOCK_STATE = "onClockStateChanged";
+    private static final String KEYGUARD_PLUGIN_CMD_SET_STYLE_DATA = "setStyleData";
+    private static final String KEYGUARD_PLUGIN_CMD_TRANS_FROM = "transFrom";
+    private static final String KEYGUARD_PLUGIN_CMD_RELEASE = "release";
+    private static final String KEYGUARD_PLUGIN_KEY_UI_STATE = "uiState";
+    private static final String KEYGUARD_PLUGIN_KEY_CLOCK_SIZE = "clockSize";
+    private static final String KEYGUARD_PLUGIN_KEY_IS_ANIM = "isAnim";
     private static final String BIG_CLOCK_LOGICAL_PACKAGE = "com.oplus.keyguard.clock.big";
     private static final String HOST_TAG = "dev.codex.pixelaod.COUI_CLOCK_PLUGIN_HOST";
     private static final String NATIVE_VISUAL_CONTAINER_CLASS =
@@ -43,12 +52,16 @@ final class CouiClockPluginHostController {
             Collections.newSetFromMap(new WeakHashMap<Method, Boolean>());
     private static final Set<Class<?>> NATIVE_DRAW_HOOKED_CLASSES =
             Collections.newSetFromMap(new WeakHashMap<Class<?>, Boolean>());
+    private static final Set<ClassLoader> NATIVE_DRAW_UNAVAILABLE_LOADERS =
+            Collections.newSetFromMap(new WeakHashMap<ClassLoader, Boolean>());
     // A weak-key map with strong HostRecord values still roots the entire view tree through
     // HostRecord.root/host. The index is weak on both sides; the live host owns its record tag.
     private static final WeakHostRegistry<ViewGroup, HostRecord> HOSTS =
             new WeakHostRegistry<>();
     private static final Map<View, WeakReference<HostRecord>> NATIVE_DRAW_BINDINGS =
             Collections.synchronizedMap(new WeakHashMap<View, WeakReference<HostRecord>>());
+    private static final Map<Object, KeyguardPluginState> KEYGUARD_PLUGIN_STATES =
+            Collections.synchronizedMap(new WeakHashMap<Object, KeyguardPluginState>());
     private static final Set<Object> ROOT_UNAVAILABLE_LOGGED =
             Collections.newSetFromMap(new WeakHashMap<Object, Boolean>());
     private static final Set<String> NON_BIG_PACKAGE_LOGGED =
@@ -68,12 +81,26 @@ final class CouiClockPluginHostController {
         hookClassLoader = classLoader;
         try {
             Class<?> pluginClass = ModernHookBridge.findClass(CLOCK_PLUGIN_CLASS, classLoader);
+            String activeClass = pluginClass.getName();
             int hooks = hookPluginClass(pluginClass);
+            if (hooks == 0) {
+                try {
+                    Class<?> keyguardPluginClass = ModernHookBridge.findClass(
+                            KEYGUARD_PLUGIN_CLASS, classLoader);
+                    int keyguardHooks = hookKeyguardPluginClass(keyguardPluginClass);
+                    if (keyguardHooks > 0) {
+                        hooks = keyguardHooks;
+                        activeClass = keyguardPluginClass.getName();
+                    }
+                } catch (ClassNotFoundException ignored) {
+                    // Pre-ColorOS 17 SystemUI does not ship KeyguardPlugin.
+                }
+            }
             hooksInstalled = hooks > 0;
             CouiClockSemanticAdapter.install(context, classLoader,
                     () -> refreshAll("COUI-semantic-data"));
             PixelAodLog.i("COUI clock persistent-host hooks installed=" + hooksInstalled
-                    + " methods=" + hooks + " class=" + pluginClass.getName()
+                    + " methods=" + hooks + " class=" + activeClass
                     + " sdk=" + android.os.Build.VERSION.SDK_INT
                     + " display=" + android.os.Build.DISPLAY
                     + " rendererMode=COUI_PORT");
@@ -705,6 +732,100 @@ final class CouiClockPluginHostController {
         return types.length >= 1 && types[0] == String.class;
     }
 
+    private static int hookKeyguardPluginClass(Class<?> keyguardPluginClass) {
+        int hooks = 0;
+        for (Method method : allMethods(keyguardPluginClass)) {
+            if (Modifier.isAbstract(method.getModifiers())) {
+                continue;
+            }
+            if (matchesKeyguardPluginSetUpSignature(method)) {
+                if (hookAfterOnce(method, param ->
+                        scheduleAttachAndSync(param.thisObject, "KeyguardPlugin#setUp", false))) {
+                    hooks++;
+                }
+            } else if (matchesKeyguardPluginSendCommandSignature(method)) {
+                if (hookAfterOnce(method, param -> handleKeyguardPluginSendCommand(
+                        param.thisObject, param.args))) {
+                    hooks++;
+                }
+            } else if (matchesKeyguardPluginReloadSignature(method, keyguardPluginClass)) {
+                if (hookBeforeOnce(method, param -> {
+                    Object target = param.args != null && param.args.length > 0
+                            ? param.args[0] : null;
+                    if (target != null) {
+                        KEYGUARD_PLUGIN_STATES.remove(target);
+                        scheduleDetach(target, "KeyguardPlugin#reload");
+                    }
+                })) {
+                    hooks++;
+                }
+            }
+        }
+        return hooks;
+    }
+
+    static boolean matchesKeyguardPluginSetUpSignature(Method method) {
+        if (method == null || !"setUp".equals(method.getName())) {
+            return false;
+        }
+        Class<?>[] types = method.getParameterTypes();
+        return types.length == 2 && types[0] == int.class && types[1] == int.class;
+    }
+
+    static boolean matchesKeyguardPluginSendCommandSignature(Method method) {
+        if (method == null || !"sendCommand".equals(method.getName())) {
+            return false;
+        }
+        Class<?>[] types = method.getParameterTypes();
+        return types.length == 2 && types[0] == String.class && Bundle.class.isAssignableFrom(types[1]);
+    }
+
+    static boolean matchesKeyguardPluginReloadSignature(Method method, Class<?> ownerClass) {
+        if (method == null || ownerClass == null || !Modifier.isStatic(method.getModifiers())
+                || !"reload$default".equals(method.getName())) {
+            return false;
+        }
+        Class<?>[] types = method.getParameterTypes();
+        return types.length >= 2 && ownerClass.isAssignableFrom(types[0]);
+    }
+
+    private static void handleKeyguardPluginSendCommand(Object plugin, Object[] args) {
+        if (plugin == null || args == null || args.length < 1 || !(args[0] instanceof String)) {
+            return;
+        }
+        String command = (String) args[0];
+        Bundle bundle = args.length >= 2 && args[1] instanceof Bundle ? (Bundle) args[1] : null;
+        if (KEYGUARD_PLUGIN_CMD_CLOCK_STATE.equals(command)) {
+            KeyguardPluginState state = parseKeyguardPluginClockState(bundle);
+            if (state != null) {
+                KEYGUARD_PLUGIN_STATES.put(plugin, state);
+            }
+            scheduleAttachAndSync(plugin, "KeyguardPlugin#onClockStateChanged", true);
+        } else if (KEYGUARD_PLUGIN_CMD_SET_STYLE_DATA.equals(command)
+                || KEYGUARD_PLUGIN_CMD_TRANS_FROM.equals(command)) {
+            scheduleAttachAndSync(plugin, "KeyguardPlugin#" + command, false);
+        } else if (KEYGUARD_PLUGIN_CMD_RELEASE.equals(command)) {
+            KEYGUARD_PLUGIN_STATES.remove(plugin);
+            scheduleDetach(plugin, "KeyguardPlugin#release");
+        }
+    }
+
+    static KeyguardPluginState parseKeyguardPluginClockState(Bundle bundle) {
+        if (bundle == null) {
+            return null;
+        }
+        Integer uiState = bundle.containsKey(KEYGUARD_PLUGIN_KEY_UI_STATE)
+                ? bundle.getInt(KEYGUARD_PLUGIN_KEY_UI_STATE, 0) : null;
+        Integer clockSize = bundle.containsKey(KEYGUARD_PLUGIN_KEY_CLOCK_SIZE)
+                ? bundle.getInt(KEYGUARD_PLUGIN_KEY_CLOCK_SIZE, 1) : null;
+        Boolean isAnim = bundle.containsKey(KEYGUARD_PLUGIN_KEY_IS_ANIM)
+                ? bundle.getBoolean(KEYGUARD_PLUGIN_KEY_IS_ANIM) : null;
+        if (uiState == null && clockSize == null && isAnim == null) {
+            return null;
+        }
+        return new KeyguardPluginState(uiState, clockSize, isAnim);
+    }
+
     private static boolean hookAfterOnce(Method method, ModernHookBridge.HookCallback callback) {
         synchronized (HOOKED_METHODS) {
             if (!HOOKED_METHODS.add(method)) {
@@ -1100,29 +1221,49 @@ final class CouiClockPluginHostController {
     private static void rememberNativeVisuals(Object plugin, HostRecord record) {
         installNativeDrawSuppression(record.root.getClass().getClassLoader());
         for (int viewId : new int[]{VIEW_CLOCK_TIME, VIEW_DATE_MESSAGE}) {
-            Object candidate = callOptional(plugin, "getView", viewId);
-            if (candidate instanceof View) {
-                View view = (View) candidate;
-                if (touchesHost(record, view)) {
-                    PixelAodLog.log("skipped COUI native suppression viewId=" + viewId
-                            + " reason=host-relative-view");
-                    continue;
-                }
-                bindNativeDrawContainer(view, viewId, record);
-                if (!record.nativeVisualAlphas.containsKey(view)) {
-                    record.nativeVisualAlphas.put(view, view.getAlpha());
-                }
-                if (!record.nativeAccessibilityImportance.containsKey(view)) {
-                    record.nativeAccessibilityImportance.put(
-                            view, view.getImportantForAccessibility());
-                }
+            rememberNativeVisualCandidate(callOptional(plugin, "getView", viewId), viewId, record);
+        }
+        Object clockSubPlugin = callOptional(plugin, "getClockPlugin");
+        if (clockSubPlugin != null) {
+            rememberNativeVisualCandidate(callOptional(clockSubPlugin, "getView", 0), 0, record);
+            for (int viewId : new int[]{VIEW_CLOCK_TIME, VIEW_DATE_MESSAGE}) {
+                rememberNativeVisualCandidate(
+                        callOptional(clockSubPlugin, "getView", viewId), viewId, record);
             }
+        }
+    }
+
+    private static void rememberNativeVisualCandidate(Object candidate, int viewId,
+            HostRecord record) {
+        if (!(candidate instanceof View)) {
+            return;
+        }
+        View view = (View) candidate;
+        if (touchesHost(record, view)) {
+            PixelAodLog.log("skipped COUI native suppression viewId=" + viewId
+                    + " reason=host-relative-view");
+            return;
+        }
+        if (viewId != 0) {
+            bindNativeDrawContainer(view, viewId, record);
+        }
+        if (!record.nativeVisualAlphas.containsKey(view)) {
+            record.nativeVisualAlphas.put(view, view.getAlpha());
+        }
+        if (!record.nativeAccessibilityImportance.containsKey(view)) {
+            record.nativeAccessibilityImportance.put(
+                    view, view.getImportantForAccessibility());
         }
     }
 
     private static void installNativeDrawSuppression(ClassLoader classLoader) {
         if (classLoader == null) {
             return;
+        }
+        synchronized (NATIVE_DRAW_UNAVAILABLE_LOADERS) {
+            if (NATIVE_DRAW_UNAVAILABLE_LOADERS.contains(classLoader)) {
+                return;
+            }
         }
         try {
             Class<?> containerClass = ModernHookBridge.findClass(
@@ -1151,6 +1292,12 @@ final class CouiClockPluginHostController {
             });
             PixelAodLog.log("COUI native ClockPlugin draw suppression hook installed class="
                     + containerClass.getName());
+        } catch (ClassNotFoundException ignored) {
+            synchronized (NATIVE_DRAW_UNAVAILABLE_LOADERS) {
+                NATIVE_DRAW_UNAVAILABLE_LOADERS.add(classLoader);
+            }
+            PixelAodLog.log("COUI native ClockPlugin draw suppression class not present: "
+                    + NATIVE_VISUAL_CONTAINER_CLASS);
         } catch (Throwable t) {
             PixelAodLog.log("COUI native ClockPlugin draw suppression unavailable", t);
         }
@@ -1261,6 +1408,17 @@ final class CouiClockPluginHostController {
     }
 
     private static RenderState readRenderState(Object plugin, boolean renderDriven) {
+        KeyguardPluginState keyguardState = plugin != null
+                ? KEYGUARD_PLUGIN_STATES.get(plugin) : null;
+        if (keyguardState != null) {
+            boolean animate = renderDriven
+                    && (keyguardState.uiStateAnimating == null || keyguardState.uiStateAnimating);
+            return new RenderState(keyguardState.uiState, keyguardState.uiStateAnimating,
+                    keyguardState.clockSizeState, animate, renderDriven);
+        }
+        if (plugin != null && KEYGUARD_PLUGIN_CLASS.equals(plugin.getClass().getName())) {
+            return null;
+        }
         try {
             Object renderedParams = ModernHookBridge.callMethod(plugin, "getRenderedParams");
             Object uiTracker = callOptional(renderedParams, "getUiState");
@@ -1530,6 +1688,18 @@ final class CouiClockPluginHostController {
             this.host = host;
             this.plugin = new WeakReference<>(plugin);
             this.generation = generation;
+        }
+    }
+
+    static final class KeyguardPluginState {
+        final Integer uiState;
+        final Integer clockSizeState;
+        final Boolean uiStateAnimating;
+
+        KeyguardPluginState(Integer uiState, Integer clockSizeState, Boolean uiStateAnimating) {
+            this.uiState = uiState;
+            this.clockSizeState = clockSizeState;
+            this.uiStateAnimating = uiStateAnimating;
         }
     }
 

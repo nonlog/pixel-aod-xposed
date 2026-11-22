@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+### Fixed
+- **ColorOS 17 / Android 17 `KeyguardPlugin` clock host bridge**:
+  - Added a ColorOS 17 fallback in `CouiClockPluginHostController` targeting `com.oplus.keyguard.plugin.KeyguardPlugin` (`setUp(int, int)`, `sendCommand(String, Bundle)` for `onClockStateChanged` / `setStyleData` / `transFrom` / `release`, and `reload$default`) when `ClockPlugin` no longer exposes legacy `loadPluginReal`/`render` methods.
+  - Suppressed the sibling `KeyguardClockPluginContainer` (`getClockPlugin().getView(0)`) cleanly while attaching `CouiClockHostView` to `KeyguardPluginViewRoot` (`getView(0)`).
+- **Fail-open stock clock protection**:
+  - Guarded `PixelAodHook` stock AOD/keyguard clock draw, visibility, alpha, and lockscreen probe suppression behind `CouiClockPluginHostController.isHookInstalled()` so a missing or changed vendor plugin target fails open instead of hiding the stock clock.
+- **ColorOS 17 / Android 17 variable-font weight morph runtime**:
+  - Added a self-contained variable-font morph runtime fallback inside `CouiClockRomTextAnimatorRuntime` backed by the bundled Google Sans Flex variable font (`ByteBuffer` + bounded 96-entry `LruCache<String, Typeface>`) when Android 17 SystemUI no longer ships `com.android.systemui.animation.TextAnimator`, restoring `MORPHING_LARGE` weight/opsz/color transitions between lockscreen and AOD instead of falling back to `FOUR_SET_CROSSFADE`.
+- **ColorOS 17 lockscreen probe, draw suppression & UDFPS**:
+  - Recognized `KeyguardPluginViewRoot` in lockscreen clock probes, cached missing legacy `MyCustomizedFrameLayout` lookups per `ClassLoader` to eliminate repeated stack-trace spam, downgraded missing legacy `ClockViewRoot` lookups to debug logs, and added `OnScreenFingerprintUiMech$updateFpColor$3` alongside `$updateFpColor$1`.
+
 ## [0.1.67] - 2026-11-22
 ### Changed
 - Rebased release automation and fixes onto the latest `0.1.66` (`57e54a6`, `feat/optional-pixel-peek-coexistence`) baseline so all 32 commits from `0.1.46`–`0.1.66` are preserved without version rollback.
