@@ -12,6 +12,7 @@ import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.hardware.SensorEvent;
 import android.hardware.camera2.CameraManager;
 import android.os.Build;
 import android.os.Handler;
@@ -58,6 +59,7 @@ final class PixelAodHook {
     private static final AtomicBoolean TORCH_CALLBACK_REGISTERED = new AtomicBoolean(false);
     private static final AtomicBoolean TORCH_REFRESH_RECEIVER_REGISTERED = new AtomicBoolean(false);
     private static volatile boolean vendorWakeTriggerAuthorityHooked;
+    private static volatile boolean vendorProximityPauseAuthorityHooked;
     private static final String ACTION_SWITCH_FLASHLIGHT =
             "com.android.systemui.ACTION_SWITCH_FLASHLIGHT";
     private static final String ACTION_USER_SWITCHED = "android.intent.action.USER_SWITCHED";
@@ -75,6 +77,9 @@ final class PixelAodHook {
     };
     private static final String OPLUS_WAKE_UP_PROXIMITY_TASK =
             "com.oplus.systemui.aod.display.OplusWakeUpController$ProximityTask";
+    private static final String OPLUS_WAKE_UP_SENSOR_LISTENER =
+            "com.oplus.systemui.aod.display.OplusWakeUpController$amdSensorListener$1";
+    private static final int OPLUS_GESTURE_PROXIMITY_SENSOR_TYPE = 33171066;
     private static final String[] OPLUS_WAKE_CALLBACK_CANDIDATES = {
             "com.oplus.systemui.aod.display.OplusWakeUpController$AodSingleClickWakeUpCallback",
             "com.oplus.systemui.aod.scene.AodViewSingleClickWakeUpHolder$AodSingleClickWakeUpCallback",
@@ -176,6 +181,9 @@ final class PixelAodHook {
     private static final long[] SCREEN_OFF_STOCK_SUPPRESSION_REASSERT_DELAYS_MILLIS = {
             0L, 160L, 620L
     };
+    private static final long[] LIVE_ALERT_NOTIFICATION_REFRESH_DELAYS_MILLIS = {
+            40L, 280L, 900L
+    };
     private static final long NATIVE_AOD_TICK_STOCK_SUPPRESSION_DEBOUNCE_MILLIS = 250L;
     private static final long NATIVE_AOD_TICK_STOCK_SUPPRESSION_RECHECK_DELAY_MILLIS = 56L;
     private static final long NATIVE_AOD_FRAME_KICK_MIN_INTERVAL_MILLIS = 1200L;
@@ -184,6 +192,19 @@ final class PixelAodHook {
     private static final boolean ENABLE_NOTIFICATION_VIEW_REFLECTION_DUMP = false;
     private static final boolean ENABLE_GLOBAL_STOCK_VIEW_METHOD_HOOKS = false;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static final NotificationRefreshBatch LIVE_ALERT_NOTIFICATION_REFRESH_BATCH =
+            new NotificationRefreshBatch(LIVE_ALERT_NOTIFICATION_REFRESH_DELAYS_MILLIS,
+                    new NotificationRefreshBatch.Scheduler() {
+                        @Override
+                        public void postDelayed(Runnable runnable, long delayMillis) {
+                            MAIN.postDelayed(runnable, delayMillis);
+                        }
+
+                        @Override
+                        public void removeCallbacks(Runnable runnable) {
+                            MAIN.removeCallbacks(runnable);
+                        }
+                    });
     private static final Set<String> LOGGED_INSPECTION_CLASSES = java.util.Collections.synchronizedSet(new HashSet<>());
     private static final Set<Class<?>> HOOKED_KEYGUARD_SLEEP_BINDERS =
             Collections.synchronizedSet(new HashSet<>());
@@ -315,7 +336,10 @@ final class PixelAodHook {
                 appContext, classLoader, notificationIcons);
         PixelAodSurfaceHookInstaller.installShadeAndLockscreen(appContext, classLoader);
         PixelAodLog.log("skipped global stock clock draw suppression to avoid UI jank");
-        PixelAodLog.log("installed Pixel AOD hooks moduleEnabled=" + moduleEnabled
+        PixelAodLog.i("installed Pixel AOD hooks sdk=" + android.os.Build.VERSION.SDK_INT
+                + " display=" + android.os.Build.DISPLAY
+                + " moduleEnabled=" + moduleEnabled
+                + " couiClockHooksInstalled=" + CouiClockPluginHostController.isHookInstalled()
                 + " nativeAodMode=" + nativeAod.displayMode
                 + " notificationIcons=" + notificationIcons
                 + " pixelFingerprintIcon=" + pixelFingerprintIcon
@@ -350,6 +374,8 @@ final class PixelAodHook {
                             + " uri=" + uri);
                     PixelAodClockView.refreshAodPolicyFromSettings("settings-provider-change");
                     PowerSavingAodController.onPolicyChanged("settings-provider-change");
+                    PixelPeekNotificationController.onSettingsChanged(
+                            appContext, "settings-provider-change");
                     if (PixelAodUdfpsRuntimePolicy.usesCouiRenderer()) {
                         CouiUdfpsController.refreshLast(appContext, "settings-provider-change");
                     } else {
@@ -436,6 +462,7 @@ final class PixelAodHook {
                     String source = "native-aod-setting-change#" + uri;
                     PixelAodClockView.refreshNativeAodEligibility(source);
                     PowerSavingAodController.onPolicyChanged(source);
+                    PixelPeekNotificationController.onSettingsChanged(appContext, source);
                 }
             };
             appContext.getContentResolver().registerContentObserver(
@@ -473,6 +500,10 @@ final class PixelAodHook {
             appContext.getContentResolver().registerContentObserver(
                     Settings.Secure.getUriFor(
                             NativeAodAvailabilityAdapter.OPLUS_AOD_END_MINUTE_SETTING),
+                    false, observer);
+            appContext.getContentResolver().registerContentObserver(
+                    Settings.Secure.getUriFor(
+                            NativeOplusPeekSettingAdapter.OPLUS_NEW_NOTIFICATION_SETTING),
                     false, observer);
             appContext.getContentResolver().registerContentObserver(
                     Settings.Secure.getUriFor("user_setup_complete"), false, observer);
@@ -552,14 +583,7 @@ final class PixelAodHook {
                 + " enabled=" + enabled
                 + " trace=" + PixelAodClockView.currentAodTraceId()
                 + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
-        scheduleTorchNotificationRefresh(source, cameraId, enabled, 40L);
-        scheduleTorchNotificationRefresh(source, cameraId, enabled, 280L);
-        scheduleTorchNotificationRefresh(source, cameraId, enabled, 900L);
-    }
-
-    private static void scheduleTorchNotificationRefresh(String source, String cameraId,
-            boolean enabled, long delayMillis) {
-        MAIN.postDelayed(() -> {
+        LIVE_ALERT_NOTIFICATION_REFRESH_BATCH.request(delayMillis -> {
             String refreshSource = "torch-state-" + (enabled ? "on" : "off")
                     + "#" + source + "#" + delayMillis + "ms";
             refreshNotificationsFromLastListener(refreshSource);
@@ -571,18 +595,11 @@ final class PixelAodHook {
                     + " delayMs=" + delayMillis
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
-        }, delayMillis);
+        });
     }
 
     private static void scheduleLiveAlertNotificationRefresh(String source, String reason) {
-        scheduleLiveAlertNotificationRefresh(source, reason, 40L);
-        scheduleLiveAlertNotificationRefresh(source, reason, 280L);
-        scheduleLiveAlertNotificationRefresh(source, reason, 900L);
-    }
-
-    private static void scheduleLiveAlertNotificationRefresh(String source, String reason,
-            long delayMillis) {
-        MAIN.postDelayed(() -> {
+        LIVE_ALERT_NOTIFICATION_REFRESH_BATCH.request(delayMillis -> {
             String refreshSource = "live-alert#" + source + "#" + delayMillis + "ms";
             refreshNotificationsFromLastListener(refreshSource);
             PixelAodClockView.forceRefreshNotificationIcons(refreshSource);
@@ -593,7 +610,7 @@ final class PixelAodHook {
                     + " delayMs=" + delayMillis
                     + " trace=" + PixelAodClockView.currentAodTraceId()
                     + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
-        }, delayMillis);
+        });
     }
 
     private static void requestNativeAodFrameRefreshKickForLiveAlert(String source,
@@ -850,6 +867,9 @@ final class PixelAodHook {
     }
 
     private static boolean isStockAodDrawCandidate(String marker, View view) {
+        if (looksLikeNativeOplusPeekView(marker)) {
+            return false;
+        }
         if (looksLikeSystemAodMediaView(marker)) {
             return false;
         }
@@ -1383,6 +1403,7 @@ final class PixelAodHook {
                 cacheSize = NOTIFICATION_CACHE.size();
             }
             NOTIFICATION_CAPSULE_ICON_POLICY.removeFinalDrawable(sbn.getKey());
+            PixelAodClockView.invalidateNotificationIconSnapshot(sbn.getKey());
             scheduleCachedNotificationSnapshotRefresh(source);
             PixelAodLog.log("removed notification from " + source
                     + " pkg=" + sbn.getPackageName()
@@ -2261,6 +2282,7 @@ final class PixelAodHook {
             // they duplicate every optical callback and eagerly build large state/argument dumps
             // on the exact wake/authentication path that must stay frame-safe.
             CouiUdfpsController.install(classLoader);
+            AodFingerprintRevealSyncController.install(classLoader);
             PixelAodLog.i("COUI UDFPS owns replacement path; legacy fingerprint carrier skipped");
             PixelAodLog.i("COUI UDFPS owns FOD callback observation; broad diagnostics skipped");
             return;
@@ -2478,8 +2500,40 @@ final class PixelAodHook {
     }
 
     static void hookOplusVendorProximityPauseSemantics(ClassLoader classLoader) {
+        boolean sensorHooked = false;
         boolean taskHooked = false;
         boolean unregisterHooked = false;
+        // Observe OPlus' existing AOD gesture-proximity listener. Do not register another sensor
+        // and do not replace the vendor dwell/commit decision. CPH2573 reports 0.0=NEAR, 5.0=FAR.
+        try {
+            Class<?> listenerClass = ModernHookBridge.findClass(
+                    OPLUS_WAKE_UP_SENSOR_LISTENER, classLoader);
+            Method onSensorChanged = ModernHookBridge.findMethod(
+                    listenerClass, "onSensorChanged", SensorEvent.class);
+            ModernHookBridge.hookAfter(onSensorChanged, param -> {
+                if (param.args == null || param.args.length == 0
+                        || !(param.args[0] instanceof SensorEvent)) {
+                    return;
+                }
+                SensorEvent event = (SensorEvent) param.args[0];
+                if (event.sensor == null
+                        || event.sensor.getType() != OPLUS_GESTURE_PROXIMITY_SENSOR_TYPE
+                        || event.values == null || event.values.length == 0) {
+                    return;
+                }
+                float value = event.values[0];
+                if (Float.isNaN(value)) {
+                    return;
+                }
+                PixelAodClockView.observeRawProximityFromOos(
+                        value == 0.0f,
+                        "OplusWakeUpController$amdSensorListener$1#onSensorChanged",
+                        "authority=gesture-prox,value=" + value);
+            });
+            sensorHooked = true;
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to hook OPlus live gesture proximity listener", t);
+        }
         try {
             Class<?> taskClass = ModernHookBridge.findClass(
                     OPLUS_WAKE_UP_PROXIMITY_TASK, classLoader);
@@ -2523,12 +2577,13 @@ final class PixelAodHook {
         } catch (Throwable t) {
             PixelAodLog.log("failed to hook OPlus proximity lifecycle reset", t);
         }
+        vendorProximityPauseAuthorityHooked = taskHooked;
         PixelAodLog.i("installed OPlus vendor proximity pause semantics"
+                + " liveSensor=" + sensorHooked
                 + " task=" + taskHooked
                 + " unregister=" + unregisterHooked
                 + " dwellOwner=OplusWakeUpController$ProximityTask");
     }
-
     static void hookOplusVendorWakeTriggerSemantics(ClassLoader classLoader) {
         boolean hooked = false;
         String authorityClass = "none";
@@ -2625,12 +2680,18 @@ final class PixelAodHook {
                             + ",result=" + summarizeValue(param.getResult());
                     if ("getProxNear".equals(targetMethod.getName())
                             && param.getResult() instanceof Boolean) {
-                        observeCommittedOosProximity(
-                                (Boolean) param.getResult(), source, detail);
+                        // A getter can still report FAR during the vendor's NEAR dwell.
+                        // Only use cached values as a fallback when task hooks are unavailable.
+                        if (!vendorProximityPauseAuthorityHooked) {
+                            observeCommittedOosProximity(
+                                    (Boolean) param.getResult(), source, detail);
+                        }
                     } else if ("getProxNearForLuxAod".equals(targetMethod.getName())
                             && param.getResult() instanceof Boolean) {
-                        PixelAodClockView.observeRawProximityFromOos(
-                                (Boolean) param.getResult(), source, detail);
+                        if (!vendorProximityPauseAuthorityHooked) {
+                            PixelAodClockView.observeRawProximityFromOos(
+                                    (Boolean) param.getResult(), source, detail);
+                        }
                     } else if (vendorWakeTriggerAuthorityHooked
                             && isDisplayTriggerType(triggerType)) {
                         PixelAodLog.log("observed subordinate OPlus wake-trigger seam"
@@ -3483,6 +3544,14 @@ final class PixelAodHook {
             NativeDozeTransitionProgressAdapter.Snapshot progressAfter =
                     NATIVE_DOZE_TRANSITION_PROGRESS.observe(
                             fromName, toName, transitionValue, phaseName, ownerName, source);
+            if (CouiBouncerHostVisibilityPolicy.shouldPreloadLockscreenReturn(after)) {
+                ActiveClockRendererController.prepareNativeLockscreenReturn(
+                        source + "#native-lockscreen-return-started");
+            }
+            if (CouiClockAodExitTransitionPolicy.shouldRepairFinishedNativeExit(after)) {
+                ActiveClockRendererController.repairFinishedAodToLockscreen(
+                        source + "#native-aod-lockscreen-finished");
+            }
             if (NativeKeyguardSceneEligibility.becameIneligible(
                     before.presentationAllowed, after.presentationAllowed)) {
                 ActiveClockRendererController.suppressForNativeScene(source + "#ineligible");
@@ -4544,6 +4613,12 @@ final class PixelAodHook {
             }
 
             String marker = markerFor(view);
+            if (looksLikeNativeOplusPeekView(marker)) {
+                return false;
+            }
+            if (view instanceof ViewGroup && containsNativeOplusPeekView((ViewGroup) view)) {
+                return true;
+            }
             if (looksLikeSystemAodMediaView(marker)) {
                 return false;
             }
@@ -5019,6 +5094,9 @@ final class PixelAodHook {
             }
 
             String marker = markerFor(view);
+            if (looksLikeNativeOplusPeekView(marker)) {
+                return false;
+            }
             if (looksLikeSystemAodMediaView(marker)) {
                 stats[0]++;
                 StockAodVisibilityController.hideView(view, marker, false);
@@ -5028,6 +5106,12 @@ final class PixelAodHook {
             if (view instanceof ViewGroup) {
                 if (looksLikeStockAodClockContainer(marker)
                         || looksLikeGenericStockAodVisual(marker, view)) {
+                    if (containsNativeOplusPeekView((ViewGroup) view)) {
+                        stats[1]++;
+                        PixelAodLog.log("preserved stock AOD container with native Peek subtree "
+                                + marker);
+                        return true;
+                    }
                     if (containsSystemAodMediaView((ViewGroup) view)) {
                         stats[1]++;
                         PixelAodLog.log("preserved stock AOD container with media subtree " + marker
@@ -5092,6 +5176,12 @@ final class PixelAodHook {
             }
 
             String marker = markerFor(view);
+            if (looksLikeNativeOplusPeekView(marker)) {
+                return false;
+            }
+            if (view instanceof ViewGroup && containsNativeOplusPeekView((ViewGroup) view)) {
+                return true;
+            }
             if (looksLikeSystemAodMediaView(marker)) {
                 return false;
             }
@@ -5461,7 +5551,7 @@ final class PixelAodHook {
     }
 
     private static void hideView(View view, String marker) {
-        if (containsPersistentClockPluginHost(view)) {
+        if (containsPersistentClockPluginHost(view) || looksLikeNativeOplusPeekView(marker)) {
             return;
         }
         StockAodVisibilityController.hideView(view, marker, looksLikeSystemAodMediaView(marker));
@@ -5606,7 +5696,7 @@ final class PixelAodHook {
     }
 
     private static boolean looksLikeGenericStockAodVisual(String marker, View view) {
-        if (view == null) {
+        if (view == null || looksLikeNativeOplusPeekView(marker)) {
             return false;
         }
         String m = marker.toLowerCase(Locale.US);
@@ -5930,6 +6020,33 @@ final class PixelAodHook {
 
     private static boolean looksLikePluginBatteryView(String marker) {
         return marker.toLowerCase(Locale.US).startsWith("com.oplus.egview.widget.batteryview");
+    }
+
+    private static boolean looksLikeNativeOplusPeekView(String marker) {
+        if (marker == null) {
+            return false;
+        }
+        String m = marker.toLowerCase(Locale.US);
+        return m.contains("com.oplus.systemui.aod.surface.oplusaodcurveddisplayview")
+                || m.contains("oplusaodcurveddisplayview");
+    }
+
+    private static boolean containsNativeOplusPeekView(ViewGroup root) {
+        if (root == null) {
+            return false;
+        }
+        int childCount = Math.min(root.getChildCount(), 120);
+        for (int i = 0; i < childCount; i++) {
+            View child = root.getChildAt(i);
+            if (looksLikeNativeOplusPeekView(markerFor(child))) {
+                return true;
+            }
+            if (child instanceof ViewGroup
+                    && containsNativeOplusPeekView((ViewGroup) child)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean looksLikePluginNotificationView(String marker) {

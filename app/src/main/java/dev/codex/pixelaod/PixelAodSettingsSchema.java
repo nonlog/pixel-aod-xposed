@@ -22,6 +22,7 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_CALENDAR_EVENTS = "calendar_events";
     public static final String KEY_CALENDAR_ICON_PACKAGE = "calendar_icon_package";
     public static final String KEY_NOTIFICATION_ICONS = "notification_icons";
+    public static final String KEY_PIXEL_NOTIFICATION_PEEK = "pixel_notification_peek";
     public static final String KEY_PIXEL_FINGERPRINT_ICON = "pixel_fingerprint_icon";
     public static final String KEY_UDFPS_HDR_PRESS_EFFECT = "udfps_hdr_press_effect";
     public static final String KEY_UDFPS_SUCCESS_RIPPLE = "udfps_success_ripple";
@@ -71,6 +72,8 @@ public final class PixelAodSettingsSchema {
             stringSpec(KEY_CALENDAR_ICON_PACKAGE, "", false);
     public static final SettingSpec NOTIFICATION_ICONS =
             alwaysEnabledBooleanSpec(KEY_NOTIFICATION_ICONS);
+    public static final SettingSpec PIXEL_NOTIFICATION_PEEK =
+            booleanSpec(KEY_PIXEL_NOTIFICATION_PEEK, true, false);
     public static final SettingSpec PIXEL_FINGERPRINT_ICON =
             booleanSpec(KEY_PIXEL_FINGERPRINT_ICON, false, false);
     public static final SettingSpec UDFPS_HDR_PRESS_EFFECT =

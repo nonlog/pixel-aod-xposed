@@ -69,6 +69,28 @@ public final class CouiBouncerHostVisibilityPolicyTest {
     }
 
     @Test
+    public void transientReturnPreloadsLockscreenOnlyAtStartedEdge() {
+        NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
+
+        assertTrue(CouiBouncerHostVisibilityPolicy.shouldPreloadLockscreenReturn(gate.observe(
+                "OCCLUDED", "LOCKSCREEN", 0.0f, "STARTED", "owner", "call-end-start")));
+        assertFalse(CouiBouncerHostVisibilityPolicy.shouldPreloadLockscreenReturn(gate.observe(
+                "OCCLUDED", "LOCKSCREEN", 0.5f, "RUNNING", "owner", "call-end-running")));
+        assertFalse(CouiBouncerHostVisibilityPolicy.shouldPreloadLockscreenReturn(gate.observe(
+                "OCCLUDED", "LOCKSCREEN", 1.0f, "FINISHED", "owner", "call-end-finish")));
+
+        assertTrue(CouiBouncerHostVisibilityPolicy.shouldPreloadLockscreenReturn(gate.observe(
+                "PRIMARY_BOUNCER", "LOCKSCREEN", 0.0f, "STARTED", "owner", "bouncer-end")));
+        assertTrue(CouiBouncerHostVisibilityPolicy.shouldPreloadLockscreenReturn(gate.observe(
+                "ALTERNATE_BOUNCER", "LOCKSCREEN", 0.0f, "STARTED", "owner", "alt-end")));
+
+        assertFalse(CouiBouncerHostVisibilityPolicy.shouldPreloadLockscreenReturn(gate.observe(
+                "LOCKSCREEN", "OCCLUDED", 0.0f, "STARTED", "owner", "alarm-start")));
+        assertFalse(CouiBouncerHostVisibilityPolicy.shouldPreloadLockscreenReturn(gate.observe(
+                "AOD", "LOCKSCREEN", 0.0f, "STARTED", "owner", "normal-aod-exit")));
+    }
+
+    @Test
     public void canceledOcclusionTransitionReturnsOwnershipToSettledScene() {
         NativeKeyguardSceneEligibility gate = new NativeKeyguardSceneEligibility();
 

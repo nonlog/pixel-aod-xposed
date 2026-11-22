@@ -71,6 +71,21 @@ final class CouiBouncerHostVisibilityPolicy {
                 && from == NativeKeyguardSceneEligibility.Scene.OCCLUDED);
     }
 
+    /**
+     * A persistent replacement host can still contain its last AOD presentation while the native
+     * ClockViewRoot is hidden by a full-screen alarm/call or bouncer. Preload the lockscreen style
+     * at the authoritative STARTED edge, before the native root begins revealing that child.
+     */
+    static boolean shouldPreloadLockscreenReturn(NativeKeyguardSceneEligibility.Snapshot scene) {
+        if (scene == null
+                || scene.phase != NativeKeyguardSceneEligibility.Phase.STARTED
+                || scene.to != NativeKeyguardSceneEligibility.Scene.LOCKSCREEN) {
+            return false;
+        }
+        return scene.from == NativeKeyguardSceneEligibility.Scene.OCCLUDED
+                || isBouncer(scene.from);
+    }
+
     private static boolean isNonLockscreenAodEntryEdge(
             NativeKeyguardSceneEligibility.Snapshot scene) {
         if (scene == null) {

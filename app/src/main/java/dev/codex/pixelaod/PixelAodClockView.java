@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.database.ContentObserver;
 import android.graphics.Bitmap;
@@ -23,6 +24,7 @@ import android.graphics.PorterDuff;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.AdaptiveIconDrawable;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.media.MediaDescription;
@@ -60,7 +62,9 @@ import android.widget.TextView;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -73,6 +77,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.time.ZoneId;
@@ -148,6 +153,7 @@ public final class PixelAodClockView extends FrameLayout {
             PixelAodVisualStyle.Aod.MEDIA_SUBTITLE_TOP_GAP_DP;
     private static final int MAX_NOTIFICATION_ICONS = 5;
     private static final int ICON_MASK_SAMPLE_SIZE = 48;
+    private static final ThreadLocal<int[]> ICON_MASK_PIXEL_BUFFER = new ThreadLocal<>();
     private static final int BATTERY_TOP_DP = PixelAodVisualStyle.Aod.BATTERY_TOP_DP;
     private static final int BATTERY_TEXT_DP = PixelAodVisualStyle.Aod.BATTERY_TEXT_DP;
     private static final int CHARGE_BOLT_WIDTH_DP = PixelAodVisualStyle.Aod.CHARGE_BOLT_WIDTH_DP;
@@ -204,6 +210,8 @@ public final class PixelAodClockView extends FrameLayout {
     private static final StatusBarNotification[] EMPTY_NOTIFICATIONS = new StatusBarNotification[0];
     private static final LinkedHashMap<String, StatusBarNotification> mediaNotificationCache =
             new LinkedHashMap<>();
+    private static final NotificationIconSnapshotCache<Drawable.ConstantState>
+            NOTIFICATION_ICON_SNAPSHOT_CACHE = new NotificationIconSnapshotCache<>(64);
     private static final Set<String> expiredInactiveMediaPackages = new HashSet<>();
     private static final Set<String> loggedNativeSystemDrawableNames = new HashSet<>();
     private static final Object INACTIVE_MEDIA_TIMEOUT_RECEIVER_LOCK = new Object();
@@ -337,14 +345,24 @@ public final class PixelAodClockView extends FrameLayout {
             PROXIMITY_AUTHORITY_GATE.reset();
             snapshot = VENDOR_PROXIMITY_PAUSE.reset(normalizedSource + "#pocket-mode-disabled");
         }
-        if (snapshot.phaseChanged()) {
-            PixelAodLog.i("OOS proximity pause raw edge near=" + near
-                    + " pocketModeEnabled=" + pocketModeEnabled
-                    + " state={" + snapshot.describe() + "}"
-                    + " detail={" + normalizedDetail + "}");
+        if (!snapshot.phaseChanged()) {
+            return;
         }
+        boolean blocked = snapshot.blocksNotificationPulse();
+        if (blocked) {
+            cancelBriefAodTriggerPreservingProximity(
+                    "oos-pocket-guard#" + normalizedSource, "pocket-or-proximity-near");
+        }
+        PowerSavingAodController.onPolicyChanged("oos-pocket-guard#" + normalizedSource);
+        PixelPeekNotificationController.onPocketGuardChanged(blocked, normalizedSource);
+        ActiveClockRendererController.setPocketGuard(blocked, normalizedSource);
+        refreshAodPolicyConsumers("oos-pocket-guard#" + normalizedSource);
+        PixelAodLog.i("OOS proximity pause raw edge near=" + near
+                + " pocketModeEnabled=" + pocketModeEnabled
+                + " hardGuard=" + blocked
+                + " state={" + snapshot.describe() + "}"
+                + " detail={" + normalizedDetail + "}");
     }
-
     static void updateProximityFromOos(boolean near, String source, String detail) {
         String normalizedSource = TextUtils.isEmpty(source) ? "unknown" : source;
         String normalizedDetail = TextUtils.isEmpty(detail) ? "" : detail;
@@ -371,7 +389,14 @@ public final class PixelAodClockView extends FrameLayout {
         if (pauseSnapshot.blocksPresentation()) {
             cancelPanelHandoffPresentation("oos-proximity-near", false);
         }
+        boolean pocketGuard = pauseSnapshot.blocksNotificationPulse();
+        if (pocketGuard) {
+            cancelBriefAodTriggerPreservingProximity(
+                    "oos-proximity#" + normalizedSource, "pocket-or-proximity-near");
+        }
         PowerSavingAodController.onPolicyChanged("oos-proximity#" + normalizedSource);
+        PixelPeekNotificationController.onPocketGuardChanged(pocketGuard, normalizedSource);
+        ActiveClockRendererController.setPocketGuard(pocketGuard, normalizedSource);
         PixelAodLog.i("OOS proximity state changed: near=" + near
                 + " appliedNear=" + isProximityNear()
                 + " pocketModeEnabled=" + pocketModeEnabled
@@ -406,6 +431,9 @@ public final class PixelAodClockView extends FrameLayout {
         PixelAodLog.i("OOS proximity pause reset source=" + source
                 + " state={" + snapshot.describe() + "}");
         PowerSavingAodController.onPolicyChanged("oos-proximity-reset#" + source);
+        PixelPeekNotificationController.onPocketGuardChanged(false,
+                "oos-proximity-reset#" + source);
+        ActiveClockRendererController.setPocketGuard(false, "oos-proximity-reset#" + source);
         if (wasBlocked || snapshot.phaseChanged()) {
             mainHandler().post(() -> {
                 ActiveClockRendererController.onTimeTick("oos-proximity-reset");
@@ -423,8 +451,12 @@ public final class PixelAodClockView extends FrameLayout {
         return PROXIMITY_AUTHORITY_GATE.isNear();
     }
 
-    static boolean isNotificationPulseProximityBlocked() {
+    static boolean isPocketGuardActive() {
         return VENDOR_PROXIMITY_PAUSE.blocksNotificationPulse();
+    }
+
+    static boolean isNotificationPulseProximityBlocked() {
+        return isPocketGuardActive();
     }
 
     static VendorProximityPauseAdapter.Snapshot vendorProximityPauseSnapshot() {
@@ -1815,7 +1847,7 @@ public final class PixelAodClockView extends FrameLayout {
                     + " state={" + describeAodState(context) + "}");
             return false;
         }
-        if (isProximityNear()) {
+        if (isPocketGuardActive()) {
             PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
                     + " source=" + source
                     + " reason=proximity-near"
@@ -1877,6 +1909,24 @@ public final class PixelAodClockView extends FrameLayout {
         return hadBriefTrigger;
     }
 
+    private static boolean cancelBriefAodTriggerPreservingProximity(
+            String source, String reason) {
+        boolean hadBriefTrigger;
+        synchronized (PixelAodClockView.class) {
+            hadBriefTrigger = clearBriefAodTriggerLocked();
+        }
+        PixelAodLog.log("blocked trigger-only Pixel AOD brief display"
+                + " source=" + source
+                + " reason=" + reason
+                + " hadBriefTrigger=" + hadBriefTrigger
+                + " preserveProximity=true"
+                + " trace=" + currentAodTraceId()
+                + " state={" + describeAodState(appContext) + "}");
+        if (hadBriefTrigger) {
+            refreshAodPolicyConsumers(source + "#trigger-brief-blocked");
+        }
+        return hadBriefTrigger;
+    }
     private static boolean clearBriefAodTriggerLocked() {
         boolean hadBriefTrigger = briefAodTriggerStartedAt > 0L
                 || !"none".equals(briefAodTriggerType);
@@ -2191,7 +2241,7 @@ public final class PixelAodClockView extends FrameLayout {
         boolean powerAllows = requested
                 && isPowerPolicyAllowingAod(context, source, trace, false);
         return PowerSavingAodPolicy.shouldKeepChargingVisible(requested,
-                isDeviceInteractive(context), isProximityNear(),
+                isDeviceInteractive(context), isPocketGuardActive(),
                 suppression.baseAodDenied(), powerAllows);
     }
 
@@ -2202,7 +2252,7 @@ public final class PixelAodClockView extends FrameLayout {
         AodLifecycleState state = currentAodLifecycleState(context);
         if (state == null || state.interactive || !state.triggerBriefActive
                 || !PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE.equals(state.triggerBriefType)
-                || isProximityNear()) {
+                || isPocketGuardActive()) {
             return false;
         }
         NativeAodAvailabilityAdapter.Decision nativeAod = NativeAodAvailabilityAdapter.read(
@@ -2282,7 +2332,7 @@ public final class PixelAodClockView extends FrameLayout {
         VendorAmbientSuppressionCapabilities.Snapshot suppression =
                 PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
         boolean chargingOverride = isPowerSavingChargingAodRequested(context)
-                && !isDeviceInteractive(context) && !isProximityNear()
+                && !isDeviceInteractive(context) && !isPocketGuardActive()
                 && !suppression.baseAodDenied();
         boolean allowed = isModuleEnabled(context) && powerAllows
                 && (nativeAod.continuousEligible || chargingOverride);
@@ -2301,7 +2351,7 @@ public final class PixelAodClockView extends FrameLayout {
         VendorAmbientSuppressionCapabilities.Snapshot suppression =
                 PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
         boolean chargingEntry = isPowerSavingChargingAodRequested(context)
-                && !isProximityNear() && !suppression.baseAodDenied();
+                && !isPocketGuardActive() && !suppression.baseAodDenied();
         boolean allowed = isModuleEnabled(context)
                 && isPowerPolicyAllowingAod(context, source, trace, false)
                 && (nativeAod.prearmEligible || chargingEntry);
@@ -2339,7 +2389,12 @@ public final class PixelAodClockView extends FrameLayout {
 
     static OosAodLifecycleAdapter.AodPolicyDecision evaluateAodPolicy(
             Context context, String source) {
-        return evaluateAodPolicy(context, source, false, false);
+        // Every lifecycle consumer must observe the same live pocket/proximity authority. The
+        // visual overlay path already passed this explicitly, but default callers such as the
+        // DreamService OFF interceptor previously hard-coded proximityBlocked=false. During the
+        // Power Saving charging hold that could turn a vendor pocket-mode OFF request back into
+        // DOZE_SUSPEND and leave AOD visible in a pocket.
+        return evaluateAodPolicy(context, source, isPocketGuardActive(), false);
     }
 
     private static OosAodLifecycleAdapter.AodPolicyDecision evaluateAodPolicy(
@@ -2412,7 +2467,14 @@ public final class PixelAodClockView extends FrameLayout {
         }
         VendorAmbientSuppressionCapabilities.Snapshot vendorSuppression =
                 PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
-        boolean vendorBaseAodSuppressed = vendorSuppression.baseAodDenied();
+        boolean nativePeekContinuous = PixelPeekPresentationPolicy.shouldPreserveContinuousAod(
+                PixelPeekNotificationController.hasActiveNativeNotificationWindow()
+                        && NativeOplusPeekSettingAdapter.isEnabled(context),
+                nativeAod.configuredEligible, nativeAod.displayMode,
+                nativeAod.scheduleWindowEligible,
+                Boolean.TRUE.equals(vendorSuppression.alwaysOnSuppressed));
+        boolean vendorBaseAodSuppressed = vendorSuppression.baseAodDenied()
+                && !nativePeekContinuous;
         boolean transitionPrearm = state != null
                 && !state.interactive
                 && !state.active
@@ -2420,6 +2482,7 @@ public final class PixelAodClockView extends FrameLayout {
         boolean chargingContinuous = isPowerSavingChargingAodRequested(context);
         boolean nativeContinuousReady = nativeAod.continuousEligible
                 || chargingContinuous
+                || nativePeekContinuous
                 || (transitionPrearm && nativeAod.prearmEligible);
         nativeContinuousReady = nativeContinuousReady && !vendorBaseAodSuppressed;
         boolean continuousAllowed = nativeContinuousReady;
@@ -2440,8 +2503,9 @@ public final class PixelAodClockView extends FrameLayout {
         }
         if (continuousAllowed) {
             return new OosAodLifecycleAdapter.ModulePolicy(true, moduleEnabled, true, false,
-                    "continuous-native-aod", displayMode, withinSchedule, false,
-                    chargingContinuous);
+                    nativePeekContinuous ? "continuous-native-aod-native-peek"
+                            : "continuous-native-aod",
+                    displayMode, withinSchedule, false, chargingContinuous);
         }
         if (!nativeContinuousReady) {
             String blockedReason = vendorBaseAodSuppressed
@@ -2715,6 +2779,26 @@ public final class PixelAodClockView extends FrameLayout {
         }
     }
 
+    static void onNativeNotificationWindowChanged(String source) {
+        refreshAodPolicyConsumers(source + "#native-notification-window");
+    }
+
+    private static boolean shouldPreserveContinuousAodDuringNativePeek(
+            Context context, boolean nativeWindowAttached) {
+        if (context == null || !nativeWindowAttached
+                || !NativeOplusPeekSettingAdapter.isEnabled(context)) {
+            return false;
+        }
+        NativeAodAvailabilityAdapter.Decision nativeAod =
+                NativeAodAvailabilityAdapter.read(context, isVendorAmbientSessionActive());
+        VendorAmbientSuppressionCapabilities.Snapshot suppression =
+                PixelAodRuntimeState.vendorAmbientSuppressionSnapshot();
+        return PixelPeekPresentationPolicy.shouldPreserveContinuousAod(
+                true, nativeAod.configuredEligible, nativeAod.displayMode,
+                nativeAod.scheduleWindowEligible,
+                Boolean.TRUE.equals(suppression.alwaysOnSuppressed));
+    }
+
     private static AodLifecycleState currentAodLifecycleState(Context context) {
         long now = SystemClock.uptimeMillis();
         boolean active;
@@ -2806,10 +2890,13 @@ public final class PixelAodClockView extends FrameLayout {
         boolean displayAod = displayState == Display.STATE_DOZE
                 || displayState == Display.STATE_DOZE_SUSPEND;
         boolean triggerBriefArmed = briefTriggerStartedAt > 0L;
-        boolean nativeNotificationWindow = triggerBriefArmed
+        boolean nativeNotificationWindow =
+                PixelPeekNotificationController.hasActiveNativeNotificationWindow();
+        boolean nativeNotificationBriefWindow = triggerBriefArmed
                 && PowerSavingAodPolicy.NOTIFICATION_TRIGGER_TYPE.equals(briefTriggerType)
-                && PixelPeekNotificationController.hasActiveNativeNotificationWindow();
-        boolean vendorTransientSurfaceAvailable = displayAod || nativeNotificationWindow;
+                && nativeNotificationWindow;
+        boolean vendorTransientSurfaceAvailable =
+                displayAod || nativeNotificationBriefWindow;
         boolean triggerBriefActive = OosAodLifecycleAdapter.shouldPresentVendorTransientScene(
                 triggerBriefArmed, interactive, vendorTransientSurfaceAvailable);
         if (triggerBriefArmed && !triggerBriefActive
@@ -2826,10 +2913,13 @@ public final class PixelAodClockView extends FrameLayout {
                 || isAllowedAodEntryAge(now, aodActivatedAt);
         boolean recentOverlayVisible =
                 isRecentUptime(now, overlayVisibleAt, AOD_FORCE_DOZE_RECENT_OVERLAY_MILLIS);
+        boolean nativePeekContinuousWindow =
+                shouldPreserveContinuousAodDuringNativePeek(context, nativeNotificationWindow);
         boolean rawShouldDrawPixelAod = context != null
                 && !interactive
                 && NonLockscreenAodVisibilityGate.shouldDraw(screenOffFromInteractiveLockscreen,
-                displayAod, entryDelay, triggerBriefActive, active, graceWindow);
+                displayAod || nativePeekContinuousWindow, entryDelay, triggerBriefActive,
+                active, graceWindow);
         boolean revealBlocked = rawShouldDrawPixelAod
                 && revealBlockedUntilAt > 0L
                 && now >= screenOffAt
@@ -3149,7 +3239,12 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static void clearActiveNotifications() {
+        NOTIFICATION_ICON_SNAPSHOT_CACHE.clear();
         setActiveNotifications(null, "clearActiveNotifications");
+    }
+
+    static void invalidateNotificationIconSnapshot(String notificationKey) {
+        NOTIFICATION_ICON_SNAPSHOT_CACHE.remove(notificationKey);
     }
 
     static void setMediaNotificationCandidates(StatusBarNotification[] notifications, String source) {
@@ -3371,9 +3466,8 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static String firstWeatherJsonFromGzip(byte[] compressed) {
-        String decompressed = BreezyWeatherRelayReceiver.decompressWeatherGz(
-                compressed, BreezyWeatherRelayReceiver.MAX_WEATHER_GZ_CHARS);
-        if (decompressed == null || decompressed.isEmpty()) {
+        String decompressed = BreezyWeatherRelayReceiver.decompressBoundedGzip(compressed);
+        if (TextUtils.isEmpty(decompressed)) {
             return null;
         }
         try {
@@ -5709,12 +5803,16 @@ public final class PixelAodClockView extends FrameLayout {
         overflowView.setMinLines(styleSource.getMinLines());
         overflowView.setMinHeight(styleSource.getMinHeight());
         overflowView.setMinWidth(styleSource.getMinWidth());
-        overflowView.setBreakStrategy(styleSource.getBreakStrategy());
-        overflowView.setHyphenationFrequency(styleSource.getHyphenationFrequency());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            overflowView.setBreakStrategy(styleSource.getBreakStrategy());
+            overflowView.setHyphenationFrequency(styleSource.getHyphenationFrequency());
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             overflowView.setElegantTextHeight(styleSource.isElegantTextHeight());
         }
-        overflowView.setFontVariationSettings(styleSource.getFontVariationSettings());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            overflowView.setFontVariationSettings(styleSource.getFontVariationSettings());
+        }
         float parentAlpha = parent != null ? parent.getAlpha() : 1f;
         float sourceAlpha = styleSource.getAlpha();
         overflowView.setAlpha(parentAlpha > 0.01f
@@ -5972,11 +6070,13 @@ public final class PixelAodClockView extends FrameLayout {
             Drawable result = monochrome.mutate();
             result.setTint(resolveMaterialInfoColor(context));
             result.setTintMode(PorterDuff.Mode.SRC_IN);
-            if (validateNotificationSilhouette
-                    && (looksLikeFilledMonochromeMask(result) || looksLikeTinyForeground(result))) {
-                logRejectedMediaIcon(packageName,
-                        looksLikeFilledMonochromeMask(result) ? "filled-mask" : "tiny-foreground");
-                return null;
+            if (validateNotificationSilhouette) {
+                boolean filledMask = looksLikeFilledMonochromeMask(result);
+                boolean tinyForeground = !filledMask && looksLikeTinyForeground(result);
+                if (filledMask || tinyForeground) {
+                    logRejectedMediaIcon(packageName, filledMask ? "filled-mask" : "tiny-foreground");
+                    return null;
+                }
             }
             return result;
         } catch (Throwable t) {
@@ -6003,6 +6103,36 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     static Drawable loadSmallIconDrawable(Context context, StatusBarNotification sbn) {
+        if (context == null || sbn == null) {
+            return null;
+        }
+        Notification notification = sbn.getNotification();
+        Icon smallIcon = notification != null ? notification.getSmallIcon() : null;
+        if (smallIcon == null) {
+            return loadSmallIconDrawableUncached(context, sbn);
+        }
+        Configuration configuration = context.getResources().getConfiguration();
+        int tintColor = resolveMaterialInfoColor(context);
+        Drawable.ConstantState cachedState = NOTIFICATION_ICON_SNAPSHOT_CACHE.get(
+                sbn.getKey(), sbn, smallIcon, configuration, tintColor);
+        if (cachedState != null) {
+            try {
+                return cachedState.newDrawable(context.getResources()).mutate();
+            } catch (Throwable ignored) {
+                NOTIFICATION_ICON_SNAPSHOT_CACHE.remove(sbn.getKey());
+            }
+        }
+        Drawable resolved = loadSmallIconDrawableUncached(context, sbn);
+        Drawable.ConstantState snapshotState = snapshotNotificationIcon(context, resolved);
+        if (snapshotState != null) {
+            NOTIFICATION_ICON_SNAPSHOT_CACHE.put(
+                    sbn.getKey(), sbn, smallIcon, new Configuration(configuration), tintColor,
+                    snapshotState);
+        }
+        return resolved;
+    }
+
+    private static Drawable loadSmallIconDrawableUncached(Context context, StatusBarNotification sbn) {
         try {
             Notification notification = sbn.getNotification();
             if (notification == null) {
@@ -6123,6 +6253,35 @@ public final class PixelAodClockView extends FrameLayout {
                 PixelAodLog.log("failed to load AOD notification fallback glyph", fallbackError);
                 return null;
             }
+        }
+    }
+
+    private static Drawable.ConstantState snapshotNotificationIcon(
+            Context context, Drawable drawable) {
+        if (context == null || drawable == null) {
+            return null;
+        }
+        Rect originalBounds = new Rect(drawable.getBounds());
+        int width = drawable.getIntrinsicWidth();
+        int height = drawable.getIntrinsicHeight();
+        if (width <= 0) {
+            width = originalBounds.width() > 0 ? originalBounds.width() : 64;
+        }
+        if (height <= 0) {
+            height = originalBounds.height() > 0 ? originalBounds.height() : 64;
+        }
+        width = Math.max(1, Math.min(width, 256));
+        height = Math.max(1, Math.min(height, 256));
+        try {
+            Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            drawable.setBounds(0, 0, width, height);
+            drawable.draw(canvas);
+            return new BitmapDrawable(context.getResources(), bitmap).getConstantState();
+        } catch (Throwable ignored) {
+            return null;
+        } finally {
+            drawable.setBounds(originalBounds);
         }
     }
 
@@ -6828,24 +6987,29 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static boolean looksLikeTinyForeground(Drawable drawable) {
         Bitmap bitmap = null;
+        Rect originalBounds = drawable != null ? new Rect(drawable.getBounds()) : null;
         try {
-            bitmap = Bitmap.createBitmap(ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE, Bitmap.Config.ARGB_8888);
+            bitmap = Bitmap.createBitmap(ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE,
+                    Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
             drawable.setBounds(0, 0, ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE);
             drawable.draw(canvas);
+            int[] pixels = readIconMaskPixels(bitmap);
             int opaque = 0;
             int size = ICON_MASK_SAMPLE_SIZE;
-            for (int y = 0; y < size; y++) {
-                for (int x = 0; x < size; x++) {
-                    if (Color.alpha(bitmap.getPixel(x, y)) > 32) {
-                        opaque++;
-                    }
+            int count = size * size;
+            for (int index = 0; index < count; index++) {
+                if (Color.alpha(pixels[index]) > 32) {
+                    opaque++;
                 }
             }
-            return opaque / (float) (size * size) < 0.16f;
+            return opaque / (float) count < 0.16f;
         } catch (Throwable ignored) {
             return false;
         } finally {
+            if (originalBounds != null) {
+                drawable.setBounds(originalBounds);
+            }
             if (bitmap != null) {
                 bitmap.recycle();
             }
@@ -6854,11 +7018,14 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static boolean looksLikeFilledNotificationMask(Drawable drawable) {
         Bitmap bitmap = null;
+        Rect originalBounds = drawable != null ? new Rect(drawable.getBounds()) : null;
         try {
-            bitmap = Bitmap.createBitmap(ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE, Bitmap.Config.ARGB_8888);
+            bitmap = Bitmap.createBitmap(ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE,
+                    Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
             drawable.setBounds(0, 0, ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE);
             drawable.draw(canvas);
+            int[] pixels = readIconMaskPixels(bitmap);
             int opaque = 0;
             int edgeOpaque = 0;
             int cornerOpaque = 0;
@@ -6866,7 +7033,7 @@ public final class PixelAodClockView extends FrameLayout {
             int corner = Math.max(4, size / 6);
             for (int y = 0; y < size; y++) {
                 for (int x = 0; x < size; x++) {
-                    int alpha = Color.alpha(bitmap.getPixel(x, y));
+                    int alpha = Color.alpha(pixels[y * size + x]);
                     if (alpha <= 32) {
                         continue;
                     }
@@ -6888,6 +7055,9 @@ public final class PixelAodClockView extends FrameLayout {
         } catch (Throwable ignored) {
             return false;
         } finally {
+            if (originalBounds != null) {
+                drawable.setBounds(originalBounds);
+            }
             if (bitmap != null) {
                 bitmap.recycle();
             }
@@ -6896,22 +7066,23 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static boolean looksLikeFilledMonochromeMask(Drawable drawable) {
         Bitmap bitmap = null;
+        Rect originalBounds = drawable != null ? new Rect(drawable.getBounds()) : null;
         try {
-            bitmap = Bitmap.createBitmap(ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE, Bitmap.Config.ARGB_8888);
+            bitmap = Bitmap.createBitmap(ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE,
+                    Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
             drawable.setBounds(0, 0, ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE);
             drawable.draw(canvas);
+            int[] pixels = readIconMaskPixels(bitmap);
             int opaque = 0;
             int edgeOpaque = 0;
             int cornerOpaque = 0;
             int transitions = 0;
             int size = ICON_MASK_SAMPLE_SIZE;
             int corner = Math.max(4, size / 6);
-            boolean[][] solid = new boolean[size][size];
             for (int y = 0; y < size; y++) {
                 for (int x = 0; x < size; x++) {
-                    boolean alpha = Color.alpha(bitmap.getPixel(x, y)) > 32;
-                    solid[y][x] = alpha;
+                    boolean alpha = Color.alpha(pixels[y * size + x]) > 32;
                     if (!alpha) {
                         continue;
                     }
@@ -6927,15 +7098,20 @@ public final class PixelAodClockView extends FrameLayout {
                 }
             }
             for (int y = 0; y < size; y++) {
+                int row = y * size;
                 for (int x = 1; x < size; x++) {
-                    if (solid[y][x] != solid[y][x - 1]) {
+                    if ((Color.alpha(pixels[row + x]) > 32)
+                            != (Color.alpha(pixels[row + x - 1]) > 32)) {
                         transitions++;
                     }
                 }
             }
             for (int y = 1; y < size; y++) {
+                int row = y * size;
+                int previousRow = (y - 1) * size;
                 for (int x = 0; x < size; x++) {
-                    if (solid[y][x] != solid[y - 1][x]) {
+                    if ((Color.alpha(pixels[row + x]) > 32)
+                            != (Color.alpha(pixels[previousRow + x]) > 32)) {
                         transitions++;
                     }
                 }
@@ -6950,6 +7126,9 @@ public final class PixelAodClockView extends FrameLayout {
         } catch (Throwable ignored) {
             return false;
         } finally {
+            if (originalBounds != null) {
+                drawable.setBounds(originalBounds);
+            }
             if (bitmap != null) {
                 bitmap.recycle();
             }
@@ -7166,29 +7345,31 @@ public final class PixelAodClockView extends FrameLayout {
 
     private static boolean mayBeColoredSystemUiUsbIcon(Drawable drawable) {
         Bitmap bitmap = null;
+        Rect originalBounds = drawable != null ? new Rect(drawable.getBounds()) : null;
         try {
-            bitmap = Bitmap.createBitmap(ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE, Bitmap.Config.ARGB_8888);
+            bitmap = Bitmap.createBitmap(ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE,
+                    Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bitmap);
             drawable.setBounds(0, 0, ICON_MASK_SAMPLE_SIZE, ICON_MASK_SAMPLE_SIZE);
             drawable.draw(canvas);
+            int[] pixels = readIconMaskPixels(bitmap);
             int firstColor = 0;
             int distinctColors = 0;
-            for (int y = 0; y < ICON_MASK_SAMPLE_SIZE; y++) {
-                for (int x = 0; x < ICON_MASK_SAMPLE_SIZE; x++) {
-                    int pixel = bitmap.getPixel(x, y);
-                    if (Color.alpha(pixel) <= 48) {
-                        continue;
-                    }
-                    int rgb = pixel & 0x00ffffff;
-                    if (firstColor == 0) {
-                        firstColor = rgb;
-                    } else if (Math.abs(Color.red(rgb) - Color.red(firstColor)) > 10
-                            || Math.abs(Color.green(rgb) - Color.green(firstColor)) > 10
-                            || Math.abs(Color.blue(rgb) - Color.blue(firstColor)) > 10) {
-                        distinctColors++;
-                        if (distinctColors > 4) {
-                            return true;
-                        }
+            int count = ICON_MASK_SAMPLE_SIZE * ICON_MASK_SAMPLE_SIZE;
+            for (int index = 0; index < count; index++) {
+                int pixel = pixels[index];
+                if (Color.alpha(pixel) <= 48) {
+                    continue;
+                }
+                int rgb = pixel & 0x00ffffff;
+                if (firstColor == 0) {
+                    firstColor = rgb;
+                } else if (Math.abs(Color.red(rgb) - Color.red(firstColor)) > 10
+                        || Math.abs(Color.green(rgb) - Color.green(firstColor)) > 10
+                        || Math.abs(Color.blue(rgb) - Color.blue(firstColor)) > 10) {
+                    distinctColors++;
+                    if (distinctColors > 4) {
+                        return true;
                     }
                 }
             }
@@ -7196,10 +7377,25 @@ public final class PixelAodClockView extends FrameLayout {
         } catch (Throwable ignored) {
             return false;
         } finally {
+            if (originalBounds != null) {
+                drawable.setBounds(originalBounds);
+            }
             if (bitmap != null) {
                 bitmap.recycle();
             }
         }
+    }
+
+    private static int[] readIconMaskPixels(Bitmap bitmap) {
+        int count = bitmap.getWidth() * bitmap.getHeight();
+        int[] pixels = ICON_MASK_PIXEL_BUFFER.get();
+        if (pixels == null || pixels.length < count) {
+            pixels = new int[count];
+            ICON_MASK_PIXEL_BUFFER.set(pixels);
+        }
+        bitmap.getPixels(pixels, 0, bitmap.getWidth(), 0, 0,
+                bitmap.getWidth(), bitmap.getHeight());
+        return pixels;
     }
 
     private static int parseThemeColor(String value) {
@@ -8671,7 +8867,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static Typeface resolveClockTypeface(Context context, int weight) {
-        if (context == null) {
+        if (context == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return null;
         }
         weight = normalizeClockWeight(weight);
@@ -8924,7 +9120,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static void applyFontVariation(TextView textView, int weight) {
-        if (textView == null) {
+        if (textView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return;
         }
         try {
@@ -8935,7 +9131,7 @@ public final class PixelAodClockView extends FrameLayout {
     }
 
     private static void clearTextViewFontVariation(TextView textView) {
-        if (textView == null) {
+        if (textView == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return;
         }
         try {
@@ -9069,15 +9265,15 @@ public final class PixelAodClockView extends FrameLayout {
             java.util.Calendar now = java.util.Calendar.getInstance();
             now.setTimeInMillis(nowMillis);
             int nowMins = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE);
-
+            
             java.util.Calendar sunrise = java.util.Calendar.getInstance();
             sunrise.setTimeInMillis(sunriseMillis);
             int sunRiseMins = sunrise.get(java.util.Calendar.HOUR_OF_DAY) * 60 + sunrise.get(java.util.Calendar.MINUTE);
-
+            
             java.util.Calendar sunset = java.util.Calendar.getInstance();
             sunset.setTimeInMillis(sunsetMillis);
             int sunSetMins = sunset.get(java.util.Calendar.HOUR_OF_DAY) * 60 + sunset.get(java.util.Calendar.MINUTE);
-
+            
             return nowMins < sunRiseMins || nowMins >= sunSetMins;
         }
 

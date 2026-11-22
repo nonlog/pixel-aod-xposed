@@ -1,7 +1,9 @@
 package dev.codex.pixelaod;
 
 import android.content.Context;
+import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
+import android.view.View;
 
 import java.util.List;
 
@@ -36,8 +38,22 @@ final class ActiveClockRendererController {
         CouiClockPluginHostController.refreshAll(source);
     }
 
+    static boolean drawAodIntoNativePeekSurface(
+            Canvas canvas, View nativeSurface, String source) {
+        return CouiClockPluginHostController.drawAodIntoNativePeekSurface(
+                canvas, nativeSurface, source);
+    }
+
+    static void setPocketGuard(boolean blocked, String source) {
+        CouiClockPluginHostController.setPocketGuard(blocked, source);
+    }
+
     static void prepareAodToLockscreenTransition(String source) {
         CouiClockPluginHostController.prepareAodToLockscreenTransition(source);
+    }
+
+    static void repairFinishedAodToLockscreen(String source) {
+        CouiClockPluginHostController.repairFinishedAodToLockscreen(source);
     }
 
     static void prepareNonLockscreenAodEntry(String source) {
@@ -50,6 +66,10 @@ final class ActiveClockRendererController {
 
     static void prepareLockscreenEntry(String source) {
         CouiClockPluginHostController.prepareLockscreenEntry(source);
+    }
+
+    static void prepareNativeLockscreenReturn(String source) {
+        CouiClockPluginHostController.prepareNativeLockscreenReturn(source);
     }
 
     static void suppressForDirectGone(String source) {

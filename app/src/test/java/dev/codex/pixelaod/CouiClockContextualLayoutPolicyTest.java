@@ -68,4 +68,33 @@ public final class CouiClockContextualLayoutPolicyTest {
         assertEquals(336f, CouiClockContextualLayoutPolicy.lowerContentTop(
                 300f, true, 240f, 84, 56f, 12f), 0.001f);
     }
+
+    @Test
+    public void compactContentReclaimsHiddenContextualSlot() {
+        assertEquals(232f, CouiClockContextualLayoutPolicy.compactContentTopWithoutContextual(
+                300f, 220f, 12f), 0.001f);
+        assertEquals(200f, CouiClockContextualLayoutPolicy.compactContentTopWithoutContextual(
+                200f, 220f, 12f), 0.001f);
+    }
+
+    @Test
+    public void smallAodReservesWeatherSlotAcrossAsyncWeatherArrival() {
+        assertTrue(CouiClockContextualLayoutPolicy.reserveSmallAodWeatherSlot(true, true));
+        assertFalse(CouiClockContextualLayoutPolicy.reserveSmallAodWeatherSlot(false, true));
+        assertFalse(CouiClockContextualLayoutPolicy.reserveSmallAodWeatherSlot(true, false));
+    }
+
+    @Test
+    public void smallAodEntryDefersVisibleContextualPixelsUntilEndpoint() {
+        assertTrue(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                true, true, true, true));
+        assertFalse(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                false, true, true, true));
+        assertFalse(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                true, false, true, true));
+        assertFalse(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                true, true, false, true));
+        assertFalse(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                true, true, true, false));
+    }
 }

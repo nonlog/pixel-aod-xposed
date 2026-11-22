@@ -1,27 +1,165 @@
 # Changelog
 
-## [0.1.46] - 2026-11-21
-### Security & Stability Hardening
-- Bound GZIP decompression on the exported `BreezyWeatherRelayReceiver` (`MAX_WEATHER_GZ_BYTES = 256 KiB`, `MAX_WEATHER_GZ_CHARS = 1 MiB`) and reuse that bounded helper in `PixelAodClockView` to prevent oversized or corrupted compressed weather payloads from exhausting memory.
-- Replace raw `Intent.putExtras(extras)` forwarding in `BreezyWeatherRelayReceiver` with an explicit weather-extra allowlist when relaying snapshots to `com.android.systemui`.
-- Store `PixelAodHook.lastNotificationListener` via a `WeakReference<NotificationListenerService>` to avoid retaining a destroyed listener service across SystemUI lifecycle transitions.
-- Add defensive `NotificationManager` null checks in `TestNotificationReceiver`.
-- Preallocate reusable `RectF`/`Rect` objects in `PixelPeekNotificationView` instead of allocating inside `onDraw()`, and switch the animated Compose switch thumb in `PixelAodDesignSystem.kt` to the lambda `Modifier.offset { ... }` overload.
+## [0.1.67] - 2026-11-22
+### Changed
+- Rebased release automation and fixes onto the latest `0.1.66` (`57e54a6`, `feat/optional-pixel-peek-coexistence`) baseline so all 32 commits from `0.1.46`–`0.1.66` are preserved without version rollback.
+- Added automated GitHub Release workflow (`.github/workflows/release.yml`), local signed release script (`scripts/build_release.sh`), and environment-driven `release` signing config in `app/build.gradle`. Replaced deprecated `android-actions/setup-android@v3` across CI, Device Test, and Release workflows with preinstalled `$ANDROID_HOME` + `sdkmanager`.
+- Removed the unused `ezxhelper` dependency from `app/build.gradle` and `PixelAodModernEntry`.
 
-### Cleanup & Packaging
-- Remove 7 unreferenced legacy pre-M8 policy classes and their 7 orphan test suites (`ClockPluginHostValidation`, `ClockPluginNonLockscreenEntryGate`, `ClockPluginPresentationGate`, `CouiClockAodEntryScenePolicy`, `CouiClockAodExitContinuityPolicy`, `CouiClockAodExitTransitionPolicy`, `CouiUdfpsPressedAnimationPolicy`).
-- Remove 14 unused legacy string resources from `values/strings.xml` and `values-en/strings.xml`, wire `ic_launcher_monochrome` into adaptive launcher icons (moved from `mipmap-anydpi-v26` to `mipmap-anydpi`), remove redundant `SettingsActivity` label and obsolete `minSdk 26` SDK guards, and eliminate remaining trailing whitespace across `app/src/`.
-- Synchronize `README.md` with the current OPlus AOD architecture (native display-mode ownership, Power Saving extensions, Pixel Peek) and GitHub-first `main` branch workflow.
-- Add environment-driven release signing support in `app/build.gradle`, a one-command signed release script (`scripts/build_release.sh`), and an automated GitHub Actions release workflow (`.github/workflows/release.yml`) that signs with configured secrets or an auto-generated ephemeral key and publishes GitHub Releases with SHA-256 checksums.
-- Bump release metadata to **0.1.46 / 9045** across `app/build.gradle` and `META-INF/xposed/module.prop` while keeping all 7 protected animation-core files (`M9_ANIMATION_NON_REGRESSION.md`) strictly untouched.
+### Fixed
+- **ColorOS 17 / Android 17 startup & compatibility hardening**:
+  - Added an idempotent `Application.onCreate()` bootstrap fallback alongside `Application.attach(Context)` hooked from both `onPackageLoaded` and `onPackageReady`, and emitted unconditional startup diagnostics (`sdk`, `release`, `display`, `device`, `api`, `framework`, `couiClockHooksInstalled`).
+  - Generalized `OosAodHandoffProfile` build-version matching from `16.0.x` to `(major, minor, patch)` so ColorOS 17 / OOS 17 (`17.0.x`) and `16.1+` builds use the modern single-layer AOD handoff and system-managed burn-in profile.
+  - Relaxed `CouiClockPluginHostController` `loadPluginReal` matching to accept multi-argument overloads whose first parameter is `String`, dump declared `ClockPlugin` method signatures when zero methods match, and log unexpected logical clock package names once for ColorOS 17 diagnostics.
+- **Reliability & security**:
+  - Bounded `WeatherGz` GZIP decompression (`256 KiB` compressed / `1 MiB` expanded) in both `BreezyWeatherRelayReceiver` and `PixelAodClockView`, and restricted forwarded broadcast extras to the weather allowlist.
+  - Stored `lastNotificationListener` in a `WeakReference` inside `PixelAodHook` to avoid strong static retention of `NotificationListenerService`.
 
 ### Validation
-- Automated Gradle gate (`:app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease`): **BUILD SUCCESSFUL**.
-- Unit tests: **107 suites, 534 tests, 0 failures, 0 errors, 0 skipped** (including new bounded GZIP decompression regression coverage in `BreezyWeatherRelayReceiverTest`).
-- Android Lint: **0 errors, 58 warnings** (reduced from 91 warnings; remaining warnings are expected Xposed reflection/private-API hooks, dynamically loaded AOSP drawables, and untouched protected animation-core code).
-- Signed Release APK verified with `apksigner verify --verbose --print-certs` (V2/V3 schemes): `PixelAOD-v0.1.46-release.apk` (`SHA-256: 9c3bdcba9cfcc0c070718a8b215efedc6a177e60785ff3a928a899b394afe493`, cert `SHA-256: 5217e423759527ad1bd71f314fedc33d8de844c0bd538b9b735b5bbe988a3eca`).
-- Modern libxposed packaging verified in both `app-debug.apk` (`SHA-256: dcfd327abd99ce109ac28618450e3520de14e0997c34e105143318d4b7056cc8`) and `PixelAOD-v0.1.46-release.apk`: `version=0.1.46`, `versionCode=9045`, `minApiVersion=101`, `targetApiVersion=101`, `staticScope=true`, sole scope `com.android.systemui`, no legacy `assets/xposed_init`.
-- **Device verification not performed in this environment**: physical acceptance on OPlus/OnePlus hardware (CPH2573 / OxygenOS 16.0.9) remains required before promoting to end users.
+- Local verification: **131 test suites / 642 unit tests, 0 failures, 0 errors, 0 skipped**; Android Lint **0 errors**; debug and signed release APKs (`0.1.67` / `9066`) built and verified with `apksigner`.
+- Physical OnePlus 12 ColorOS 17 / Android 17 device verification has not been performed yet; collect `/data/adb/lspd/log/modules_*.log` if hooks still do not attach on a renamed SystemUI class.
+
+## [0.1.66] - 2026-10-07
+### Fixed
+- Keep module AOD pixels visible with the stock OPlus notification Peek on ROMs where OplusAodCurvedDisplayView uses a separate full-screen transient surface. When Pixel Peek is disabled and the existing AOD policy already authorizes module pixels, draw the canonical dozing COUI host into the native Peek canvas after OPlus draws its own card.
+- The coexistence compositor reuses the existing host without reparenting it, creating another AOD lifecycle, changing Peek timing/privacy, or touching the accepted clock/weather/notification geometry. Power Saving mode still requires Show AOD for new notifications before any module AOD pixels are composited.
+
+## [0.1.65] - 2026-10-07
+### Added
+- Add a live **Use Pixel notification Peek** switch. Disable it to keep the OPlus native Peek card without disabling the separate Power Saving **Show AOD for new notifications** enhancement.
+
+### Fixed
+- Keep the module AOD background visible while the native OPlus notification Peek is attached in all-day AOD or an active scheduled-AOD window. The native notification surface remains the lifecycle/privacy authority; Power Saving mode still requires its existing brief-AOD option and is never promoted to continuous AOD.
+- Track native Peek attachment independently from privacy-safe custom-card content, and exclude the OPlus Peek surface/subtree from generic stock-AOD suppression so custom Peek failures or a disabled custom skin fail open to the system card.
+
+## [0.1.64] - 2026-10-01
+### Fixed
+- Invalidate glyph and information endpoint snapshots whenever a COUI property animation is cancelled, including pocket hiding and live-content retargets. A cancelled animation can no longer leave unchanged digits at an intermediate position while the next minute moves only the changed digit to its final position.
+- Settle interrupted positions before revealing a hidden persistent host. Normal visible animation deduplication, clock geometry, font styles, curves and durations remain unchanged.
+
+## [0.1.63] - 2026-10-01
+### Fixed
+- Invalidate cached glyph, information and ROM font-style targets before an explicit synchronous lockscreen return. Cancelling a pending AOD exit animation no longer skips the matching lockscreen endpoint because it was already cached when the animation started. Normal ClockPlugin animation deduplication remains active.
+- Apply the shared pocket guard when attaching or reusing a COUI host as well as when rendering it, eliminating direct visibility writes that could reveal a covered AOD host.
+
+## [0.1.62] - 2026-10-01
+### Fixed
+- Reapply and commit notification icon layout parameters for both existing and newly added slots. This resolves stale physical margins after width-based design metrics change, preventing mixed AOD icon gaps without changing the accepted icon size or spacing.
+
+## [0.1.61] - 2026-10-01
+### Fixed
+- Keep the pocket guard effective across charging AOD ClockPlugin render/prearm refreshes. Every primary-host reveal now checks the live guard while the device is non-interactive.
+- When OPlus proximity task hooks are installed, cached proximity getters no longer overwrite raw/dwell events. This prevents a stale FAR read during the native NEAR dwell from releasing the guard and re-enabling charging AOD. Getter fallback remains available on unsupported vendor task seams.
+
+## [0.1.60] - 2026-10-01
+### Fixed
+- Do not copy the Android `Hotspot turned off` status notification into AOD. Active Wi-Fi sharing status notifications remain eligible for the existing system-status icon path.
+- Apply the pocket/proximity guard to the active COUI host as soon as the vendor raw NEAR edge arrives, so charging Power Saving AOD cannot keep the clock visible while the proximity sensor is covered. Restore the host only after FAR and an active AOD session.
+
+## [0.1.59] - 2026-10-01
+### Fixed
+- Repair a native `DOZING/AOD -> LOCKSCREEN` exit when ClockPlugin has already published the lockscreen model but its target animation is still exposing the previous AOD frame. The existing FINISHED safety-net now cancels only that still-pending exit animation and commits the remembered lockscreen scene, clearing AOD-only media and notification presentation without changing geometry or animation parameters.
+
+## [0.1.58] - 2026-09-24
+### Fixed
+- Fix the notification-peek wake race that could leave the persistent COUI host on its last AOD frame after the native DOZING/AOD -> LOCKSCREEN transition had already finished. ClockPlugin render remains the primary handoff owner; only a FINISHED transition whose host is still dozing triggers the synchronous safety net.
+- The safety net restores the remembered real lockscreen scene before consulting the transient AOD clock-size tracker, commits a non-dozing/non-partial presentation, and clears AOD-only content. This removes both the thin AOD clock weight and lingering AOD notification icons without changing the accepted clock geometry, animation curve, weather layout, or notification spacing.
+
+## [0.1.57] - 2026-09-18
+### Fixed
+- Fix the real Lockscreen -> Small AOD forecast drift path instead of only the screen-off-from-unlocked entry helper. Normal ClockPlugin transitions use present(); their contextual row now reserves geometry while staying transparent through the same 550 ms clock target transaction, then re-primes the settled AOD endpoint and reveals with alpha only.
+- Resolve burn-in ownership before contextual geometry is prepared and restore the established OOS 16.0.9+ ownership boundary: when OosAodHandoffProfile says the native ClockPlugin owns burn-in, the COUI child applies zero module X/Y burn-in. This removes a second two-axis coordinate writer without changing the accepted 0.1.52 right/up AOD endpoint.
+- Keep 0.1.56's stable current-weather slot reservation, so late weather data also cannot move the tomorrow-forecast Y anchor after the transition.
+
+## [0.1.56] - 2026-09-17
+### Fixed
+- Freeze the Small AOD tomorrow-forecast vertical anchor across asynchronous current-weather refreshes. The dozing Small scene now reserves the current-weather row slot from its first geometry transaction, even when weather text/icon has not arrived yet, so later weather availability cannot push the forecast row to a second Y position.
+- Preserve the accepted 0.1.52 compact AOD right/up clock endpoint, 32 dp leading-edge alignment, and final steady-state spacing. The 0.1.55 deferred alpha reveal remains as entry-time protection; this change removes the late post-entry reflow that it could not cover.
+
+## [0.1.55] - 2026-09-17
+### Fixed
+- Remove the last visible Small-AOD forecast-row drift by separating layout ownership from pixel visibility during the lockscreen-to-AOD transaction. Forecast/contextual content is prepared immediately and continues reserving its final slot for media/notification layout, but its parent row stays fully transparent while the Small clock is moving.
+- Reveal the prepared contextual row only after the AOD entry transaction has completed and its final AOD X/Y has been re-primed. The reveal is alpha-only, so the first visible forecast pixel is already at the settled AOD endpoint; the accepted clock geometry and media spacing are unchanged.
+
+## [0.1.54] - 2026-09-17
+### Fixed
+- Stabilize Small AOD forecast-row Y before the next Android measure/layout pass. Compact date/weather row heights are now derived from current visible TextView line metrics and icon geometry, so an async forecast reveal cannot first use stale lockscreen measurements and then drift to a second position one frame later.
+- When the Small AOD forecast/contextual row is absent, media and notification content now reclaim that row's slot instead of falling back to the older fixed partial-content Y. This removes the large empty band between the raised compact clock and media while leaving the accepted clock endpoint unchanged.
+
+## [0.1.53] - 2026-09-17
+### Fixed
+- Commit Small AOD contextual/weather geometry in the same frame that freshly prepared forecast pixels become visible. The row now receives its final 32 dp leading edge, compact AOD vertical offset, and burn-in translation before visibility, preventing the occasional lockscreen-position flash before the final AOD position.
+- Reduce ROM TextAnimator variable-font cache expansion from 384 to 96 entries and stop the constructor-time 279-sample offscreen prewarm. The real ROM variable-font morph, timing, geometry, and animation curve remain unchanged while avoiding unnecessary Typeface/cache pressure inside SystemUI.
+
+### Validation
+- Performance fix is intentionally limited to cache/prewarm policy; it does not change clock target geometry, transition duration, font variations, or the accepted 0.1.52 compact AOD alignment. GitHub CI and physical SystemUI A/B validation are required before acceptance.
+
+## [0.1.52] - 2026-09-17
+### Fixed
+- Recalibrate the compact AOD endpoint so its painted clock leading edge lands on the same 32 dp column used by AOD contextual, media, and notification rows instead of drifting left when the AOD font weight changes. Burn-in X remains shared, so the alignment is preserved while the ambient surface moves.
+- Move the complete compact AOD upper stack 16 dp upward relative to the lockscreen baseline. The lockscreen geometry is unchanged; the lockscreen-to-AOD handoff now resolves toward the right/up endpoint instead of the previous left/down drift, while date/weather/contextual/media/notification spacing remains internally consistent.
+
+## [0.1.51] - 2026-09-16
+### Fixed
+- Give pocket/proximity suppression strict priority over both Power Saving charging AOD hold and incoming-notification temporary AOD. Pixel AOD now observes OPlus' already-registered AOD gesture-proximity listener (sensor type 33171066), so a raw NEAR can stop module-owned keep-alive/re-show behavior even when the vendor ProximityTask commit path is not emitted during the charging extension.
+- While the hard pocket guard is active, cancel the module notification brief without clearing proximity state, hide the Pixel Peek overlay, block native notification showClock(), and release the charging/update-budget extensions. FAR can resume an attached native notification window only after the vendor proximity pause state no longer blocks it.
+
+### Ownership and validation
+- OPlus still owns sensor registration, debounce/dwell, committed pocket state, native notification-window lifetime, Dream/doze/panel OFF, fingerprint optical state, and HBM. Pixel AOD only observes the existing listener and refuses to override native decisions while the hard guard is active.
+- Candidate is based on remote 0.1.50 commit 37d148e; build/test validation is GitHub CI only. Physical charging-pocket and notification-in-pocket acceptance remains required.
+
+## [0.1.50] - 2026-09-16
+### Fixed
+- Restore pocket/proximity authority while the optional Power Saving charging AOD hold is active. The default AOD lifecycle evaluation now carries the live OPlus proximity state, so a pocket-mode `DreamService#setDozeScreenState(OFF)` request can no longer be converted back to `DOZE_SUSPEND` merely because the phone is charging.
+- Remove the thin-to-bold clock flash when returning from an OPlus full-screen alarm, call, or bouncer to the lockscreen. At the native transient-scene `STARTED -> LOCKSCREEN` edge, the already-hidden persistent COUI child is synchronously preloaded with its lockscreen scene and variable-font weight before the native `ClockViewRoot` reveals it. The current vendor clock-size tracker is preferred, with the last real lockscreen scene used only when that tracker is transiently unavailable.
+
+### Ownership and validation
+- OPlus continues to own the proximity sensor/dwell timer, pocket decision, native root visibility, panel/doze state, alarm/call occlusion, and ClockPlugin scene transition. The module only stops its charging exception when proximity is blocked and restyles its own hidden clock child before native reveal.
+- Local unit tests: **599 tests, 0 failures, 0 errors, 0 skipped**. Physical acceptance still needs a charging-pocket reproduction and a real full-screen alarm/call return on CPH2573.
+
+## [0.1.49] - 2026-09-16
+### Changed
+- Port the safe COUI Expressive 2.7 UDFPS HDR transition optimization without taking over OPlus AOD power state. Repeated refresh callbacks now skip an identical module-owned `SurfaceControl` HDR transaction when both press state and exact surface identity are unchanged.
+- Reapply HDR state after `WindowManager.updateViewLayout()` and whenever the pressed carrier receives a different `SurfaceControl`, so transaction dedupe cannot suppress the existing post-layout/surface-recreation repair.
+- Clear the dedupe record when HDR replacement ownership is disabled or the pressed carrier is restored, ensuring native optical mode remains untouched and a later HDR re-enable starts from fresh state.
+
+### Scope and review
+- COUI 2.7's new `AODDisplayUtil.requestScreenState(view, state, true)` path is intentionally not ported. Its state constants are `1 = OFF` and `3 = DOZE`, which makes it an AOD/panel lifecycle request rather than a visual-only optimization.
+- COUI 2.7's AOD-only forced visibility of the vendor pressed carrier is also not ported without a reproduced CPH2573 defect. OPlus continues to own pressed-carrier visibility, AOD power state, HBM/local-HBM, optical sensing, and fingerprint touch routing.
+- The existing next-frame live-touch recheck remains in place and now explicitly forces a surface reapply after HDR window layout work.
+
+## [0.1.48] - 2026-09-13
+### Changed
+- Port COUI Expressive 2.7 notification refresh batching to the existing live-alert/torch reconciliation path. The `40/280/900 ms` passes now keep at most one pending runnable per delay, newer events replace pending work, and the final `900 ms` pass moves to the trailing edge of a burst instead of accumulating another three callbacks for every event.
+- Add a bounded 64-entry notification icon snapshot cache modeled after COUI 2.7. Cache hits require the same notification instance, small-icon identity, configuration, and current Material tint; notification removal and content reset invalidate the corresponding snapshots.
+- Reuse one thread-local pixel buffer for notification silhouette/color classification and avoid the previous per-pixel `Bitmap.getPixel()` hot loops. Drawable bounds are restored after sampling and monochrome fallback classification no longer rasterizes the same icon twice.
+
+### Scope and validation
+- The existing `NotificationSnapshotRefreshGate`, notification ranking/visibility policy, lockscreen/AOD lifecycle gates, capsule icon ownership, and native OPlus notification admission remain unchanged. This is a scheduling/allocation optimization, not a notification-policy rewrite.
+- COUI 2.7 notification-card Monet styling, list spacing/snap behavior, and scroll physics remain vendor-owned and are not copied into Pixel AOD.
+- The COUI 2.7 UDFPS HDR/press-glow lifecycle repair remains a separate candidate so notification performance can be validated independently.
+
+## [0.1.47] - 2026-09-13
+### Changed
+- Port COUI Expressive 2.7 compact-clock anchoring into the persistent COUI clock host. Compact/immersed clocks now center against a stable four-`8` reference width while retaining the per-digit `0`/`1` optical corrections, so times containing narrow or corrected digits no longer pull the whole clock left or right relative to the native notification card.
+- Port COUI 2.7 width-based design metrics (`538 dpi` at `1272 px` reference width) for the COUI clock host. Clock information typography, weather/contextual/media/notification icon geometry, offsets, and burn-in amplitudes now scale from the measured host width instead of following a user density override independently.
+- Recompute design metrics after configuration changes and whenever the host measure width changes. Pixel-specific contextual/weather additions are updated in the same transaction so the upstream DPI fix does not leave mixed coordinate systems.
+
+### Review
+- Pulled and decompiled the installed COUI Expressive `2.7.260912` APK from the physical CPH2573 as local-only reference material. The reference APK/source remains untracked and must not be uploaded to GitHub.
+- The provided lockscreen captures showed the module compact clock beginning about 12-13 px left of the native notification card, while COUI 2.7 aligned the clock/card starts. The 2.7 fixed-width compact anchor is the relevant upstream change; this patch does not add a device-specific pixel offset.
+- COUI 2.7 notification-style rewrite, notification Monet background, row snapping/scroll physics, media seekbar waveform hooks, and XSharedPreferences migration are not copied because Pixel AOD does not own those native surfaces/configuration paths. The notification-heavy lockscreen batching/icon-cache and newer UDFPS HDR/glow fixes remain separate candidates for targeted review rather than being mixed into this geometry correction.
+- This candidate is stacked on the pending 0.1.46 system-UDFPS/AOD reveal synchronization and still requires physical acceptance before merging to `main`.
+
+## [0.1.46] - 2026-09-11
+### Fixed
+- Synchronize the system-owned AOD fingerprint glyph with the native OPlus AOD reveal instead of letting the independent `OnScreenFingerprintIcon` window become fully visible ahead of the clock surface after the black frame.
+- During a real native AOD show, scale only the system fingerprint ImageView alpha by the slower of the `AodClockLayout` setup alpha and the OPlus `workshop_aod_anim_mock` black-mask reveal. The native brightness alpha remains the upper bound and is restored when the reveal completes.
+- A real fingerprint touch cancels the visual synchronization immediately. Fingerprint sensing, touch routing, HBM/local-HBM, native visibility state, wake locks, panel requests, and the existing Power Saving fingerprint timeout remain OPlus-owned.
+
+### Validation
+- Device tracing on CPH2573 showed the fingerprint surface can reach `HAS_DRAWN` independently while the AOD layout is still completing its vendor reveal. The exact OOS `AodClockLayout.setVisibleWithSetupAnimate()` path uses a 400 ms first-appearance alpha animation for Workshop AOD and subsequent black-mask reveal animation, explaining the visible lead.
+- The synchronization is event/frame driven (`postOnAnimation` while the native reveal is incomplete), not a fixed-delay timer, and is disabled when the Pixel replacement fingerprint glyph is selected. Physical acceptance is still required.
 
 ## [0.1.45] - 2026-09-11
 ### Fixed

@@ -35,7 +35,9 @@ final class CouiClockRomTextAnimatorRuntime {
             "com.android.systemui.animation.TypefaceVariantCache";
     private static final String TYPEFACE_CACHE_IMPL =
             "com.android.systemui.animation.TypefaceVariantCacheImpl";
-    private static final int FONT_CACHE_MAX_ENTRIES = 384;
+    // One 550 ms morph at 120-144 Hz needs roughly 66-80 variants. Keep one transition
+    // resident without retaining hundreds of native Typeface variants in SystemUI.
+    private static final int FONT_CACHE_MAX_ENTRIES = 96;
     private static final long PREWARM_DELAY_MS = 2000L;
     private static final String PREWARM_TEXT = "8";
     private static final int PREWARM_LAYOUT_WIDTH_PX = 256;

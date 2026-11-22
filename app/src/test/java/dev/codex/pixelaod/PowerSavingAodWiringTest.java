@@ -72,6 +72,61 @@ public class PowerSavingAodWiringTest {
     }
 
     @Test
+    public void defaultAodPolicyCarriesLivePocketStateIntoChargingDozeDecision() throws Exception {
+        String clock = source("PixelAodClockView");
+        String policy = section(clock,
+                "static OosAodLifecycleAdapter.AodPolicyDecision evaluateAodPolicy(\n"
+                        + "            Context context, String source)",
+                "private static OosAodLifecycleAdapter.AodPolicyDecision evaluateAodPolicy(");
+        assertTrue(policy.contains("isPocketGuardActive()"));
+        assertFalse(policy.contains("source, false, false"));
+
+        String hook = source("PixelAodHook");
+        String dreamHook = section(hook,
+                "static void hookDreamServiceDozeScreenStateObserver",
+                "private static String classifyAodTriggerEvent");
+        assertTrue(dreamHook.contains("PixelAodClockView.evaluateAodPolicy(context"));
+        assertTrue(dreamHook.contains("decision.shouldKeepNativeDozeAlive"));
+    }
+
+    @Test
+    public void powerSavingPocketGuardUsesLiveGestureProximityAuthority() throws Exception {
+        String hook = source("PixelAodHook");
+        String proximityHook = section(hook,
+                "static void hookOplusVendorProximityPauseSemantics",
+                "static void hookOplusVendorWakeTriggerSemantics");
+        assertTrue(proximityHook.contains("OPLUS_WAKE_UP_SENSOR_LISTENER"));
+        assertTrue(proximityHook.contains("onSensorChanged"));
+        assertTrue(proximityHook.contains("OPLUS_GESTURE_PROXIMITY_SENSOR_TYPE"));
+        assertTrue(proximityHook.contains("value == 0.0f"));
+        assertTrue(proximityHook.contains("observeRawProximityFromOos"));
+
+        String clock = source("PixelAodClockView");
+        String rawObserver = section(clock, "static void observeRawProximityFromOos",
+                "static void updateProximityFromOos");
+        assertTrue(rawObserver.contains("cancelBriefAodTriggerPreservingProximity"));
+        assertTrue(rawObserver.contains("PowerSavingAodController.onPolicyChanged"));
+        assertTrue(rawObserver.contains("PixelPeekNotificationController.onPocketGuardChanged"));
+
+        String charging = section(clock, "static boolean shouldKeepPowerSavingAodVisibleForCharging",
+                "static boolean shouldKeepPowerSavingNotificationVisible");
+        assertTrue(charging.contains("isPocketGuardActive()"));
+
+        String controller = source("PowerSavingAodController");
+        String notificationShow = section(controller, "static void requestNotificationShow",
+                "/** Called only at the vendor's actual energy-saving timeout callback. */");
+        assertTrue(notificationShow.contains("isPocketGuardActive()"));
+
+        String peek = source("PixelPeekNotificationController");
+        assertTrue(peek.contains("onPocketGuardChanged"));
+        assertTrue(peek.contains("nativeView.post(() ->"));
+        assertTrue(peek.contains("Pixel peek suppressed by pocket/proximity guard"));
+        String reset = section(clock, "static void resetProximityFromOos",
+                "static boolean isProximityNear");
+        assertTrue(reset.contains("onPocketGuardChanged(false"));
+    }
+
+    @Test
     public void notificationUsesAttachedNativePeekAsTransientAuthority() throws Exception {
         String peek = source("PixelPeekNotificationController");
         assertTrue(peek.contains("hasActiveNativeNotificationWindow"));
@@ -101,7 +156,7 @@ public class PowerSavingAodWiringTest {
                 "static boolean isModuleAodPolicyAllowingDisplay");
         assertTrue(notificationBudget.contains("hasActiveNativeNotificationWindow()"));
         assertTrue(notificationBudget.contains("NOTIFICATION_TRIGGER_TYPE.equals(state.triggerBriefType)"));
-        assertTrue(notificationBudget.contains("isProximityNear()"));
+        assertTrue(notificationBudget.contains("isPocketGuardActive()"));
         assertTrue(notificationBudget.contains("isNotificationEnhancementConfigured"));
         assertTrue(notificationBudget.contains("suppression.baseAodDenied()"));
         assertTrue(notificationBudget.contains("isPowerPolicyAllowingAod"));
@@ -116,5 +171,32 @@ public class PowerSavingAodWiringTest {
         assertFalse(controller.contains("AlarmManager"));
         assertFalse(controller.contains("postDelayed"));
         assertFalse(controller.contains("Settings.Secure.put"));
+    }
+
+    @Test
+    public void customPeekSkinIsIndependentFromNotificationAodAndNativeWindowContinuity()
+            throws Exception {
+        String peek = source("PixelPeekNotificationController");
+        String nativeActive = section(peek, "private static void onNativeWindowActive",
+                "private static void showPixelPeek");
+        assertTrue(nativeActive.contains("startPowerSavingNotificationAod"));
+        assertTrue(nativeActive.contains("KEY_PIXEL_NOTIFICATION_PEEK"));
+        assertTrue(nativeActive.contains("showPixelPeek"));
+        assertTrue(peek.contains("PixelPeekPresentationPolicy.shouldSuppressNativeDraw"));
+        assertTrue(peek.contains("state != null && state.nativeAttached"));
+
+        String clock = source("PixelAodClockView");
+        String lifecycle = section(clock,
+                "private static AodLifecycleState currentAodLifecycleState",
+                "static final class AodLifecycleState");
+        assertTrue(lifecycle.contains("nativeNotificationWindow ="));
+        assertTrue(lifecycle.contains("nativePeekContinuousWindow"));
+        assertTrue(lifecycle.contains("displayAod || nativePeekContinuousWindow"));
+
+        String modulePolicy = section(clock,
+                "private static OosAodLifecycleAdapter.ModulePolicy",
+                "private static boolean maybeStartNativeShortWakeTrigger");
+        assertTrue(modulePolicy.contains("nativePeekContinuous"));
+        assertTrue(modulePolicy.contains("continuous-native-aod-native-peek"));
     }
 }

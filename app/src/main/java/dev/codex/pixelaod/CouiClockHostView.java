@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -18,6 +19,7 @@ import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.BatteryManager;
 import android.os.Build;
+import android.os.SystemClock;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -117,6 +119,8 @@ final class CouiClockHostView extends FrameLayout {
     private boolean refreshingClockTime;
     private long pendingEntryToken;
     private boolean aodEntryInProgress;
+    // Native FINISHED can arrive while the normal 550 ms lockscreen target is still settling.
+    private long aodExitAnimationDeadlineUptimeMillis;
     private boolean liveCrossfadeInProgress;
     private AodData deferredAodData;
     private CouiClockPresentationModel.AodContent deferredAodContent;
@@ -138,6 +142,7 @@ final class CouiClockHostView extends FrameLayout {
     private int lastBatteryLevel = -1;
     private CouiBatteryStatusPolicy.State lastBatteryState;
     private int clockBaseWidth;
+    private int designWidthPx;
     private String timeText = "0000";
     private int monetColor = Integer.MIN_VALUE;
     private int aodMonetColor = Integer.MIN_VALUE;
@@ -146,6 +151,9 @@ final class CouiClockHostView extends FrameLayout {
     private String lastTargetDiagnosticSignature;
     private float contextualTargetTopPx;
     private boolean contextualSurfaceActive;
+    private boolean deferredSmallContextualReveal;
+    private boolean smallAodContextualTransitionInProgress;
+    private Runnable finishSmallAodContextualTransitionRunnable;
 
     CouiClockHostView(Context context) {
         this(context, context != null ? context.getClassLoader() : null);
@@ -308,9 +316,6 @@ final class CouiClockHostView extends FrameLayout {
         updateMonetColor();
         updateAccessibilitySemantics();
         scheduleApplyTargets(false);
-        if (morphRuntime != null) {
-            morphRuntime.prewarmAsync(motionInterpolator);
-        }
     }
 
     /** Applies the canonical scene/content state through the host's sole target path. */
@@ -327,16 +332,40 @@ final class CouiClockHostView extends FrameLayout {
             deferredLiveAodContent = normalizeContent(next.content());
             return;
         }
+        CouiClockPresentationModel previous = presentation;
+        boolean animatedSmallAodEntry = previous != null
+                && !previous.dozing()
+                && next.dozing()
+                && next.visualScene() == CouiClockPresentationModel.Scene.SMALL
+                && SystemAnimationScalePolicy.shouldAnimate(animate);
+        boolean exitingAod = previous != null && previous.dozing() && !next.dozing();
+        if (exitingAod && SystemAnimationScalePolicy.shouldAnimate(animate)) {
+            aodExitAnimationDeadlineUptimeMillis = SystemClock.uptimeMillis()
+                    + TARGET_TRANSITION_MS;
+        } else if (next.dozing()) {
+            aodExitAnimationDeadlineUptimeMillis = 0L;
+        }
         cancelAodEntryTransaction();
         if (!next.dozing() || !next.partialAod()) {
             cancelLiveAodCrossfade();
         }
+        if (!next.dozing() || next.visualScene() != CouiClockPresentationModel.Scene.SMALL) {
+            cancelSmallAodContextualTransition();
+        }
+        if (animatedSmallAodEntry) {
+            beginSmallAodContextualTransition();
+        }
         presentation = next;
+        // Geometry priming must consume the same burn-in owner/value as the target transaction.
+        // Resolving it after contextual pixels were prepared allowed a second X/Y write.
+        updateBurnInForPresentation();
         refreshContextualFromExistingAdapters(diagnosticSource + "#presentation", false);
         applyDataForContent(next.content());
-        updateBurnInForPresentation();
         applyClockColors();
         scheduleApplyTargets(animate);
+        if (animatedSmallAodEntry) {
+            scheduleSmallAodContextualTransitionFinish();
+        }
     }
 
     /**
@@ -779,10 +808,17 @@ final class CouiClockHostView extends FrameLayout {
         applyContextualIconGeometry(ContextualAtAGlancePresentation.displayed(contextualGroup));
         int contextualAccent = CouiClockVisualStylePolicy.contextualAccentColor(
                 presentation.visualScene(), presentation.dozing(), monetColor, aodMonetColor);
+        boolean deferSmallEntryReveal =
+                CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
+                        aodEntryInProgress || smallAodContextualTransitionInProgress,
+                        presentation.dozing(),
+                        presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL,
+                        card.isVisible());
         boolean changed = ContextualAtAGlancePresentation.apply(
                 getContext(), contextualGroup, contextualIconView, contextualView, card,
                 contextualAccent, contextualAccent, textSizeDp, infoWeight,
-                animate && surfaceVisible, this::onContextualDisplayedContentChanged,
+                animate && surfaceVisible && !deferSmallEntryReveal,
+                this::onContextualDisplayedContentChanged,
                 source == null ? "coui-contextual" : source);
         ContextualAtAGlancePresentation.restyleDisplayed(
                 contextualGroup, contextualIconView, contextualView,
@@ -875,10 +911,9 @@ final class CouiClockHostView extends FrameLayout {
             ImageView iconView = new ImageView(getContext());
             iconView.setScaleType(ImageView.ScaleType.FIT_CENTER);
             iconView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(18), dp(18));
-            if (notificationIconCount() > 0) {
-                params.setMarginStart(dp(15));
-            }
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP),
+                    dp(CouiClockGeometryPolicy.NOTIFICATION_ICON_SIZE_DP));
             int overflowIndex = notificationIconRow.indexOfChild(notificationOverflowView);
             notificationIconRow.addView(iconView, overflowIndex < 0
                     ? notificationIconRow.getChildCount() : overflowIndex, params);
@@ -897,6 +932,7 @@ final class CouiClockHostView extends FrameLayout {
         }
         notificationOverflowView.setText(plan.overflowText());
         notificationOverflowView.setVisibility(plan.hasOverflow() ? VISIBLE : GONE);
+        applyNotificationIconMetrics();
         notificationIconRow.requestLayout();
         updateAccessibilitySemantics();
         scheduleApplyTargets(false);
@@ -1005,6 +1041,16 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     void setBurnInTranslation(float x, float y, long durationMillis) {
+        if (OosAodHandoffProfile.usesSystemManagedBurnIn(Build.DISPLAY)) {
+            manualBurnIn = false;
+            if (burnInX == 0f && burnInY == 0f) {
+                return;
+            }
+            burnInX = 0f;
+            burnInY = 0f;
+            applyTargets(false, 0L);
+            return;
+        }
         manualBurnIn = true;
         if (burnInX == x && burnInY == y) {
             return;
@@ -1043,9 +1089,15 @@ final class CouiClockHostView extends FrameLayout {
      * revealing a legacy module clock.</p>
      */
     void setPrimaryVisible(boolean visible, String source) {
+        // Render/prearm refreshes must not undo a NEAR edge's presentation suppression.
+        visible = visible && (PixelAodRuntimeState.isDeviceInteractive(getContext())
+                || !PixelAodClockView.isPocketGuardActive());
         if (visible) {
             // A persistent host can return without attach or a minute broadcast (pocket/doze).
             onTimeTick(source + "#before-visible");
+            if (getVisibility() != VISIBLE && appliedGlyphTargets.isEmpty()) {
+                applyTargets(false, 0L);
+            }
             if (!contextualSurfaceActive) {
                 PixelAodContentState.beginContextualSurfaceEntry(
                         (source == null ? "primary-visible" : source) + "#COUI-visible");
@@ -1308,6 +1360,11 @@ final class CouiClockHostView extends FrameLayout {
         }
         pendingEntryToken = 0L;
         aodEntryInProgress = false;
+        if (deferredSmallContextualReveal) {
+            contextualGroup.animate().cancel();
+            contextualGroup.setAlpha(0f);
+            deferredSmallContextualReveal = false;
+        }
         deferredAodContent = null;
         deferredAodData = null;
     }
@@ -1337,6 +1394,9 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     private void cancelRunningPropertyAnimations() {
+        // Cancelled animations can stop between frames; their cached endpoints are not applied.
+        appliedGlyphTargets.clear();
+        appliedInformationTargets.clear();
         for (GlyphSet glyphSet : glyphSets) {
             for (TextView digit : glyphSet.digits) {
                 digit.animate().cancel();
@@ -1518,6 +1578,9 @@ final class CouiClockHostView extends FrameLayout {
         float contextualX;
         float contextualY;
         float contextualGapPx;
+        int contextualDateHeight = dateGroup.getMeasuredHeight();
+        int contextualWeatherHeight = weatherGroup.getMeasuredHeight();
+        boolean contextualWeatherVisible = weatherView.getVisibility() == VISIBLE;
         boolean rtl = isRtl();
         if (presentation.visualScene() == CouiClockPresentationModel.Scene.LARGE) {
             float dozingScale = presentation.dozing() ? surface.scale : 1f;
@@ -1561,6 +1624,10 @@ final class CouiClockHostView extends FrameLayout {
                     : CouiClockGeometryPolicy.INFO_Y_RATIO)
                     + dp(immersed && !presentation.dozing()
                     ? 30f : CouiClockGeometryPolicy.INFO_Y_OFFSET_DP);
+            if (presentation.dozing()
+                    && presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL) {
+                top += compactAodVerticalOffsetPx();
+            }
             float centeredInformationStart = centerX - maximumWidth / 2f;
             dateX = centeredInformationStart;
             if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL
@@ -2123,12 +2190,13 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     private void updateBurnInForPresentation() {
-        if (manualBurnIn) {
-            return;
-        }
-        if (!presentation.dozing()) {
+        if (!presentation.dozing()
+                || OosAodHandoffProfile.usesSystemManagedBurnIn(Build.DISPLAY)) {
             burnInX = 0f;
             burnInY = 0f;
+            return;
+        }
+        if (manualBurnIn) {
             return;
         }
         long minute = System.currentTimeMillis() / 60000L;
@@ -2243,7 +2311,7 @@ final class CouiClockHostView extends FrameLayout {
 
     private TextView informationText(float sizeSp, int weight, boolean rounded) {
         TextView view = new TextView(getContext());
-        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, sizeSp);
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dpFloat(sizeSp));
         view.setTextColor(INFORMATION_COLOR);
         view.setGravity(android.view.Gravity.CENTER_VERTICAL);
         view.setIncludeFontPadding(false);
@@ -2307,8 +2375,13 @@ final class CouiClockHostView extends FrameLayout {
         return params;
     }
 
+    private float dpFloat(float value) {
+        int fallbackWidth = getResources().getDisplayMetrics().widthPixels;
+        return CouiDesignMetricsPolicy.toPixels(value, designWidthPx, fallbackWidth);
+    }
+
     private int dp(float value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+        return Math.round(dpFloat(value));
     }
 
     private static final class GlyphSet {

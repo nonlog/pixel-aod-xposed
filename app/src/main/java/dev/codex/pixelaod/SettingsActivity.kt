@@ -207,6 +207,11 @@ private fun SettingsContent(
     val moduleEnabled = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_MODULE_ENABLED, true))
     }
+    val pixelNotificationPeek = remember {
+        mutableStateOf(
+            prefs.schemaBoolean(PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, true)
+        )
+    }
     val powerSavingNotificationAod = remember {
         mutableStateOf(
             prefs.schemaBoolean(PixelAodSettings.KEY_POWER_SAVING_NOTIFICATION_AOD, true)
@@ -501,6 +506,22 @@ private fun SettingsContent(
                         subtitle = stringResource(R.string.desc_page_lockscreen),
                         showDivider = false
                     ) { navigate(SettingsPage.LOCKSCREEN) }
+                }
+            }
+            PixelAodSection(stringResource(R.string.section_notifications)) {
+                PixelAodGroup {
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Notifications,
+                        title = stringResource(R.string.title_pixel_notification_peek),
+                        subtitle = stringResource(R.string.desc_pixel_notification_peek),
+                        checked = pixelNotificationPeek.value,
+                        showDivider = false
+                    ) {
+                        pixelNotificationPeek.value = it
+                        updateModuleBooleanSetting(
+                            context, PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, it
+                        )
+                    }
                 }
             }
             PixelAodSection(stringResource(R.string.section_power_saving_enhancements)) {

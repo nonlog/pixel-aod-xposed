@@ -50,6 +50,9 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
     private static final String KEY_ALERT_JSON = "alert_json";
     private static final String KEY_SNAPSHOT_JSON = "snapshot_json_v1";
     private static final String TAG = "PixelAodBreezyRelay";
+    static final int MAX_WEATHER_GZ_BYTES = 256 * 1024;
+    static final int MAX_WEATHER_GZ_CHARS = 1024 * 1024;
+    static final int MAX_WEATHER_JSON_CHARS = 1024 * 1024;
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -71,7 +74,7 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
             Intent relay = new Intent(ACTION_RELAY)
                     .setPackage("com.android.systemui")
                     .setFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
-            copyKnownWeatherExtras(intent, relay);
+            copyAllowedWeatherExtras(intent, relay);
             appendWeatherSnapshot(relay, snapshot, snapshotResult.queried);
             // Re-extract sunrise/sunset from persisted JSON so the clock view
             // gets authoritative day/night boundaries.
@@ -139,8 +142,16 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
         SharedPreferences.Editor editor = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit();
         editor.putLong(KEY_RECEIVED_AT, System.currentTimeMillis());
         String json = intent.getStringExtra("WeatherJson");
+        if (json != null && json.length() > MAX_WEATHER_JSON_CHARS) {
+            Log.w(TAG, "ignoring oversized WeatherJson payload length=" + json.length());
+            json = null;
+        }
         putString(editor, KEY_WEATHER_JSON, json);
         byte[] weatherGz = intent.getByteArrayExtra("WeatherGz");
+        if (weatherGz != null && weatherGz.length > MAX_WEATHER_GZ_BYTES) {
+            Log.w(TAG, "ignoring oversized WeatherGz payload bytes=" + weatherGz.length);
+            weatherGz = null;
+        }
         putString(editor, KEY_WEATHER_GZ,
                 weatherGz != null && weatherGz.length > 0
                         ? Base64.encodeToString(weatherGz, Base64.NO_WRAP)
@@ -168,64 +179,6 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
             }
         }
         editor.apply();
-    }
-
-    private static void copyKnownWeatherExtras(Intent source, Intent target) {
-        if (source == null || target == null) {
-            return;
-        }
-        copyStringExtra(source, target, "WeatherJson");
-        byte[] weatherGz = source.getByteArrayExtra("WeatherGz");
-        if (weatherGz != null && weatherGz.length > 0 && weatherGz.length <= MAX_WEATHER_GZ_BYTES) {
-            target.putExtra("WeatherGz", weatherGz);
-        }
-        copyStringExtra(source, target, "currentCondition");
-        copyStringExtra(source, target, "condition");
-        copyStringExtra(source, target, "weatherText");
-        copyNumericExtra(source, target, "currentTemp");
-        copyNumericExtra(source, target, "temperature");
-        copyNumericExtra(source, target, "temp");
-        copyIntExtra(source, target, "currentConditionCode");
-        copyIntExtra(source, target, "weatherCode");
-        copyIntExtra(source, target, "conditionCode");
-        copyLongExtra(source, target, EXTRA_SUNRISE);
-        copyLongExtra(source, target, "sunrise");
-        copyLongExtra(source, target, "sunRise");
-        copyLongExtra(source, target, EXTRA_SUNSET);
-        copyLongExtra(source, target, "sunset");
-        copyLongExtra(source, target, "sunSet");
-    }
-
-    private static void copyStringExtra(Intent source, Intent target, String key) {
-        String value = source.getStringExtra(key);
-        if (value != null && !value.isEmpty()) {
-            target.putExtra(key, value);
-        }
-    }
-
-    private static void copyNumericExtra(Intent source, Intent target, String key) {
-        Bundle extras = source.getExtras();
-        if (extras == null || !extras.containsKey(key)) {
-            return;
-        }
-        Object raw = extras.get(key);
-        if (raw instanceof Number) {
-            target.putExtra(key, ((Number) raw).doubleValue());
-        } else if (raw instanceof String) {
-            target.putExtra(key, (String) raw);
-        }
-    }
-
-    private static void copyIntExtra(Intent source, Intent target, String key) {
-        if (source.hasExtra(key)) {
-            target.putExtra(key, source.getIntExtra(key, Integer.MIN_VALUE));
-        }
-    }
-
-    private static void copyLongExtra(Intent source, Intent target, String key) {
-        if (source.hasExtra(key)) {
-            target.putExtra(key, source.getLongExtra(key, 0L));
-        }
     }
 
     private static boolean hasWeatherPayload(Intent intent) {
@@ -346,55 +299,29 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
         } else if (intent.hasExtra("sunSet")) {
             result[1] = intent.getLongExtra("sunSet", 0L);
         }
+        
         if (result[0] > 0L && result[0] < 100000000000L) {
             result[0] *= 1000L;
         }
         if (result[1] > 0L && result[1] < 100000000000L) {
             result[1] *= 1000L;
         }
-
+        
         return result;
-    }
-
-    static final int MAX_WEATHER_GZ_BYTES = 256 * 1024;
-    static final int MAX_WEATHER_GZ_CHARS = 1024 * 1024;
-
-    static String decompressWeatherGz(byte[] compressed, int maxChars) {
-        if (compressed == null || compressed.length == 0
-                || compressed.length > MAX_WEATHER_GZ_BYTES || maxChars <= 0) {
-            return null;
-        }
-        try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(compressed));
-             InputStreamReader reader = new InputStreamReader(gzip, StandardCharsets.UTF_8)) {
-            StringBuilder builder = new StringBuilder();
-            char[] buffer = new char[1024];
-            int total = 0;
-            int read;
-            while ((read = reader.read(buffer)) >= 0) {
-                total += read;
-                if (total > maxChars) {
-                    return null;
-                }
-                builder.append(buffer, 0, read);
-            }
-            return builder.toString();
-        } catch (Throwable t) {
-            return null;
-        }
     }
 
     private static long[] readSunTimesFromJson(String json, byte[] weatherGz) {
         long[] result = new long[]{0L, 0L};
         String target = json;
         if ((target == null || target.isEmpty()) && weatherGz != null && weatherGz.length > 0) {
-            String jsonStr = decompressWeatherGz(weatherGz, MAX_WEATHER_GZ_CHARS);
+            String jsonStr = decompressBoundedGzip(weatherGz);
             if (jsonStr == null || jsonStr.isEmpty()) {
                 return result;
             }
             try {
-                JSONArray array = new JSONArray(jsonStr);
+                org.json.JSONArray array = new org.json.JSONArray(jsonStr);
                 if (array.length() > 0) {
-                    JSONObject first = array.optJSONObject(0);
+                    org.json.JSONObject first = array.optJSONObject(0);
                     if (first != null) {
                         target = first.toString();
                     }
@@ -407,13 +334,13 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
             return result;
         }
         try {
-            JSONObject object = new JSONObject(target);
+            org.json.JSONObject object = new org.json.JSONObject(target);
             long sunriseSec = readSunSecondsFromObject(object, "sunRise", "sunrise");
             long sunsetSec = readSunSecondsFromObject(object, "sunSet", "sunset");
             if (sunriseSec <= 0L || sunsetSec <= 0L) {
-                JSONObject hourly = object.optJSONObject("hourlyForecast");
+                org.json.JSONObject hourly = object.optJSONObject("hourlyForecast");
                 if (hourly == null) {
-                    JSONArray arrays = object.optJSONArray("hourlyForecast");
+                    org.json.JSONArray arrays = object.optJSONArray("hourlyForecast");
                     if (arrays != null && arrays.length() > 0) {
                         hourly = arrays.optJSONObject(0);
                     }
@@ -428,10 +355,10 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
                 }
             }
             if (sunriseSec <= 0L || sunsetSec <= 0L) {
-                JSONArray daily = object.optJSONArray("dailyForecast");
+                org.json.JSONArray daily = object.optJSONArray("dailyForecast");
                 if (daily != null) {
                     for (int i = 0; i < daily.length(); i++) {
-                        JSONObject day = daily.optJSONObject(i);
+                        org.json.JSONObject day = daily.optJSONObject(i);
                         if (day == null) continue;
                         if (sunriseSec <= 0L) {
                             sunriseSec = readSunSecondsFromObject(day, "sunRise", "sunrise");
@@ -455,7 +382,7 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
         return result;
     }
 
-    private static long readSunSecondsFromObject(JSONObject object, String camelKey, String lowerKey) {
+    private static long readSunSecondsFromObject(org.json.JSONObject object, String camelKey, String lowerKey) {
         if (object == null) {
             return 0L;
         }
@@ -523,6 +450,83 @@ public final class BreezyWeatherRelayReceiver extends BroadcastReceiver {
             SharedPreferences prefs, String key) {
         if (prefs.contains(key)) {
             intent.putExtra(extraName, prefs.getInt(key, Integer.MIN_VALUE));
+        }
+    }
+
+    private static void copyAllowedWeatherExtras(Intent source, Intent target) {
+        if (source == null || target == null) {
+            return;
+        }
+        String weatherJson = source.getStringExtra("WeatherJson");
+        if (weatherJson != null && !weatherJson.isEmpty()
+                && weatherJson.length() <= MAX_WEATHER_JSON_CHARS) {
+            target.putExtra("WeatherJson", weatherJson);
+        }
+        byte[] weatherGz = source.getByteArrayExtra("WeatherGz");
+        if (weatherGz != null && weatherGz.length > 0
+                && weatherGz.length <= MAX_WEATHER_GZ_BYTES) {
+            target.putExtra("WeatherGz", weatherGz);
+        }
+        copyStringExtraIfPresent(source, target, "currentCondition");
+        copyStringExtraIfPresent(source, target, "condition");
+        copyStringExtraIfPresent(source, target, "weatherText");
+        copyDoubleExtraIfPresent(source, target, "currentTemp");
+        copyDoubleExtraIfPresent(source, target, "temperature");
+        copyDoubleExtraIfPresent(source, target, "temp");
+        copyIntExtraIfPresent(source, target, "currentConditionCode");
+        copyIntExtraIfPresent(source, target, "weatherCode");
+        copyIntExtraIfPresent(source, target, "conditionCode");
+        copyLongExtraIfPresent(source, target, EXTRA_SUNRISE);
+        copyLongExtraIfPresent(source, target, "sunrise");
+        copyLongExtraIfPresent(source, target, "sunRise");
+        copyLongExtraIfPresent(source, target, EXTRA_SUNSET);
+        copyLongExtraIfPresent(source, target, "sunset");
+        copyLongExtraIfPresent(source, target, "sunSet");
+    }
+
+    private static void copyStringExtraIfPresent(Intent source, Intent target, String key) {
+        String value = source.getStringExtra(key);
+        if (value != null && !value.isEmpty()) {
+            target.putExtra(key, value);
+        }
+    }
+
+    private static void copyDoubleExtraIfPresent(Intent source, Intent target, String key) {
+        if (source.hasExtra(key)) {
+            target.putExtra(key, source.getDoubleExtra(key, Double.NaN));
+        }
+    }
+
+    private static void copyIntExtraIfPresent(Intent source, Intent target, String key) {
+        if (source.hasExtra(key)) {
+            target.putExtra(key, source.getIntExtra(key, Integer.MIN_VALUE));
+        }
+    }
+
+    private static void copyLongExtraIfPresent(Intent source, Intent target, String key) {
+        if (source.hasExtra(key)) {
+            target.putExtra(key, source.getLongExtra(key, 0L));
+        }
+    }
+
+    static String decompressBoundedGzip(byte[] compressed) {
+        if (compressed == null || compressed.length == 0 || compressed.length > MAX_WEATHER_GZ_BYTES) {
+            return null;
+        }
+        try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(compressed));
+             InputStreamReader reader = new InputStreamReader(gzip, StandardCharsets.UTF_8)) {
+            StringBuilder builder = new StringBuilder();
+            char[] buffer = new char[1024];
+            int read;
+            while ((read = reader.read(buffer)) >= 0) {
+                if (builder.length() + read > MAX_WEATHER_GZ_CHARS) {
+                    return null;
+                }
+                builder.append(buffer, 0, read);
+            }
+            return builder.toString();
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 }

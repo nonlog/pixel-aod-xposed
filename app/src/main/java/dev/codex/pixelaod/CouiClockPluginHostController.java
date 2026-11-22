@@ -51,6 +51,9 @@ final class CouiClockPluginHostController {
             Collections.synchronizedMap(new WeakHashMap<View, WeakReference<HostRecord>>());
     private static final Set<Object> ROOT_UNAVAILABLE_LOGGED =
             Collections.newSetFromMap(new WeakHashMap<Object, Boolean>());
+    private static final Set<String> NON_BIG_PACKAGE_LOGGED =
+            Collections.synchronizedSet(new java.util.HashSet<String>());
+    private static final int MAX_NON_BIG_PACKAGE_LOGS = 16;
     private static long nextHostGeneration;
 
     private static volatile boolean hooksInstalled;
@@ -69,12 +72,21 @@ final class CouiClockPluginHostController {
             hooksInstalled = hooks > 0;
             CouiClockSemanticAdapter.install(context, classLoader,
                     () -> refreshAll("COUI-semantic-data"));
-            PixelAodLog.log("COUI clock persistent-host hooks installed=" + hooksInstalled
+            PixelAodLog.i("COUI clock persistent-host hooks installed=" + hooksInstalled
                     + " methods=" + hooks + " class=" + pluginClass.getName()
-                    + " rendererMode=COUI_PORT temporaryAodContent=NONE"
-                    + " retainedAdapters=DEFERRED_TO_SLICE3");
+                    + " sdk=" + android.os.Build.VERSION.SDK_INT
+                    + " display=" + android.os.Build.DISPLAY
+                    + " rendererMode=COUI_PORT");
+            if (hooks == 0) {
+                PixelAodLog.i("COUI ClockPlugin declared methods (0 matched): "
+                        + describePluginMethods(pluginClass));
+            }
         } catch (Throwable t) {
             hooksInstalled = false;
+            PixelAodLog.i("COUI ClockPlugin path unavailable class=" + CLOCK_PLUGIN_CLASS
+                    + " sdk=" + android.os.Build.VERSION.SDK_INT
+                    + " display=" + android.os.Build.DISPLAY
+                    + " error=" + t.getClass().getSimpleName() + ": " + t.getMessage());
             PixelAodLog.log("COUI ClockPlugin path unavailable", t);
         }
     }
@@ -90,6 +102,57 @@ final class CouiClockPluginHostController {
             }
         }
         return false;
+    }
+
+    /**
+     * The stock OPlus notification Peek owns a transient full-screen drawing surface. On current
+     * OOS it can replace or occlude the ordinary AOD surface even while the canonical COUI host
+     * remains logically dozing. Mirror only that ambient host after OPlus draws its own card.
+     * No View is reparented and no second AOD lifecycle is created.
+     */
+    static boolean drawAodIntoNativePeekSurface(
+            Canvas canvas, View nativeSurface, String source) {
+        if (canvas == null || nativeSurface == null) {
+            return false;
+        }
+        HostRecord candidate = null;
+        for (HostRecord record : snapshotRecords()) {
+            if (record == null || record.host.getParent() != record.root
+                    || !PrimaryDisplayPolicy.isPrimary(record.root)
+                    || record.host.getWidth() <= 0 || record.host.getHeight() <= 0
+                    || record.host.presentation() == null
+                    || !record.host.presentation().dozing()) {
+                continue;
+            }
+            if (isSameOrAncestor(record.host, nativeSurface)
+                    || isSameOrAncestor(nativeSurface, record.host)) {
+                continue;
+            }
+            if (candidate == null || record.generation > candidate.generation) {
+                candidate = record;
+            }
+        }
+        if (candidate == null) {
+            return false;
+        }
+
+        int[] nativeLocation = new int[2];
+        int[] hostLocation = new int[2];
+        int saveCount = canvas.save();
+        try {
+            nativeSurface.getLocationOnScreen(nativeLocation);
+            candidate.host.getLocationOnScreen(hostLocation);
+            canvas.translate(hostLocation[0] - nativeLocation[0],
+                    hostLocation[1] - nativeLocation[1]);
+            candidate.host.draw(canvas);
+            return true;
+        } catch (Throwable failure) {
+            PixelAodLog.log("failed to composite module AOD into native OPlus Peek"
+                    + " source=" + source, failure);
+            return false;
+        } finally {
+            canvas.restoreToCount(saveCount);
+        }
     }
 
     /**
@@ -120,10 +183,40 @@ final class CouiClockPluginHostController {
         });
     }
 
+    static void setPocketGuard(boolean blocked, String source) {
+        runOnMain(() -> {
+            int hidden = 0;
+            int restored = 0;
+            for (HostRecord record : snapshotRecords()) {
+                if (record == null || record.host.getParent() != record.root) {
+                    continue;
+                }
+                if (blocked) {
+                    record.host.setPrimaryVisible(false, source + "#pocket-near");
+                    hidden++;
+                    continue;
+                }
+                Context context = record.root.getContext();
+                if (context == null || PixelAodRuntimeState.isDeviceInteractive(context)
+                        || !PixelAodClockView.isAodActive()) {
+                    continue;
+                }
+                record.host.setPrimaryVisible(true, source + "#pocket-far");
+                restored++;
+            }
+            PixelAodLog.i("COUI pocket guard presentation"
+                    + " blocked=" + blocked
+                    + " hiddenHosts=" + hidden
+                    + " restoredHosts=" + restored
+                    + " source=" + source);
+        });
+    }
+
     /**
-     * ClockPlugin render owns the AOD-to-lockscreen presentation handoff. Waking before a
-     * pre-armed non-lockscreen AOD has reached a real AOD state also cancels that pre-arm so a
-     * later normal lockscreen render cannot inherit it.
+     * ClockPlugin render remains the primary AOD-to-lockscreen presentation owner. Waking before
+     * a pre-armed non-lockscreen AOD has reached a real AOD state also cancels that pre-arm so a
+     * later normal lockscreen render cannot inherit it. Native LOCKSCREEN FINISHED is only a
+     * safety net for the proven case where that render is late or absent.
      */
     static void prepareAodToLockscreenTransition(String source) {
         runOnMain(() -> {
@@ -152,6 +245,80 @@ final class CouiClockPluginHostController {
      * stale UNLOCKED/KEYGUARD renders between dispatchStartedGoingToSleep and the real AOD render;
      * those renders must not animate the parked host away from this baseline.
      */
+    /**
+     * Native DOZING/AOD -> LOCKSCREEN FINISHED is authoritative enough to repair a stale
+     * persistent child after the normal ClockPlugin render missed its deadline. Do nothing when
+     * the host already settled: the regular render keeps full ownership of the accepted exit
+     * animation. Prefer the last real lockscreen scene over the current AOD clock-size tracker,
+     * because notification content can transiently force the AOD visual scene to SMALL.
+     */
+    static void repairFinishedAodToLockscreen(String source) {
+        runOnMain(() -> {
+            int repaired = 0;
+            int alreadySettled = 0;
+            int held = 0;
+            int rememberedScene = 0;
+            int trackerFallback = 0;
+            int pendingExitAnimation = 0;
+            for (HostRecord record : snapshotRecords()) {
+                if (record == null || record.host.getParent() != record.root) {
+                    continue;
+                }
+                boolean hostDozing = record.host.presentation().dozing();
+                boolean exitAnimationPending = record.host.hasPendingAodToLockscreenAnimation();
+                if (!CouiClockAodExitTransitionPolicy.shouldRepairStaleHost(
+                        hostDozing, exitAnimationPending)) {
+                    alreadySettled++;
+                    continue;
+                }
+                if (exitAnimationPending) {
+                    pendingExitAnimation++;
+                }
+
+                CouiClockPresentationModel.Scene scene = record.lastLockscreenScene;
+                if (scene != null) {
+                    rememberedScene++;
+                } else {
+                    Object plugin = record.plugin != null ? record.plugin.get() : null;
+                    RenderState renderState = plugin != null
+                            ? readRenderState(plugin, false) : null;
+                    Integer clockSizeState = renderState != null
+                            ? renderState.clockSizeState : null;
+                    CouiClockPluginPresentationMapper.Mapping mapping =
+                            CouiClockPluginPresentationMapper.forcedLockscreenEntry(
+                                    clockSizeState, false, DEFAULT_AOD_CONTENT);
+                    CouiClockPresentationModel mapped = mapping.presentation();
+                    if (mapping.action() == CouiClockPluginPresentationMapper.Action.PRESENT
+                            && mapped != null) {
+                        scene = mapped.requestedScene();
+                        trackerFallback++;
+                    }
+                }
+
+                if (scene == null) {
+                    held++;
+                    continue;
+                }
+
+                CouiClockPresentationModel next = new CouiClockPresentationModel(
+                        scene, false, false, DEFAULT_AOD_CONTENT);
+                record.lastLockscreenScene = scene;
+                record.aodExitHandoffPending = false;
+                record.host.preloadLockscreenReturn(
+                        next, source + "#native-finished-stale-aod");
+                repaired++;
+            }
+            PixelAodLog.i("COUI finished AOD exit safety-net rendererMode=COUI_PORT"
+                    + " repairedHosts=" + repaired
+                    + " alreadySettledHosts=" + alreadySettled
+                    + " heldHosts=" + held
+                    + " rememberedScene=" + rememberedScene
+                    + " trackerFallback=" + trackerFallback
+                    + " pendingExitAnimation=" + pendingExitAnimation
+                    + " source=" + source);
+        });
+    }
+
     static void prepareNonLockscreenAodEntry(String source) {
         runOnMain(() -> prepareNonLockscreenAodEntryOnMain(source));
     }
@@ -223,6 +390,60 @@ final class CouiClockPluginHostController {
     /** External lifecycle callbacks may refresh data but must not synthesize lockscreen state. */
     static void prepareLockscreenEntry(String source) {
         refreshAll(source + "#pre-lockscreen-data");
+    }
+
+    /**
+     * Native OCCLUDED/bouncer -> LOCKSCREEN is an authoritative return to the lockscreen, but the
+     * ClockPlugin rendered ui-state can remain transient until the transition finishes. Normalize
+     * only the module-owned persistent child while the native ClockViewRoot still owns visibility,
+     * so its first revealed frame cannot expose a stale AOD weight.
+     */
+    static void prepareNativeLockscreenReturn(String source) {
+        runOnMain(() -> {
+            int prepared = 0;
+            int rememberedSceneFallbacks = 0;
+            int held = 0;
+            for (HostRecord record : snapshotRecords()) {
+                if (record == null || record.host.getParent() != record.root) {
+                    continue;
+                }
+                Object plugin = record.plugin != null ? record.plugin.get() : null;
+                if (plugin == null) {
+                    continue;
+                }
+                RenderState renderState = readRenderState(plugin, false);
+                Integer clockSizeState = renderState != null
+                        ? renderState.clockSizeState : null;
+                CouiClockPluginPresentationMapper.Mapping mapping =
+                        CouiClockPluginPresentationMapper.forcedLockscreenEntry(
+                                clockSizeState, false, DEFAULT_AOD_CONTENT);
+                CouiClockPresentationModel next = mapping.presentation();
+                if ((mapping.action() != CouiClockPluginPresentationMapper.Action.PRESENT
+                        || next == null) && record.lastLockscreenScene != null) {
+                    // Clock-size trackers can be transiently unavailable while the native root is
+                    // occluded. The last real non-AOD ClockPlugin scene is still authoritative for
+                    // this return and avoids guessing from an AOD content-derived visual scene.
+                    next = new CouiClockPresentationModel(record.lastLockscreenScene,
+                            false, false, DEFAULT_AOD_CONTENT);
+                    rememberedSceneFallbacks++;
+                }
+                if (next == null) {
+                    held++;
+                    continue;
+                }
+                record.lastLockscreenScene = next.requestedScene();
+                record.host.preloadLockscreenReturn(next,
+                        source + "#native-lockscreen-return");
+                prepared++;
+            }
+            PixelAodLog.i("COUI native lockscreen return preloaded rendererMode=COUI_PORT"
+                    + " preparedHosts=" + prepared
+                    + " rememberedSceneFallbacks=" + rememberedSceneFallbacks
+                    + " heldHosts=" + held
+                    + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility()
+                    + "}"
+                    + " source=" + source);
+        });
     }
 
     static void suppressForDirectGone(String source) {
@@ -447,13 +668,15 @@ final class CouiClockPluginHostController {
                 continue;
             }
             String name = method.getName();
-            if ("loadPluginReal".equals(name)
-                    && method.getParameterCount() == 1
-                    && method.getParameterTypes()[0] == String.class) {
+            if (matchesLoadPluginRealSignature(method)) {
                 if (hookAfterOnce(method, param -> {
-                    if (isSuccessfulLoad(param.getResult()) && isBigClockLoad(param.args)) {
-                        scheduleAttachAndSync(param.thisObject,
-                                "ClockPlugin#loadPluginReal", false);
+                    if (isSuccessfulLoad(param.getResult())) {
+                        if (isBigClockLoad(param.args)) {
+                            scheduleAttachAndSync(param.thisObject,
+                                    "ClockPlugin#loadPluginReal", false);
+                        } else {
+                            logNonBigLogicalPackageOnce(param.args);
+                        }
                     }
                 })) {
                     hooks++;
@@ -472,6 +695,14 @@ final class CouiClockPluginHostController {
             }
         }
         return hooks;
+    }
+
+    static boolean matchesLoadPluginRealSignature(Method method) {
+        if (method == null || !"loadPluginReal".equals(method.getName())) {
+            return false;
+        }
+        Class<?>[] types = method.getParameterTypes();
+        return types.length >= 1 && types[0] == String.class;
     }
 
     private static boolean hookAfterOnce(Method method, ModernHookBridge.HookCallback callback) {
@@ -600,8 +831,7 @@ final class CouiClockPluginHostController {
         }
         if (existing != null && existing.host.getParent() == root) {
             existing.plugin = new WeakReference<>(plugin);
-            existing.host.onTimeTick(source + "#reuse-before-visible");
-            existing.host.setVisibility(View.VISIBLE);
+            existing.host.setPrimaryVisible(true, source + "#reuse");
             existing.host.bringToFront();
             return existing;
         }
@@ -623,8 +853,7 @@ final class CouiClockPluginHostController {
             root.addView(host, root.getChildCount(), new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
-        host.onTimeTick(source + "#attach-before-visible");
-        host.setVisibility(View.VISIBLE);
+        host.setPrimaryVisible(true, source + "#attach");
         host.bringToFront();
         HostRecord record = new HostRecord(root, host, plugin, nextGeneration());
         // This owner is part of the view tree, not a process-global GC root.
@@ -1082,8 +1311,51 @@ final class CouiClockPluginHostController {
         return !(result instanceof Boolean) || (Boolean) result;
     }
 
-    private static boolean isBigClockLoad(Object[] args) {
-        return args != null && args.length == 1 && BIG_CLOCK_LOGICAL_PACKAGE.equals(args[0]);
+    static boolean isBigClockLoad(Object[] args) {
+        return args != null && args.length >= 1 && BIG_CLOCK_LOGICAL_PACKAGE.equals(args[0]);
+    }
+
+    private static void logNonBigLogicalPackageOnce(Object[] args) {
+        String pkg = (args != null && args.length >= 1 && args[0] != null)
+                ? String.valueOf(args[0])
+                : "<null>";
+        boolean shouldLog;
+        synchronized (NON_BIG_PACKAGE_LOGGED) {
+            shouldLog = NON_BIG_PACKAGE_LOGGED.size() < MAX_NON_BIG_PACKAGE_LOGS
+                    && NON_BIG_PACKAGE_LOGGED.add(pkg);
+        }
+        if (shouldLog) {
+            PixelAodLog.i("COUI ClockPlugin#loadPluginReal observed non-big logical package=" + pkg
+                    + " argc=" + (args != null ? args.length : 0));
+        }
+    }
+
+    private static String describePluginMethods(Class<?> pluginClass) {
+        if (pluginClass == null) {
+            return "<null>";
+        }
+        StringBuilder sb = new StringBuilder();
+        int count = 0;
+        for (Method method : allMethods(pluginClass)) {
+            if (count >= 40) {
+                sb.append("...");
+                break;
+            }
+            if (count > 0) {
+                sb.append(", ");
+            }
+            sb.append(method.getName()).append('(');
+            Class<?>[] params = method.getParameterTypes();
+            for (int i = 0; i < params.length; i++) {
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append(params[i].getSimpleName());
+            }
+            sb.append(')');
+            count++;
+        }
+        return sb.toString();
     }
 
     private static boolean isKeyguardShowing(Context context) {

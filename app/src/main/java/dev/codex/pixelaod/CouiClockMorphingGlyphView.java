@@ -93,6 +93,11 @@ final class CouiClockMorphingGlyphView extends TextView {
         }
     }
 
+    void resetMorphStyleTarget() {
+        targetVariation = null;
+        targetColor = null;
+    }
+
     private static boolean isAodVariation(String variation) {
         return CouiClockFontPolicy.AOD_LARGE_VARIATION.equals(variation)
                 || CouiClockFontPolicy.AOD_SMALL_VARIATION.equals(variation);

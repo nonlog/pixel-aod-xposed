@@ -74,7 +74,8 @@ final class PowerSavingAodController {
                     ctx, PixelAodClockView.isVendorAmbientSessionActive());
             if (!PowerSavingAodPolicy.isEnergySavingMode(nativeAod.displayMode)
                     || !nativeAod.configuredEligible
-                    || PixelAodClockView.isDeviceInteractive(ctx)) {
+                    || PixelAodClockView.isDeviceInteractive(ctx)
+                    || PixelAodClockView.isPocketGuardActive()) {
                 return;
             }
             showNative("notification#" + source);

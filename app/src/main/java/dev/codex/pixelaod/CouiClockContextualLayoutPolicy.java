@@ -10,6 +10,16 @@ final class CouiClockContextualLayoutPolicy {
         return dozing;
     }
 
+    static boolean deferSmallAodContextualReveal(boolean transitionInProgress,
+            boolean dozing, boolean smallScene, boolean cardVisible) {
+        return transitionInProgress && dozing && smallScene && cardVisible;
+    }
+
+    /** Keep the forecast Y invariant while current-weather content arrives asynchronously. */
+    static boolean reserveSmallAodWeatherSlot(boolean dozing, boolean smallScene) {
+        return dozing && smallScene;
+    }
+
     static float largeContextualStart(float containerWidthPx, float visibleContentWidthPx) {
         float container = Math.max(0f, containerWidthPx);
         float content = Math.max(0f, visibleContentWidthPx);
@@ -41,6 +51,12 @@ final class CouiClockContextualLayoutPolicy {
                     weatherTopPx + Math.max(0, weatherHeightPx));
         }
         return infoBottom + Math.max(0f, gapPx);
+    }
+
+    static float compactContentTopWithoutContextual(float defaultTopPx,
+            float contextualTopPx, float gapPx) {
+        return Math.min(defaultTopPx,
+                contextualTopPx + Math.max(0f, gapPx));
     }
 
     static float lowerContentTop(float defaultTopPx, boolean contextualVisible,

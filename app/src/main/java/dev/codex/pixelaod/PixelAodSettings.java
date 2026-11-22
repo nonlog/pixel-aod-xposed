@@ -3,6 +3,7 @@ package dev.codex.pixelaod;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.database.Cursor;
+import android.os.Build;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -35,6 +36,8 @@ public final class PixelAodSettings {
             PixelAodSettingsSchema.KEY_CALENDAR_ICON_PACKAGE;
     public static final String KEY_NOTIFICATION_ICONS =
             PixelAodSettingsSchema.KEY_NOTIFICATION_ICONS;
+    public static final String KEY_PIXEL_NOTIFICATION_PEEK =
+            PixelAodSettingsSchema.KEY_PIXEL_NOTIFICATION_PEEK;
     public static final String KEY_PIXEL_FINGERPRINT_ICON =
             PixelAodSettingsSchema.KEY_PIXEL_FINGERPRINT_ICON;
     public static final String KEY_UDFPS_HDR_PRESS_EFFECT =
@@ -250,8 +253,8 @@ public final class PixelAodSettings {
     }
 
     private static Context storageContext(Context context) {
-        if (context == null) {
-            return null;
+        if (context == null || Build.VERSION.SDK_INT < 24) {
+            return context;
         }
         Context directBootContext = context.createDeviceProtectedStorageContext();
         if (directBootContext == null) {

@@ -53,4 +53,23 @@ public final class ClockTypefaceResolutionPolicyTest {
         assertEquals(0L, OosAodHandoffProfile.nonLockscreenRevealDelayMillis(
                 "CPH2573_16.0.9.400(EX01)"));
     }
+
+    @Test
+    public void colorOs17AndOos161UseModernSingleLayerAodProfile() {
+        String[] modernBuilds = {
+                "PJD110_17.0.0.100(CN01)",
+                "CPH2573_17.0.0.200(EX01)",
+                "CPH2573_16.1.0.100(EX01)"
+        };
+        for (String build : modernBuilds) {
+            assertTrue(build + " should use stable single-layer AOD handoff",
+                    OosAodHandoffProfile.usesStableSingleLayerAodHandoff(build));
+            assertTrue(build + " should use system-managed burn-in",
+                    OosAodHandoffProfile.usesSystemManagedBurnIn(build));
+            assertEquals(build + " should not add legacy reveal delay",
+                    0L, OosAodHandoffProfile.nonLockscreenRevealDelayMillis(build));
+        }
+        assertFalse("OOS 15 should remain on legacy handoff profile",
+                OosAodHandoffProfile.usesStableSingleLayerAodHandoff("PJD110_15.0.0.800(CN01)"));
+    }
 }
