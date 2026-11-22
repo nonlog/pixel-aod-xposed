@@ -1,6 +1,15 @@
 # Changelog
 
 ## [Unreleased]
+### Changed
+- **FlClash-style Material 3 Settings UI redesign**:
+  - Replaced oversized 32sp headers, 18sp row titles, 16sp 5–6 line descriptions, and custom 58x36dp switches in `PixelAodDesignSystem.kt` and `SettingsActivity.kt` with a compact 56dp top app bar, 16dp `surfaceContainerLow` grouped list cards with hairline inset dividers, 15sp single-line titles, 12.5sp 1-line subtitles, native Material 3 switches, and a horizontal Home header card.
+  - Rewrote all verbose Chinese and English setting descriptions in `res/values/strings.xml` and `res/values-en/strings.xml` into concise 1-line copy.
+
+### Added
+- **Native Android 16/17 Pixel lockscreen clock customization**:
+  - Added live **Clock Width** (`wdth`, 75–125), **Clock Roundness** (`ROND`, 0–100), and **Lockscreen Clock Color** (Dynamic Wallpaper Monet vs Pure White) settings wired into `PixelAodSettingsSchema`, `CouiClockFontPolicy`, `CouiClockMorphingGlyphView`, `CouiClockRomTextAnimatorRuntime`, and `CouiClockHostView`.
+
 ### Fixed
 - **ColorOS 17 / Android 17 `KeyguardPlugin` clock host bridge**:
   - Added a ColorOS 17 fallback in `CouiClockPluginHostController` targeting `com.oplus.keyguard.plugin.KeyguardPlugin` (`setUp(int, int)`, `sendCommand(String, Bundle)` for `onClockStateChanged` / `setStyleData` / `transFrom` / `release`, and `reload$default`) when `ClockPlugin` no longer exposes legacy `loadPluginReal`/`render` methods.

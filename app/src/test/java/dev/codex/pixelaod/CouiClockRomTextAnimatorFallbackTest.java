@@ -40,4 +40,16 @@ public final class CouiClockRomTextAnimatorFallbackTest {
         assertEquals(0xFF808080, CouiClockRomTextAnimatorRuntime.interpolateArgb(
                 0xFF000000, 0xFFFFFFFF, 0.5f));
     }
+
+    @Test
+    public void supportsCustomClockWidthAndRoundnessAxes() {
+        assertEquals("'wght' 450, 'wdth' 85, 'ROND' 40, 'GRAD' 0, 'opsz' 144, 'slnt' 0",
+                CouiClockFontPolicy.variationFor(
+                        CouiClockPresentationModel.Scene.LARGE, false, 85f, 40f));
+        assertEquals("'wght' 180, 'wdth' 120, 'ROND' 0, 'GRAD' 0, 'opsz' 96, 'slnt' 0",
+                CouiClockFontPolicy.variationFor(
+                        CouiClockPresentationModel.Scene.SMALL, true, 120f, 0f));
+        assertEquals("'wght' 300, 'wdth' 90, 'ROND' 50, 'GRAD' 0, 'opsz' 120, 'slnt' 0",
+                CouiClockRomTextAnimatorRuntime.quantizeVariation(301f, 120f, 90f, 50f));
+    }
 }

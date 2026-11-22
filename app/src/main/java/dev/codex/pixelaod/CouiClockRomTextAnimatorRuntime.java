@@ -461,13 +461,19 @@ final class CouiClockRomTextAnimatorRuntime {
     }
 
     static String quantizeVariation(float wght, float opsz) {
+        return quantizeVariation(wght, opsz, 100f, 100f);
+    }
+
+    static String quantizeVariation(float wght, float opsz, float wdth, float rond) {
         int qWght = Math.max(100, Math.min(900,
                 Math.round(wght / SELF_CONTAINED_WGHT_STEP) * SELF_CONTAINED_WGHT_STEP));
         int qOpsz = Math.max(12, Math.min(144,
                 Math.round(opsz / SELF_CONTAINED_OPSZ_STEP) * SELF_CONTAINED_OPSZ_STEP));
+        int qWdth = Math.max(75, Math.min(125, Math.round(wdth)));
+        int qRond = Math.max(0, Math.min(100, Math.round(rond)));
         return String.format(Locale.US,
-                "'wght' %d, 'wdth' 100, 'ROND' 100, 'GRAD' 0, 'opsz' %d, 'slnt' 0",
-                qWght, qOpsz);
+                "'wght' %d, 'wdth' %d, 'ROND' %d, 'GRAD' 0, 'opsz' %d, 'slnt' 0",
+                qWght, qWdth, qRond, qOpsz);
     }
 
     static int interpolateArgb(int startColor, int endColor, float fraction) {
@@ -503,6 +509,8 @@ final class CouiClockRomTextAnimatorRuntime {
         private boolean initialized;
         private float currentWght = 450f;
         private float currentOpsz = 144f;
+        private float currentWdth = 100f;
+        private float currentRond = 100f;
         private int currentColor = Color.WHITE;
         private Typeface currentTypeface;
         private String currentQuantizedKey;
@@ -603,6 +611,8 @@ final class CouiClockRomTextAnimatorRuntime {
             }
             float targetWght = parseAxis(style.variation(), "wght", currentWght);
             float targetOpsz = parseAxis(style.variation(), "opsz", currentOpsz);
+            float targetWdth = parseAxis(style.variation(), "wdth", currentWdth);
+            float targetRond = parseAxis(style.variation(), "ROND", currentRond);
             int targetColor = style.color();
             if (valueAnimator != null) {
                 valueAnimator.cancel();
@@ -610,11 +620,13 @@ final class CouiClockRomTextAnimatorRuntime {
             }
             if (!initialized || !style.animate() || style.durationMillis() <= 0L) {
                 initialized = true;
-                applySelfContainedState(targetWght, targetOpsz, targetColor);
+                applySelfContainedState(targetWght, targetOpsz, targetWdth, targetRond, targetColor);
                 return;
             }
             final float startWght = currentWght;
             final float startOpsz = currentOpsz;
+            final float startWdth = currentWdth;
+            final float startRond = currentRond;
             final int startColor = currentColor;
             ValueAnimator anim = ValueAnimator.ofFloat(0f, 1f);
             anim.setDuration(style.durationMillis());
@@ -625,18 +637,23 @@ final class CouiClockRomTextAnimatorRuntime {
                 float fraction = (Float) updated.getAnimatedValue();
                 float wght = startWght + (targetWght - startWght) * fraction;
                 float opsz = startOpsz + (targetOpsz - startOpsz) * fraction;
+                float wdth = startWdth + (targetWdth - startWdth) * fraction;
+                float rond = startRond + (targetRond - startRond) * fraction;
                 int color = interpolateArgb(startColor, targetColor, fraction);
-                applySelfContainedState(wght, opsz, color);
+                applySelfContainedState(wght, opsz, wdth, rond, color);
             });
             valueAnimator = anim;
             anim.start();
         }
 
-        private void applySelfContainedState(float wght, float opsz, int color) {
+        private void applySelfContainedState(float wght, float opsz, float wdth, float rond,
+                int color) {
             currentWght = wght;
             currentOpsz = opsz;
+            currentWdth = wdth;
+            currentRond = rond;
             currentColor = color;
-            String key = quantizeVariation(wght, opsz);
+            String key = quantizeVariation(wght, opsz, wdth, rond);
             if (!key.equals(currentQuantizedKey)) {
                 currentQuantizedKey = key;
                 currentTypeface = selfRuntime.resolveVariantTypeface(key);

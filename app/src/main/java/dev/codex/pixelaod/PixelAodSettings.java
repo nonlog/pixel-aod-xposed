@@ -55,6 +55,13 @@ public final class PixelAodSettings {
     public static final String KEY_DEBUG_LOGGING = PixelAodSettingsSchema.KEY_DEBUG_LOGGING;
     public static final String KEY_AOD_WEIGHT = PixelAodSettingsSchema.KEY_AOD_WEIGHT;
     public static final String KEY_LOCKSCREEN_WEIGHT = PixelAodSettingsSchema.KEY_LOCKSCREEN_WEIGHT;
+    public static final String KEY_CLOCK_WIDTH = PixelAodSettingsSchema.KEY_CLOCK_WIDTH;
+    public static final String KEY_CLOCK_ROUNDNESS = PixelAodSettingsSchema.KEY_CLOCK_ROUNDNESS;
+    public static final String KEY_CLOCK_COLOR_MODE = PixelAodSettingsSchema.KEY_CLOCK_COLOR_MODE;
+    public static final String CLOCK_COLOR_MODE_DYNAMIC = PixelAodSettingsSchema.CLOCK_COLOR_MODE_DYNAMIC;
+    public static final String CLOCK_COLOR_MODE_WHITE = PixelAodSettingsSchema.CLOCK_COLOR_MODE_WHITE;
+    public static final float DEFAULT_CLOCK_WIDTH = PixelAodSettingsSchema.DEFAULT_CLOCK_WIDTH;
+    public static final float DEFAULT_CLOCK_ROUNDNESS = PixelAodSettingsSchema.DEFAULT_CLOCK_ROUNDNESS;
     public static final String KEY_DISABLE_BURN_IN_OFFSET =
             PixelAodSettingsSchema.KEY_DISABLE_BURN_IN_OFFSET;
     public static final String KEY_POCKET_MODE = PixelAodSettingsSchema.KEY_POCKET_MODE;

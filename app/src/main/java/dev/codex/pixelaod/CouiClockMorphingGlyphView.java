@@ -79,8 +79,8 @@ final class CouiClockMorphingGlyphView extends TextView {
         }
         targetVariation = variation;
         targetColor = color;
-        CouiClockFontPolicy.MorphStyleSpec style = CouiClockFontPolicy.morphStyle(
-                sceneForVariation(variation), isAodVariation(variation), color, animate, duration);
+        CouiClockFontPolicy.MorphStyleSpec style = new CouiClockFontPolicy.MorphStyleSpec(
+                variation, color, animate, duration);
         if (bridge != null) {
             bridge.setStyle(style, interpolator);
         } else {

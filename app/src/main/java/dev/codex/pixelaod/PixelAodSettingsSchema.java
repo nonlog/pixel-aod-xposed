@@ -34,6 +34,9 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_DEBUG_LOGGING = "debug_logging";
     public static final String KEY_AOD_WEIGHT = "aod_weight";
     public static final String KEY_LOCKSCREEN_WEIGHT = "lockscreen_weight";
+    public static final String KEY_CLOCK_WIDTH = "clock_width";
+    public static final String KEY_CLOCK_ROUNDNESS = "clock_roundness";
+    public static final String KEY_CLOCK_COLOR_MODE = "clock_color_mode";
     public static final String KEY_DISABLE_BURN_IN_OFFSET = "disable_burn_in_offset";
     public static final String KEY_POCKET_MODE = "pocket_mode";
     public static final String KEY_POWER_SAVING_NOTIFICATION_AOD = "power_saving_notification_aod";
@@ -46,8 +49,12 @@ public final class PixelAodSettingsSchema {
     public static final String LANGUAGE_CHINESE = "zh";
     public static final String LANGUAGE_ENGLISH = "en";
 
+    public static final String CLOCK_COLOR_MODE_DYNAMIC = "dynamic";
+    public static final String CLOCK_COLOR_MODE_WHITE = "white";
     public static final float DEFAULT_AOD_WEIGHT = 280f;
     public static final float DEFAULT_LOCKSCREEN_WEIGHT = 520f;
+    public static final float DEFAULT_CLOCK_WIDTH = 100f;
+    public static final float DEFAULT_CLOCK_ROUNDNESS = 100f;
 
     private static final LinkedHashMap<String, SettingSpec> SPECS = new LinkedHashMap<>();
 
@@ -89,6 +96,12 @@ public final class PixelAodSettingsSchema {
             floatSpec(KEY_AOD_WEIGHT, DEFAULT_AOD_WEIGHT, false);
     public static final SettingSpec LOCKSCREEN_WEIGHT =
             floatSpec(KEY_LOCKSCREEN_WEIGHT, DEFAULT_LOCKSCREEN_WEIGHT, false);
+    public static final SettingSpec CLOCK_WIDTH =
+            floatSpec(KEY_CLOCK_WIDTH, DEFAULT_CLOCK_WIDTH, false);
+    public static final SettingSpec CLOCK_ROUNDNESS =
+            floatSpec(KEY_CLOCK_ROUNDNESS, DEFAULT_CLOCK_ROUNDNESS, false);
+    public static final SettingSpec CLOCK_COLOR_MODE =
+            stringSpec(KEY_CLOCK_COLOR_MODE, CLOCK_COLOR_MODE_DYNAMIC, false);
     public static final SettingSpec DISABLE_BURN_IN_OFFSET =
             booleanSpec(KEY_DISABLE_BURN_IN_OFFSET, false, false);
     public static final SettingSpec POCKET_MODE = alwaysEnabledBooleanSpec(KEY_POCKET_MODE);

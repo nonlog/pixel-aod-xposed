@@ -45,6 +45,24 @@ final class CouiClockFontPolicy {
                 ? LARGE_VARIATION : SMALL_VARIATION;
     }
 
+    static String variationFor(CouiClockPresentationModel.Scene scene, boolean dozing,
+            float width, float roundness) {
+        int clampedWidth = Math.max(75, Math.min(125, Math.round(width)));
+        int clampedRoundness = Math.max(0, Math.min(100, Math.round(roundness)));
+        if (clampedWidth == 100 && clampedRoundness == 100) {
+            return variationFor(scene, dozing);
+        }
+        CouiClockPresentationModel.Scene normalized = scene == null
+                ? CouiClockPresentationModel.Scene.LARGE : scene;
+        boolean large = normalized == CouiClockPresentationModel.Scene.LARGE;
+        int wght = dozing ? (large ? 100 : 180) : (large ? 450 : 500);
+        int opsz = large ? 144 : 96;
+        return "'wght' " + wght
+                + ", 'wdth' " + clampedWidth
+                + ", 'ROND' " + clampedRoundness
+                + ", 'GRAD' 0, 'opsz' " + opsz + ", 'slnt' 0";
+    }
+
     static GlyphMode glyphMode(CouiClockPresentationModel.Scene scene, boolean dozing,
             boolean runtimeAvailable) {
         return runtimeAvailable

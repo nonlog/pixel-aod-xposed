@@ -1693,8 +1693,7 @@ final class CouiClockHostView extends FrameLayout {
         CouiClockGeometryPolicy.SurfaceTarget surface = currentSurfaceTarget();
         GlyphSet metricSet = metricGlyphSet();
         GlyphTarget[] targets = calculateGlyphTargets(metricSet, surface);
-        String variation = CouiClockFontPolicy.variationFor(
-                presentation.visualScene(), presentation.dozing());
+        String variation = currentClockVariation(presentation.visualScene(), presentation.dozing());
         String systemAnimation = SystemAnimationScalePolicy.describe();
         String diagnosticSignature = presentation.visualScene() + "|"
                 + presentation.dozing() + "|" + presentation.partialAod() + "|"
@@ -2443,8 +2442,16 @@ final class CouiClockHostView extends FrameLayout {
         mediaAppIconView.setImageTintList(ColorStateList.valueOf(Color.WHITE));
     }
 
+    private String currentClockVariation(CouiClockPresentationModel.Scene scene, boolean dozing) {
+        float width = PixelAodSettings.getFloat(getContext(),
+                PixelAodSettings.KEY_CLOCK_WIDTH, PixelAodSettings.DEFAULT_CLOCK_WIDTH);
+        float roundness = PixelAodSettings.getFloat(getContext(),
+                PixelAodSettings.KEY_CLOCK_ROUNDNESS, PixelAodSettings.DEFAULT_CLOCK_ROUNDNESS);
+        return CouiClockFontPolicy.variationFor(scene, dozing, width, roundness);
+    }
+
     private void applyMorphStyle(boolean animate, long duration) {
-        String variation = CouiClockFontPolicy.variationFor(presentation.visualScene(),
+        String variation = currentClockVariation(presentation.visualScene(),
                 presentation.dozing());
         int color = CouiClockVisualStylePolicy.clockColor(presentation.visualScene(),
                 presentation.dozing(), monetColor, aodMonetColor);
@@ -2484,6 +2491,13 @@ final class CouiClockHostView extends FrameLayout {
     }
 
     void updateMonetColor() {
+        String colorMode = PixelAodSettings.getString(getContext(),
+                PixelAodSettings.KEY_CLOCK_COLOR_MODE,
+                PixelAodSettings.CLOCK_COLOR_MODE_DYNAMIC);
+        if (PixelAodSettings.CLOCK_COLOR_MODE_WHITE.equals(colorMode)) {
+            setMonetColors(Color.WHITE, Color.WHITE);
+            return;
+        }
         int fallback = CouiClockVisualStylePolicy.LOCKSCREEN_FALLBACK_CLOCK_COLOR;
         int lockscreen = resolveSystemColor("system_accent1_100", fallback);
         int accentLight = resolveSystemColor("system_accent1_10", Color.WHITE);

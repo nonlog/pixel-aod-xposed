@@ -17,13 +17,17 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Android
 import androidx.compose.material.icons.outlined.BatteryChargingFull
@@ -154,6 +158,24 @@ private fun requestBreezyWeatherRefresh(context: Context) {
     context.sendBroadcast(
         Intent(REQUEST_BREEZY_WEATHER_RELAY).setPackage(context.packageName)
     )
+}
+
+private fun updateModuleFloatSetting(context: Context, key: String, value: Float) {
+    val values = ContentValues().apply {
+        put("key", key)
+        put("value", value)
+    }
+    val updated = try {
+        context.contentResolver.update(PixelAodSettingsProvider.URI, values, null, null)
+    } catch (_: Throwable) {
+        0
+    }
+    if (updated > 0) {
+        return
+    }
+    PixelAodSettings.getSharedPreferences(context).edit().putFloat(key, value).apply()
+    PixelAodSettings.refresh(context)
+    context.contentResolver.notifyChange(PixelAodSettingsProvider.URI, null)
 }
 
 private fun updateModuleStringSetting(context: Context, key: String, value: String) {
@@ -366,11 +388,36 @@ private fun SettingsContent(
             )
         )
     }
+    val clockWidth = remember {
+        mutableFloatStateOf(
+            prefs.schemaFloat(
+                PixelAodSettings.KEY_CLOCK_WIDTH,
+                PixelAodSettings.DEFAULT_CLOCK_WIDTH
+            )
+        )
+    }
+    val clockRoundness = remember {
+        mutableFloatStateOf(
+            prefs.schemaFloat(
+                PixelAodSettings.KEY_CLOCK_ROUNDNESS,
+                PixelAodSettings.DEFAULT_CLOCK_ROUNDNESS
+            )
+        )
+    }
+    val clockColorMode = remember {
+        mutableStateOf(
+            prefs.schemaString(
+                PixelAodSettings.KEY_CLOCK_COLOR_MODE,
+                PixelAodSettings.CLOCK_COLOR_MODE_DYNAMIC
+            )
+        )
+    }
 
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showIconPackDialog by remember { mutableStateOf(false) }
     var showCalendarIconAppDialog by remember { mutableStateOf(false) }
     var showNonLockscreenTransitionDialog by remember { mutableStateOf(false) }
+    var showClockColorModeDialog by remember { mutableStateOf(false) }
 
     var currentPageName by rememberSaveable { mutableStateOf(SettingsPage.HOME.name) }
     val currentPage = remember(currentPageName) { SettingsPage.valueOf(currentPageName) }
@@ -422,37 +469,52 @@ private fun SettingsContent(
             onAction = { restartSystemUi(context) },
             bottomBar = bottomBar
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Surface(
+                shape = PixelAodDesignSystem.groupShape,
+                color = PixelAodDesignSystem.groupColor(MaterialTheme.colorScheme),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                PixelAodHeroMark(modifier = Modifier.size(112.dp))
-                Spacer(modifier = Modifier.height(18.dp))
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.displaySmall.copy(fontSize = 28.sp),
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = versionName,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp)
-                    )
+                    PixelAodHeroMark(modifier = Modifier.size(54.dp))
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.app_name),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            if (versionName.isNotEmpty()) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Text(
+                                        text = "v$versionName",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = stringResource(R.string.module_description),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = stringResource(R.string.module_description),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 20.dp)
-                )
             }
 
             PixelAodHeroToggle(
@@ -580,10 +642,41 @@ private fun SettingsContent(
                     valueText = lockscreenWeight.floatValue.toInt().toString(),
                     value = lockscreenWeight.floatValue,
                     valueRange = 100f..500f,
-                    showDivider = false
+                    showDivider = true
                 ) {
                     lockscreenWeight.floatValue = it
-                    prefs.edit().putFloat(PixelAodSettings.KEY_LOCKSCREEN_WEIGHT, it).apply()
+                    updateModuleFloatSetting(context, PixelAodSettings.KEY_LOCKSCREEN_WEIGHT, it)
+                }
+                PixelAodSliderRow(
+                    icon = Icons.Outlined.Schedule,
+                    title = stringResource(R.string.title_clock_width),
+                    valueText = clockWidth.floatValue.toInt().toString(),
+                    value = clockWidth.floatValue,
+                    valueRange = 75f..125f,
+                    showDivider = true
+                ) {
+                    clockWidth.floatValue = it
+                    updateModuleFloatSetting(context, PixelAodSettings.KEY_CLOCK_WIDTH, it)
+                }
+                PixelAodSliderRow(
+                    icon = Icons.Outlined.Palette,
+                    title = stringResource(R.string.title_clock_roundness),
+                    valueText = clockRoundness.floatValue.toInt().toString(),
+                    value = clockRoundness.floatValue,
+                    valueRange = 0f..100f,
+                    showDivider = true
+                ) {
+                    clockRoundness.floatValue = it
+                    updateModuleFloatSetting(context, PixelAodSettings.KEY_CLOCK_ROUNDNESS, it)
+                }
+                PixelAodChoiceRow(
+                    icon = Icons.Outlined.Palette,
+                    title = stringResource(R.string.title_clock_color_mode),
+                    subtitle = stringResource(R.string.desc_clock_color_mode),
+                    valueText = clockColorModeLabel(clockColorMode.value),
+                    showDivider = false
+                ) {
+                    showClockColorModeDialog = true
                 }
             }
         }
@@ -955,6 +1048,23 @@ private fun SettingsContent(
             }
         )
     }
+    if (showClockColorModeDialog) {
+        ClockColorModeDialog(
+            current = clockColorMode.value,
+            onDismiss = { showClockColorModeDialog = false },
+            onSelected = { selected ->
+                showClockColorModeDialog = false
+                if (selected != clockColorMode.value) {
+                    clockColorMode.value = selected
+                    updateModuleStringSetting(
+                        context,
+                        PixelAodSettings.KEY_CLOCK_COLOR_MODE,
+                        selected
+                    )
+                }
+            }
+        )
+    }
     if (showClockDial) {
         PixelAodTimePickerDialog(
             title = clockDialTitle,
@@ -1024,6 +1134,37 @@ private fun nonLockscreenAodTransitionLabel(value: String): String = when (value
     PixelAodSettings.NON_LOCKSCREEN_AOD_TRANSITION_DIRECT_FINAL ->
         stringResource(R.string.non_lockscreen_aod_transition_direct_final)
     else -> stringResource(R.string.non_lockscreen_aod_transition_animated)
+}
+
+@Composable
+private fun clockColorModeLabel(value: String): String = when (value) {
+    PixelAodSettings.CLOCK_COLOR_MODE_WHITE -> stringResource(R.string.clock_color_mode_white)
+    else -> stringResource(R.string.clock_color_mode_dynamic)
+}
+
+@Composable
+private fun ClockColorModeDialog(
+    current: String,
+    onDismiss: () -> Unit,
+    onSelected: (String) -> Unit
+) {
+    PixelAodSelectionDialog(
+        title = stringResource(R.string.title_clock_color_mode),
+        current = current,
+        options = listOf(
+            PixelAodSelectionOption(
+                PixelAodSettings.CLOCK_COLOR_MODE_DYNAMIC,
+                stringResource(R.string.clock_color_mode_dynamic)
+            ),
+            PixelAodSelectionOption(
+                PixelAodSettings.CLOCK_COLOR_MODE_WHITE,
+                stringResource(R.string.clock_color_mode_white)
+            )
+        ),
+        cancelLabel = stringResource(android.R.string.cancel),
+        onDismiss = onDismiss,
+        onSelected = onSelected
+    )
 }
 @Composable
 private fun LanguageDialog(

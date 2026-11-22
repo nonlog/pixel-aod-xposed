@@ -2,11 +2,8 @@ package dev.codex.pixelaod
 
 import android.os.Build
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -34,7 +30,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,6 +44,8 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -61,7 +58,6 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,57 +71,50 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Shared settings presentation system.
- *
- * The visual hierarchy follows COUI Expressive 2.5: wallpaper-derived Material 3 color,
- * edge-to-edge system surfaces, a compact large title, low-elevation rounded groups, primary
- * section labels and controls, and one continuous settings column.  No setting key or persistence
- * semantics live here; this file owns presentation only.
+ * Shared settings presentation system inspired by FlClash's clean Material 3 layout:
+ * compact 56dp top bar, low-elevation 16dp grouped list cards with hairline inset dividers,
+ * 15sp single-line titles, 12.5sp concise subtitles, and native Material 3 switches.
  */
 object PixelAodDesignSystem {
     @Immutable
     data class Spacing(
         val pageHorizontal: Dp = 16.dp,
-        val pageBottom: Dp = 28.dp,
-        val titleHorizontal: Dp = 8.dp,
-        val sectionGap: Dp = 24.dp,
-        val sectionInnerGap: Dp = 10.dp,
+        val pageBottom: Dp = 20.dp,
+        val titleHorizontal: Dp = 4.dp,
+        val sectionGap: Dp = 14.dp,
+        val sectionInnerGap: Dp = 6.dp,
         val rowHorizontal: Dp = 16.dp,
-        val rowVertical: Dp = 14.dp,
+        val rowVertical: Dp = 12.dp,
         val leadingGap: Dp = 14.dp,
-        val trailingGap: Dp = 12.dp
+        val trailingGap: Dp = 10.dp
     )
 
     @Immutable
     data class Motion(
-        val stateChangeMillis: Int = 300,
-        val contentChangeMillis: Int = 450
+        val stateChangeMillis: Int = 220,
+        val contentChangeMillis: Int = 300
     )
 
     val spacing = Spacing()
     val motion = Motion()
-    val groupShape = RoundedCornerShape(22.dp)
-    val heroShape = RoundedCornerShape(28.dp)
-    val iconShape = RoundedCornerShape(14.dp)
+    val groupShape = RoundedCornerShape(16.dp)
+    val heroShape = RoundedCornerShape(16.dp)
+    val iconShape = RoundedCornerShape(12.dp)
 
     val shapes = Shapes(
-        extraSmall = RoundedCornerShape(10.dp),
-        small = RoundedCornerShape(14.dp),
-        medium = RoundedCornerShape(18.dp),
-        large = RoundedCornerShape(24.dp),
-        extraLarge = groupShape
+        extraSmall = RoundedCornerShape(8.dp),
+        small = RoundedCornerShape(12.dp),
+        medium = RoundedCornerShape(16.dp),
+        large = RoundedCornerShape(20.dp),
+        extraLarge = RoundedCornerShape(24.dp)
     )
 
-    // COUI dark cards sit above the page background instead of dropping to absolute black.
-    // Use the wallpaper-derived highest neutral container role so the card keeps Monet tint while
-    // preserving the visible page -> card hierarchy seen in COUI Expressive.
-    fun groupColor(scheme: ColorScheme): Color = scheme.surfaceContainerHighest
-    fun pageColor(scheme: ColorScheme): Color = scheme.background
+    fun groupColor(scheme: ColorScheme): Color = scheme.surfaceContainerLow
+    fun pageColor(scheme: ColorScheme): Color = scheme.surface
     fun bottomBarColor(scheme: ColorScheme): Color = scheme.surfaceContainer
 }
 
@@ -143,26 +132,36 @@ data class PixelAodBottomItem(
 fun PixelAodTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
-    val baseColors = when {
+    val colors = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && dark -> dynamicDarkColorScheme(context)
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> dynamicLightColorScheme(context)
         dark -> darkColorScheme()
         else -> lightColorScheme()
     }
-    // COUI Expressive follows the device wallpaper palette rather than pinning a fixed teal/neutral
-    // theme. Keep the complete dynamic Material You role mapping intact on Android 12+; component
-    // hierarchy below selects the appropriate surface/container roles without replacing their hues.
-    val colors = baseColors
     val baseTypography = Typography()
     val typography = baseTypography.copy(
-        displaySmall = baseTypography.displaySmall.copy(
-            fontSize = 32.sp,
-            lineHeight = 40.sp,
-            fontWeight = FontWeight.Normal
+        titleLarge = baseTypography.titleLarge.copy(
+            fontSize = 20.sp,
+            lineHeight = 26.sp,
+            fontWeight = FontWeight.Medium
         ),
-        titleLarge = baseTypography.titleLarge.copy(fontWeight = FontWeight.Medium),
-        titleMedium = baseTypography.titleMedium.copy(fontWeight = FontWeight.Medium),
-        labelLarge = baseTypography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+        titleMedium = baseTypography.titleMedium.copy(
+            fontSize = 15.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium
+        ),
+        bodyMedium = baseTypography.bodyMedium.copy(
+            fontSize = 13.sp,
+            lineHeight = 18.sp
+        ),
+        bodySmall = baseTypography.bodySmall.copy(
+            fontSize = 12.5.sp,
+            lineHeight = 17.sp
+        ),
+        labelLarge = baseTypography.labelLarge.copy(
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
+        )
     )
     MaterialTheme(
         colorScheme = colors,
@@ -198,8 +197,8 @@ fun PixelAodPage(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .height(56.dp)
+                    .padding(horizontal = if (onBack != null) 4.dp else 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (onBack != null) {
@@ -207,11 +206,28 @@ fun PixelAodPage(
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                             contentDescription = backDescription,
-                            tint = scheme.onSurfaceVariant
+                            tint = scheme.onSurface
                         )
                     }
-                } else {
-                    Spacer(modifier = Modifier.size(48.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = scheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (subtitle.isNotBlank()) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
                 if (actionIcon != null && onAction != null) {
                     IconButton(onClick = onAction) {
@@ -221,8 +237,6 @@ fun PixelAodPage(
                             tint = scheme.onSurfaceVariant
                         )
                     }
-                } else {
-                    Spacer(modifier = Modifier.size(48.dp))
                 }
             }
             Column(
@@ -230,34 +244,10 @@ fun PixelAodPage(
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = PixelAodDesignSystem.spacing.pageHorizontal)
-                    .padding(bottom = PixelAodDesignSystem.spacing.pageBottom),
-                verticalArrangement = Arrangement.spacedBy(PixelAodDesignSystem.spacing.sectionGap)
-            ) {
-                Spacer(modifier = Modifier.height(34.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.displaySmall,
-                    color = scheme.onSurface,
-                    modifier = Modifier.padding(
-                        start = PixelAodDesignSystem.spacing.titleHorizontal,
-                        end = PixelAodDesignSystem.spacing.titleHorizontal,
-                        bottom = 2.dp
-                    )
-                )
-                if (subtitle.isNotBlank()) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = scheme.onSurfaceVariant,
-                        modifier = Modifier.padding(
-                            start = PixelAodDesignSystem.spacing.titleHorizontal,
-                            end = PixelAodDesignSystem.spacing.titleHorizontal,
-                            bottom = 4.dp
-                        )
-                    )
-                }
-                content()
-            }
+                    .padding(top = 4.dp, bottom = PixelAodDesignSystem.spacing.pageBottom),
+                verticalArrangement = Arrangement.spacedBy(PixelAodDesignSystem.spacing.sectionGap),
+                content = content
+            )
             bottomBar()
         }
     }
@@ -271,9 +261,9 @@ fun PixelAodSection(title: String, content: @Composable ColumnScope.() -> Unit) 
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Medium),
+            style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(horizontal = 8.dp)
+            modifier = Modifier.padding(horizontal = 6.dp)
         )
         content()
     }
@@ -284,14 +274,17 @@ fun PixelAodGroup(
     enabled: Boolean = true,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(PixelAodDesignSystem.groupShape)
             .animateContentSize(),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-        content = content
-    )
+        shape = PixelAodDesignSystem.groupShape,
+        color = PixelAodDesignSystem.groupColor(MaterialTheme.colorScheme),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(modifier = Modifier.fillMaxWidth(), content = content)
+    }
 }
 
 @Composable
@@ -301,9 +294,10 @@ fun PixelAodHeroToggle(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
         shape = PixelAodDesignSystem.heroShape,
-        color = MaterialTheme.colorScheme.secondaryContainer,
+        color = if (checked) scheme.primaryContainer else scheme.surfaceContainerHigh,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         modifier = Modifier.fillMaxWidth()
@@ -312,111 +306,83 @@ fun PixelAodHeroToggle(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { onCheckedChange(!checked) }
-                .padding(horizontal = 20.dp, vertical = 18.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = Icons.Outlined.Bolt,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(32.dp)
+                tint = if (checked) scheme.onPrimaryContainer else scheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
             )
-            Spacer(modifier = Modifier.width(18.dp))
+            Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleLarge)
-                Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (checked) scheme.onPrimaryContainer else scheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+                if (subtitle.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (checked) {
+                            scheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        } else {
+                            scheme.onSurfaceVariant
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(PixelAodDesignSystem.spacing.trailingGap))
-            PixelAodSwitch(checked)
+            PixelAodSwitch(checked = checked, enabled = true, onCheckedChange = onCheckedChange)
         }
     }
 }
 
 @Composable
 fun PixelAodInfoBanner(text: String) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
-        shape = PixelAodDesignSystem.heroShape,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        shape = RoundedCornerShape(14.dp),
+        color = scheme.surfaceContainerHigh,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.titleMedium.copy(
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = 24.sp
-            ),
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp)
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp)
         )
     }
 }
 
 @Composable
-private fun PixelAodSwitch(checked: Boolean, enabled: Boolean = true) {
+private fun PixelAodSwitch(
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: ((Boolean) -> Unit)? = null
+) {
     val scheme = MaterialTheme.colorScheme
-    val thumbOffset by animateDpAsState(
-        targetValue = if (checked) 25.dp else 3.dp,
-        animationSpec = androidx.compose.animation.core.tween(
-            durationMillis = PixelAodDesignSystem.motion.stateChangeMillis,
-            easing = FastOutSlowInEasing
-        ),
-        label = "coui-switch-thumb"
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = scheme.onPrimary,
+            checkedTrackColor = scheme.primary,
+            uncheckedThumbColor = scheme.outline,
+            uncheckedTrackColor = scheme.surfaceContainerHighest,
+            uncheckedBorderColor = scheme.outline
+        )
     )
-    val trackColor = when {
-        !enabled && checked -> scheme.primary.copy(alpha = 0.38f)
-        !enabled -> Color.Transparent
-        checked -> scheme.primary
-        else -> Color.Transparent
-    }
-    val borderColor = when {
-        !enabled -> scheme.outline.copy(alpha = 0.38f)
-        checked -> scheme.primary
-        else -> scheme.outline
-    }
-    val thumbColor = when {
-        !enabled && checked -> scheme.primaryContainer.copy(alpha = 0.72f)
-        !enabled -> scheme.outline.copy(alpha = 0.48f)
-        checked -> scheme.primaryContainer
-        else -> scheme.outline
-    }
-    Box(
-        modifier = Modifier
-            .size(width = 58.dp, height = 36.dp)
-            .clip(CircleShape)
-            .background(trackColor)
-            .border(
-                width = 2.5.dp,
-                color = borderColor,
-                shape = CircleShape
-            )
-    ) {
-        Box(
-            modifier = Modifier
-                .offset { IntOffset(thumbOffset.roundToPx(), 3.dp.roundToPx()) }
-                .size(30.dp)
-                .clip(CircleShape)
-                .background(thumbColor),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = if (checked) Icons.Outlined.Check else Icons.Outlined.Close,
-                contentDescription = null,
-                tint = when {
-                    !enabled -> scheme.onSurfaceVariant.copy(alpha = 0.55f)
-                    checked -> scheme.onPrimaryContainer
-                    else -> scheme.surface
-                },
-                modifier = Modifier.size(19.dp)
-            )
-        }
-    }
 }
 
 @Composable
@@ -424,12 +390,12 @@ fun PixelAodHeroMark(modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(30.dp),
+        shape = RoundedCornerShape(16.dp),
         color = scheme.secondaryContainer,
         tonalElevation = 0.dp,
-        shadowElevation = 5.dp
+        shadowElevation = 0.dp
     ) {
-        Canvas(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(10.dp)) {
             val w = size.width
             val h = size.height
             val strokeWidth = size.minDimension * 0.135f
@@ -494,36 +460,41 @@ fun PixelAodActionCard(
     subtitle: String,
     onClick: () -> Unit
 ) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = PixelAodDesignSystem.heroShape,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = scheme.secondaryContainer,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(30.dp)
+                tint = scheme.onSecondaryContainer,
+                modifier = Modifier.size(22.dp)
             )
-            Spacer(Modifier.width(18.dp))
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                    style = MaterialTheme.typography.titleMedium,
+                    color = scheme.onSecondaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (subtitle.isNotEmpty()) {
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSecondaryContainer.copy(alpha = 0.78f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -534,12 +505,9 @@ fun PixelAodActionCard(
 @Composable
 private fun PixelAodDivider() {
     HorizontalDivider(
-        modifier = Modifier.padding(
-            start = 58.dp,
-            end = PixelAodDesignSystem.spacing.rowHorizontal
-        ),
+        modifier = Modifier.padding(start = 52.dp, end = 16.dp),
         thickness = 0.5.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f)
     )
 }
 
@@ -548,9 +516,9 @@ private fun PixelAodLeadingIcon(icon: ImageVector, enabled: Boolean) {
     Icon(
         imageVector = icon,
         contentDescription = null,
-        tint = if (enabled) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-        modifier = Modifier.size(24.dp)
+        tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.36f),
+        modifier = Modifier.size(22.dp)
     )
 }
 
@@ -564,17 +532,13 @@ fun PixelAodNavigationRow(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    Surface(
-        color = PixelAodDesignSystem.groupColor(MaterialTheme.colorScheme),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 56.dp)
                 .clickable(enabled = enabled, onClick = onClick)
-                .padding(horizontal = 18.dp, vertical = 15.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             PixelAodLeadingIcon(icon, enabled)
@@ -582,43 +546,48 @@ fun PixelAodNavigationRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                    style = MaterialTheme.typography.titleMedium,
                     color = if (enabled) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (subtitle.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodySmall,
                         color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-                        maxLines = 3,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
             if (!valueText.isNullOrEmpty()) {
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = valueText,
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (enabled) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.End,
-                    modifier = Modifier.widthIn(max = 104.dp)
+                    modifier = Modifier.widthIn(max = 112.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
             Icon(
                 imageVector = Icons.Outlined.ChevronRight,
                 contentDescription = null,
-                tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-                modifier = Modifier.size(22.dp)
+                tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f),
+                modifier = Modifier.size(20.dp)
             )
+        }
+        if (showDivider) {
+            PixelAodDivider()
         }
     }
 }
@@ -633,40 +602,47 @@ fun PixelAodToggleRow(
     enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    Surface(
-        color = PixelAodDesignSystem.groupColor(MaterialTheme.colorScheme),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 56.dp)
                 .clickable(enabled = enabled) { onCheckedChange(!checked) }
-                .padding(horizontal = 18.dp, vertical = 15.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             PixelAodLeadingIcon(icon, enabled)
             Spacer(modifier = Modifier.width(PixelAodDesignSystem.spacing.leadingGap))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    title,
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
                     color = if (enabled) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (subtitle.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodyLarge,
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
                         color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            PixelAodSwitch(checked, enabled)
+            Spacer(modifier = Modifier.width(PixelAodDesignSystem.spacing.trailingGap))
+            PixelAodSwitch(
+                checked = checked,
+                enabled = enabled,
+                onCheckedChange = if (enabled) onCheckedChange else null
+            )
+        }
+        if (showDivider) {
+            PixelAodDivider()
         }
     }
 }
@@ -681,51 +657,52 @@ fun PixelAodChoiceRow(
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    Surface(
-        color = PixelAodDesignSystem.groupColor(MaterialTheme.colorScheme),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 56.dp)
                 .clickable(enabled = enabled, onClick = onClick)
-                .padding(horizontal = 18.dp, vertical = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             PixelAodLeadingIcon(icon, enabled)
             Spacer(modifier = Modifier.width(PixelAodDesignSystem.spacing.leadingGap))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    title,
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
                     color = if (enabled) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (subtitle.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        subtitle,
-                        style = MaterialTheme.typography.bodyLarge,
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
                         color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
                         else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
-                        maxLines = 3,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(10.dp))
             Text(
-                valueText,
-                modifier = Modifier.widthIn(max = 150.dp),
-                maxLines = 2,
+                text = valueText,
+                modifier = Modifier.widthIn(max = 136.dp),
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.End,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                 color = if (enabled) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
             )
+        }
+        if (showDivider) {
+            PixelAodDivider()
         }
     }
 }
@@ -741,30 +718,27 @@ fun PixelAodSliderRow(
     enabled: Boolean = true,
     onValueChange: (Float) -> Unit
 ) {
-    Surface(
-        color = PixelAodDesignSystem.groupColor(MaterialTheme.colorScheme),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 14.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PixelAodLeadingIcon(icon, enabled)
                 Spacer(modifier = Modifier.width(PixelAodDesignSystem.spacing.leadingGap))
                 Text(
-                    title,
+                    text = title,
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                    style = MaterialTheme.typography.titleMedium,
                     color = if (enabled) MaterialTheme.colorScheme.onSurface
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    valueText,
-                    style = MaterialTheme.typography.bodyLarge,
+                    text = valueText,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                     color = MaterialTheme.colorScheme.primary
                 )
             }
@@ -773,13 +747,16 @@ fun PixelAodSliderRow(
                 onValueChange = onValueChange,
                 valueRange = valueRange,
                 enabled = enabled,
-                modifier = Modifier.padding(start = 36.dp, top = 4.dp),
+                modifier = Modifier.padding(start = 36.dp, top = 2.dp),
                 colors = SliderDefaults.colors(
                     thumbColor = MaterialTheme.colorScheme.primary,
                     activeTrackColor = MaterialTheme.colorScheme.primary,
                     inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest
                 )
             )
+        }
+        if (showDivider) {
+            PixelAodDivider()
         }
     }
 }
@@ -803,19 +780,19 @@ fun PixelAodBottomBar(
                     Icon(
                         imageVector = item.icon,
                         contentDescription = null,
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 },
                 label = {
                     Text(
                         text = item.label,
-                        style = MaterialTheme.typography.labelLarge
+                        style = MaterialTheme.typography.labelMedium
                     )
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -823,6 +800,7 @@ fun PixelAodBottomBar(
         }
     }
 }
+
 @Composable
 fun PixelAodSelectionDialog(
     title: String,
@@ -835,23 +813,23 @@ fun PixelAodSelectionDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(30.dp),
+        shape = RoundedCornerShape(24.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         title = {
             Text(
-                title,
-                style = MaterialTheme.typography.headlineSmall,
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
         },
         text = {
             val bodyModifier = if (scrollable) {
-                Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())
+                Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())
             } else {
                 Modifier
             }
             Column(
-                modifier = bodyModifier.clip(RoundedCornerShape(22.dp)),
+                modifier = bodyModifier.clip(RoundedCornerShape(14.dp)),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 options.forEach { option ->
@@ -863,18 +841,18 @@ fun PixelAodSelectionDialog(
                         color = if (selected) {
                             MaterialTheme.colorScheme.secondaryContainer
                         } else {
-                            MaterialTheme.colorScheme.surfaceContainerHighest
+                            MaterialTheme.colorScheme.surfaceContainerLow
                         },
                         tonalElevation = 0.dp,
                         shadowElevation = 0.dp
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 15.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 text = option.label,
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 14.5.sp),
                                 color = if (selected) {
                                     MaterialTheme.colorScheme.onSecondaryContainer
                                 } else {
@@ -883,20 +861,12 @@ fun PixelAodSelectionDialog(
                                 modifier = Modifier.weight(1f)
                             )
                             if (selected) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(30.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Check,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onPrimary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Outlined.Check,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                     }
@@ -930,25 +900,25 @@ fun PixelAodTimePickerDialog(
     val scheme = MaterialTheme.colorScheme
     AlertDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(30.dp),
+        shape = RoundedCornerShape(24.dp),
         containerColor = scheme.surfaceContainerHigh,
         title = {
             Text(
                 text = title,
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.titleLarge,
                 color = scheme.onSurface
             )
         },
         text = {
             Surface(
-                shape = RoundedCornerShape(22.dp),
-                color = scheme.surfaceContainerHighest,
+                shape = RoundedCornerShape(16.dp),
+                color = scheme.surfaceContainerLow,
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     TimePicker(
