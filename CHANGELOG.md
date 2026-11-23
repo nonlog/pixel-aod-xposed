@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 ### Changed
+- **Android 16 Pixel 1:1 lockscreen & AOD typography/layout calibration**:
+  - Refined `CouiClockGeometryPolicy` and `CouiClockHostView` to match Android 16 Pixel proportions: tighter `15.5sp` date/weather beside the compact clock (`19dp` weather icon slot, closer horizontal gap), tighter two-line large clock spacing (`LARGE_LINE_WIDTH_RATIO=0.78`, `topRatio=0.230`), bolder `0.430` compact clock positioned closer to notifications (`topRatio=0.132`), and lower, lighter `14sp` AOD battery text (`BATTERY_BOTTOM_MARGIN_DP=44`).
 - **Native Pixel Notification Peek & Android 16 compact clock proportions**:
   - Redesigned `PixelPeekNotificationView` into native Pixel Material 3 lockscreen/ambient notification card geometry (28dp pill container, `#1F2227` dark tonal surface, 38dp left circular icon badge, bold headline + body) and restored `pixel_notification_peek` default to `true`.
   - Enlarged `LS_SMALL` / `AOD_SMALL` compact clock scale (`0.415`) and lowered `topRatio` (`0.120`) / `INFO_Y_RATIO` (`0.133`) to match Android 16 Pixel lockscreen clock-to-notification spacing.

@@ -15,7 +15,7 @@ public final class CouiClockGeometryPolicyTest {
                 CouiClockGeometryPolicy.Surface.LS_LARGE);
 
         assertEquals(.47f, target.baseWidthRatio, EPSILON);
-        assertEquals(.215f, target.topRatio, EPSILON);
+        assertEquals(.230f, target.topRatio, EPSILON);
         assertEquals(-10f, target.topDp, EPSILON);
         assertEquals(1.0f, target.scale, EPSILON);
         assertEquals(450f, target.weight, EPSILON);
@@ -31,7 +31,7 @@ public final class CouiClockGeometryPolicyTest {
                 CouiClockGeometryPolicy.Surface.AOD_LARGE);
 
         assertEquals(.47f, target.baseWidthRatio, EPSILON);
-        assertEquals(.215f, target.topRatio, EPSILON);
+        assertEquals(.230f, target.topRatio, EPSILON);
         assertEquals(-24f, target.topDp, EPSILON);
         assertEquals(.9f, target.scale, EPSILON);
         assertEquals(100f, target.weight, EPSILON);
@@ -46,11 +46,11 @@ public final class CouiClockGeometryPolicyTest {
         CouiClockGeometryPolicy.SurfaceTarget target = target(
                 CouiClockGeometryPolicy.Surface.LS_SMALL);
 
-        assertEquals(.415f, target.scale, EPSILON);
+        assertEquals(.430f, target.scale, EPSILON);
         assertEquals(.25f, target.centerRatio, EPSILON);
         assertEquals(8f, target.centerDp, EPSILON);
-        assertEquals(.120f, target.topRatio, EPSILON);
-        assertEquals(25f, target.topDp, EPSILON);
+        assertEquals(.132f, target.topRatio, EPSILON);
+        assertEquals(26f, target.topDp, EPSILON);
         assertEquals(500f, target.weight, EPSILON);
         assertEquals(96f, target.opsz, EPSILON);
         assertEquals(-.09f, target.trackingFactor, EPSILON);
@@ -63,11 +63,11 @@ public final class CouiClockGeometryPolicyTest {
         CouiClockGeometryPolicy.SurfaceTarget target = target(
                 CouiClockGeometryPolicy.Surface.AOD_SMALL);
 
-        assertEquals(.415f, target.scale, EPSILON);
+        assertEquals(.430f, target.scale, EPSILON);
         assertEquals(.25f, target.centerRatio, EPSILON);
         assertEquals(10f, target.centerDp, EPSILON);
-        assertEquals(.120f, target.topRatio, EPSILON);
-        assertEquals(9f, target.topDp, EPSILON);
+        assertEquals(.132f, target.topRatio, EPSILON);
+        assertEquals(10f, target.topDp, EPSILON);
         assertEquals(180f, target.weight, EPSILON);
         assertEquals(96f, target.opsz, EPSILON);
         assertEquals(-.09f, target.trackingFactor, EPSILON);
@@ -97,13 +97,13 @@ public final class CouiClockGeometryPolicyTest {
     @Test
     public void informationContentAndBurnInConstantsMatchDesignLiterals() {
         assertEquals(.75f, CouiClockGeometryPolicy.INFO_CENTER_RATIO, EPSILON);
-        assertEquals(-36f, CouiClockGeometryPolicy.LOCKSCREEN_INFO_X_DP, EPSILON);
-        assertEquals(-34f, CouiClockGeometryPolicy.AOD_INFO_X_DP, EPSILON);
-        assertEquals(.133f, CouiClockGeometryPolicy.INFO_Y_RATIO, EPSILON);
-        assertEquals(33f, CouiClockGeometryPolicy.INFO_Y_OFFSET_DP, EPSILON);
+        assertEquals(-44f, CouiClockGeometryPolicy.LOCKSCREEN_INFO_X_DP, EPSILON);
+        assertEquals(-42f, CouiClockGeometryPolicy.AOD_INFO_X_DP, EPSILON);
+        assertEquals(.145f, CouiClockGeometryPolicy.INFO_Y_RATIO, EPSILON);
+        assertEquals(36f, CouiClockGeometryPolicy.INFO_Y_OFFSET_DP, EPSILON);
         assertEquals(1f, CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP, EPSILON);
-        assertEquals(12f, CouiClockGeometryPolicy.COMPACT_CLOCK_INFO_MIN_GAP_DP, EPSILON);
-        assertEquals(22f, CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP, EPSILON);
+        assertEquals(10f, CouiClockGeometryPolicy.COMPACT_CLOCK_INFO_MIN_GAP_DP, EPSILON);
+        assertEquals(19f, CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP, EPSILON);
         assertEquals(2f, CouiClockGeometryPolicy.WEATHER_ICON_CONTENT_INSET_DP, EPSILON);
         assertEquals(4f, CouiClockGeometryPolicy.WEATHER_ICON_GAP_DP, EPSILON);
         assertEquals(.255f, CouiClockGeometryPolicy.PARTIAL_CONTENT_TOP_RATIO, EPSILON);
@@ -118,7 +118,7 @@ public final class CouiClockGeometryPolicyTest {
         assertEquals(521, CouiClockGeometryPolicy.BURN_IN_Y_PERIOD_MINUTES);
         assertEquals(.75f, CouiClockGeometryPolicy.BATTERY_BURN_IN_X_SCALE, EPSILON);
         assertEquals(.5f, CouiClockGeometryPolicy.BATTERY_BURN_IN_Y_SCALE, EPSILON);
-        assertEquals(64f, CouiClockGeometryPolicy.BATTERY_BOTTOM_MARGIN_DP, EPSILON);
+        assertEquals(44f, CouiClockGeometryPolicy.BATTERY_BOTTOM_MARGIN_DP, EPSILON);
     }
 
     @Test

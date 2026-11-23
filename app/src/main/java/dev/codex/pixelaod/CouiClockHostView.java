@@ -61,10 +61,10 @@ final class CouiClockHostView extends FrameLayout {
     private static final int INFORMATION_COLOR = Color.WHITE;
     private static final float LARGE_COLON_SCALE = 0.44f;
     private static final float COMPACT_COLON_TRACKING_SCALE = 0.55f;
-    private static final float LARGE_LINE_WIDTH_RATIO = 0.82f;
-    private static final float LARGE_INFO_WIDTH_MULTIPLIER = 1.9f;
+    private static final float LARGE_LINE_WIDTH_RATIO = 0.78f;
+    private static final float LARGE_INFO_WIDTH_MULTIPLIER = 1.82f;
     private static final float LARGE_INFO_SIDE_GAP_DP = 10f;
-    private static final float BATTERY_Y_OFFSET_DP = 16f;
+    private static final float BATTERY_Y_OFFSET_DP = 8f;
 
     private final PathInterpolator motionInterpolator =
             new PathInterpolator(CouiClockPresentationModel.MOTION_X1,
@@ -181,8 +181,8 @@ final class CouiClockHostView extends FrameLayout {
         dateGroup.setOrientation(LinearLayout.HORIZONTAL);
         dateGroup.setGravity(android.view.Gravity.CENTER_VERTICAL);
         dateGroup.setClipChildren(false);
-        weekView = informationText(18f, 500, true);
-        dateView = informationText(18f, 500, true);
+        weekView = informationText(15.5f, 500, true);
+        dateView = informationText(15.5f, 500, true);
         dateGroup.addView(dateView);
         dateGroup.addView(weekView);
 
@@ -202,7 +202,7 @@ final class CouiClockHostView extends FrameLayout {
                 dp(CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP));
         weatherIconParams.setMarginEnd(dp(CouiClockGeometryPolicy.WEATHER_ICON_GAP_DP));
         weatherGroup.addView(weatherIconView, weatherIconParams);
-        weatherView = informationText(18f, 500, true);
+        weatherView = informationText(15.5f, 500, true);
         weatherGroup.addView(weatherView);
 
         contextualGroup = new LinearLayout(context);
@@ -267,7 +267,7 @@ final class CouiClockHostView extends FrameLayout {
         mediaArtistView.setEllipsize(TextUtils.TruncateAt.END);
         mediaSubtitleRow.addView(mediaArtistView);
 
-        batteryView = informationText(16f, 500);
+        batteryView = informationText(14f, 450);
         batteryView.setAlpha(0f);
 
         setClipChildren(false);
@@ -1394,13 +1394,13 @@ final class CouiClockHostView extends FrameLayout {
 
     private void applyDesignMetrics(int width) {
         designWidthPx = width;
-        setInformationTextSize(dateView, 18f);
-        setInformationTextSize(weekView, 18f);
-        setInformationTextSize(weatherView, 18f);
+        setInformationTextSize(dateView, 15.5f);
+        setInformationTextSize(weekView, 15.5f);
+        setInformationTextSize(weatherView, 15.5f);
         setInformationTextSize(contextualView,
                 PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP);
         setInformationTextSize(notificationOverflowView, 16f);
-        setInformationTextSize(batteryView, 16f);
+        setInformationTextSize(batteryView, 14f);
         setInformationTextSize(mediaTitleView, 18f);
         setInformationTextSize(mediaArtistView, 15f);
 
