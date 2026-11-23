@@ -14,8 +14,8 @@ public final class PresentationSettingsConvergenceTest {
 
     @Test
     public void pixelNotificationPeekIsLiveAndDefaultsToCurrentTakeoverBehavior() {
-        assertFalse(PixelAodSettingsSchema.booleanDefault(
-                PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, true));
+        assertTrue(PixelAodSettingsSchema.booleanDefault(
+                PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, false));
         assertFalse(PixelAodSettingsSchema.requiresSystemUiRestart(
                 PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK));
     }

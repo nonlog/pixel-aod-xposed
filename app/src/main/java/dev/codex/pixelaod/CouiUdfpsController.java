@@ -323,6 +323,22 @@ final class CouiUdfpsController {
                 final Method target = method;
                 final String source = simpleClassName(className) + "#" + signature(method);
                 target.setAccessible(true);
+                if (uiMechClass && "startToAnimInDream".equals(method.getName())) {
+                    ModernHookBridge.hookBefore(target, param -> {
+                        Object uiMech = param.thisObject;
+                        if (uiMech == null) {
+                            return;
+                        }
+                        rememberUiMech(uiMech);
+                        Context ctx = contextFrom(param, uiMech);
+                        if (isReplacementEnabled(ctx)
+                                && isAodExitAnimationEnabled(ctx)
+                                && startCustomAodExit(uiMech)) {
+                            param.setResult(defaultReturnValue(target.getReturnType()));
+                            PixelAodLog.i("COUI UDFPS intercepted native startToAnimInDream");
+                        }
+                    });
+                }
                 ModernHookBridge.hookAfter(target, param -> {
                     Object uiMech = uiMechClass ? param.thisObject : lastUiMech.get();
                     if (uiMech == null) {
@@ -549,11 +565,17 @@ final class CouiUdfpsController {
     }
 
     private static boolean isAodExitRunnable(String className, Object runnable) {
-        if (!className.endsWith("OnScreenFingerprintUiMech$1")) {
+        if (className == null) {
             return false;
         }
-        Object classId = readObjectField(runnable, "$r8$classId");
-        return classId instanceof Number && ((Number) classId).intValue() == 22;
+        if (className.endsWith("OnScreenFingerprintUiMech$1")) {
+            Object classId = readObjectField(runnable, "$r8$classId");
+            if (classId instanceof Number && ((Number) classId).intValue() == 22) {
+                return true;
+            }
+        }
+        return className.contains("OnScreenFingerprintUiMech")
+                && (className.contains("Hide") || className.contains("Exit") || className.contains("AnimInDream"));
     }
 
     private static boolean isAodExitPending(Object uiMech) {

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 ### Changed
+- **Native Pixel Notification Peek & Android 16 compact clock proportions**:
+  - Redesigned `PixelPeekNotificationView` into native Pixel Material 3 lockscreen/ambient notification card geometry (28dp pill container, `#1F2227` dark tonal surface, 38dp left circular icon badge, bold headline + body) and restored `pixel_notification_peek` default to `true`.
+  - Enlarged `LS_SMALL` / `AOD_SMALL` compact clock scale (`0.415`) and lowered `topRatio` (`0.120`) / `INFO_Y_RATIO` (`0.133`) to match Android 16 Pixel lockscreen clock-to-notification spacing.
 - **Default weather icon pack & Pixel Notification Peek defaults**:
   - Merged the bundled Google Weather icon pack directly into the default weather icon pack (`default`, keeping `builtin:google` backward-compatible) and removed the duplicate separate picker item.
   - Changed `pixel_notification_peek` default to `false` (off) and redesigned `PixelPeekNotificationView` into a restrained OLED-black Pixel Ambient Display pulse pill with an inline app icon header row.
@@ -19,6 +22,9 @@
   - Added live **Clock Width** (`wdth`, 75–125), **Clock Roundness** (`ROND`, 0–100), and **Lockscreen Clock Color** (Dynamic Wallpaper Monet vs Pure White) settings wired into `PixelAodSettingsSchema`, `CouiClockFontPolicy`, `CouiClockMorphingGlyphView`, `CouiClockRomTextAnimatorRuntime`, and `CouiClockHostView`.
 
 ### Fixed
+- **AOD fingerprint failure clock-weight jump & native UDFPS exit flash**:
+  - Guarded `CouiClockPluginHostController` against transient non-interactive `AOD -> Lockscreen` state transitions during biometric failure on AOD so the clock stays in its thin AOD weight.
+  - Intercepted `OnScreenFingerprintUiMech#startToAnimInDream` directly in `CouiUdfpsController` and broadened AOD exit runnable matching so ColorOS native UDFPS exit animations no longer flash when Pixel Fingerprint is enabled.
 - **Pixel Notification Peek missing clock & ColorOS lockscreen widget collision**:
   - Removed the `!customEnabled` gate on `shouldCompositeModuleAodOverNativePeek` so the Pixel AOD clock continues to render above the notification card when Pixel Notification Peek is enabled.
   - Added `CouiClockWidgetAvoidancePolicy` in `CouiClockHostView` to detect visible ColorOS lockscreen widgets (`WidgetPlugin` / `KeyguardStyleWidget`) below the large lockscreen clock and shift the clock and date row upward to prevent overlap.

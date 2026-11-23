@@ -15,36 +15,32 @@ import android.text.TextUtils;
 import android.view.View;
 
 /**
- * Transient Pixel Ambient Display notification pulse view whose lifetime is owned
- * by the OPlus AOD surface. Uses a restrained OLED-black minimal pill with an inline
- * app header row matching native Pixel Android 15/16/17 ambient pulses.
+ * Pixel-style Material 3 incoming notification card shown during Ambient Display pulses.
+ * Matches native Pixel lockscreen/ambient notification card geometry:
+ * 28dp rounded pill container, 38dp circular icon badge on the left, bold headline + body.
  */
 final class PixelPeekNotificationView extends View {
-    private static final float CARD_SIDE_MARGIN_DP = 24f;
-    private static final float CARD_RADIUS_DP = 20f;
-    private static final float CARD_MIN_HEIGHT_DP = 64f;
+    private static final float CARD_SIDE_MARGIN_DP = 16f;
+    private static final float CARD_RADIUS_DP = 28f;
+    private static final float CARD_MIN_HEIGHT_DP = 76f;
     private static final float CARD_MAX_HEIGHT_DP = 112f;
     private static final float PADDING_H_DP = 16f;
-    private static final float PADDING_V_DP = 13f;
-    private static final float HEADER_ICON_DP = 17f;
-    private static final float HEADER_ICON_GAP_DP = 8f;
-    private static final float HEADER_TEXT_SP = 12.5f;
+    private static final float PADDING_V_DP = 14f;
+    private static final float ICON_BADGE_DP = 38f;
+    private static final float ICON_GLYPH_DP = 22f;
+    private static final float ICON_TEXT_GAP_DP = 14f;
     private static final float TITLE_TEXT_SP = 15.5f;
-    private static final float MESSAGE_TEXT_SP = 13.5f;
-    private static final float STROKE_WIDTH_DP = 0.75f;
+    private static final float BODY_TEXT_SP = 14f;
 
-    // OLED-friendly near-black ambient surface with a delicate hairline outline.
-    private static final int AMBIENT_SURFACE_COLOR = 0xFF0E1013;
-    private static final int AMBIENT_STROKE_COLOR = 0x26FFFFFF;
-    private static final int HEADER_TEXT_COLOR = Color.rgb(168, 176, 186);
-    private static final int PRIMARY_TEXT_COLOR = Color.WHITE;
-    private static final int SECONDARY_TEXT_COLOR = Color.rgb(210, 214, 220);
+    private static final int SURFACE_CONTAINER_COLOR = 0xFF1F2227;
+    private static final int ICON_BADGE_COLOR = 0xFF333942;
+    private static final int PRIMARY_TEXT_COLOR = Color.rgb(227, 227, 227);
+    private static final int SECONDARY_TEXT_COLOR = Color.rgb(196, 199, 204);
 
     private final Paint surfacePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final TextPaint headerPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint badgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint titlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-    private final TextPaint messagePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private final TextPaint bodyPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final RectF cardRect = new RectF();
     private final Rect oldIconBounds = new Rect();
     private PixelPeekNotificationContent content;
@@ -58,27 +54,18 @@ final class PixelPeekNotificationView extends View {
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
 
         surfacePaint.setStyle(Paint.Style.FILL);
-        surfacePaint.setColor(AMBIENT_SURFACE_COLOR);
+        surfacePaint.setColor(SURFACE_CONTAINER_COLOR);
 
-        strokePaint.setStyle(Paint.Style.STROKE);
-        strokePaint.setStrokeWidth(dp(STROKE_WIDTH_DP));
-        strokePaint.setColor(AMBIENT_STROKE_COLOR);
-
-        Typeface mediumTypeface = Typeface.create("sans-serif-medium", Typeface.NORMAL);
-        Typeface regularTypeface = Typeface.create("sans-serif", Typeface.NORMAL);
-
-        headerPaint.setColor(HEADER_TEXT_COLOR);
-        headerPaint.setTextSize(sp(HEADER_TEXT_SP));
-        headerPaint.setTypeface(mediumTypeface);
-        headerPaint.setLetterSpacing(0.01f);
+        badgePaint.setStyle(Paint.Style.FILL);
+        badgePaint.setColor(ICON_BADGE_COLOR);
 
         titlePaint.setColor(PRIMARY_TEXT_COLOR);
         titlePaint.setTextSize(sp(TITLE_TEXT_SP));
-        titlePaint.setTypeface(mediumTypeface);
+        titlePaint.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
 
-        messagePaint.setColor(SECONDARY_TEXT_COLOR);
-        messagePaint.setTextSize(sp(MESSAGE_TEXT_SP));
-        messagePaint.setTypeface(regularTypeface);
+        bodyPaint.setColor(SECONDARY_TEXT_COLOR);
+        bodyPaint.setTextSize(sp(BODY_TEXT_SP));
+        bodyPaint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
     }
 
     void setContent(PixelPeekNotificationContent content) {
@@ -112,87 +99,79 @@ final class PixelPeekNotificationView extends View {
                 ? dp(PixelPeekGeometryPolicy.MIN_CARD_TOP_DP) : cardTopPx;
         float padH = dp(PADDING_H_DP);
         float padV = dp(PADDING_V_DP);
-        float iconSize = dp(HEADER_ICON_DP);
-        boolean hasIcon = current.appIcon != null;
-        float contentLeft = left + padH;
-        float contentRight = right - padH;
-        int fullTextWidth = Math.max(1, Math.round(contentRight - contentLeft));
+        float badgeSize = dp(ICON_BADGE_DP);
+        float textLeft = left + padH + badgeSize + dp(ICON_TEXT_GAP_DP);
+        float textRight = right - padH;
+        int textWidth = Math.max(1, Math.round(textRight - textLeft));
 
-        float headerTextLeft = hasIcon ? contentLeft + iconSize + dp(HEADER_ICON_GAP_DP) : contentLeft;
-        int headerTextWidth = Math.max(1, Math.round(contentRight - headerTextLeft));
+        CharSequence headline = current.title.length() > 0 ? current.title : current.appName;
+        CharSequence ellipsizedTitle = ellipsize(headline, titlePaint, textWidth);
+        CharSequence bodySource = current.message.length() > 0
+                ? current.message
+                : (current.title.length() > 0 ? current.appName : "");
+        StaticLayout bodyLayout = buildBodyLayout(bodySource, textWidth);
 
-        CharSequence appName = ellipsize(current.appName, headerPaint, headerTextWidth);
-        CharSequence title = ellipsize(current.title, titlePaint, fullTextWidth);
-        StaticLayout messageLayout = buildMessageLayout(current.message, fullTextWidth);
-
-        Paint.FontMetrics headerFm = headerPaint.getFontMetrics();
         Paint.FontMetrics titleFm = titlePaint.getFontMetrics();
-        float headerTextHeight = headerFm.descent - headerFm.ascent;
-        float headerRowHeight = Math.max(hasIcon ? iconSize : 0f, headerTextHeight);
-        float titleHeight = title.length() > 0 ? (titleFm.descent - titleFm.ascent) : 0f;
-
-        float bodyHeight = headerRowHeight;
-        if (title.length() > 0) {
-            bodyHeight += dp(5f) + titleHeight;
+        float titleHeight = ellipsizedTitle.length() > 0 ? (titleFm.descent - titleFm.ascent) : 0f;
+        float textBlockHeight = titleHeight;
+        if (bodyLayout != null && bodyLayout.getHeight() > 0) {
+            if (textBlockHeight > 0f) {
+                textBlockHeight += dp(3f);
+            }
+            textBlockHeight += bodyLayout.getHeight();
         }
-        if (messageLayout != null && messageLayout.getHeight() > 0) {
-            bodyHeight += dp(3f) + messageLayout.getHeight();
-        }
-        float cardHeight = clamp(bodyHeight + (padV * 2f),
+        float contentHeight = Math.max(badgeSize, textBlockHeight);
+        float cardHeight = clamp(contentHeight + (padV * 2f),
                 dp(CARD_MIN_HEIGHT_DP), dp(CARD_MAX_HEIGHT_DP));
         float bottom = Math.min(getHeight() - side, top + cardHeight);
 
         float radius = dp(CARD_RADIUS_DP);
         cardRect.set(left, top, right, bottom);
         canvas.drawRoundRect(cardRect, radius, radius, surfacePaint);
-        float strokeInset = dp(STROKE_WIDTH_DP) / 2f;
-        cardRect.inset(strokeInset, strokeInset);
-        canvas.drawRoundRect(cardRect, radius, radius, strokePaint);
 
-        float headerRowTop = top + padV;
-        if (hasIcon) {
-            Drawable icon = current.appIcon;
-            int iconLeft = Math.round(contentLeft);
-            int iconTop = Math.round(headerRowTop + ((headerRowHeight - iconSize) / 2f));
-            int size = Math.round(iconSize);
+        float badgeCx = left + padH + (badgeSize / 2f);
+        float badgeCy = top + ((bottom - top) / 2f);
+        canvas.drawCircle(badgeCx, badgeCy, badgeSize / 2f, badgePaint);
+
+        Drawable icon = current.appIcon;
+        if (icon != null) {
+            float glyphSize = dp(ICON_GLYPH_DP);
+            int iconLeft = Math.round(badgeCx - (glyphSize / 2f));
+            int iconTop = Math.round(badgeCy - (glyphSize / 2f));
+            int size = Math.round(glyphSize);
             oldIconBounds.set(icon.getBounds());
             icon.setBounds(iconLeft, iconTop, iconLeft + size, iconTop + size);
             icon.draw(canvas);
             icon.setBounds(oldIconBounds);
         }
-        if (appName.length() > 0) {
-            float headerBaseline = headerRowTop + ((headerRowHeight - headerTextHeight) / 2f) - headerFm.ascent;
-            canvas.drawText(appName, 0, appName.length(), headerTextLeft, headerBaseline, headerPaint);
-        }
 
-        float cursorY = headerRowTop + headerRowHeight;
-        if (title.length() > 0) {
-            cursorY += dp(5f);
+        float textStartY = top + Math.max(padV, ((bottom - top) - textBlockHeight) / 2f);
+        float cursorY = textStartY;
+        if (ellipsizedTitle.length() > 0) {
             float titleBaseline = cursorY - titleFm.ascent;
-            canvas.drawText(title, 0, title.length(), contentLeft, titleBaseline, titlePaint);
-            cursorY += titleHeight;
+            canvas.drawText(ellipsizedTitle, 0, ellipsizedTitle.length(), textLeft, titleBaseline, titlePaint);
+            cursorY += titleHeight + dp(3f);
         }
-        if (messageLayout != null && messageLayout.getHeight() > 0) {
-            float messageTop = cursorY + dp(3f);
-            float availableMessageHeight = (bottom - padV) - messageTop;
-            if (availableMessageHeight > 0f) {
+        if (bodyLayout != null && bodyLayout.getHeight() > 0) {
+            float maxBottom = bottom - padV;
+            if (cursorY < maxBottom) {
                 canvas.save();
-                canvas.clipRect(contentLeft, messageTop, contentRight, bottom - padV);
-                canvas.translate(contentLeft, messageTop);
-                messageLayout.draw(canvas);
+                canvas.clipRect(textLeft, cursorY, textRight, maxBottom);
+                canvas.translate(textLeft, cursorY);
+                bodyLayout.draw(canvas);
                 canvas.restore();
             }
         }
     }
 
-    private StaticLayout buildMessageLayout(CharSequence message, int width) {
+    private StaticLayout buildBodyLayout(CharSequence message, int width) {
         if (message == null || message.length() == 0) {
             return null;
         }
-        return StaticLayout.Builder.obtain(message, 0, message.length(), messagePaint, width)
+        return StaticLayout.Builder.obtain(message, 0, message.length(), bodyPaint, width)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                 .setIncludePad(false)
-                .setLineSpacing(0f, 1.18f)
+                .setLineSpacing(0f, 1.16f)
                 .setMaxLines(2)
                 .setEllipsize(TextUtils.TruncateAt.END)
                 .build();

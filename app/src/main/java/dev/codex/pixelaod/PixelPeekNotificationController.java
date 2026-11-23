@@ -105,7 +105,7 @@ final class PixelPeekNotificationController {
                 }
                 State state = STATES.get(nativeView);
                 boolean customEnabled = PixelAodSettings.getBoolean(nativeView.getContext(),
-                        PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, false);
+                        PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, true);
                 boolean nativeEnabled =
                         NativeOplusPeekSettingAdapter.isEnabled(nativeView.getContext());
                 if (!PixelPeekPresentationPolicy.shouldSuppressNativeDraw(
@@ -133,7 +133,7 @@ final class PixelPeekNotificationController {
                 }
                 Context context = nativeView.getContext();
                 boolean customEnabled = PixelAodSettings.getBoolean(context,
-                        PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, false);
+                        PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, true);
                 boolean nativeEnabled = NativeOplusPeekSettingAdapter.isEnabled(context);
                 boolean composite =
                         PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
@@ -270,7 +270,7 @@ final class PixelPeekNotificationController {
         }
 
         boolean customEnabled = PixelAodSettings.getBoolean(context,
-                PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, false);
+                PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, true);
         boolean moduleAodWanted = PixelAodClockView.shouldApplyModuleAodNow(
                 context, "PixelPeek#" + source + "#native-surface-composite");
         state.nativeAodCompositeRequested =

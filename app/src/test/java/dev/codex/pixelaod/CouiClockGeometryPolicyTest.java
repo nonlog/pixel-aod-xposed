@@ -46,10 +46,10 @@ public final class CouiClockGeometryPolicyTest {
         CouiClockGeometryPolicy.SurfaceTarget target = target(
                 CouiClockGeometryPolicy.Surface.LS_SMALL);
 
-        assertEquals(.36170214f, target.scale, EPSILON);
+        assertEquals(.415f, target.scale, EPSILON);
         assertEquals(.25f, target.centerRatio, EPSILON);
         assertEquals(8f, target.centerDp, EPSILON);
-        assertEquals(.105f, target.topRatio, EPSILON);
+        assertEquals(.120f, target.topRatio, EPSILON);
         assertEquals(25f, target.topDp, EPSILON);
         assertEquals(500f, target.weight, EPSILON);
         assertEquals(96f, target.opsz, EPSILON);
@@ -63,10 +63,10 @@ public final class CouiClockGeometryPolicyTest {
         CouiClockGeometryPolicy.SurfaceTarget target = target(
                 CouiClockGeometryPolicy.Surface.AOD_SMALL);
 
-        assertEquals(.36170214f, target.scale, EPSILON);
+        assertEquals(.415f, target.scale, EPSILON);
         assertEquals(.25f, target.centerRatio, EPSILON);
         assertEquals(10f, target.centerDp, EPSILON);
-        assertEquals(.105f, target.topRatio, EPSILON);
+        assertEquals(.120f, target.topRatio, EPSILON);
         assertEquals(9f, target.topDp, EPSILON);
         assertEquals(180f, target.weight, EPSILON);
         assertEquals(96f, target.opsz, EPSILON);
@@ -99,7 +99,7 @@ public final class CouiClockGeometryPolicyTest {
         assertEquals(.75f, CouiClockGeometryPolicy.INFO_CENTER_RATIO, EPSILON);
         assertEquals(-36f, CouiClockGeometryPolicy.LOCKSCREEN_INFO_X_DP, EPSILON);
         assertEquals(-34f, CouiClockGeometryPolicy.AOD_INFO_X_DP, EPSILON);
-        assertEquals(.118f, CouiClockGeometryPolicy.INFO_Y_RATIO, EPSILON);
+        assertEquals(.133f, CouiClockGeometryPolicy.INFO_Y_RATIO, EPSILON);
         assertEquals(33f, CouiClockGeometryPolicy.INFO_Y_OFFSET_DP, EPSILON);
         assertEquals(1f, CouiClockGeometryPolicy.DATE_WEATHER_GAP_DP, EPSILON);
         assertEquals(12f, CouiClockGeometryPolicy.COMPACT_CLOCK_INFO_MIN_GAP_DP, EPSILON);

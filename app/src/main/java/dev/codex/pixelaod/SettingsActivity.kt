@@ -215,7 +215,7 @@ private fun SettingsContent(
     }
     val pixelNotificationPeek = remember {
         mutableStateOf(
-            prefs.schemaBoolean(PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, false)
+            prefs.schemaBoolean(PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, true)
         )
     }
     val powerSavingNotificationAod = remember {

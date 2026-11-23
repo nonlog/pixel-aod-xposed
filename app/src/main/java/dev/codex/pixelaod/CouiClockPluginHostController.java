@@ -1120,6 +1120,16 @@ final class CouiClockPluginHostController {
         CouiClockPresentationModel previous = record.host.presentation();
         CouiClockPresentationModel next = mapping.presentation();
         boolean exitingAod = previous != null && previous.dozing() && !next.dozing();
+        if (exitingAod
+                && !PixelAodRuntimeState.isDeviceInteractive(context)
+                && source != null
+                && !source.contains("Wakefulness")
+                && !source.contains("WakingUp")) {
+            PixelAodLog.log("COUI ignored non-interactive AOD->Lockscreen transition"
+                    + " uiState=" + renderState.uiState
+                    + " source=" + source);
+            return;
+        }
         boolean enteringAod = previous != null && !previous.dozing() && next.dozing();
         boolean presentationAnimate = mapping.animate() && !directFinalNonLockscreenEntry;
         if (directFinalNonLockscreenEntry) {

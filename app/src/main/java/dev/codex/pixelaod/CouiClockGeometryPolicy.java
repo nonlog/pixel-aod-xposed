@@ -12,7 +12,7 @@ public final class CouiClockGeometryPolicy {
     public static final float INFO_CENTER_RATIO = .75f;
     public static final float LOCKSCREEN_INFO_X_DP = -36f;
     public static final float AOD_INFO_X_DP = -34f;
-    public static final float INFO_Y_RATIO = .118f;
+    public static final float INFO_Y_RATIO = .133f;
     public static final float INFO_Y_OFFSET_DP = 33f;
     public static final float DATE_WEATHER_GAP_DP = 1f;
     public static final float COMPACT_CLOCK_INFO_MIN_GAP_DP = 12f;
@@ -91,10 +91,10 @@ public final class CouiClockGeometryPolicy {
             .47f, .215f, -24f, .9f, 0f, 0f, 100f, 144f, -.06f,
             0f, 0f, true);
     public static final SurfaceTarget LS_SMALL = new SurfaceTarget(
-            0f, .105f, 25f, .36170214f, .25f, 8f, 500f, 96f, -.09f,
+            0f, .120f, 25f, .415f, .25f, 8f, 500f, 96f, -.09f,
             0f, 0f, false);
     public static final SurfaceTarget AOD_SMALL = new SurfaceTarget(
-            0f, .105f, 25f + AOD_SMALL_VERTICAL_SHIFT_DP, .36170214f, .25f, 10f, 180f, 96f, -.09f,
+            0f, .120f, 25f + AOD_SMALL_VERTICAL_SHIFT_DP, .415f, .25f, 10f, 180f, 96f, -.09f,
             0f, 0f, true);
     public static final SurfaceTarget LS_IMMERSED = new SurfaceTarget(
             0f, .072f, 30f, .32978722f, .25f, 8f, 500f, 96f, -.09f,
