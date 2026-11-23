@@ -1,44 +1,33 @@
 # Changelog
 
 ## [Unreleased]
-### Changed
-- **Android 16 Pixel 1:1 lockscreen & AOD typography/layout calibration**:
-  - Refined `CouiClockGeometryPolicy` and `CouiClockHostView` to match Android 16 Pixel proportions: tighter `15.5sp` date/weather beside the compact clock (`19dp` weather icon slot, closer horizontal gap), tighter two-line large clock spacing (`LARGE_LINE_WIDTH_RATIO=0.78`, `topRatio=0.230`), bolder `0.430` compact clock positioned closer to notifications (`topRatio=0.132`), and lower, lighter `14sp` AOD battery text (`BATTERY_BOTTOM_MARGIN_DP=44`).
-- **Native Pixel Notification Peek & Android 16 compact clock proportions**:
-  - Redesigned `PixelPeekNotificationView` into native Pixel Material 3 lockscreen/ambient notification card geometry (28dp pill container, `#1F2227` dark tonal surface, 38dp left circular icon badge, bold headline + body) and restored `pixel_notification_peek` default to `true`.
-  - Enlarged `LS_SMALL` / `AOD_SMALL` compact clock scale (`0.415`) and lowered `topRatio` (`0.120`) / `INFO_Y_RATIO` (`0.133`) to match Android 16 Pixel lockscreen clock-to-notification spacing.
-- **Default weather icon pack & Pixel Notification Peek defaults**:
-  - Merged the bundled Google Weather icon pack directly into the default weather icon pack (`default`, keeping `builtin:google` backward-compatible) and removed the duplicate separate picker item.
-  - Changed `pixel_notification_peek` default to `false` (off) and redesigned `PixelPeekNotificationView` into a restrained OLED-black Pixel Ambient Display pulse pill with an inline app icon header row.
-- **True FlClash (`prism_ui`) Settings UI rebuild**:
-  - Rebuilt `PixelAodDesignSystem.kt` and `SettingsActivity.kt` around FlClash's 4-level neutral surface palette (`page/card/block/inset`, zero borders, `0.5dp` 14% alpha dividers), 2-column Home Dashboard cards, 3-segment weather source switcher, floating capsule bottom dock, floating primary Restart FAB, and snapping `ModalBottomSheet` option pickers.
-- **FlClash-style Material 3 Settings UI redesign**:
-  - Replaced oversized 32sp headers, 18sp row titles, 16sp 5–6 line descriptions, and custom 58x36dp switches in `PixelAodDesignSystem.kt` and `SettingsActivity.kt` with a compact 56dp top app bar, 16dp `surfaceContainerLow` grouped list cards with hairline inset dividers, 15sp single-line titles, 12.5sp 1-line subtitles, native Material 3 switches, and a horizontal Home header card.
-  - Rewrote all verbose Chinese and English setting descriptions in `res/values/strings.xml` and `res/values-en/strings.xml` into concise 1-line copy.
 
+## [0.1.68] - 2026-11-23
 ### Added
-- **Bundled Google Weather icon pack & selectable weather data source**:
-  - Bundled all 12 Google Weather PNG icons under `app/src/main/assets/weather_icons/google/` with `BuiltinGoogleWeatherIcons` (`builtin:google`) selectable directly in At a Glance settings without installing an external icon pack.
-  - Added `SystemWeatherProvider` reading ColorOS/OPlus native weather ContentProvider (`content://com.oplusos.weather.service.provider.data`) alongside Breezy Weather, with `Auto` / `System Weather` / `Breezy Weather` source switching in `PixelAodSettingsSchema`, `PixelAodSettings`, `PixelAodClockView`, and Settings UI.
+- **ColorOS 17 / Android 17 support**:
+  - Added a ColorOS 17 fallback in `CouiClockPluginHostController` targeting `com.oplus.keyguard.plugin.KeyguardPlugin` (`setUp`, `sendCommand`, `reload$default`) and a self-contained Google Sans Flex variable-font morph runtime fallback when Android 17 SystemUI no longer ships `TextAnimator`.
 - **Native Android 16/17 Pixel lockscreen clock customization**:
-  - Added live **Clock Width** (`wdth`, 75–125), **Clock Roundness** (`ROND`, 0–100), and **Lockscreen Clock Color** (Dynamic Wallpaper Monet vs Pure White) settings wired into `PixelAodSettingsSchema`, `CouiClockFontPolicy`, `CouiClockMorphingGlyphView`, `CouiClockRomTextAnimatorRuntime`, and `CouiClockHostView`.
+  - Added live **Clock Width** (`wdth`, 75-125), **Clock Roundness** (`ROND`, 0-100), and **Lockscreen Clock Color** (Dynamic Wallpaper Monet vs Pure White) settings.
+- **Bundled Google Weather icon pack & selectable weather data source**:
+  - Bundled all 12 Google Weather PNG icons under `app/src/main/assets/weather_icons/google/` as the default weather icon pack (`BuiltinGoogleWeatherIcons`).
+  - Added `SystemWeatherProvider` reading ColorOS/OPlus native weather ContentProvider alongside Breezy Weather, with **Auto** / **System Weather** / **Breezy Weather** source switching.
+
+### Changed
+- **FlClash (`prism_ui`) Settings UI rebuild**:
+  - Rebuilt `PixelAodDesignSystem.kt` and `SettingsActivity.kt` around FlClash 4-level neutral surface hierarchy, 2-column Home Dashboard cards, 3-segment weather source switcher, floating capsule bottom dock, primary Restart FAB, and snapping `ModalBottomSheet` pickers, with concise 1-line copy.
+- **Native Pixel Notification Peek & Android 16 lockscreen/AOD proportions**:
+  - Redesigned `PixelPeekNotificationView` into native Pixel Material 3 notification card geometry (28dp pill, `#1F2227` dark tonal surface, 38dp circular icon badge) and kept `pixel_notification_peek` enabled by default.
+  - Calibrated compact clock (`scale=0.395`, `centerRatio=0.285`, `topRatio=0.130`), `17sp` date/weather, and `14sp` AOD battery layout to match Android 16 Pixel lockscreen proportions.
 
 ### Fixed
-- **AOD fingerprint failure clock-weight jump & native UDFPS exit flash**:
-  - Guarded `CouiClockPluginHostController` against transient non-interactive `AOD -> Lockscreen` state transitions during biometric failure on AOD so the clock stays in its thin AOD weight.
-  - Intercepted `OnScreenFingerprintUiMech#startToAnimInDream` directly in `CouiUdfpsController` and broadened AOD exit runnable matching so ColorOS native UDFPS exit animations no longer flash when Pixel Fingerprint is enabled.
-- **Pixel Notification Peek missing clock & ColorOS lockscreen widget collision**:
-  - Removed the `!customEnabled` gate on `shouldCompositeModuleAodOverNativePeek` so the Pixel AOD clock continues to render above the notification card when Pixel Notification Peek is enabled.
-  - Added `CouiClockWidgetAvoidancePolicy` in `CouiClockHostView` to detect visible ColorOS lockscreen widgets (`WidgetPlugin` / `KeyguardStyleWidget`) below the large lockscreen clock and shift the clock and date row upward to prevent overlap.
-- **ColorOS 17 / Android 17 `KeyguardPlugin` clock host bridge**:
-  - Added a ColorOS 17 fallback in `CouiClockPluginHostController` targeting `com.oplus.keyguard.plugin.KeyguardPlugin` (`setUp(int, int)`, `sendCommand(String, Bundle)` for `onClockStateChanged` / `setStyleData` / `transFrom` / `release`, and `reload$default`) when `ClockPlugin` no longer exposes legacy `loadPluginReal`/`render` methods.
-  - Suppressed the sibling `KeyguardClockPluginContainer` (`getClockPlugin().getView(0)`) cleanly while attaching `CouiClockHostView` to `KeyguardPluginViewRoot` (`getView(0)`).
+- **Pixel Notification Peek missing clock & ColorOS lockscreen widget avoidance**:
+  - Ensured the Pixel AOD clock continues to render above the incoming notification card when Pixel Notification Peek is enabled.
+  - Added `CouiClockWidgetAvoidancePolicy` to shift the large lockscreen clock upward only when visible ColorOS lockscreen widgets would collide with the date row.
+- **AOD fingerprint failure clock-weight jump & ColorOS 17 native UDFPS fade-out flash**:
+  - Guarded `CouiClockPluginHostController` against non-interactive `AOD -> Lockscreen` transitions during biometric auth failure on AOD.
+  - Intercepted native ColorOS 17 AOD fade-out dispatched inside `notifyHideAodIcon()` via `KeyguardFingerprintUtils.updateOpticalUI` without relying on hardcoded R8 class IDs.
 - **Fail-open stock clock protection**:
-  - Guarded `PixelAodHook` stock AOD/keyguard clock draw, visibility, alpha, and lockscreen probe suppression behind `CouiClockPluginHostController.isHookInstalled()` so a missing or changed vendor plugin target fails open instead of hiding the stock clock.
-- **ColorOS 17 / Android 17 variable-font weight morph runtime**:
-  - Added a self-contained variable-font morph runtime fallback inside `CouiClockRomTextAnimatorRuntime` backed by the bundled Google Sans Flex variable font (`ByteBuffer` + bounded 96-entry `LruCache<String, Typeface>`) when Android 17 SystemUI no longer ships `com.android.systemui.animation.TextAnimator`, restoring `MORPHING_LARGE` weight/opsz/color transitions between lockscreen and AOD instead of falling back to `FOUR_SET_CROSSFADE`.
-- **ColorOS 17 lockscreen probe, draw suppression & UDFPS**:
-  - Recognized `KeyguardPluginViewRoot` in lockscreen clock probes, cached missing legacy `MyCustomizedFrameLayout` lookups per `ClassLoader` to eliminate repeated stack-trace spam, downgraded missing legacy `ClockViewRoot` lookups to debug logs, and added `OnScreenFingerprintUiMech$updateFpColor$3` alongside `$updateFpColor$1`.
+  - Guarded `PixelAodHook` stock AOD/keyguard suppression behind `CouiClockPluginHostController.isHookInstalled()`.
 
 ## [0.1.67] - 2026-11-22
 ### Changed
