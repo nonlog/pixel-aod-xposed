@@ -86,7 +86,7 @@ public final class PixelAodSettingsSchema {
     public static final SettingSpec NOTIFICATION_ICONS =
             alwaysEnabledBooleanSpec(KEY_NOTIFICATION_ICONS);
     public static final SettingSpec PIXEL_NOTIFICATION_PEEK =
-            booleanSpec(KEY_PIXEL_NOTIFICATION_PEEK, true, false);
+            booleanSpec(KEY_PIXEL_NOTIFICATION_PEEK, false, false);
     public static final SettingSpec PIXEL_FINGERPRINT_ICON =
             booleanSpec(KEY_PIXEL_FINGERPRINT_ICON, false, false);
     public static final SettingSpec UDFPS_HDR_PRESS_EFFECT =

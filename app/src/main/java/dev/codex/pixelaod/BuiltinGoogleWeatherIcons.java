@@ -24,7 +24,7 @@ final class BuiltinGoogleWeatherIcons {
     }
 
     static boolean isSelected(String packId) {
-        return PACK_ID.equals(packId);
+        return packId == null || packId.isEmpty() || PACK_ID.equals(packId);
     }
 
     static String resolveAssetName(int weatherCode, boolean isNight) {

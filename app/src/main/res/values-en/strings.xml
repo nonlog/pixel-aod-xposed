@@ -22,7 +22,7 @@
     <string name="calendar_all_day">All day</string>
     <string name="calendar_permission_denied">Calendar access not granted</string>
     <string name="title_weather_icon_pack">Weather Icon Pack</string>
-    <string name="default_weather_icon_pack">Default</string>
+    <string name="default_weather_icon_pack">Default (Google Icons)</string>
     <string name="title_pixel_fingerprint_icon">Pixel Fingerprint Icon</string>
     <string name="desc_pixel_fingerprint_icon">Use Pixel-style UDFPS icon</string>
     <string name="section_fingerprint">Fingerprint</string>

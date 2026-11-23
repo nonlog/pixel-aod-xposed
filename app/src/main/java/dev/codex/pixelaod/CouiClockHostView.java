@@ -1859,8 +1859,9 @@ final class CouiClockHostView extends FrameLayout {
                 dateX = pairStart;
                 weatherX = dateX + dateWidth + dp(LARGE_INFO_SIDE_GAP_DP);
             }
+            float widgetShiftUp = resolveLockscreenWidgetShiftUpPx(surface);
             dateY = getWidth() * surface.baseWidthRatio * LARGE_INFO_WIDTH_MULTIPLIER
-                    * dozingScale + centeredGap;
+                    * dozingScale + centeredGap - widgetShiftUp;
             weatherY = dateY;
             ContextualAtAGlanceCard displayedContextual =
                     ContextualAtAGlancePresentation.displayed(contextualGroup);
@@ -2191,14 +2192,97 @@ final class CouiClockHostView extends FrameLayout {
         return calculateLineTargets(glyphSet, surface);
     }
 
+    private float resolveLockscreenWidgetShiftUpPx(CouiClockGeometryPolicy.SurfaceTarget surface) {
+        if (surface == null
+                || presentation.dozing()
+                || presentation.visualScene() != CouiClockPresentationModel.Scene.LARGE
+                || getWidth() <= 0
+                || getHeight() <= 0) {
+            return 0f;
+        }
+        float widgetTopPx = findVisibleLockscreenWidgetTopInHostPx();
+        if (Float.isNaN(widgetTopPx)) {
+            return 0f;
+        }
+        float baseWidth = getWidth() * surface.baseWidthRatio;
+        float scale = surface.scale;
+        float clockTop = ((1f - scale) * (1.82f * baseWidth) / 2f)
+                + getHeight() * surface.topRatio + dp(surface.topDp);
+        float centeredGap = getHeight() * surface.topRatio;
+        float dateTop = getWidth() * surface.baseWidthRatio * LARGE_INFO_WIDTH_MULTIPLIER
+                + centeredGap;
+        float dateHeight = Math.max(dateGroup.getMeasuredHeight(), dp(26));
+        return CouiClockWidgetAvoidancePolicy.resolveVerticalShiftUpPx(
+                getHeight(),
+                clockTop,
+                dateTop + dateHeight,
+                widgetTopPx,
+                dp(CouiClockWidgetAvoidancePolicy.MIN_CLOCK_TOP_DP),
+                dp(CouiClockWidgetAvoidancePolicy.WIDGET_CLEARANCE_DP));
+    }
+
+    private float findVisibleLockscreenWidgetTopInHostPx() {
+        try {
+            View root = getRootView();
+            if (root == null || root == this) {
+                return Float.NaN;
+            }
+            int[] hostLoc = new int[2];
+            getLocationOnScreen(hostLoc);
+            float[] bestTop = new float[]{Float.NaN};
+            scanLockscreenWidgets(root, hostLoc[1], bestTop, 0);
+            return bestTop[0];
+        } catch (Throwable ignored) {
+            return Float.NaN;
+        }
+    }
+
+    private void scanLockscreenWidgets(View view, int hostTopOnScreen, float[] bestTop, int depth) {
+        if (view == null || view == this || depth > 14 || view.getVisibility() != VISIBLE) {
+            return;
+        }
+        if (view.getAlpha() <= 0.05f || view.getWidth() <= 0 || view.getHeight() <= 0) {
+            return;
+        }
+        String idName = "";
+        int id = view.getId();
+        if (id != View.NO_ID && id > 0) {
+            try {
+                idName = view.getResources().getResourceEntryName(id);
+            } catch (Throwable ignored) {
+            }
+        }
+        if (CouiClockWidgetAvoidancePolicy.isLockscreenWidgetCandidate(
+                view.getClass().getName(), idName)) {
+            int[] loc = new int[2];
+            view.getLocationOnScreen(loc);
+            float topInHost = loc[1] - hostTopOnScreen;
+            if (topInHost >= getHeight() * CouiClockWidgetAvoidancePolicy.MIN_WIDGET_TOP_RATIO
+                    && topInHost <= getHeight() * CouiClockWidgetAvoidancePolicy.MAX_WIDGET_TOP_RATIO) {
+                if (Float.isNaN(bestTop[0]) || topInHost < bestTop[0]) {
+                    bestTop[0] = topInHost;
+                }
+            }
+            return;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            int count = group.getChildCount();
+            for (int i = 0; i < count; i++) {
+                scanLockscreenWidgets(group.getChildAt(i), hostTopOnScreen, bestTop, depth + 1);
+            }
+        }
+    }
+
     private GlyphTarget[] calculateLargeTargets(GlyphSet glyphSet,
             CouiClockGeometryPolicy.SurfaceTarget surface) {
         float width = getWidth();
         float height = getHeight();
         float baseWidth = width * surface.baseWidthRatio;
         float scale = surface.scale;
+        float widgetShiftUp = resolveLockscreenWidgetShiftUpPx(surface);
         float top = ((1f - scale) * (1.82f * baseWidth) / 2f)
-                + height * surface.topRatio + dp(surface.topDp);
+                + height * surface.topRatio + dp(surface.topDp) - widgetShiftUp;
         float lineWidth = baseWidth * LARGE_LINE_WIDTH_RATIO * scale;
         float centerX = width / 2f;
         float tracking = baseWidth * scale * surface.trackingFactor;

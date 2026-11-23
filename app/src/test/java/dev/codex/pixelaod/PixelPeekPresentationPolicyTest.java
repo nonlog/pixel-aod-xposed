@@ -42,7 +42,7 @@ public final class PixelPeekPresentationPolicyTest {
     public void nativeSurfaceCompositeRunsOnlyForStockPeekWhenModuleAodIsWanted() {
         assertTrue(PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
                 false, true, true, true));
-        assertFalse(PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
+        assertTrue(PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
                 true, true, true, true));
         assertFalse(PixelPeekPresentationPolicy.shouldCompositeModuleAodOverNativePeek(
                 false, false, true, true));

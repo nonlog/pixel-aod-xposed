@@ -89,6 +89,9 @@ public class BuiltinGoogleWeatherIconsAndSourceTest {
                 PixelAodSettingsSchema.WEATHER_DATA_SOURCE_BREEZY, false, true));
         assertEquals(PixelAodSettingsSchema.WEATHER_DATA_SOURCE_AUTO,
                 PixelAodSettingsSchema.stringDefault(PixelAodSettingsSchema.KEY_WEATHER_DATA_SOURCE, "wrong"));
-        assertEquals("builtin:google", PixelAodSettingsSchema.WEATHER_ICON_PACK_BUILTIN_GOOGLE);
+        assertTrue(BuiltinGoogleWeatherIcons.isSelected(""));
+        assertTrue(BuiltinGoogleWeatherIcons.isSelected(null));
+        assertTrue(BuiltinGoogleWeatherIcons.isSelected(PixelAodSettingsSchema.WEATHER_ICON_PACK_BUILTIN_GOOGLE));
+        assertFalse(BuiltinGoogleWeatherIcons.isSelected("org.example.otherpack"));
     }
 }

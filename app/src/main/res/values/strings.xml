@@ -22,7 +22,7 @@
     <string name="calendar_all_day">全天</string>
     <string name="calendar_permission_denied">未授予日历权限</string>
     <string name="title_weather_icon_pack">天气图标包</string>
-    <string name="default_weather_icon_pack">默认</string>
+    <string name="default_weather_icon_pack">默认 (Google 图标)</string>
     <string name="title_pixel_fingerprint_icon">Pixel 指纹图标</string>
     <string name="desc_pixel_fingerprint_icon">使用 Pixel 风格屏下指纹图标</string>
     <string name="section_fingerprint">指纹</string>

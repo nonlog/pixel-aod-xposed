@@ -7584,11 +7584,11 @@ public final class PixelAodClockView extends FrameLayout {
             return null;
         }
         String packageName = PixelAodSettings.getString(context, PixelAodSettings.KEY_WEATHER_ICON_PACK, "");
-        if (TextUtils.isEmpty(packageName)) {
-            return null;
-        }
         if (BuiltinGoogleWeatherIcons.isSelected(packageName)) {
             return BuiltinGoogleWeatherIcons.loadDrawable(context, weatherCode, isNight);
+        }
+        if (TextUtils.isEmpty(packageName)) {
+            return null;
         }
         try {
             PackageManager pm = context.getPackageManager();

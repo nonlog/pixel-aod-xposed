@@ -215,7 +215,7 @@ private fun SettingsContent(
     }
     val pixelNotificationPeek = remember {
         mutableStateOf(
-            prefs.schemaBoolean(PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, true)
+            prefs.schemaBoolean(PixelAodSettings.KEY_PIXEL_NOTIFICATION_PEEK, false)
         )
     }
     val powerSavingNotificationAod = remember {
@@ -291,7 +291,8 @@ private fun SettingsContent(
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_UDFPS_AOD_EXIT_ANIMATION, true))
     }
     val weatherIconPack = remember {
-        mutableStateOf(prefs.schemaString(PixelAodSettings.KEY_WEATHER_ICON_PACK, ""))
+        val raw = prefs.schemaString(PixelAodSettings.KEY_WEATHER_ICON_PACK, "")
+        mutableStateOf(if (raw == PixelAodSettings.WEATHER_ICON_PACK_BUILTIN_GOOGLE) "" else raw)
     }
     val language = remember {
         mutableStateOf(
@@ -1318,10 +1319,6 @@ private fun NonLockscreenAodTransitionDialog(
 private fun getAvailableIconPacks(context: Context): List<Pair<String, String>> {
     val packs = mutableListOf<Pair<String, String>>()
     packs.add("" to context.getString(R.string.default_weather_icon_pack))
-    packs.add(
-        PixelAodSettings.WEATHER_ICON_PACK_BUILTIN_GOOGLE to
-            context.getString(R.string.builtin_google_weather_icon_pack)
-    )
     val pm = context.packageManager
 
     val intents = listOf(

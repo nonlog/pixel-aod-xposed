@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 ### Changed
+- **Default weather icon pack & Pixel Notification Peek defaults**:
+  - Merged the bundled Google Weather icon pack directly into the default weather icon pack (`default`, keeping `builtin:google` backward-compatible) and removed the duplicate separate picker item.
+  - Changed `pixel_notification_peek` default to `false` (off) and redesigned `PixelPeekNotificationView` into a restrained OLED-black Pixel Ambient Display pulse pill with an inline app icon header row.
 - **True FlClash (`prism_ui`) Settings UI rebuild**:
   - Rebuilt `PixelAodDesignSystem.kt` and `SettingsActivity.kt` around FlClash's 4-level neutral surface palette (`page/card/block/inset`, zero borders, `0.5dp` 14% alpha dividers), 2-column Home Dashboard cards, 3-segment weather source switcher, floating capsule bottom dock, floating primary Restart FAB, and snapping `ModalBottomSheet` option pickers.
 - **FlClash-style Material 3 Settings UI redesign**:
@@ -16,6 +19,9 @@
   - Added live **Clock Width** (`wdth`, 75–125), **Clock Roundness** (`ROND`, 0–100), and **Lockscreen Clock Color** (Dynamic Wallpaper Monet vs Pure White) settings wired into `PixelAodSettingsSchema`, `CouiClockFontPolicy`, `CouiClockMorphingGlyphView`, `CouiClockRomTextAnimatorRuntime`, and `CouiClockHostView`.
 
 ### Fixed
+- **Pixel Notification Peek missing clock & ColorOS lockscreen widget collision**:
+  - Removed the `!customEnabled` gate on `shouldCompositeModuleAodOverNativePeek` so the Pixel AOD clock continues to render above the notification card when Pixel Notification Peek is enabled.
+  - Added `CouiClockWidgetAvoidancePolicy` in `CouiClockHostView` to detect visible ColorOS lockscreen widgets (`WidgetPlugin` / `KeyguardStyleWidget`) below the large lockscreen clock and shift the clock and date row upward to prevent overlap.
 - **ColorOS 17 / Android 17 `KeyguardPlugin` clock host bridge**:
   - Added a ColorOS 17 fallback in `CouiClockPluginHostController` targeting `com.oplus.keyguard.plugin.KeyguardPlugin` (`setUp(int, int)`, `sendCommand(String, Bundle)` for `onClockStateChanged` / `setStyleData` / `transFrom` / `release`, and `reload$default`) when `ClockPlugin` no longer exposes legacy `loadPluginReal`/`render` methods.
   - Suppressed the sibling `KeyguardClockPluginContainer` (`getClockPlugin().getView(0)`) cleanly while attaching `CouiClockHostView` to `KeyguardPluginViewRoot` (`getView(0)`).
