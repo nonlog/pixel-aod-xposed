@@ -10,13 +10,13 @@ public final class CouiClockGeometryPolicy {
     public static final float SLNT = 0f;
 
     public static final float INFO_CENTER_RATIO = .75f;
-    public static final float LOCKSCREEN_INFO_X_DP = -44f;
-    public static final float AOD_INFO_X_DP = -42f;
-    public static final float INFO_Y_RATIO = .145f;
-    public static final float INFO_Y_OFFSET_DP = 36f;
+    public static final float LOCKSCREEN_INFO_X_DP = -24f;
+    public static final float AOD_INFO_X_DP = -22f;
+    public static final float INFO_Y_RATIO = .144f;
+    public static final float INFO_Y_OFFSET_DP = 35f;
     public static final float DATE_WEATHER_GAP_DP = 1f;
-    public static final float COMPACT_CLOCK_INFO_MIN_GAP_DP = 10f;
-    public static final float WEATHER_ICON_SLOT_DP = 19f;
+    public static final float COMPACT_CLOCK_INFO_MIN_GAP_DP = 14f;
+    public static final float WEATHER_ICON_SLOT_DP = 20f;
     public static final float WEATHER_ICON_CONTENT_INSET_DP = 2f;
     public static final float WEATHER_ICON_GAP_DP = 4f;
     public static final float PARTIAL_CONTENT_TOP_RATIO = .255f;
@@ -85,16 +85,16 @@ public final class CouiClockGeometryPolicy {
     }
 
     public static final SurfaceTarget LS_LARGE = new SurfaceTarget(
-            .47f, .230f, -10f, 1.0f, 0f, 0f, 450f, 144f, -.07f,
+            .47f, .215f, -10f, 1.0f, 0f, 0f, 450f, 144f, -.07f,
             0f, 0f, false);
     public static final SurfaceTarget AOD_LARGE = new SurfaceTarget(
-            .47f, .230f, -24f, .9f, 0f, 0f, 100f, 144f, -.06f,
+            .47f, .215f, -24f, .9f, 0f, 0f, 100f, 144f, -.06f,
             0f, 0f, true);
     public static final SurfaceTarget LS_SMALL = new SurfaceTarget(
-            0f, .132f, 26f, .430f, .25f, 8f, 500f, 96f, -.09f,
+            0f, .130f, 26f, .395f, .285f, 12f, 500f, 96f, -.09f,
             0f, 0f, false);
     public static final SurfaceTarget AOD_SMALL = new SurfaceTarget(
-            0f, .132f, 26f + AOD_SMALL_VERTICAL_SHIFT_DP, .430f, .25f, 10f, 180f, 96f, -.09f,
+            0f, .130f, 26f + AOD_SMALL_VERTICAL_SHIFT_DP, .395f, .285f, 10f, 180f, 96f, -.09f,
             0f, 0f, true);
     public static final SurfaceTarget LS_IMMERSED = new SurfaceTarget(
             0f, .072f, 30f, .32978722f, .25f, 8f, 500f, 96f, -.09f,

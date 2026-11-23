@@ -7,10 +7,10 @@ import java.util.Locale;
  * from colliding with ColorOS / OPlus lockscreen widgets placed below the clock.
  */
 final class CouiClockWidgetAvoidancePolicy {
-    static final float MIN_WIDGET_TOP_RATIO = 0.30f;
-    static final float MAX_WIDGET_TOP_RATIO = 0.80f;
-    static final float MIN_CLOCK_TOP_DP = 64f;
-    static final float WIDGET_CLEARANCE_DP = 14f;
+    static final float MIN_WIDGET_TOP_RATIO = 0.42f;
+    static final float MAX_WIDGET_TOP_RATIO = 0.78f;
+    static final float MIN_CLOCK_TOP_DP = 96f;
+    static final float WIDGET_CLEARANCE_DP = 16f;
 
     private CouiClockWidgetAvoidancePolicy() {
     }
@@ -35,14 +35,10 @@ final class CouiClockWidgetAvoidancePolicy {
             return false;
         }
         return combined.contains("widgetplugin")
-                || combined.contains("stylewidget")
-                || combined.contains("keyguard_widget")
-                || combined.contains("lockscreen_widget")
-                || combined.contains("clock_widget")
-                || combined.contains("oplus_widget")
-                || combined.contains("cardwidget")
-                || combined.contains("widget_container")
-                || (cls.contains("oplus") && cls.contains("widget"));
+                || combined.contains("keyguardstylewidget")
+                || combined.contains("keyguard_style_widget")
+                || combined.contains("oplus_keyguard_widget")
+                || combined.contains("lockscreen_widget");
     }
 
     static float resolveVerticalShiftUpPx(

@@ -61,8 +61,8 @@ final class CouiClockHostView extends FrameLayout {
     private static final int INFORMATION_COLOR = Color.WHITE;
     private static final float LARGE_COLON_SCALE = 0.44f;
     private static final float COMPACT_COLON_TRACKING_SCALE = 0.55f;
-    private static final float LARGE_LINE_WIDTH_RATIO = 0.78f;
-    private static final float LARGE_INFO_WIDTH_MULTIPLIER = 1.82f;
+    private static final float LARGE_LINE_WIDTH_RATIO = 0.82f;
+    private static final float LARGE_INFO_WIDTH_MULTIPLIER = 1.90f;
     private static final float LARGE_INFO_SIDE_GAP_DP = 10f;
     private static final float BATTERY_Y_OFFSET_DP = 8f;
 
@@ -181,8 +181,8 @@ final class CouiClockHostView extends FrameLayout {
         dateGroup.setOrientation(LinearLayout.HORIZONTAL);
         dateGroup.setGravity(android.view.Gravity.CENTER_VERTICAL);
         dateGroup.setClipChildren(false);
-        weekView = informationText(15.5f, 500, true);
-        dateView = informationText(15.5f, 500, true);
+        weekView = informationText(17f, 500, true);
+        dateView = informationText(17f, 500, true);
         dateGroup.addView(dateView);
         dateGroup.addView(weekView);
 
@@ -202,7 +202,7 @@ final class CouiClockHostView extends FrameLayout {
                 dp(CouiClockGeometryPolicy.WEATHER_ICON_SLOT_DP));
         weatherIconParams.setMarginEnd(dp(CouiClockGeometryPolicy.WEATHER_ICON_GAP_DP));
         weatherGroup.addView(weatherIconView, weatherIconParams);
-        weatherView = informationText(15.5f, 500, true);
+        weatherView = informationText(17f, 500, true);
         weatherGroup.addView(weatherView);
 
         contextualGroup = new LinearLayout(context);
@@ -1394,9 +1394,9 @@ final class CouiClockHostView extends FrameLayout {
 
     private void applyDesignMetrics(int width) {
         designWidthPx = width;
-        setInformationTextSize(dateView, 15.5f);
-        setInformationTextSize(weekView, 15.5f);
-        setInformationTextSize(weatherView, 15.5f);
+        setInformationTextSize(dateView, 17f);
+        setInformationTextSize(weekView, 17f);
+        setInformationTextSize(weatherView, 17f);
         setInformationTextSize(contextualView,
                 PixelAodVisualStyle.COMPACT_AUXILIARY_INFO_TEXT_DP);
         setInformationTextSize(notificationOverflowView, 16f);
@@ -2253,7 +2253,8 @@ final class CouiClockHostView extends FrameLayout {
             }
         }
         if (CouiClockWidgetAvoidancePolicy.isLockscreenWidgetCandidate(
-                view.getClass().getName(), idName)) {
+                view.getClass().getName(), idName)
+                && hasVisibleWidgetContent(view)) {
             int[] loc = new int[2];
             view.getLocationOnScreen(loc);
             float topInHost = loc[1] - hostTopOnScreen;
@@ -2272,6 +2273,22 @@ final class CouiClockHostView extends FrameLayout {
                 scanLockscreenWidgets(group.getChildAt(i), hostTopOnScreen, bestTop, depth + 1);
             }
         }
+    }
+
+    private static boolean hasVisibleWidgetContent(View view) {
+        if (!(view instanceof ViewGroup)) {
+            return view.getWidth() > 0 && view.getHeight() > 0;
+        }
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child != null && child.getVisibility() == VISIBLE
+                    && child.getAlpha() > 0.05f
+                    && child.getWidth() > 0 && child.getHeight() > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private GlyphTarget[] calculateLargeTargets(GlyphSet glyphSet,

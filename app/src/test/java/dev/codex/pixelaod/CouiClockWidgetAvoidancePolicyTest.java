@@ -19,6 +19,8 @@ public class CouiClockWidgetAvoidancePolicyTest {
         assertFalse(CouiClockWidgetAvoidancePolicy.isLockscreenWidgetCandidate(
                 "com.oplus.keyguard.security.widget.PinSimpleLockInputWidget", ""));
         assertFalse(CouiClockWidgetAvoidancePolicy.isLockscreenWidgetCandidate(
+                "com.oplus.systemui.keyguard.clock.big.widget.MyCustomizedFrameLayout", ""));
+        assertFalse(CouiClockWidgetAvoidancePolicy.isLockscreenWidgetCandidate(
                 "dev.codex.pixelaod.CouiClockHostView", "keyguard_widget"));
     }
 
