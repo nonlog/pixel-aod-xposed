@@ -135,6 +135,7 @@ final class CouiUdfpsController {
     private static final Map<Object, Integer> DISCOVERY_ATTEMPTS = new WeakHashMap<>();
     private static final Map<Object, Runnable> DISCOVERY_RUNNABLES = new WeakHashMap<>();
     private static final Map<ImageView, ValueAnimator> EXIT_ANIMATORS = new WeakHashMap<>();
+    private static final ThreadLocal<Boolean> IN_NOTIFY_HIDE_AOD_ICON = new ThreadLocal<>();
     private static final Map<ImageView, CouiUdfpsGlowOverlay> GLOW_OVERLAYS = new WeakHashMap<>();
     private static final Map<ImageView, View.OnAttachStateChangeListener> HDR_ATTACH_LISTENERS = new WeakHashMap<>();
     private static final Map<ImageView, HdrSurfaceState> LAST_HDR_SURFACE_STATES =
@@ -154,6 +155,7 @@ final class CouiUdfpsController {
         hooked += hookPressedIconClass(classLoader);
         hooked += hookPressedIconMutations(classLoader);
         hooked += hookPressedAnimationDecisions(classLoader);
+        hooked += hookNotifyHideAodFadeOut(classLoader);
         hooked += hookAsyncClasses(classLoader);
         hooked += hookAuthenticationCallbacks(classLoader, UPDATE_MONITOR_CALLBACK_CLASS);
         hooked += hookAuthenticationCallbacks(classLoader, BIOMETRIC_UNLOCK_CLASS);
@@ -323,23 +325,14 @@ final class CouiUdfpsController {
                 final Method target = method;
                 final String source = simpleClassName(className) + "#" + signature(method);
                 target.setAccessible(true);
-                if (uiMechClass && "startToAnimInDream".equals(method.getName())) {
-                    ModernHookBridge.hookBefore(target, param -> {
-                        Object uiMech = param.thisObject;
-                        if (uiMech == null) {
-                            return;
-                        }
-                        rememberUiMech(uiMech);
-                        Context ctx = contextFrom(param, uiMech);
-                        if (isReplacementEnabled(ctx)
-                                && isAodExitAnimationEnabled(ctx)
-                                && startCustomAodExit(uiMech)) {
-                            param.setResult(defaultReturnValue(target.getReturnType()));
-                            PixelAodLog.i("COUI UDFPS intercepted native startToAnimInDream");
-                        }
-                    });
+                final boolean isNotifyHideAod = uiMechClass && "notifyHideAodIcon".equals(method.getName());
+                if (isNotifyHideAod) {
+                    ModernHookBridge.hookBefore(target, param -> IN_NOTIFY_HIDE_AOD_ICON.set(Boolean.TRUE));
                 }
                 ModernHookBridge.hookAfter(target, param -> {
+                    if (isNotifyHideAod) {
+                        IN_NOTIFY_HIDE_AOD_ICON.remove();
+                    }
                     Object uiMech = uiMechClass ? param.thisObject : lastUiMech.get();
                     if (uiMech == null) {
                         return;
@@ -372,6 +365,54 @@ final class CouiUdfpsController {
             PixelAodLog.log("failed to hook COUI UDFPS configuration refresh", throwable);
             return 0;
         }
+    }
+
+    private static int hookNotifyHideAodFadeOut(ClassLoader classLoader) {
+        try {
+            Class<?> utilsClass = ModernHookBridge.findClass(FINGERPRINT_UTILS_CLASS, classLoader);
+            int count = 0;
+            for (Method method : utilsClass.getDeclaredMethods()) {
+                if (!"updateOpticalUI".equals(method.getName())
+                        || method.getParameterCount() != 1
+                        || !Runnable.class.isAssignableFrom(method.getParameterTypes()[0])
+                        || Modifier.isAbstract(method.getModifiers())) {
+                    continue;
+                }
+                final Method target = method;
+                target.setAccessible(true);
+                ModernHookBridge.hookBefore(target, param -> {
+                    if (!Boolean.TRUE.equals(IN_NOTIFY_HIDE_AOD_ICON.get())) {
+                        return;
+                    }
+                    Object runnable = (param.args != null && param.args.length > 0) ? param.args[0] : null;
+                    Object uiMech = runnable != null ? readObjectField(runnable, "this$0") : null;
+                    if (uiMech == null) {
+                        uiMech = lastUiMech.get();
+                    }
+                    if (uiMech == null) {
+                        return;
+                    }
+                    rememberUiMech(uiMech);
+                    Context ctx = contextFrom(null, uiMech);
+                    if (!isReplacementEnabled(ctx)) {
+                        return;
+                    }
+                    if (isAodExitAnimationEnabled(ctx)) {
+                        startCustomAodExit(uiMech);
+                    }
+                    param.setResult(null);
+                    PixelAodLog.i("COUI UDFPS intercepted native AOD fade-out inside notifyHideAodIcon");
+                });
+                count++;
+            }
+            PixelAodLog.log("hooked COUI UDFPS notifyHideAodIcon fade-out gate count=" + count);
+            return count;
+        } catch (ClassNotFoundException ignored) {
+            PixelAodLog.log("COUI UDFPS fingerprint utils class not found class=" + FINGERPRINT_UTILS_CLASS);
+        } catch (Throwable throwable) {
+            PixelAodLog.log("failed to hook COUI UDFPS notifyHideAodIcon fade-out gate", throwable);
+        }
+        return 0;
     }
 
     private static int hookAsyncClasses(ClassLoader classLoader) {
@@ -454,6 +495,11 @@ final class CouiUdfpsController {
                             Object uiMech = CouiUdfpsStateMachine.resolveAuthenticationUiMech(
                                     className, callbackOuter, lastUiMech.get());
                             stopPress(uiMech, target.getName());
+                            Context failCtx = contextFrom(null, uiMech);
+                            if (failCtx != null && !PixelAodRuntimeState.isDeviceInteractive(failCtx)) {
+                                CouiClockPluginHostController.resyncForNativeScene(
+                                        "CouiUdfps#" + target.getName() + "#aod-non-interactive");
+                            }
                         }
                     });
                     count++;
@@ -565,17 +611,11 @@ final class CouiUdfpsController {
     }
 
     private static boolean isAodExitRunnable(String className, Object runnable) {
-        if (className == null) {
+        if (!className.endsWith("OnScreenFingerprintUiMech$1")) {
             return false;
         }
-        if (className.endsWith("OnScreenFingerprintUiMech$1")) {
-            Object classId = readObjectField(runnable, "$r8$classId");
-            if (classId instanceof Number && ((Number) classId).intValue() == 22) {
-                return true;
-            }
-        }
-        return className.contains("OnScreenFingerprintUiMech")
-                && (className.contains("Hide") || className.contains("Exit") || className.contains("AnimInDream"));
+        Object classId = readObjectField(runnable, "$r8$classId");
+        return classId instanceof Number && ((Number) classId).intValue() == 22;
     }
 
     private static boolean isAodExitPending(Object uiMech) {

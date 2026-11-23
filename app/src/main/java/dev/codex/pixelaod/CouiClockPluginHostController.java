@@ -298,6 +298,10 @@ final class CouiClockPluginHostController {
                     alreadySettled++;
                     continue;
                 }
+                if (!PixelAodRuntimeState.isDeviceInteractive(record.root.getContext())) {
+                    held++;
+                    continue;
+                }
                 if (exitAnimationPending) {
                     pendingExitAnimation++;
                 }
