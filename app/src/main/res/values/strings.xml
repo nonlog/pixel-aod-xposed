@@ -4,7 +4,7 @@
     <string name="title_module_enabled">启用模块</string>
     <string name="desc_module_enabled">关闭后需重启 SystemUI 生效</string>
     <string name="title_weather">天气</string>
-    <string name="desc_weather">Breezy Weather / Gadgetbridge</string>
+    <string name="desc_weather">支持系统天气或 Breezy Weather</string>
     <string name="title_weather_alerts">天气预警</string>
     <string name="desc_weather_alerts">显示 Breezy Weather 有效预警</string>
     <string name="title_weather_forecast">明日预报</string>
@@ -90,4 +90,19 @@
     <string name="language_system">跟随系统</string>
     <string name="language_chinese">中文</string>
     <string name="language_english">English</string>
+    <string name="builtin_google_weather_icon_pack">Google 图标 (内置)</string>
+    <string name="title_weather_data_source">天气数据源</string>
+    <string name="desc_weather_data_source">选择系统天气或 Breezy Weather</string>
+    <string name="weather_source_auto">自动</string>
+    <string name="weather_source_system">系统天气</string>
+    <string name="weather_source_breezy">Breezy</string>
+    <string name="dashboard_title">概览</string>
+    <string name="status_module_active">已启用 · SystemUI Hook</string>
+    <string name="status_module_inactive">已停用 · 需重启 SystemUI</string>
+    <string name="card_fingerprint_pixel">Pixel 图标</string>
+    <string name="card_fingerprint_stock">系统默认</string>
+    <string name="card_clock_meta">字宽 %1$d · 圆角 %2$d</string>
+    <string name="card_fingerprint_meta">HDR · 解锁涟漪</string>
+    <string name="card_transition_meta">解锁后熄屏</string>
+    <string name="fab_restart_systemui">重启</string>
 </resources>

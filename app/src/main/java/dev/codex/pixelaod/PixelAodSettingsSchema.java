@@ -18,7 +18,12 @@ public final class PixelAodSettingsSchema {
     public static final String KEY_WEATHER_FORECAST = "weather_forecast";
     public static final String KEY_WEATHER_FORECAST_START_TIME = "weather_forecast_start_time";
     public static final String KEY_WEATHER_FORECAST_END_TIME = "weather_forecast_end_time";
+    public static final String KEY_WEATHER_DATA_SOURCE = "weather_data_source";
+    public static final String WEATHER_DATA_SOURCE_AUTO = "auto";
+    public static final String WEATHER_DATA_SOURCE_BREEZY = "breezy";
+    public static final String WEATHER_DATA_SOURCE_SYSTEM = "system";
     public static final String KEY_WEATHER_ICON_PACK = "weather_icon_pack";
+    public static final String WEATHER_ICON_PACK_BUILTIN_GOOGLE = "builtin:google";
     public static final String KEY_CALENDAR_EVENTS = "calendar_events";
     public static final String KEY_CALENDAR_ICON_PACKAGE = "calendar_icon_package";
     public static final String KEY_NOTIFICATION_ICONS = "notification_icons";
@@ -73,6 +78,7 @@ public final class PixelAodSettingsSchema {
             KEY_WEATHER_FORECAST_START_TIME, ForecastDisplayWindow.DEFAULT_START_TIME, false);
     public static final SettingSpec WEATHER_FORECAST_END_TIME = stringSpec(
             KEY_WEATHER_FORECAST_END_TIME, ForecastDisplayWindow.DEFAULT_END_TIME, false);
+    public static final SettingSpec WEATHER_DATA_SOURCE = stringSpec(KEY_WEATHER_DATA_SOURCE, WEATHER_DATA_SOURCE_AUTO, false);
     public static final SettingSpec WEATHER_ICON_PACK = stringSpec(KEY_WEATHER_ICON_PACK, "", false);
     public static final SettingSpec CALENDAR_EVENTS = booleanSpec(KEY_CALENDAR_EVENTS, false, false);
     public static final SettingSpec CALENDAR_ICON_PACKAGE =

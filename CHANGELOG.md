@@ -2,11 +2,16 @@
 
 ## [Unreleased]
 ### Changed
+- **True FlClash (`prism_ui`) Settings UI rebuild**:
+  - Rebuilt `PixelAodDesignSystem.kt` and `SettingsActivity.kt` around FlClash's 4-level neutral surface palette (`page/card/block/inset`, zero borders, `0.5dp` 14% alpha dividers), 2-column Home Dashboard cards, 3-segment weather source switcher, floating capsule bottom dock, floating primary Restart FAB, and snapping `ModalBottomSheet` option pickers.
 - **FlClash-style Material 3 Settings UI redesign**:
   - Replaced oversized 32sp headers, 18sp row titles, 16sp 5–6 line descriptions, and custom 58x36dp switches in `PixelAodDesignSystem.kt` and `SettingsActivity.kt` with a compact 56dp top app bar, 16dp `surfaceContainerLow` grouped list cards with hairline inset dividers, 15sp single-line titles, 12.5sp 1-line subtitles, native Material 3 switches, and a horizontal Home header card.
   - Rewrote all verbose Chinese and English setting descriptions in `res/values/strings.xml` and `res/values-en/strings.xml` into concise 1-line copy.
 
 ### Added
+- **Bundled Google Weather icon pack & selectable weather data source**:
+  - Bundled all 12 Google Weather PNG icons under `app/src/main/assets/weather_icons/google/` with `BuiltinGoogleWeatherIcons` (`builtin:google`) selectable directly in At a Glance settings without installing an external icon pack.
+  - Added `SystemWeatherProvider` reading ColorOS/OPlus native weather ContentProvider (`content://com.oplusos.weather.service.provider.data`) alongside Breezy Weather, with `Auto` / `System Weather` / `Breezy Weather` source switching in `PixelAodSettingsSchema`, `PixelAodSettings`, `PixelAodClockView`, and Settings UI.
 - **Native Android 16/17 Pixel lockscreen clock customization**:
   - Added live **Clock Width** (`wdth`, 75–125), **Clock Roundness** (`ROND`, 0–100), and **Lockscreen Clock Color** (Dynamic Wallpaper Monet vs Pure White) settings wired into `PixelAodSettingsSchema`, `CouiClockFontPolicy`, `CouiClockMorphingGlyphView`, `CouiClockRomTextAnimatorRuntime`, and `CouiClockHostView`.
 

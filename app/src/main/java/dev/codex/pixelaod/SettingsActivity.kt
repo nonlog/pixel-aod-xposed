@@ -1,9 +1,10 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package dev.codex.pixelaod
 
+import android.Manifest
 import android.content.ContentValues
 import android.content.Context
-import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
@@ -11,23 +12,14 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
-import android.content.Intent
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.view.WindowCompat
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Android
 import androidx.compose.material.icons.outlined.BatteryChargingFull
@@ -41,10 +33,8 @@ import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Policy
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -53,14 +43,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.core.view.WindowCompat
 import java.util.Locale
 
 private const val BREEZY_READ_PROVIDER_PERMISSION = "org.breezyweather.READ_PROVIDER"
@@ -222,9 +208,7 @@ private fun SettingsContent(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val prefs = remember {
-        PixelAodSettings.getSharedPreferences(context)
-    }
+    val prefs = remember { PixelAodSettings.getSharedPreferences(context) }
 
     val moduleEnabled = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_MODULE_ENABLED, true))
@@ -254,6 +238,14 @@ private fun SettingsContent(
     }
     val weather = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_WEATHER, true))
+    }
+    val weatherDataSource = remember {
+        mutableStateOf(
+            prefs.schemaString(
+                PixelAodSettings.KEY_WEATHER_DATA_SOURCE,
+                PixelAodSettings.WEATHER_DATA_SOURCE_AUTO
+            )
+        )
     }
     val weatherAlerts = remember {
         mutableStateOf(prefs.schemaBoolean(PixelAodSettings.KEY_WEATHER_ALERTS, false))
@@ -306,6 +298,44 @@ private fun SettingsContent(
             prefs.schemaString(PixelAodSettings.KEY_LANGUAGE, PixelAodSettings.LANGUAGE_SYSTEM)
         )
     }
+    val aodWeight = remember {
+        mutableFloatStateOf(
+            prefs.schemaFloat(PixelAodSettings.KEY_AOD_WEIGHT, PixelAodSettings.DEFAULT_AOD_WEIGHT)
+        )
+    }
+    val lockscreenWeight = remember {
+        mutableFloatStateOf(
+            prefs.schemaFloat(
+                PixelAodSettings.KEY_LOCKSCREEN_WEIGHT,
+                PixelAodSettings.DEFAULT_LOCKSCREEN_WEIGHT
+            )
+        )
+    }
+    val clockWidth = remember {
+        mutableFloatStateOf(
+            prefs.schemaFloat(
+                PixelAodSettings.KEY_CLOCK_WIDTH,
+                PixelAodSettings.DEFAULT_CLOCK_WIDTH
+            )
+        )
+    }
+    val clockRoundness = remember {
+        mutableFloatStateOf(
+            prefs.schemaFloat(
+                PixelAodSettings.KEY_CLOCK_ROUNDNESS,
+                PixelAodSettings.DEFAULT_CLOCK_ROUNDNESS
+            )
+        )
+    }
+    val clockColorMode = remember {
+        mutableStateOf(
+            prefs.schemaString(
+                PixelAodSettings.KEY_CLOCK_COLOR_MODE,
+                PixelAodSettings.CLOCK_COLOR_MODE_DYNAMIC
+            )
+        )
+    }
+
     var showClockDial by remember { mutableStateOf(false) }
     var clockDialTarget by remember { mutableStateOf(ClockDialTarget.FORECAST_START) }
     var clockDialTitle by remember { mutableStateOf("") }
@@ -332,11 +362,7 @@ private fun SettingsContent(
         clockDialMinute = minute
         showClockDial = true
     }
-    val aodWeight = remember {
-        mutableFloatStateOf(
-            prefs.schemaFloat(PixelAodSettings.KEY_AOD_WEIGHT, PixelAodSettings.DEFAULT_AOD_WEIGHT)
-        )
-    }
+
     val calendarPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -380,40 +406,9 @@ private fun SettingsContent(
             ).show()
         }
     }
-    val lockscreenWeight = remember {
-        mutableFloatStateOf(
-            prefs.schemaFloat(
-                PixelAodSettings.KEY_LOCKSCREEN_WEIGHT,
-                PixelAodSettings.DEFAULT_LOCKSCREEN_WEIGHT
-            )
-        )
-    }
-    val clockWidth = remember {
-        mutableFloatStateOf(
-            prefs.schemaFloat(
-                PixelAodSettings.KEY_CLOCK_WIDTH,
-                PixelAodSettings.DEFAULT_CLOCK_WIDTH
-            )
-        )
-    }
-    val clockRoundness = remember {
-        mutableFloatStateOf(
-            prefs.schemaFloat(
-                PixelAodSettings.KEY_CLOCK_ROUNDNESS,
-                PixelAodSettings.DEFAULT_CLOCK_ROUNDNESS
-            )
-        )
-    }
-    val clockColorMode = remember {
-        mutableStateOf(
-            prefs.schemaString(
-                PixelAodSettings.KEY_CLOCK_COLOR_MODE,
-                PixelAodSettings.CLOCK_COLOR_MODE_DYNAMIC
-            )
-        )
-    }
 
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showWeatherDataSourceDialog by remember { mutableStateOf(false) }
     var showIconPackDialog by remember { mutableStateOf(false) }
     var showCalendarIconAppDialog by remember { mutableStateOf(false) }
     var showNonLockscreenTransitionDialog by remember { mutableStateOf(false) }
@@ -422,7 +417,6 @@ private fun SettingsContent(
     var currentPageName by rememberSaveable { mutableStateOf(SettingsPage.HOME.name) }
     val currentPage = remember(currentPageName) { SettingsPage.valueOf(currentPageName) }
     val navigate: (SettingsPage) -> Unit = { page -> currentPageName = page.name }
-    val navigateHome: () -> Unit = { currentPageName = SettingsPage.HOME.name }
     val navigateAod: () -> Unit = { currentPageName = SettingsPage.AOD.name }
     val selectedBottomPage = when (currentPage) {
         SettingsPage.HOME -> SettingsPage.HOME
@@ -438,9 +432,15 @@ private fun SettingsContent(
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull().orEmpty()
     }
+    val availablePacks = remember(context) { getAvailableIconPacks(context) }
+    val currentWeatherIconLabel = availablePacks
+        .find { it.first == weatherIconPack.value }
+        ?.second
+        ?: stringResource(R.string.default_weather_icon_pack)
+
     val bottomItems = listOf(
         PixelAodBottomItem(SettingsPage.HOME.name, stringResource(R.string.nav_home), Icons.Outlined.Home),
-        PixelAodBottomItem(SettingsPage.AOD.name, stringResource(R.string.nav_aod), Icons.Outlined.Schedule),
+        PixelAodBottomItem(SettingsPage.AOD.name, stringResource(R.string.nav_aod), Icons.Outlined.Tune),
         PixelAodBottomItem(SettingsPage.SYSTEM.name, stringResource(R.string.nav_system_ui), Icons.Outlined.Android)
     )
     val bottomBar: @Composable () -> Unit = {
@@ -450,6 +450,7 @@ private fun SettingsContent(
             onSelected = { currentPageName = it }
         )
     }
+
     BackHandler(enabled = currentPage != SettingsPage.HOME) {
         currentPageName = when (currentPage) {
             SettingsPage.CLOCK,
@@ -460,86 +461,131 @@ private fun SettingsContent(
         }
     }
 
+    val surfaces = PixelAodDesignSystem.surfaces
+    val weatherSourceSegments = listOf(
+        PixelAodSelectionOption(
+            PixelAodSettings.WEATHER_DATA_SOURCE_AUTO,
+            stringResource(R.string.weather_source_auto)
+        ),
+        PixelAodSelectionOption(
+            PixelAodSettings.WEATHER_DATA_SOURCE_SYSTEM,
+            stringResource(R.string.weather_source_system)
+        ),
+        PixelAodSelectionOption(
+            PixelAodSettings.WEATHER_DATA_SOURCE_BREEZY,
+            stringResource(R.string.weather_source_breezy)
+        )
+    )
+
     when (currentPage) {
         SettingsPage.HOME -> PixelAodPage(
-            title = stringResource(R.string.nav_home),
-            subtitle = "",
-            actionIcon = Icons.Outlined.RestartAlt,
-            actionDescription = stringResource(R.string.restart_systemui),
-            onAction = { restartSystemUi(context) },
+            title = stringResource(R.string.dashboard_title),
+            badgeText = if (versionName.isNotEmpty()) "v" + versionName else null,
+            actionIcon = Icons.Outlined.Language,
+            actionDescription = stringResource(R.string.title_language),
+            onAction = { showLanguageDialog = true },
+            floatingAction = {
+                FlClashActionFab(
+                    icon = Icons.Outlined.RestartAlt,
+                    label = stringResource(R.string.fab_restart_systemui)
+                ) {
+                    restartSystemUi(context)
+                }
+            },
             bottomBar = bottomBar
         ) {
-            Surface(
-                shape = PixelAodDesignSystem.groupShape,
-                color = PixelAodDesignSystem.groupColor(MaterialTheme.colorScheme),
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    PixelAodHeroMark(modifier = Modifier.size(54.dp))
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.app_name),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            if (versionName.isNotEmpty()) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = MaterialTheme.colorScheme.secondaryContainer
-                                ) {
-                                    Text(
-                                        text = "v$versionName",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = stringResource(R.string.module_description),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            PixelAodHeroToggle(
-                title = stringResource(R.string.title_module_enabled),
-                subtitle = stringResource(R.string.desc_module_enabled),
+            FlClashStatusCard(
+                title = stringResource(R.string.app_name),
+                statusText = stringResource(
+                    if (moduleEnabled.value) R.string.status_module_active
+                    else R.string.status_module_inactive
+                ),
                 checked = moduleEnabled.value
             ) {
                 moduleEnabled.value = it
                 updateModuleBooleanSetting(context, PixelAodSettings.KEY_MODULE_ENABLED, it)
             }
 
-            PixelAodSection(stringResource(R.string.section_general)) {
-                PixelAodGroup {
-                    PixelAodChoiceRow(
-                        icon = Icons.Outlined.Language,
-                        title = stringResource(R.string.title_language),
-                        valueText = languageLabel(language.value),
-                        showDivider = false
-                    ) { showLanguageDialog = true }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(PixelAodDesignSystem.spacing.gridGap)
+            ) {
+                FlClashDashboardCard(
+                    icon = Icons.Outlined.Palette,
+                    label = stringResource(R.string.section_clock),
+                    value = aodWeight.floatValue.toInt().toString() + " / " + lockscreenWeight.floatValue.toInt().toString(),
+                    sublabel = stringResource(
+                        R.string.card_clock_meta,
+                        clockWidth.floatValue.toInt(),
+                        clockRoundness.floatValue.toInt()
+                    ),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    navigate(SettingsPage.CLOCK)
+                }
+                FlClashDashboardCard(
+                    icon = Icons.Outlined.Cloud,
+                    label = stringResource(R.string.section_weather),
+                    value = weatherDataSourceLabel(weatherDataSource.value),
+                    sublabel = currentWeatherIconLabel,
+                    statusDotColor = if (weather.value) surfaces.statusSuccess
+                    else surfaces.onSurfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    navigate(SettingsPage.AT_A_GLANCE)
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(PixelAodDesignSystem.spacing.gridGap)
+            ) {
+                FlClashDashboardCard(
+                    icon = Icons.Outlined.Fingerprint,
+                    label = stringResource(R.string.section_fingerprint),
+                    value = stringResource(
+                        if (pixelFingerprintIcon.value) R.string.card_fingerprint_pixel
+                        else R.string.card_fingerprint_stock
+                    ),
+                    sublabel = stringResource(R.string.card_fingerprint_meta),
+                    statusDotColor = if (pixelFingerprintIcon.value) surfaces.statusSuccess else null,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    navigate(SettingsPage.FINGERPRINT)
+                }
+                FlClashDashboardCard(
+                    icon = Icons.Outlined.Schedule,
+                    label = stringResource(R.string.section_transitions),
+                    value = nonLockscreenAodTransitionLabel(nonLockscreenAodTransition.value),
+                    sublabel = stringResource(R.string.card_transition_meta),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    showNonLockscreenTransitionDialog = true
+                }
+            }
+
+            FlClashSegmentedCard(
+                icon = Icons.Outlined.Cloud,
+                title = stringResource(R.string.title_weather_data_source),
+                options = weatherSourceSegments,
+                selectedValue = weatherDataSource.value
+            ) { selected ->
+                if (selected != weatherDataSource.value) {
+                    weatherDataSource.value = selected
+                    updateModuleStringSetting(
+                        context,
+                        PixelAodSettings.KEY_WEATHER_DATA_SOURCE,
+                        selected
+                    )
+                    if (selected != PixelAodSettings.WEATHER_DATA_SOURCE_SYSTEM) {
+                        requestBreezyWeatherRefresh(context)
+                    }
                 }
             }
         }
+
         SettingsPage.AOD -> PixelAodPage(
             title = stringResource(R.string.title_page_aod),
-            subtitle = "",
             bottomBar = bottomBar
         ) {
             PixelAodSection(stringResource(R.string.section_aod_pages)) {
@@ -618,365 +664,381 @@ private fun SettingsContent(
 
         SettingsPage.CLOCK -> PixelAodPage(
             title = stringResource(R.string.section_clock),
-            subtitle = "",
             onBack = navigateAod,
             backDescription = stringResource(R.string.navigate_back),
             bottomBar = bottomBar
         ) {
-        PixelAodSection(stringResource(R.string.section_appearance)) {
-            PixelAodGroup() {
-                PixelAodSliderRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_aod_weight),
-                    valueText = aodWeight.floatValue.toInt().toString(),
-                    value = aodWeight.floatValue,
-                    valueRange = 100f..500f,
-                    showDivider = true
-                ) {
-                    aodWeight.floatValue = it
-                    prefs.edit().putFloat(PixelAodSettings.KEY_AOD_WEIGHT, it).apply()
-                }
-                PixelAodSliderRow(
-                    icon = Icons.Outlined.Palette,
-                    title = stringResource(R.string.title_lockscreen_weight),
-                    valueText = lockscreenWeight.floatValue.toInt().toString(),
-                    value = lockscreenWeight.floatValue,
-                    valueRange = 100f..500f,
-                    showDivider = true
-                ) {
-                    lockscreenWeight.floatValue = it
-                    updateModuleFloatSetting(context, PixelAodSettings.KEY_LOCKSCREEN_WEIGHT, it)
-                }
-                PixelAodSliderRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_clock_width),
-                    valueText = clockWidth.floatValue.toInt().toString(),
-                    value = clockWidth.floatValue,
-                    valueRange = 75f..125f,
-                    showDivider = true
-                ) {
-                    clockWidth.floatValue = it
-                    updateModuleFloatSetting(context, PixelAodSettings.KEY_CLOCK_WIDTH, it)
-                }
-                PixelAodSliderRow(
-                    icon = Icons.Outlined.Palette,
-                    title = stringResource(R.string.title_clock_roundness),
-                    valueText = clockRoundness.floatValue.toInt().toString(),
-                    value = clockRoundness.floatValue,
-                    valueRange = 0f..100f,
-                    showDivider = true
-                ) {
-                    clockRoundness.floatValue = it
-                    updateModuleFloatSetting(context, PixelAodSettings.KEY_CLOCK_ROUNDNESS, it)
-                }
-                PixelAodChoiceRow(
-                    icon = Icons.Outlined.Palette,
-                    title = stringResource(R.string.title_clock_color_mode),
-                    subtitle = stringResource(R.string.desc_clock_color_mode),
-                    valueText = clockColorModeLabel(clockColorMode.value),
-                    showDivider = false
-                ) {
-                    showClockColorModeDialog = true
-                }
-            }
-        }
-        PixelAodSection(stringResource(R.string.section_transitions)) {
-            PixelAodGroup {
-                PixelAodChoiceRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_non_lockscreen_aod_transition),
-                    subtitle = stringResource(R.string.desc_non_lockscreen_aod_transition),
-                    valueText = nonLockscreenAodTransitionLabel(nonLockscreenAodTransition.value),
-                    showDivider = false
-                ) {
-                    showNonLockscreenTransitionDialog = true
+            PixelAodSection(stringResource(R.string.section_appearance)) {
+                PixelAodGroup {
+                    PixelAodSliderRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_aod_weight),
+                        valueText = aodWeight.floatValue.toInt().toString(),
+                        value = aodWeight.floatValue,
+                        valueRange = 100f..500f,
+                        showDivider = true
+                    ) {
+                        aodWeight.floatValue = it
+                        updateModuleFloatSetting(context, PixelAodSettings.KEY_AOD_WEIGHT, it)
+                    }
+                    PixelAodSliderRow(
+                        icon = Icons.Outlined.Palette,
+                        title = stringResource(R.string.title_lockscreen_weight),
+                        valueText = lockscreenWeight.floatValue.toInt().toString(),
+                        value = lockscreenWeight.floatValue,
+                        valueRange = 100f..500f,
+                        showDivider = true
+                    ) {
+                        lockscreenWeight.floatValue = it
+                        updateModuleFloatSetting(context, PixelAodSettings.KEY_LOCKSCREEN_WEIGHT, it)
+                    }
+                    PixelAodSliderRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_clock_width),
+                        valueText = clockWidth.floatValue.toInt().toString(),
+                        value = clockWidth.floatValue,
+                        valueRange = 75f..125f,
+                        showDivider = true
+                    ) {
+                        clockWidth.floatValue = it
+                        updateModuleFloatSetting(context, PixelAodSettings.KEY_CLOCK_WIDTH, it)
+                    }
+                    PixelAodSliderRow(
+                        icon = Icons.Outlined.Palette,
+                        title = stringResource(R.string.title_clock_roundness),
+                        valueText = clockRoundness.floatValue.toInt().toString(),
+                        value = clockRoundness.floatValue,
+                        valueRange = 0f..100f,
+                        showDivider = true
+                    ) {
+                        clockRoundness.floatValue = it
+                        updateModuleFloatSetting(context, PixelAodSettings.KEY_CLOCK_ROUNDNESS, it)
+                    }
+                    PixelAodChoiceRow(
+                        icon = Icons.Outlined.Palette,
+                        title = stringResource(R.string.title_clock_color_mode),
+                        subtitle = stringResource(R.string.desc_clock_color_mode),
+                        valueText = clockColorModeLabel(clockColorMode.value),
+                        showDivider = false
+                    ) {
+                        showClockColorModeDialog = true
+                    }
                 }
             }
-        }
+            PixelAodSection(stringResource(R.string.section_transitions)) {
+                PixelAodGroup {
+                    PixelAodChoiceRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_non_lockscreen_aod_transition),
+                        subtitle = stringResource(R.string.desc_non_lockscreen_aod_transition),
+                        valueText = nonLockscreenAodTransitionLabel(nonLockscreenAodTransition.value),
+                        showDivider = false
+                    ) {
+                        showNonLockscreenTransitionDialog = true
+                    }
+                }
+            }
         }
 
         SettingsPage.FINGERPRINT -> PixelAodPage(
             title = stringResource(R.string.section_fingerprint),
-            subtitle = "",
             onBack = navigateAod,
             backDescription = stringResource(R.string.navigate_back),
             bottomBar = bottomBar
         ) {
-
-        PixelAodSection(stringResource(R.string.section_fingerprint)) {
-            PixelAodGroup() {
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.Fingerprint,
-                    title = stringResource(R.string.title_pixel_fingerprint_icon),
-                    subtitle = stringResource(R.string.desc_pixel_fingerprint_icon),
-                    checked = pixelFingerprintIcon.value,
-                    showDivider = false
-                ) {
-                    pixelFingerprintIcon.value = it
-                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, it)
+            PixelAodSection(stringResource(R.string.section_fingerprint)) {
+                PixelAodGroup {
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Fingerprint,
+                        title = stringResource(R.string.title_pixel_fingerprint_icon),
+                        subtitle = stringResource(R.string.desc_pixel_fingerprint_icon),
+                        checked = pixelFingerprintIcon.value,
+                        showDivider = false
+                    ) {
+                        pixelFingerprintIcon.value = it
+                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_PIXEL_FINGERPRINT_ICON, it)
+                    }
                 }
             }
-        }
-
-        PixelAodSection(stringResource(R.string.section_fingerprint_effects)) {
-            PixelAodGroup() {
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.Fingerprint,
-                    title = stringResource(R.string.title_udfps_hdr_press_effect),
-                    subtitle = stringResource(R.string.desc_udfps_hdr_press_effect),
-                    checked = udfpsHdrPressEffect.value,
-                    showDivider = true,
-                    enabled = pixelFingerprintIcon.value
-                ) {
-                    udfpsHdrPressEffect.value = it
-                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_HDR_PRESS_EFFECT, it)
-                }
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.Fingerprint,
-                    title = stringResource(R.string.title_udfps_success_ripple),
-                    subtitle = stringResource(R.string.desc_udfps_success_ripple),
-                    checked = udfpsSuccessRipple.value,
-                    showDivider = true
-                ) {
-                    udfpsSuccessRipple.value = it
-                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_SUCCESS_RIPPLE, it)
-                }
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.Fingerprint,
-                    title = stringResource(R.string.title_udfps_aod_exit_animation),
-                    subtitle = stringResource(R.string.desc_udfps_aod_exit_animation),
-                    checked = udfpsAodExitAnimation.value,
-                    showDivider = false,
-                    enabled = pixelFingerprintIcon.value
-                ) {
-                    udfpsAodExitAnimation.value = it
-                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_AOD_EXIT_ANIMATION, it)
+            PixelAodSection(stringResource(R.string.section_fingerprint_effects)) {
+                PixelAodGroup {
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Fingerprint,
+                        title = stringResource(R.string.title_udfps_hdr_press_effect),
+                        subtitle = stringResource(R.string.desc_udfps_hdr_press_effect),
+                        checked = udfpsHdrPressEffect.value,
+                        showDivider = true,
+                        enabled = pixelFingerprintIcon.value
+                    ) {
+                        udfpsHdrPressEffect.value = it
+                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_HDR_PRESS_EFFECT, it)
+                    }
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Fingerprint,
+                        title = stringResource(R.string.title_udfps_success_ripple),
+                        subtitle = stringResource(R.string.desc_udfps_success_ripple),
+                        checked = udfpsSuccessRipple.value,
+                        showDivider = true
+                    ) {
+                        udfpsSuccessRipple.value = it
+                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_SUCCESS_RIPPLE, it)
+                    }
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Fingerprint,
+                        title = stringResource(R.string.title_udfps_aod_exit_animation),
+                        subtitle = stringResource(R.string.desc_udfps_aod_exit_animation),
+                        checked = udfpsAodExitAnimation.value,
+                        showDivider = false,
+                        enabled = pixelFingerprintIcon.value
+                    ) {
+                        udfpsAodExitAnimation.value = it
+                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_UDFPS_AOD_EXIT_ANIMATION, it)
+                    }
                 }
             }
-        }
         }
 
         SettingsPage.AT_A_GLANCE -> PixelAodPage(
             title = stringResource(R.string.section_at_a_glance),
-            subtitle = "",
             onBack = navigateAod,
             backDescription = stringResource(R.string.navigate_back),
             bottomBar = bottomBar
         ) {
-        val availablePacks = remember { getAvailableIconPacks(context) }
-        val currentWeatherIconLabel = availablePacks
-            .find { it.first == weatherIconPack.value }
-            ?.second
-            ?: stringResource(R.string.default_weather_icon_pack)
-        val calendarIconOptions = remember { getCalendarIconAppOptions(context) }
-        val currentCalendarIconLabel = calendarIconOptions
-            .find { it.first == calendarIconPackage.value }
-            ?.second
-            ?: calendarIconPackage.value
+            val calendarIconOptions = remember { getCalendarIconAppOptions(context) }
+            val currentCalendarIconLabel = calendarIconOptions
+                .find { it.first == calendarIconPackage.value }
+                ?.second
+                ?: calendarIconPackage.value
 
-        PixelAodSection(stringResource(R.string.section_weather)) {
-            PixelAodGroup() {
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.Cloud,
-                    title = stringResource(R.string.title_weather),
-                    subtitle = stringResource(R.string.desc_weather),
-                    checked = weather.value,
-                    showDivider = true
-                ) {
-                    weather.value = it
-                    prefs.edit().putBoolean(PixelAodSettings.KEY_WEATHER, it).apply()
-                }
-                PixelAodChoiceRow(
-                    icon = Icons.Outlined.Cloud,
-                    title = stringResource(R.string.title_weather_icon_pack),
-                    valueText = currentWeatherIconLabel,
-                    showDivider = false,
-                    enabled = weather.value
-                ) {
-                    showIconPackDialog = true
-                }
-            }
-        }
-
-        PixelAodSection(stringResource(R.string.section_forecast)) {
-            PixelAodGroup() {
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.Cloud,
-                    title = stringResource(R.string.title_weather_forecast),
-                    subtitle = stringResource(R.string.desc_weather_forecast),
-                    checked = weatherForecast.value,
-                    showDivider = true
-                ) {
-                    if (!it) {
-                        weatherForecast.value = false
-                        updateModuleBooleanSetting(
-                            context,
-                            PixelAodSettings.KEY_WEATHER_FORECAST,
-                            false
-                        )
-                        requestBreezyWeatherRefresh(context)
-                    } else if (context.checkSelfPermission(BREEZY_READ_PROVIDER_PERMISSION)
-                        == PackageManager.PERMISSION_GRANTED
+            PixelAodSection(stringResource(R.string.section_weather)) {
+                PixelAodGroup {
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Cloud,
+                        title = stringResource(R.string.title_weather),
+                        subtitle = stringResource(R.string.desc_weather),
+                        checked = weather.value,
+                        showDivider = true
                     ) {
-                        weatherForecast.value = true
-                        updateModuleBooleanSetting(
-                            context,
-                            PixelAodSettings.KEY_WEATHER_FORECAST,
-                            true
-                        )
-                        requestBreezyWeatherRefresh(context)
-                    } else {
-                        pendingBreezyWeatherFeature.value =
-                            ContextualAtAGlancePermission.WEATHER_FORECAST
-                        breezyWeatherPermissionLauncher.launch(BREEZY_READ_PROVIDER_PERMISSION)
+                        weather.value = it
+                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_WEATHER, it)
+                    }
+                    PixelAodChoiceRow(
+                        icon = Icons.Outlined.Cloud,
+                        title = stringResource(R.string.title_weather_data_source),
+                        subtitle = stringResource(R.string.desc_weather_data_source),
+                        valueText = weatherDataSourceLabel(weatherDataSource.value),
+                        showDivider = true,
+                        enabled = weather.value
+                    ) {
+                        showWeatherDataSourceDialog = true
+                    }
+                    PixelAodChoiceRow(
+                        icon = Icons.Outlined.Palette,
+                        title = stringResource(R.string.title_weather_icon_pack),
+                        valueText = currentWeatherIconLabel,
+                        showDivider = false,
+                        enabled = weather.value
+                    ) {
+                        showIconPackDialog = true
                     }
                 }
-                PixelAodChoiceRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_weather_forecast_start_time),
-                    valueText = weatherForecastStartTime.value,
-                    showDivider = true,
-                    enabled = weatherForecast.value
-                ) {
-                    showClockDialPicker(
-                        ClockDialTarget.FORECAST_START,
-                        weatherForecastStartTime.value
-                    )
-                }
-                PixelAodChoiceRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_weather_forecast_end_time),
-                    valueText = weatherForecastEndTime.value,
-                    showDivider = false,
-                    enabled = weatherForecast.value
-                ) {
-                    showClockDialPicker(
-                        ClockDialTarget.FORECAST_END,
-                        weatherForecastEndTime.value
-                    )
-                }
             }
-        }
 
-        PixelAodSection(stringResource(R.string.section_contextual_information)) {
-            PixelAodGroup() {
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.Cloud,
-                    title = stringResource(R.string.title_weather_alerts),
-                    subtitle = stringResource(R.string.desc_weather_alerts),
-                    checked = weatherAlerts.value,
-                    showDivider = true
-                ) { enabled ->
-                    if (!enabled) {
-                        weatherAlerts.value = false
-                        updateModuleBooleanSetting(
-                            context,
-                            PixelAodSettings.KEY_WEATHER_ALERTS,
-                            false
-                        )
-                        requestBreezyWeatherRefresh(context)
-                    } else if (context.checkSelfPermission(BREEZY_READ_PROVIDER_PERMISSION)
-                        == PackageManager.PERMISSION_GRANTED
+            PixelAodSection(stringResource(R.string.section_forecast)) {
+                PixelAodGroup {
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Cloud,
+                        title = stringResource(R.string.title_weather_forecast),
+                        subtitle = stringResource(R.string.desc_weather_forecast),
+                        checked = weatherForecast.value,
+                        showDivider = true
                     ) {
-                        weatherAlerts.value = true
-                        updateModuleBooleanSetting(
-                            context,
-                            PixelAodSettings.KEY_WEATHER_ALERTS,
-                            true
-                        )
-                        requestBreezyWeatherRefresh(context)
-                    } else {
-                        pendingBreezyWeatherFeature.value =
-                            ContextualAtAGlancePermission.WEATHER_ALERTS
-                        breezyWeatherPermissionLauncher.launch(BREEZY_READ_PROVIDER_PERMISSION)
+                        if (!it) {
+                            weatherForecast.value = false
+                            updateModuleBooleanSetting(
+                                context,
+                                PixelAodSettings.KEY_WEATHER_FORECAST,
+                                false
+                            )
+                            requestBreezyWeatherRefresh(context)
+                        } else if (context.checkSelfPermission(BREEZY_READ_PROVIDER_PERMISSION)
+                            == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            weatherForecast.value = true
+                            updateModuleBooleanSetting(
+                                context,
+                                PixelAodSettings.KEY_WEATHER_FORECAST,
+                                true
+                            )
+                            requestBreezyWeatherRefresh(context)
+                        } else {
+                            pendingBreezyWeatherFeature.value =
+                                ContextualAtAGlancePermission.WEATHER_FORECAST
+                            breezyWeatherPermissionLauncher.launch(BREEZY_READ_PROVIDER_PERMISSION)
+                        }
                     }
-                }
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_calendar_events),
-                    subtitle = stringResource(R.string.desc_calendar_events),
-                    checked = calendarEvents.value,
-                    showDivider = true
-                ) { enabled ->
-                    if (!enabled) {
-                        calendarEvents.value = false
-                        updateModuleBooleanSetting(
-                            context,
-                            PixelAodSettings.KEY_CALENDAR_EVENTS,
-                            false
-                        )
-                    } else if (context.checkSelfPermission(Manifest.permission.READ_CALENDAR)
-                        == PackageManager.PERMISSION_GRANTED
+                    PixelAodChoiceRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_weather_forecast_start_time),
+                        valueText = weatherForecastStartTime.value,
+                        showDivider = true,
+                        enabled = weatherForecast.value
                     ) {
-                        calendarEvents.value = true
-                        updateModuleBooleanSetting(
-                            context,
-                            PixelAodSettings.KEY_CALENDAR_EVENTS,
-                            true
+                        showClockDialPicker(
+                            ClockDialTarget.FORECAST_START,
+                            weatherForecastStartTime.value
                         )
-                    } else {
-                        calendarPermissionLauncher.launch(Manifest.permission.READ_CALENDAR)
                     }
-                }
-                PixelAodChoiceRow(
-                    icon = Icons.Outlined.Schedule,
-                    title = stringResource(R.string.title_calendar_icon_app),
-                    valueText = currentCalendarIconLabel,
-                    showDivider = false,
-                    enabled = calendarEvents.value
-                ) {
-                    showCalendarIconAppDialog = true
+                    PixelAodChoiceRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_weather_forecast_end_time),
+                        valueText = weatherForecastEndTime.value,
+                        showDivider = false,
+                        enabled = weatherForecast.value
+                    ) {
+                        showClockDialPicker(
+                            ClockDialTarget.FORECAST_END,
+                            weatherForecastEndTime.value
+                        )
+                    }
                 }
             }
-        }
+
+            PixelAodSection(stringResource(R.string.section_contextual_information)) {
+                PixelAodGroup {
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Cloud,
+                        title = stringResource(R.string.title_weather_alerts),
+                        subtitle = stringResource(R.string.desc_weather_alerts),
+                        checked = weatherAlerts.value,
+                        showDivider = true
+                    ) { enabled ->
+                        if (!enabled) {
+                            weatherAlerts.value = false
+                            updateModuleBooleanSetting(
+                                context,
+                                PixelAodSettings.KEY_WEATHER_ALERTS,
+                                false
+                            )
+                            requestBreezyWeatherRefresh(context)
+                        } else if (context.checkSelfPermission(BREEZY_READ_PROVIDER_PERMISSION)
+                            == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            weatherAlerts.value = true
+                            updateModuleBooleanSetting(
+                                context,
+                                PixelAodSettings.KEY_WEATHER_ALERTS,
+                                true
+                            )
+                            requestBreezyWeatherRefresh(context)
+                        } else {
+                            pendingBreezyWeatherFeature.value =
+                                ContextualAtAGlancePermission.WEATHER_ALERTS
+                            breezyWeatherPermissionLauncher.launch(BREEZY_READ_PROVIDER_PERMISSION)
+                        }
+                    }
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_calendar_events),
+                        subtitle = stringResource(R.string.desc_calendar_events),
+                        checked = calendarEvents.value,
+                        showDivider = true
+                    ) { enabled ->
+                        if (!enabled) {
+                            calendarEvents.value = false
+                            updateModuleBooleanSetting(
+                                context,
+                                PixelAodSettings.KEY_CALENDAR_EVENTS,
+                                false
+                            )
+                        } else if (context.checkSelfPermission(Manifest.permission.READ_CALENDAR)
+                            == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            calendarEvents.value = true
+                            updateModuleBooleanSetting(
+                                context,
+                                PixelAodSettings.KEY_CALENDAR_EVENTS,
+                                true
+                            )
+                        } else {
+                            calendarPermissionLauncher.launch(Manifest.permission.READ_CALENDAR)
+                        }
+                    }
+                    PixelAodChoiceRow(
+                        icon = Icons.Outlined.Schedule,
+                        title = stringResource(R.string.title_calendar_icon_app),
+                        valueText = currentCalendarIconLabel,
+                        showDivider = false,
+                        enabled = calendarEvents.value
+                    ) {
+                        showCalendarIconAppDialog = true
+                    }
+                }
+            }
         }
 
         SettingsPage.LOCKSCREEN -> PixelAodPage(
             title = stringResource(R.string.section_lockscreen),
-            subtitle = "",
             onBack = navigateAod,
             backDescription = stringResource(R.string.navigate_back),
             bottomBar = bottomBar
         ) {
-        PixelAodInfoBanner(stringResource(R.string.lockscreen_notifications_compatibility_note))
-        PixelAodSection(stringResource(R.string.section_notifications)) {
-            PixelAodGroup() {
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.Policy,
-                    title = stringResource(R.string.title_lockscreen_policy),
-                    subtitle = stringResource(R.string.desc_lockscreen_policy),
-                    checked = lockscreenPolicy.value,
-                    showDivider = false
-                ) {
-                    lockscreenPolicy.value = it
-                    prefs.edit()
-                        .putBoolean(PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY, it)
-                        .apply()
+            PixelAodInfoBanner(stringResource(R.string.lockscreen_notifications_compatibility_note))
+            PixelAodSection(stringResource(R.string.section_notifications)) {
+                PixelAodGroup {
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.Policy,
+                        title = stringResource(R.string.title_lockscreen_policy),
+                        subtitle = stringResource(R.string.desc_lockscreen_policy),
+                        checked = lockscreenPolicy.value,
+                        showDivider = false
+                    ) {
+                        lockscreenPolicy.value = it
+                        updateModuleBooleanSetting(
+                            context,
+                            PixelAodSettings.KEY_LOCKSCREEN_NOTIFICATION_POLICY,
+                            it
+                        )
+                    }
                 }
             }
-        }
         }
 
         SettingsPage.SYSTEM -> PixelAodPage(
             title = stringResource(R.string.nav_system_ui),
-            subtitle = "",
             bottomBar = bottomBar
         ) {
-        PixelAodInfoBanner(stringResource(R.string.system_ui_warning))
-        PixelAodSection(stringResource(R.string.section_diagnostics)) {
-            PixelAodGroup() {
-                PixelAodToggleRow(
-                    icon = Icons.Outlined.BugReport,
-                    title = stringResource(R.string.title_debug_logging),
-                    subtitle = stringResource(R.string.desc_debug_logging),
-                    checked = debugLogging.value,
-                    showDivider = false
-                ) {
-                    debugLogging.value = it
-                    updateModuleBooleanSetting(context, PixelAodSettings.KEY_DEBUG_LOGGING, it)
+            PixelAodInfoBanner(stringResource(R.string.system_ui_warning))
+            PixelAodSection(stringResource(R.string.section_general)) {
+                PixelAodGroup {
+                    PixelAodChoiceRow(
+                        icon = Icons.Outlined.Language,
+                        title = stringResource(R.string.title_language),
+                        valueText = languageLabel(language.value),
+                        showDivider = true
+                    ) { showLanguageDialog = true }
+                    PixelAodNavigationRow(
+                        icon = Icons.Outlined.RestartAlt,
+                        title = stringResource(R.string.restart_systemui),
+                        subtitle = "",
+                        showDivider = false
+                    ) { restartSystemUi(context) }
                 }
             }
-        }
+            PixelAodSection(stringResource(R.string.section_diagnostics)) {
+                PixelAodGroup {
+                    PixelAodToggleRow(
+                        icon = Icons.Outlined.BugReport,
+                        title = stringResource(R.string.title_debug_logging),
+                        subtitle = stringResource(R.string.desc_debug_logging),
+                        checked = debugLogging.value,
+                        showDivider = false
+                    ) {
+                        debugLogging.value = it
+                        updateModuleBooleanSetting(context, PixelAodSettings.KEY_DEBUG_LOGGING, it)
+                    }
+                }
+            }
         }
     }
 
@@ -988,15 +1050,38 @@ private fun SettingsContent(
                 showLanguageDialog = false
                 if (selected != language.value) {
                     language.value = selected
-                    prefs.edit().putString(PixelAodSettings.KEY_LANGUAGE, selected).apply()
+                    updateModuleStringSetting(context, PixelAodSettings.KEY_LANGUAGE, selected)
                     onLanguageChanged()
                 }
             }
         )
     }
 
+    if (showWeatherDataSourceDialog) {
+        PixelAodSelectionDialog(
+            title = stringResource(R.string.title_weather_data_source),
+            current = weatherDataSource.value,
+            options = weatherSourceSegments,
+            cancelLabel = stringResource(android.R.string.cancel),
+            onDismiss = { showWeatherDataSourceDialog = false },
+            onSelected = { selected ->
+                showWeatherDataSourceDialog = false
+                if (selected != weatherDataSource.value) {
+                    weatherDataSource.value = selected
+                    updateModuleStringSetting(
+                        context,
+                        PixelAodSettings.KEY_WEATHER_DATA_SOURCE,
+                        selected
+                    )
+                    if (selected != PixelAodSettings.WEATHER_DATA_SOURCE_SYSTEM) {
+                        requestBreezyWeatherRefresh(context)
+                    }
+                }
+            }
+        )
+    }
+
     if (showIconPackDialog) {
-        val availablePacks = remember { getAvailableIconPacks(context) }
         IconPackDialog(
             current = weatherIconPack.value,
             options = availablePacks,
@@ -1005,7 +1090,7 @@ private fun SettingsContent(
                 showIconPackDialog = false
                 if (selected != weatherIconPack.value) {
                     weatherIconPack.value = selected
-                    prefs.edit().putString(PixelAodSettings.KEY_WEATHER_ICON_PACK, selected).apply()
+                    updateModuleStringSetting(context, PixelAodSettings.KEY_WEATHER_ICON_PACK, selected)
                 }
             }
         )
@@ -1048,6 +1133,7 @@ private fun SettingsContent(
             }
         )
     }
+
     if (showClockColorModeDialog) {
         ClockColorModeDialog(
             current = clockColorMode.value,
@@ -1065,6 +1151,7 @@ private fun SettingsContent(
             }
         )
     }
+
     if (showClockDial) {
         PixelAodTimePickerDialog(
             title = clockDialTitle,
@@ -1130,6 +1217,13 @@ private fun languageLabel(value: String): String = when (value) {
 }
 
 @Composable
+private fun weatherDataSourceLabel(value: String): String = when (value) {
+    PixelAodSettings.WEATHER_DATA_SOURCE_SYSTEM -> stringResource(R.string.weather_source_system)
+    PixelAodSettings.WEATHER_DATA_SOURCE_BREEZY -> stringResource(R.string.weather_source_breezy)
+    else -> stringResource(R.string.weather_source_auto)
+}
+
+@Composable
 private fun nonLockscreenAodTransitionLabel(value: String): String = when (value) {
     PixelAodSettings.NON_LOCKSCREEN_AOD_TRANSITION_DIRECT_FINAL ->
         stringResource(R.string.non_lockscreen_aod_transition_direct_final)
@@ -1166,6 +1260,7 @@ private fun ClockColorModeDialog(
         onSelected = onSelected
     )
 }
+
 @Composable
 private fun LanguageDialog(
     current: String,
@@ -1219,9 +1314,14 @@ private fun NonLockscreenAodTransitionDialog(
         onSelected = onSelected
     )
 }
+
 private fun getAvailableIconPacks(context: Context): List<Pair<String, String>> {
     val packs = mutableListOf<Pair<String, String>>()
     packs.add("" to context.getString(R.string.default_weather_icon_pack))
+    packs.add(
+        PixelAodSettings.WEATHER_ICON_PACK_BUILTIN_GOOGLE to
+            context.getString(R.string.builtin_google_weather_icon_pack)
+    )
     val pm = context.packageManager
 
     val intents = listOf(
@@ -1252,12 +1352,10 @@ private fun getAvailableIconPacks(context: Context): List<Pair<String, String>> 
 private fun getCalendarIconAppOptions(context: Context): List<Pair<String, String>> {
     val options = mutableListOf("" to context.getString(R.string.default_calendar_icon_app))
     val pm = context.packageManager
-    // Android has no calendar-app registry. Calendar editors advertise this event MIME type.
     val calendarEventIntent = Intent(Intent.ACTION_INSERT)
         .setType("vnd.android.cursor.item/event")
     val packages = linkedMapOf<String, String>()
     for (resolveInfo in pm.queryIntentActivities(calendarEventIntent, PackageManager.MATCH_DEFAULT_ONLY)) {
-        // OPlus's missing-calendar recovery activity deliberately ranks below valid handlers.
         if (resolveInfo.priority < 0) {
             continue
         }

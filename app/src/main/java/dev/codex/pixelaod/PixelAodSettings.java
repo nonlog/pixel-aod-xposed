@@ -30,7 +30,12 @@ public final class PixelAodSettings {
             PixelAodSettingsSchema.KEY_WEATHER_FORECAST_START_TIME;
     public static final String KEY_WEATHER_FORECAST_END_TIME =
             PixelAodSettingsSchema.KEY_WEATHER_FORECAST_END_TIME;
+    public static final String KEY_WEATHER_DATA_SOURCE = PixelAodSettingsSchema.KEY_WEATHER_DATA_SOURCE;
+    public static final String WEATHER_DATA_SOURCE_AUTO = PixelAodSettingsSchema.WEATHER_DATA_SOURCE_AUTO;
+    public static final String WEATHER_DATA_SOURCE_BREEZY = PixelAodSettingsSchema.WEATHER_DATA_SOURCE_BREEZY;
+    public static final String WEATHER_DATA_SOURCE_SYSTEM = PixelAodSettingsSchema.WEATHER_DATA_SOURCE_SYSTEM;
     public static final String KEY_WEATHER_ICON_PACK = PixelAodSettingsSchema.KEY_WEATHER_ICON_PACK;
+    public static final String WEATHER_ICON_PACK_BUILTIN_GOOGLE = PixelAodSettingsSchema.WEATHER_ICON_PACK_BUILTIN_GOOGLE;
     public static final String KEY_CALENDAR_EVENTS = PixelAodSettingsSchema.KEY_CALENDAR_EVENTS;
     public static final String KEY_CALENDAR_ICON_PACKAGE =
             PixelAodSettingsSchema.KEY_CALENDAR_ICON_PACKAGE;

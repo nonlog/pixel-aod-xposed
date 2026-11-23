@@ -4,7 +4,7 @@
     <string name="title_module_enabled">Enable Module</string>
     <string name="desc_module_enabled">Restart SystemUI after disabling</string>
     <string name="title_weather">Weather</string>
-    <string name="desc_weather">Breezy Weather / Gadgetbridge</string>
+    <string name="desc_weather">System Weather or Breezy Weather</string>
     <string name="title_weather_alerts">Weather Alerts</string>
     <string name="desc_weather_alerts">Active alerts from Breezy Weather</string>
     <string name="title_weather_forecast">Tomorrow Forecast</string>
@@ -90,4 +90,19 @@
     <string name="language_system">Follow system</string>
     <string name="language_chinese">中文</string>
     <string name="language_english">English</string>
+    <string name="builtin_google_weather_icon_pack">Google Icons (Built-in)</string>
+    <string name="title_weather_data_source">Weather Source</string>
+    <string name="desc_weather_data_source">Choose System Weather or Breezy Weather</string>
+    <string name="weather_source_auto">Auto</string>
+    <string name="weather_source_system">System</string>
+    <string name="weather_source_breezy">Breezy</string>
+    <string name="dashboard_title">Dashboard</string>
+    <string name="status_module_active">Active · SystemUI Hook</string>
+    <string name="status_module_inactive">Disabled · Restart SystemUI</string>
+    <string name="card_fingerprint_pixel">Pixel Icon</string>
+    <string name="card_fingerprint_stock">Stock</string>
+    <string name="card_clock_meta">W %1$d · R %2$d</string>
+    <string name="card_fingerprint_meta">HDR · Unlock Ripple</string>
+    <string name="card_transition_meta">After unlock</string>
+    <string name="fab_restart_systemui">Restart</string>
 </resources>

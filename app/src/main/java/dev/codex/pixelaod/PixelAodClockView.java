@@ -7587,6 +7587,9 @@ public final class PixelAodClockView extends FrameLayout {
         if (TextUtils.isEmpty(packageName)) {
             return null;
         }
+        if (BuiltinGoogleWeatherIcons.isSelected(packageName)) {
+            return BuiltinGoogleWeatherIcons.loadDrawable(context, weatherCode, isNight);
+        }
         try {
             PackageManager pm = context.getPackageManager();
             android.content.res.Resources res = pm.getResourcesForApplication(packageName);
@@ -7786,16 +7789,34 @@ public final class PixelAodClockView extends FrameLayout {
         if (!PixelAodSettings.getBoolean(context, PixelAodSettings.KEY_WEATHER, true)) {
             return WeatherSnapshot.empty();
         }
-        WeatherSnapshot snapshot;
+        String sourceMode = SystemWeatherProvider.normalizeSourceMode(
+                PixelAodSettings.getString(context, PixelAodSettings.KEY_WEATHER_DATA_SOURCE,
+                        PixelAodSettings.WEATHER_DATA_SOURCE_AUTO));
+        long now = System.currentTimeMillis();
+        WeatherSnapshot breezySnapshot;
         synchronized (PixelAodClockView.class) {
-            snapshot = breezyWeather.isFresh(System.currentTimeMillis())
-                    ? breezyWeather
-                    : WeatherSnapshot.empty();
+            breezySnapshot = breezyWeather;
         }
-        if (!snapshot.hasDisplayableWeather()) {
+        WeatherSnapshot systemSnapshot = WeatherSnapshot.empty();
+        if (!PixelAodSettings.WEATHER_DATA_SOURCE_BREEZY.equals(sourceMode)) {
+            systemSnapshot = SystemWeatherProvider.getCachedOrRefresh(
+                    context != null ? context : appContext,
+                    PixelAodClockView::refreshAllOnMainThread);
+        }
+        WeatherSnapshot selected = SystemWeatherProvider.selectWeatherSnapshot(
+                sourceMode, breezySnapshot, systemSnapshot, now);
+        if (!PixelAodSettings.WEATHER_DATA_SOURCE_SYSTEM.equals(sourceMode)
+                && (breezySnapshot == null || !breezySnapshot.isFresh(now))) {
             maybeRequestCachedBreezyWeather();
         }
-        return snapshot;
+        return selected;
+    }
+
+    private static void refreshAllOnMainThread() {
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+            ActiveClockRendererController.refreshAll("system-weather");
+            PixelLockscreenClockView.refreshAll("system-weather");
+        });
     }
 
     private static BreezyWeatherAlert currentFreshWeatherAlert(Context context) {
