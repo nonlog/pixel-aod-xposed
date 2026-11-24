@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.1.70] - 2026-11-24
+### Fixed
+- **System Weather data source for both CN ColorOS and Global OxygenOS / ColorOS Export**:
+  - Added `/data` ContentProvider queries for `com.oplus.weather.provider.opexp.data` (Global `net.oneplus.weather`), `com.oplus.weather.provider.data` (CN `com.coloros.weather2`), `com.coloros.weather.provider.data`, and `com.oneplus.weather.ContentProvider`, with OnePlus `1001-1014` code mapping and `is_day` day/night icon synthesis.
+  - Fixed `com.coloros.weather.service` (`com.oplusos/oplus/coloros.weather.service.provider.data`) queries to target `weather_info/-10000` (`weather_index=0`), active `attent_city` `_id` -> `weather_info/<id>`, and `intraday_weather_info` (including OPlus's `temprature` column spelling), with 1-based `weather_type` OWM code mapping.
+  - Added a stock lockscreen clock `VIEW_DATE_MESSAGE` (`getExtraMsgView().getMessageContent()`) weather text mirror fallback in `CouiClockPluginHostController`.
+
 ## [0.1.69] - 2026-11-24
 ### Added
 - **`com.fankes.coloros.notify` monochrome icon compatibility with pixel chroma guard**:
