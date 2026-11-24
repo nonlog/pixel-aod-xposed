@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.1.71] - 2026-11-24
+### Fixed
+- **Compact AOD At a Glance vertical clearance**:
+  - Updated `CouiClockHostView` and `CouiClockContextualLayoutPolicy` so the compact AOD contextual row (tomorrow's forecast / alerts / calendar) always clears both the compact clock's visual bottom and the right-hand date/weather block with symmetric `12dp` spacing.
+- **Blank lockscreen clock after SystemUI restart or non-default clock styles**:
+  - Synthesized an initial `RenderState` for ColorOS 17 `KeyguardPlugin` before the first `onClockStateChanged` callback, tracked scene-deferred plugins in `PENDING_PLUGINS` for `resyncForNativeScene()`, and gated stock clock suppression in `PixelAodHook` on `CouiClockPluginHostController.hasValidatedHost()`.
+- **Settings UI text truncation**:
+  - Allowed settings row titles and descriptions in `PixelAodDesignSystem.kt` to wrap naturally instead of clipping at a single line, and added Breezy Weather `Settings -> External modules -> Data sharing` instructions.
+
+### Changed
+- Simplified bilingual `README.md` / `README.zh-CN.md`, added MIT `LICENSE`, and cleaned internal docs and personal helper scripts from the repository.
+
 ## [0.1.70] - 2026-11-24
 ### Fixed
 - **System Weather data source for both CN ColorOS and Global OxygenOS / ColorOS Export**:
