@@ -26,3 +26,8 @@ screenshots/
 *.p12
 *.keystore
 *.keystore.base64
+
+# Personal & agent notes (never commit)
+AGENTS.md
+CONTEXT.md
+AOD_MIGRATION_RECORD.md
