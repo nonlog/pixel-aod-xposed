@@ -251,9 +251,41 @@ final class AodNotificationPipeline {
     }
 
     static boolean isOosDeskClockLiveAlert(StatusBarNotification sbn) {
-        return sbn != null
-                && "com.oneplus.deskclock".equals(sbn.getPackageName())
-                && isOosLiveAlertCarrier(sbn);
+        if (sbn == null || !isOosLiveAlertCarrier(sbn)) {
+            return false;
+        }
+        String pkg = sbn.getPackageName();
+        return "com.oneplus.deskclock".equals(pkg)
+                || "com.coloros.alarmclock".equals(pkg)
+                || "com.oplus.alarmclock".equals(pkg);
+    }
+
+    static boolean isOosScreenRecorderLiveAlert(StatusBarNotification sbn) {
+        if (sbn == null) {
+            return false;
+        }
+        String pkg = sbn.getPackageName();
+        return "com.oplus.screenrecorder".equals(pkg)
+                || "com.coloros.screenrecorder".equals(pkg);
+    }
+
+    static boolean isOosSoundRecorderLiveAlert(StatusBarNotification sbn) {
+        if (sbn == null) {
+            return false;
+        }
+        String pkg = sbn.getPackageName();
+        return "com.coloros.soundrecorder".equals(pkg)
+                || "com.oneplus.soundrecorder".equals(pkg)
+                || "com.oplus.soundrecorder".equals(pkg);
+    }
+
+    static boolean isOosInCallLiveAlert(StatusBarNotification sbn) {
+        if (sbn == null) {
+            return false;
+        }
+        String pkg = sbn.getPackageName();
+        return "com.android.incallui".equals(pkg)
+                || "com.os.callservice".equals(pkg);
     }
 
     static String notificationIconDedupeKey(StatusBarNotification sbn) {
@@ -277,6 +309,15 @@ final class AodNotificationPipeline {
         }
         if (isOosDeskClockLiveAlert(sbn)) {
             return "deskclock";
+        }
+        if (isOosScreenRecorderLiveAlert(sbn)) {
+            return "screenrecorder";
+        }
+        if (isOosSoundRecorderLiveAlert(sbn)) {
+            return "soundrecorder";
+        }
+        if (isOosInCallLiveAlert(sbn)) {
+            return "incall";
         }
         try {
             Notification notification = sbn.getNotification();
@@ -360,7 +401,11 @@ final class AodNotificationPipeline {
             return joined.contains("usb")
                     || joined.contains("adb")
                     || joined.contains("debugging enabled")
-                    || joined.contains("charging this device");
+                    || joined.contains("charging this device")
+                    || joined.contains("usb 调试")
+                    || joined.contains("正在通过 usb")
+                    || joined.contains("已连接 usb")
+                    || joined.contains("通过 usb");
         } catch (Throwable ignored) {
             return false;
         }
@@ -386,6 +431,9 @@ final class AodNotificationPipeline {
         if (sbn == null || sbn.getNotification() == null) {
             return false;
         }
+        if (isSystemVpnNotification(sbn)) {
+            return true;
+        }
         String packageName = sbn.getPackageName();
         if (!"android".equals(packageName) && !"com.android.systemui".equals(packageName)) {
             return false;
@@ -399,6 +447,9 @@ final class AodNotificationPipeline {
         if (isSystemNetworkStatusNotification(sbn)) {
             return true;
         }
+        if (isSystemCastNotification(sbn)) {
+            return true;
+        }
         String joined = systemNotificationText(sbn);
         return joined.contains("module update")
                 || joined.contains("network status")
@@ -407,9 +458,49 @@ final class AodNotificationPipeline {
                 || joined.contains("wi-fi sharing")
                 || joined.contains("wifi sharing")
                 || joined.contains("device is connected")
+                || joined.contains("个人热点")
+                || joined.contains("热点")
+                || joined.contains("网络共享")
+                || joined.contains("wlan 共享")
                 || joined.contains("usb")
                 || joined.contains("debugging enabled")
                 || joined.contains("charging this device");
+    }
+
+    static boolean isSystemVpnNotification(StatusBarNotification sbn) {
+        if (sbn == null || sbn.getNotification() == null) {
+            return false;
+        }
+        String packageName = sbn.getPackageName();
+        if ("com.android.vpndialogs".equals(packageName)) {
+            return true;
+        }
+        if (!"android".equals(packageName) && !"com.android.systemui".equals(packageName)) {
+            return false;
+        }
+        String channelId = sbn.getNotification().getChannelId();
+        if ("VPN".equalsIgnoreCase(channelId)) {
+            return true;
+        }
+        String joined = systemNotificationText(sbn);
+        return joined.contains("vpn");
+    }
+
+    static boolean isSystemCastNotification(StatusBarNotification sbn) {
+        if (sbn == null || sbn.getNotification() == null) {
+            return false;
+        }
+        String packageName = sbn.getPackageName();
+        if (!"android".equals(packageName) && !"com.android.systemui".equals(packageName)) {
+            return false;
+        }
+        String joined = systemNotificationText(sbn);
+        return joined.contains("casting")
+                || joined.contains("screen cast")
+                || joined.contains("wireless display")
+                || joined.contains("投屏")
+                || joined.contains("屏幕共享")
+                || joined.contains("无线显示");
     }
 
     /**
@@ -437,7 +528,11 @@ final class AodNotificationPipeline {
         return joined.contains("wi-fi sharing")
                 || joined.contains("wifi sharing")
                 || joined.contains("hotspot")
-                || joined.contains("tether");
+                || joined.contains("tether")
+                || joined.contains("个人热点")
+                || joined.contains("热点")
+                || joined.contains("网络共享")
+                || joined.contains("wlan 共享");
     }
 
     static boolean isHotspotDisabledNotificationText(String text) {

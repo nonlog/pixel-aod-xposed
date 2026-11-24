@@ -4,8 +4,8 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.PorterDuff;
 import android.graphics.Rect;
-import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.text.Layout;
@@ -15,33 +15,27 @@ import android.text.TextUtils;
 import android.view.View;
 
 /**
- * Pixel-style Material 3 incoming notification card shown during Ambient Display pulses.
- * Matches native Pixel lockscreen/ambient notification card geometry:
- * 28dp rounded pill container, 38dp circular icon badge on the left, bold headline + body.
+ * Authentic Google Pixel Ambient Display (AOD) incoming notification pulse view.
+ * Renders directly on pure OLED black (no gray card box or gray icon badge) aligned to the
+ * Pixel compact clock margin: monochrome small icon + muted app header, bold title, 2-line body.
  */
 final class PixelPeekNotificationView extends View {
-    private static final float CARD_SIDE_MARGIN_DP = 16f;
-    private static final float CARD_RADIUS_DP = 28f;
-    private static final float CARD_MIN_HEIGHT_DP = 76f;
-    private static final float CARD_MAX_HEIGHT_DP = 112f;
-    private static final float PADDING_H_DP = 16f;
-    private static final float PADDING_V_DP = 14f;
-    private static final float ICON_BADGE_DP = 38f;
-    private static final float ICON_GLYPH_DP = 22f;
-    private static final float ICON_TEXT_GAP_DP = 14f;
-    private static final float TITLE_TEXT_SP = 15.5f;
-    private static final float BODY_TEXT_SP = 14f;
+    private static final float SIDE_MARGIN_DP = 24f;
+    private static final float HEADER_ICON_DP = 17f;
+    private static final float HEADER_ICON_GAP_DP = 8f;
+    private static final float HEADER_BOTTOM_GAP_DP = 6f;
+    private static final float TITLE_BODY_GAP_DP = 3f;
+    private static final float HEADER_TEXT_SP = 12.5f;
+    private static final float TITLE_TEXT_SP = 16f;
+    private static final float BODY_TEXT_SP = 14.5f;
 
-    private static final int SURFACE_CONTAINER_COLOR = 0xFF1F2227;
-    private static final int ICON_BADGE_COLOR = 0xFF333942;
-    private static final int PRIMARY_TEXT_COLOR = Color.rgb(227, 227, 227);
-    private static final int SECONDARY_TEXT_COLOR = Color.rgb(196, 199, 204);
+    private static final int HEADER_TEXT_COLOR = Color.rgb(160, 165, 172);
+    private static final int PRIMARY_TEXT_COLOR = Color.rgb(242, 242, 242);
+    private static final int SECONDARY_TEXT_COLOR = Color.rgb(184, 188, 194);
 
-    private final Paint surfacePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint badgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final TextPaint headerPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint titlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint bodyPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF cardRect = new RectF();
     private final Rect oldIconBounds = new Rect();
     private PixelPeekNotificationContent content;
     private float cardTopPx = Float.NaN;
@@ -53,11 +47,9 @@ final class PixelPeekNotificationView extends View {
         setFocusable(false);
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
 
-        surfacePaint.setStyle(Paint.Style.FILL);
-        surfacePaint.setColor(SURFACE_CONTAINER_COLOR);
-
-        badgePaint.setStyle(Paint.Style.FILL);
-        badgePaint.setColor(ICON_BADGE_COLOR);
+        headerPaint.setColor(HEADER_TEXT_COLOR);
+        headerPaint.setTextSize(sp(HEADER_TEXT_SP));
+        headerPaint.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
 
         titlePaint.setColor(PRIMARY_TEXT_COLOR);
         titlePaint.setTextSize(sp(TITLE_TEXT_SP));
@@ -89,78 +81,80 @@ final class PixelPeekNotificationView extends View {
             return;
         }
 
-        float side = dp(CARD_SIDE_MARGIN_DP);
+        float side = dp(SIDE_MARGIN_DP);
         float left = side;
         float right = getWidth() - side;
         if (right <= left) {
             return;
         }
+        int contentWidth = Math.max(1, Math.round(right - left));
         float top = Float.isNaN(cardTopPx)
                 ? dp(PixelPeekGeometryPolicy.MIN_CARD_TOP_DP) : cardTopPx;
-        float padH = dp(PADDING_H_DP);
-        float padV = dp(PADDING_V_DP);
-        float badgeSize = dp(ICON_BADGE_DP);
-        float textLeft = left + padH + badgeSize + dp(ICON_TEXT_GAP_DP);
-        float textRight = right - padH;
-        int textWidth = Math.max(1, Math.round(textRight - textLeft));
+        float maxBottom = getHeight() - dp(PixelPeekGeometryPolicy.BOTTOM_SAFE_AREA_DP);
 
         CharSequence headline = current.title.length() > 0 ? current.title : current.appName;
-        CharSequence ellipsizedTitle = ellipsize(headline, titlePaint, textWidth);
+        boolean showHeaderAppName = current.appName.length() > 0
+                && !TextUtils.equals(current.appName, headline);
         CharSequence bodySource = current.message.length() > 0
                 ? current.message
-                : (current.title.length() > 0 ? current.appName : "");
-        StaticLayout bodyLayout = buildBodyLayout(bodySource, textWidth);
+                : (current.title.length() > 0 && !showHeaderAppName ? current.appName : "");
 
-        Paint.FontMetrics titleFm = titlePaint.getFontMetrics();
-        float titleHeight = ellipsizedTitle.length() > 0 ? (titleFm.descent - titleFm.ascent) : 0f;
-        float textBlockHeight = titleHeight;
-        if (bodyLayout != null && bodyLayout.getHeight() > 0) {
-            if (textBlockHeight > 0f) {
-                textBlockHeight += dp(3f);
-            }
-            textBlockHeight += bodyLayout.getHeight();
-        }
-        float contentHeight = Math.max(badgeSize, textBlockHeight);
-        float cardHeight = clamp(contentHeight + (padV * 2f),
-                dp(CARD_MIN_HEIGHT_DP), dp(CARD_MAX_HEIGHT_DP));
-        float bottom = Math.min(getHeight() - side, top + cardHeight);
-
-        float radius = dp(CARD_RADIUS_DP);
-        cardRect.set(left, top, right, bottom);
-        canvas.drawRoundRect(cardRect, radius, radius, surfacePaint);
-
-        float badgeCx = left + padH + (badgeSize / 2f);
-        float badgeCy = top + ((bottom - top) / 2f);
-        canvas.drawCircle(badgeCx, badgeCy, badgeSize / 2f, badgePaint);
-
+        float cursorY = top;
         Drawable icon = current.appIcon;
-        if (icon != null) {
-            float glyphSize = dp(ICON_GLYPH_DP);
-            int iconLeft = Math.round(badgeCx - (glyphSize / 2f));
-            int iconTop = Math.round(badgeCy - (glyphSize / 2f));
-            int size = Math.round(glyphSize);
-            oldIconBounds.set(icon.getBounds());
-            icon.setBounds(iconLeft, iconTop, iconLeft + size, iconTop + size);
-            icon.draw(canvas);
-            icon.setBounds(oldIconBounds);
+        float iconSize = dp(HEADER_ICON_DP);
+        float iconGap = dp(HEADER_ICON_GAP_DP);
+
+        // Top ambient header row: crisp monochrome small icon + muted app name on pure OLED black.
+        if (icon != null || showHeaderAppName) {
+            Paint.FontMetrics headerFm = headerPaint.getFontMetrics();
+            float headerTextHeight = headerFm.descent - headerFm.ascent;
+            float rowHeight = Math.max(icon != null ? iconSize : 0f,
+                    showHeaderAppName ? headerTextHeight : 0f);
+            float rowCenterY = cursorY + (rowHeight / 2f);
+            float headerTextLeft = left;
+            if (icon != null) {
+                int tintColor = PixelAodClockView.resolveMaterialInfoColor(getContext());
+                Drawable tinted = icon.mutate();
+                tinted.setTint(tintColor != 0 ? tintColor : PRIMARY_TEXT_COLOR);
+                tinted.setTintMode(PorterDuff.Mode.SRC_IN);
+                int iconLeft = Math.round(left);
+                int iconTop = Math.round(rowCenterY - (iconSize / 2f));
+                int sizePx = Math.round(iconSize);
+                oldIconBounds.set(tinted.getBounds());
+                tinted.setBounds(iconLeft, iconTop, iconLeft + sizePx, iconTop + sizePx);
+                tinted.draw(canvas);
+                tinted.setBounds(oldIconBounds);
+                headerTextLeft += iconSize + iconGap;
+            }
+            if (showHeaderAppName) {
+                int headerWidth = Math.max(1, Math.round(right - headerTextLeft));
+                CharSequence ellipsizedApp = ellipsize(current.appName, headerPaint, headerWidth);
+                float baseline = rowCenterY - ((headerFm.ascent + headerFm.descent) / 2f);
+                canvas.drawText(ellipsizedApp, 0, ellipsizedApp.length(),
+                        headerTextLeft, baseline, headerPaint);
+            }
+            cursorY += rowHeight + dp(HEADER_BOTTOM_GAP_DP);
         }
 
-        float textStartY = top + Math.max(padV, ((bottom - top) - textBlockHeight) / 2f);
-        float cursorY = textStartY;
-        if (ellipsizedTitle.length() > 0) {
+        // Bold title line.
+        CharSequence ellipsizedTitle = ellipsize(headline, titlePaint, contentWidth);
+        if (ellipsizedTitle.length() > 0 && cursorY < maxBottom) {
+            Paint.FontMetrics titleFm = titlePaint.getFontMetrics();
+            float titleHeight = titleFm.descent - titleFm.ascent;
             float titleBaseline = cursorY - titleFm.ascent;
-            canvas.drawText(ellipsizedTitle, 0, ellipsizedTitle.length(), textLeft, titleBaseline, titlePaint);
-            cursorY += titleHeight + dp(3f);
+            canvas.drawText(ellipsizedTitle, 0, ellipsizedTitle.length(),
+                    left, titleBaseline, titlePaint);
+            cursorY += titleHeight + dp(TITLE_BODY_GAP_DP);
         }
-        if (bodyLayout != null && bodyLayout.getHeight() > 0) {
-            float maxBottom = bottom - padV;
-            if (cursorY < maxBottom) {
-                canvas.save();
-                canvas.clipRect(textLeft, cursorY, textRight, maxBottom);
-                canvas.translate(textLeft, cursorY);
-                bodyLayout.draw(canvas);
-                canvas.restore();
-            }
+
+        // Clean 2-line message body.
+        StaticLayout bodyLayout = buildBodyLayout(bodySource, contentWidth);
+        if (bodyLayout != null && bodyLayout.getHeight() > 0 && cursorY < maxBottom) {
+            canvas.save();
+            canvas.clipRect(left, cursorY, right, maxBottom);
+            canvas.translate(left, cursorY);
+            bodyLayout.draw(canvas);
+            canvas.restore();
         }
     }
 
@@ -171,7 +165,7 @@ final class PixelPeekNotificationView extends View {
         return StaticLayout.Builder.obtain(message, 0, message.length(), bodyPaint, width)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
                 .setIncludePad(false)
-                .setLineSpacing(0f, 1.16f)
+                .setLineSpacing(0f, 1.18f)
                 .setMaxLines(2)
                 .setEllipsize(TextUtils.TruncateAt.END)
                 .build();
@@ -190,9 +184,5 @@ final class PixelPeekNotificationView extends View {
 
     private float sp(float value) {
         return value * getResources().getDisplayMetrics().scaledDensity;
-    }
-
-    private static float clamp(float value, float min, float max) {
-        return Math.max(min, Math.min(max, value));
     }
 }

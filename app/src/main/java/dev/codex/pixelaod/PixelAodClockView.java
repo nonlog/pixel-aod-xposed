@@ -212,6 +212,9 @@ public final class PixelAodClockView extends FrameLayout {
             new LinkedHashMap<>();
     private static final NotificationIconSnapshotCache<Drawable.ConstantState>
             NOTIFICATION_ICON_SNAPSHOT_CACHE = new NotificationIconSnapshotCache<>(64);
+    private static final ExternalStatusBarIconCache<Icon>
+            EXTERNAL_STATUS_BAR_ICON_CACHE = new ExternalStatusBarIconCache<>(64);
+    private static volatile boolean torchActive;
     private static final Set<String> expiredInactiveMediaPackages = new HashSet<>();
     private static final Set<String> loggedNativeSystemDrawableNames = new HashSet<>();
     private static final Object INACTIVE_MEDIA_TIMEOUT_RECEIVER_LOCK = new Object();
@@ -3240,11 +3243,65 @@ public final class PixelAodClockView extends FrameLayout {
 
     static void clearActiveNotifications() {
         NOTIFICATION_ICON_SNAPSHOT_CACHE.clear();
+        EXTERNAL_STATUS_BAR_ICON_CACHE.clear();
         setActiveNotifications(null, "clearActiveNotifications");
     }
 
     static void invalidateNotificationIconSnapshot(String notificationKey) {
         NOTIFICATION_ICON_SNAPSHOT_CACHE.remove(notificationKey);
+        EXTERNAL_STATUS_BAR_ICON_CACHE.remove(notificationKey);
+    }
+
+    static boolean putExternalStatusBarIcon(String notificationKey, Icon icon) {
+        boolean changed = EXTERNAL_STATUS_BAR_ICON_CACHE.put(notificationKey, icon);
+        if (changed) {
+            NOTIFICATION_ICON_SNAPSHOT_CACHE.remove(notificationKey);
+        }
+        return changed;
+    }
+
+    static Icon getExternalStatusBarIcon(String notificationKey) {
+        return EXTERNAL_STATUS_BAR_ICON_CACHE.get(notificationKey);
+    }
+
+    static void clearExternalStatusBarIcons() {
+        EXTERNAL_STATUS_BAR_ICON_CACHE.clear();
+        NOTIFICATION_ICON_SNAPSHOT_CACHE.clear();
+    }
+
+    static boolean isTorchActive() {
+        return torchActive;
+    }
+
+    static void setTorchActive(boolean enabled, String source) {
+        if (torchActive == enabled) {
+            return;
+        }
+        torchActive = enabled;
+        synchronized (PixelAodClockView.class) {
+            lastNotificationSnapshotSignature = "";
+        }
+        String refreshSource = "torch-" + (enabled ? "on" : "off")
+                + "#" + (source != null ? source : "unknown");
+        PixelAodLog.log("updated synthetic AOD torch state enabled=" + enabled
+                + " source=" + refreshSource
+                + " trace=" + currentAodTraceId());
+        refreshInstancesFromNotificationSnapshot(refreshSource);
+        ActiveClockRendererController.refreshSemanticData(refreshSource + "#COUI");
+    }
+
+    static boolean shouldSynthesizeTorchIcon(List<StatusBarNotification> notifications) {
+        if (!torchActive) {
+            return false;
+        }
+        if (notifications != null) {
+            for (StatusBarNotification sbn : notifications) {
+                if (AodNotificationPipeline.isOosFlashlightLiveAlert(sbn)) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     static void setMediaNotificationCandidates(StatusBarNotification[] notifications, String source) {
@@ -4544,6 +4601,7 @@ public final class PixelAodClockView extends FrameLayout {
                     view.requestAodFrameRefresh("force-" + source);
                 }
             }
+            ActiveClockRendererController.refreshSemanticData("force-" + source + "#COUI");
             PixelAodLog.log("force refreshed Pixel AOD notification icons trace="
                     + currentAodTraceId()
                     + " source=" + source
@@ -5586,7 +5644,8 @@ public final class PixelAodClockView extends FrameLayout {
         String signature = AodNotificationPipeline.notificationSignature(
                 notifications.toArray(new StatusBarNotification[0]))
                 + "|media=" + currentMediaNotificationKey
-                + "|expiredMedia=" + expiredInactiveMediaPackageSignature();
+                + "|expiredMedia=" + expiredInactiveMediaPackageSignature()
+                + "|torch=" + (torchActive ? "1" : "0");
         if (TextUtils.equals(lastNotificationIconSignature, signature)) {
             PixelAodLog.log("skipped native AOD notification icon rebuild trace=" + currentAodTraceId()
                     + " source=" + source
@@ -5598,7 +5657,8 @@ public final class PixelAodClockView extends FrameLayout {
         lastNotificationIconSignature = signature;
         notificationIconRow.removeAllViews();
         notificationOverflowView = null;
-        if (notifications.isEmpty()) {
+        boolean synthesizeTorch = shouldSynthesizeTorchIcon(notifications);
+        if (notifications.isEmpty() && !synthesizeTorch) {
             notificationIconRow.setVisibility(View.GONE);
             applyClockMode(false);
             PixelAodLog.log("rebuilt native AOD notification icons trace=" + currentAodTraceId()
@@ -5651,6 +5711,14 @@ public final class PixelAodClockView extends FrameLayout {
             }
             loadedIconKeys.add(dedupeKey);
             loadedIcons.add(drawable);
+        }
+        if (synthesizeTorch
+                && seenIconKeys.add("com.android.systemui|live-alert|flashlight|synthetic-torch")) {
+            Drawable torchDrawable = loadOosFlashlightIcon(getContext());
+            if (torchDrawable != null) {
+                loadedIconKeys.add("com.android.systemui|live-alert|flashlight|synthetic-torch");
+                loadedIcons.add(torchDrawable);
+            }
         }
         NotificationIconDisplayPlan displayPlan =
                 NotificationIconDisplayPlan.fromEligibleIconKeys(
@@ -5867,7 +5935,8 @@ public final class PixelAodClockView extends FrameLayout {
             return Collections.emptyList();
         }
         List<StatusBarNotification> notifications = currentNotifications();
-        if (notifications.isEmpty()) {
+        boolean synthesizeTorch = shouldSynthesizeTorchIcon(notifications);
+        if (notifications.isEmpty() && !synthesizeTorch) {
             return Collections.emptyList();
         }
         HashSet<String> seenIconKeys = new HashSet<>();
@@ -5891,6 +5960,14 @@ public final class PixelAodClockView extends FrameLayout {
                 loadedIcons.add(drawable);
             }
         }
+        if (synthesizeTorch
+                && seenIconKeys.add("com.android.systemui|live-alert|flashlight|synthetic-torch")) {
+            Drawable torchDrawable = loadOosFlashlightIcon(context);
+            if (torchDrawable != null) {
+                loadedIconKeys.add("com.android.systemui|live-alert|flashlight|synthetic-torch");
+                loadedIcons.add(torchDrawable);
+            }
+        }
         // The COUI host owns its five-icon plus-x presentation. Keep this semantic adapter's
         // filtered/deduplicated input complete so hidden count remains exact.
         return new ArrayList<>(loadedIcons);
@@ -5901,6 +5978,9 @@ public final class PixelAodClockView extends FrameLayout {
      * Media alone keeps the large AOD clock (module media row).
      */
     static boolean hasCompactClockNotificationContent() {
+        if (torchActive) {
+            return true;
+        }
         synchronized (PixelAodClockView.class) {
             if (activeNotifications != null) {
                 for (StatusBarNotification sbn : activeNotifications) {
@@ -6108,13 +6188,15 @@ public final class PixelAodClockView extends FrameLayout {
         }
         Notification notification = sbn.getNotification();
         Icon smallIcon = notification != null ? notification.getSmallIcon() : null;
-        if (smallIcon == null) {
+        Icon externalIcon = getExternalStatusBarIcon(sbn.getKey());
+        Icon cacheToken = externalIcon != null ? externalIcon : smallIcon;
+        if (cacheToken == null) {
             return loadSmallIconDrawableUncached(context, sbn);
         }
         Configuration configuration = context.getResources().getConfiguration();
         int tintColor = resolveMaterialInfoColor(context);
         Drawable.ConstantState cachedState = NOTIFICATION_ICON_SNAPSHOT_CACHE.get(
-                sbn.getKey(), sbn, smallIcon, configuration, tintColor);
+                sbn.getKey(), sbn, cacheToken, configuration, tintColor);
         if (cachedState != null) {
             try {
                 return cachedState.newDrawable(context.getResources()).mutate();
@@ -6126,7 +6208,7 @@ public final class PixelAodClockView extends FrameLayout {
         Drawable.ConstantState snapshotState = snapshotNotificationIcon(context, resolved);
         if (snapshotState != null) {
             NOTIFICATION_ICON_SNAPSHOT_CACHE.put(
-                    sbn.getKey(), sbn, smallIcon, new Configuration(configuration), tintColor,
+                    sbn.getKey(), sbn, cacheToken, new Configuration(configuration), tintColor,
                     snapshotState);
         }
         return resolved;
@@ -6180,17 +6262,13 @@ public final class PixelAodClockView extends FrameLayout {
             }
             boolean filledMask = looksLikeFilledNotificationMask(drawable);
             boolean tinyForeground = looksLikeTinyForeground(drawable);
-            if (AodNotificationPipeline.isOosLiveAlertNotification(sbn)) {
-                Drawable liveAlertIcon = loadOosLiveAlertIcon(context, sbn);
+            boolean smallIconUsable = !filledMask && !tinyForeground;
+            boolean isLiveAlert = AodNotificationPipeline.isOosLiveAlertNotification(sbn);
+            if (isLiveAlert) {
+                Drawable liveAlertIcon = loadOosLiveAlertIcon(context, sbn, smallIconUsable);
                 if (liveAlertIcon != null) {
                     logNotificationIconChoice(sbn.getPackageName(), "oos-live-alert-glyph");
                     return liveAlertIcon;
-                }
-                if (filledMask || tinyForeground) {
-                    return loadNotificationFallbackGlyph(context, sbn,
-                            SystemNotificationGlyphDrawable.TYPE_LIVE_ALERT,
-                            "blocky-live-alert-smallIcon filled=" + filledMask
-                                    + " tiny=" + tinyForeground);
                 }
             }
             if (AodNotificationPipeline.isSystemNotificationCandidate(sbn)) {
@@ -6210,6 +6288,21 @@ public final class PixelAodClockView extends FrameLayout {
                 mutated.setTintMode(PorterDuff.Mode.SRC_IN);
                 logNotificationIconChoice(sbn.getPackageName(), "system-smallIcon");
                 return mutated;
+            }
+            Icon externalIcon = getExternalStatusBarIcon(sbn.getKey());
+            if (externalIcon != null) {
+                Drawable externalDrawable = loadIconDrawable(context, sbn.getPackageName(), externalIcon);
+                if (externalDrawable != null
+                        && looksMonochromeDrawable(externalDrawable)
+                        && !looksLikeFilledNotificationMask(externalDrawable)
+                        && !looksLikeTinyForeground(externalDrawable)) {
+                    Drawable mutated = externalDrawable.mutate();
+                    mutated.setTint(resolveMaterialInfoColor(context));
+                    mutated.setTintMode(PorterDuff.Mode.SRC_IN);
+                    logNotificationIconChoice(sbn.getPackageName(),
+                            "external-statusbar-monochrome-icon");
+                    return mutated;
+                }
             }
             if (AodNotificationPipeline.isLauncherStyleSmallIconResourceName(resourceName)) {
                 logNotificationIconChoice(sbn.getPackageName(),
@@ -6234,8 +6327,11 @@ public final class PixelAodClockView extends FrameLayout {
                     }
                 }
                 return loadNotificationFallbackGlyph(context, sbn,
-                        SystemNotificationGlyphDrawable.TYPE_GENERIC_NOTIFICATION,
-                        "blocky-notification-smallIcon filled=" + filledMask
+                        isLiveAlert
+                                ? SystemNotificationGlyphDrawable.TYPE_LIVE_ALERT
+                                : SystemNotificationGlyphDrawable.TYPE_GENERIC_NOTIFICATION,
+                        (isLiveAlert ? "blocky-live-alert-smallIcon" : "blocky-notification-smallIcon")
+                                + " filled=" + filledMask
                                 + " tiny=" + tinyForeground);
             }
             Drawable mutated = drawable.mutate();
@@ -6410,33 +6506,66 @@ public final class PixelAodClockView extends FrameLayout {
             }
             return loadSystemNotificationGlyph(context, sbn);
         }
+        if (AodNotificationPipeline.isSystemVpnNotification(sbn)) {
+            Drawable nativeIcon = loadTintedPackageDrawable(context, color, "com.android.systemui",
+                    "stat_sys_vpn_ic",
+                    "ic_vpn_key");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+            nativeIcon = loadTintedSystemDrawable(context, color,
+                    "vpn_connected",
+                    "stat_sys_vpn_ic");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+        }
+        if (AodNotificationPipeline.isSystemCastNotification(sbn)) {
+            Drawable nativeIcon = loadTintedPackageDrawable(context, color, "com.android.systemui",
+                    "stat_sys_cast",
+                    "ic_cast_connected");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+            nativeIcon = loadTintedSystemDrawable(context, color,
+                    "stat_sys_cast");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+        }
         if (text.contains("module update")) {
             return loadSystemNotificationGlyph(context, sbn);
         }
         return null;
     }
 
-    private static Drawable loadOosLiveAlertIcon(Context context, StatusBarNotification sbn) {
+    static Drawable loadOosFlashlightIcon(Context context) {
+        int color = resolveMaterialInfoColor(context);
+        Drawable nativeIcon = loadTintedPackageDrawable(context, color, "com.android.systemui",
+                "stat_sys_flashlight",
+                "ic_qs_flashlight",
+                "ic_qs_flashlight_enabled",
+                "ic_flashlight",
+                "ic_flashlight_on",
+                "op_ic_flashlight",
+                "op_ic_qs_flashlight");
+        if (nativeIcon != null) {
+            return nativeIcon;
+        }
+        nativeIcon = loadTintedPackageDrawable(context, color, MODULE_PACKAGE,
+                "ic_aosp_qs_flashlight");
+        if (nativeIcon != null) {
+            return nativeIcon;
+        }
+        return new SystemNotificationGlyphDrawable(color,
+                SystemNotificationGlyphDrawable.TYPE_FLASHLIGHT);
+    }
+
+    private static Drawable loadOosLiveAlertIcon(Context context, StatusBarNotification sbn,
+            boolean smallIconUsable) {
         int color = resolveMaterialInfoColor(context);
         if (AodNotificationPipeline.isOosFlashlightLiveAlert(sbn)) {
-            Drawable nativeIcon = loadTintedPackageDrawable(context, color, "com.android.systemui",
-                    "stat_sys_flashlight",
-                    "ic_qs_flashlight",
-                    "ic_qs_flashlight_enabled",
-                    "ic_flashlight",
-                    "ic_flashlight_on",
-                    "op_ic_flashlight",
-                    "op_ic_qs_flashlight");
-            if (nativeIcon != null) {
-                return nativeIcon;
-            }
-            nativeIcon = loadTintedPackageDrawable(context, color, MODULE_PACKAGE,
-                    "ic_aosp_qs_flashlight");
-            if (nativeIcon != null) {
-                return nativeIcon;
-            }
-            return new SystemNotificationGlyphDrawable(color,
-                    SystemNotificationGlyphDrawable.TYPE_FLASHLIGHT);
+            return loadOosFlashlightIcon(context);
         }
         if (AodNotificationPipeline.isOosDeskClockLiveAlert(sbn)) {
             Drawable nativeIcon = loadTintedSystemDrawable(context, color,
@@ -6447,7 +6576,8 @@ public final class PixelAodClockView extends FrameLayout {
             if (nativeIcon != null) {
                 return nativeIcon;
             }
-            nativeIcon = loadTintedPackageDrawable(context, color, "com.oneplus.deskclock",
+            String clockPkg = sbn.getPackageName();
+            nativeIcon = loadTintedPackageDrawable(context, color, clockPkg,
                     "stat_notify_alarm",
                     "stat_notify_timer",
                     "ic_stat_timer",
@@ -6462,8 +6592,30 @@ public final class PixelAodClockView extends FrameLayout {
             return new SystemNotificationGlyphDrawable(color,
                     SystemNotificationGlyphDrawable.TYPE_TIMER);
         }
-        return new SystemNotificationGlyphDrawable(color,
-                SystemNotificationGlyphDrawable.TYPE_LIVE_ALERT);
+        if (!smallIconUsable && AodNotificationPipeline.isOosScreenRecorderLiveAlert(sbn)) {
+            Drawable nativeIcon = loadTintedPackageDrawable(context, color, "com.android.systemui",
+                    "ic_screenrecord",
+                    "stat_sys_screen_record");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+        }
+        if (!smallIconUsable && AodNotificationPipeline.isOosSoundRecorderLiveAlert(sbn)) {
+            Drawable nativeIcon = loadTintedSystemDrawable(context, color,
+                    "ic_btn_speak_now",
+                    "stat_notify_call_mute");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+        }
+        if (!smallIconUsable && AodNotificationPipeline.isOosInCallLiveAlert(sbn)) {
+            Drawable nativeIcon = loadTintedSystemDrawable(context, color,
+                    "stat_sys_phone_call");
+            if (nativeIcon != null) {
+                return nativeIcon;
+            }
+        }
+        return null;
     }
 
     private void noteMediaContentActivity(String packageName, String source) {
@@ -7013,6 +7165,28 @@ public final class PixelAodClockView extends FrameLayout {
             if (bitmap != null) {
                 bitmap.recycle();
             }
+        }
+    }
+
+    private static boolean looksMonochromeDrawable(Drawable drawable) {
+        if (drawable == null) {
+            return false;
+        }
+        Rect originalBounds = new Rect(drawable.getBounds());
+        try {
+            int size = 24;
+            Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            drawable.setBounds(0, 0, size, size);
+            drawable.draw(canvas);
+            int[] pixels = new int[size * size];
+            bitmap.getPixels(pixels, 0, size, 0, 0, size, size);
+            bitmap.recycle();
+            return ExternalStatusBarIconCache.isMonochromePixels(pixels);
+        } catch (Throwable ignored) {
+            return false;
+        } finally {
+            drawable.setBounds(originalBounds);
         }
     }
 

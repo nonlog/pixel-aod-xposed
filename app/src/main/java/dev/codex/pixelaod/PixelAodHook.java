@@ -12,6 +12,7 @@ import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.Icon;
 import android.hardware.SensorEvent;
 import android.hardware.camera2.CameraManager;
 import android.os.Build;
@@ -58,6 +59,7 @@ final class PixelAodHook {
     private static final AtomicBoolean SELECTED_USER_RECEIVER_REGISTERED = new AtomicBoolean(false);
     private static final AtomicBoolean TORCH_CALLBACK_REGISTERED = new AtomicBoolean(false);
     private static final AtomicBoolean TORCH_REFRESH_RECEIVER_REGISTERED = new AtomicBoolean(false);
+    private static final HashSet<String> ACTIVE_TORCH_CAMERA_IDS = new HashSet<>();
     private static volatile boolean vendorWakeTriggerAuthorityHooked;
     private static volatile boolean vendorProximityPauseAuthorityHooked;
     private static final String ACTION_SWITCH_FLASHLIGHT =
@@ -579,9 +581,21 @@ final class PixelAodHook {
     }
 
     private static void onTorchStateChanged(String source, String cameraId, boolean enabled) {
+        boolean torchActive;
+        String normalizedCameraId = TextUtils.isEmpty(cameraId) ? "default" : cameraId;
+        synchronized (ACTIVE_TORCH_CAMERA_IDS) {
+            if (enabled) {
+                ACTIVE_TORCH_CAMERA_IDS.add(normalizedCameraId);
+            } else {
+                ACTIVE_TORCH_CAMERA_IDS.remove(normalizedCameraId);
+            }
+            torchActive = !ACTIVE_TORCH_CAMERA_IDS.isEmpty();
+        }
+        PixelAodClockView.setTorchActive(torchActive, source);
         PixelAodLog.log("observed torch state source=" + source
                 + " cameraId=" + cameraId
                 + " enabled=" + enabled
+                + " torchActive=" + torchActive
                 + " trace=" + PixelAodClockView.currentAodTraceId()
                 + " state={" + PixelAodClockView.describeAodState(systemUiContext) + "}");
         LIVE_ALERT_NOTIFICATION_REFRESH_BATCH.request(delayMillis -> {
@@ -1478,10 +1492,66 @@ final class PixelAodHook {
                     captureFinalStatusBarNotificationIconAtPreDraw(iconView, token);
                 }
             }, StatusBarNotification.class);
+            Class<?> statusBarIconClass = ModernHookBridge.findClass(
+                    "com.android.internal.statusbar.StatusBarIcon", classLoader);
+            ModernHookBridge.hookAfter(statusBarIconViewClass, "set", param -> {
+                if (param.args == null || param.args.length == 0
+                        || param.args[0] == null
+                        || param.thisObject == null) {
+                    return;
+                }
+                captureExternalStatusBarMonochromeIcon(param.thisObject, param.args[0]);
+            }, statusBarIconClass);
             PixelAodLog.log("hooked StatusBarIconView final notification drawable capture class="
                     + STATUS_BAR_ICON_VIEW);
         } catch (Throwable t) {
             PixelAodLog.log("StatusBarIconView final notification drawable capture unavailable", t);
+        }
+    }
+
+    private static void captureExternalStatusBarMonochromeIcon(Object iconView,
+            Object statusBarIconObj) {
+        try {
+            Object notifObj = ModernHookBridge.callMethod(iconView, "getNotification");
+            if (!(notifObj instanceof StatusBarNotification)) {
+                notifObj = ModernHookBridge.getObjectField(iconView, "mNotification");
+            }
+            if (!(notifObj instanceof StatusBarNotification)) {
+                return;
+            }
+            StatusBarNotification sbn = (StatusBarNotification) notifObj;
+            if (sbn.getNotification() == null
+                    || AodNotificationPipeline.isSyntheticAutogroupSummaryFlags(
+                            sbn.getNotification().flags)
+                    || AodNotificationPipeline.isSystemNotificationCandidate(sbn)
+                    || AodNotificationPipeline.isOosFlashlightLiveAlert(sbn)) {
+                return;
+            }
+            Object iconField = ModernHookBridge.getObjectField(statusBarIconObj, "icon");
+            if (!(iconField instanceof Icon)) {
+                return;
+            }
+            Icon statusBarIcon = (Icon) iconField;
+            Icon rawSmallIcon = sbn.getNotification().getSmallIcon();
+            boolean statusBarIsBitmap = Build.VERSION.SDK_INT >= 28
+                    && statusBarIcon.getType() == Icon.TYPE_BITMAP;
+            boolean rawIsBitmap = Build.VERSION.SDK_INT >= 28
+                    && rawSmallIcon != null
+                    && rawSmallIcon.getType() == Icon.TYPE_BITMAP;
+            if (!ExternalStatusBarIconCache.isExternalBitmapReplacement(
+                    rawSmallIcon, statusBarIcon, statusBarIsBitmap, rawIsBitmap)) {
+                return;
+            }
+            boolean firstCapture = PixelAodClockView.getExternalStatusBarIcon(sbn.getKey()) == null;
+            if (PixelAodClockView.putExternalStatusBarIcon(sbn.getKey(), statusBarIcon)
+                    && firstCapture) {
+                PixelAodLog.log("captured external StatusBarIcon monochrome replacement pkg="
+                        + sbn.getPackageName()
+                        + " key=" + sbn.getKey());
+                PixelAodClockView.forceRefreshNotificationIcons("external-statusbar-icon");
+            }
+        } catch (Throwable t) {
+            PixelAodLog.log("failed to capture external StatusBarIcon monochrome icon", t);
         }
     }
 
