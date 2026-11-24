@@ -1010,6 +1010,7 @@ final class CouiClockPluginHostController {
         if (context == null) {
             return;
         }
+        mirrorStockExtraMessageWeatherFromPlugin(plugin);
         if (PixelAodRuntimeState.isDirectGoneHandoffActive()) {
             record.nonLockscreenAodPrearmed = false;
             record.nonLockscreenAodSceneGateBypass = false;
@@ -1232,6 +1233,42 @@ final class CouiClockPluginHostController {
         }
     }
 
+    private static void mirrorStockExtraMessageWeatherFromPlugin(Object plugin) {
+        if (plugin == null) {
+            return;
+        }
+        Object dateMsgView = callOptional(plugin, "getView", VIEW_DATE_MESSAGE);
+        if (dateMsgView instanceof View) {
+            mirrorStockExtraMessageWeather((View) dateMsgView);
+            return;
+        }
+        Object clockSubPlugin = callOptional(plugin, "getClockPlugin");
+        if (clockSubPlugin != null) {
+            Object subDateMsgView = callOptional(clockSubPlugin, "getView", VIEW_DATE_MESSAGE);
+            if (subDateMsgView instanceof View) {
+                mirrorStockExtraMessageWeather((View) subDateMsgView);
+            }
+        }
+    }
+
+    private static void mirrorStockExtraMessageWeather(View dateMessageView) {
+        if (dateMessageView == null) {
+            return;
+        }
+        try {
+            Object extraMsgView = callOptional(dateMessageView, "getExtraMsgView");
+            if (extraMsgView == null) {
+                return;
+            }
+            Object msgContent = callOptional(extraMsgView, "getMessageContent");
+            if (msgContent instanceof android.widget.TextView) {
+                CharSequence text = ((android.widget.TextView) msgContent).getText();
+                SystemWeatherProvider.updateMirroredLockscreenWeather(text);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     private static void rememberNativeVisuals(Object plugin, HostRecord record) {
         installNativeDrawSuppression(record.root.getClass().getClassLoader());
         for (int viewId : new int[]{VIEW_CLOCK_TIME, VIEW_DATE_MESSAGE}) {
@@ -1257,6 +1294,9 @@ final class CouiClockPluginHostController {
             PixelAodLog.log("skipped COUI native suppression viewId=" + viewId
                     + " reason=host-relative-view");
             return;
+        }
+        if (viewId == VIEW_DATE_MESSAGE) {
+            mirrorStockExtraMessageWeather(view);
         }
         if (viewId != 0) {
             bindNativeDrawContainer(view, viewId, record);

@@ -94,4 +94,27 @@ public class BuiltinGoogleWeatherIconsAndSourceTest {
         assertTrue(BuiltinGoogleWeatherIcons.isSelected(PixelAodSettingsSchema.WEATHER_ICON_PACK_BUILTIN_GOOGLE));
         assertFalse(BuiltinGoogleWeatherIcons.isSelected("org.example.otherpack"));
     }
+
+    @Test
+    public void systemWeatherMapsCnWeatherInfoGlobalOpDataAndMirroredText() {
+        assertEquals(800, SystemWeatherProvider.mapOplusWeatherInfoCodeToOwm(1, ""));
+        assertEquals(801, SystemWeatherProvider.mapOplusWeatherInfoCodeToOwm(2, ""));
+        assertEquals(804, SystemWeatherProvider.mapOplusWeatherInfoCodeToOwm(3, ""));
+        assertEquals(211, SystemWeatherProvider.mapOplusWeatherInfoCodeToOwm(5, ""));
+        assertEquals(500, SystemWeatherProvider.mapOplusWeatherInfoCodeToOwm(8, ""));
+        assertEquals(741, SystemWeatherProvider.mapOplusWeatherInfoCodeToOwm(19, ""));
+        assertEquals(721, SystemWeatherProvider.mapOplusWeatherInfoCodeToOwm(36, ""));
+        assertEquals(801, SystemWeatherProvider.mapOnePlusOpWeatherCodeToOwm(1001, "Partly cloudy"));
+        assertEquals(800, SystemWeatherProvider.mapOnePlusOpWeatherCodeToOwm(1001, ""));
+        assertEquals(500, SystemWeatherProvider.mapOnePlusOpWeatherCodeToOwm(1005, ""));
+        assertEquals(211, SystemWeatherProvider.mapOnePlusOpWeatherCodeToOwm(1009, ""));
+        assertEquals(600, SystemWeatherProvider.mapOnePlusOpWeatherCodeToOwm(1010, ""));
+        String[] cnMirror = SystemWeatherProvider.parseMirroredLockscreenWeatherParts("晴 7°C");
+        assertEquals("7°", cnMirror[0]);
+        assertEquals("800", cnMirror[2]);
+        String[] globalMirror = SystemWeatherProvider.parseMirroredLockscreenWeatherParts("Partly cloudy 24°");
+        assertEquals("24°", globalMirror[0]);
+        assertEquals("801", globalMirror[2]);
+        assertEquals(null, SystemWeatherProvider.parseMirroredLockscreenWeatherParts("Alarm 07:30"));
+    }
 }
