@@ -54,6 +54,7 @@ final class CouiClockPluginHostController {
             Collections.newSetFromMap(new WeakHashMap<Class<?>, Boolean>());
     private static final Set<ClassLoader> NATIVE_DRAW_UNAVAILABLE_LOADERS =
             Collections.newSetFromMap(new WeakHashMap<ClassLoader, Boolean>());
+    private static final Set<Object> PENDING_PLUGINS = Collections.newSetFromMap(new WeakHashMap<Object, Boolean>());
     // A weak-key map with strong HostRecord values still roots the entire view tree through
     // HostRecord.root/host. The index is weak on both sides; the live host owns its record tag.
     private static final WeakHostRegistry<ViewGroup, HostRecord> HOSTS =
@@ -559,6 +560,15 @@ final class CouiClockPluginHostController {
             if (!PixelAodRuntimeState.nativeKeyguardSceneAllowsPresentation()) {
                 return;
             }
+            List<Object> pendingPlugins;
+            synchronized (PENDING_PLUGINS) {
+                pendingPlugins = new ArrayList<>(PENDING_PLUGINS);
+            }
+            for (Object pendingPlugin : pendingPlugins) {
+                if (pendingPlugin != null) {
+                    attachAndSync(pendingPlugin, source + "#pending-plugin-resync", false);
+                }
+            }
             int synced = 0;
             int releasedNonLockscreenBypasses = 0;
             for (HostRecord record : snapshotRecords()) {
@@ -912,6 +922,9 @@ final class CouiClockPluginHostController {
                 existing = HOSTS.get(root);
             }
             if (PixelAodRuntimeState.nativeKeyguardSceneUsesCouiHostVisibility()) {
+                synchronized (PENDING_PLUGINS) {
+                    PENDING_PLUGINS.add(plugin);
+                }
                 PixelAodLog.log("skipped COUI ClockPlugin attach/sync reason=native-bouncer-host-visibility"
                         + " rootId=" + identity(root)
                         + " scene={" + PixelAodRuntimeState.describeNativeKeyguardSceneEligibility() + "}"
@@ -919,6 +932,9 @@ final class CouiClockPluginHostController {
                 return;
             }
             if (!nativeSceneAllowsRecord(existing)) {
+                synchronized (PENDING_PLUGINS) {
+                    PENDING_PLUGINS.add(plugin);
+                }
                 if (existing != null && existing.host.getParent() == root) {
                     suppressRecordForNativeScene(existing, source + "#attach-block");
                 }
@@ -938,6 +954,9 @@ final class CouiClockPluginHostController {
             HostRecord record = ensureHost(root, plugin, source);
             if (record == null) {
                 return;
+            }
+            synchronized (PENDING_PLUGINS) {
+                PENDING_PLUGINS.remove(plugin);
             }
             restoreHostAncestors(record, source + "#visible");
             record.suppressNativeDraw = true;
@@ -1471,7 +1490,9 @@ final class CouiClockPluginHostController {
                     keyguardState.clockSizeState, animate, renderDriven);
         }
         if (plugin != null && KEYGUARD_PLUGIN_CLASS.equals(plugin.getClass().getName())) {
-            return null;
+            int initialUiState = PixelAodClockView.isAodActive() ? 1 : 0;
+            int initialClockSize = PixelAodClockView.hasCompactClockNotificationContent() ? 0 : 1;
+            return new RenderState(initialUiState, Boolean.FALSE, initialClockSize, false, renderDriven);
         }
         try {
             Object renderedParams = ModernHookBridge.callMethod(plugin, "getRenderedParams");

@@ -92,7 +92,7 @@
     <string name="language_english">English</string>
     <string name="builtin_google_weather_icon_pack">Google Icons (Built-in)</string>
     <string name="title_weather_data_source">Weather Source</string>
-    <string name="desc_weather_data_source">Choose System Weather or Breezy Weather</string>
+    <string name="desc_weather_data_source">Choose System Weather or Breezy Weather (enable Data sharing in Breezy Weather → Settings → External modules)</string>
     <string name="weather_source_auto">Auto</string>
     <string name="weather_source_system">System</string>
     <string name="weather_source_breezy">Breezy</string>

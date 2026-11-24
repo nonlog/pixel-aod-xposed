@@ -360,7 +360,7 @@ fun PixelAodPage(
                                 text = subtitle,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = s.onSurfaceVariant,
-                                maxLines = 1,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
@@ -950,7 +950,7 @@ fun PixelAodNavigationRow(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
                     color = if (enabled) s.onSurface else s.onSurface.copy(alpha = 0.38f),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 if (subtitle.isNotEmpty()) {
@@ -959,7 +959,7 @@ fun PixelAodNavigationRow(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = if (enabled) s.onSurfaceVariant else s.onSurfaceVariant.copy(alpha = 0.38f),
-                        maxLines = 1,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -1025,7 +1025,7 @@ fun PixelAodToggleRow(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
                     color = if (enabled) s.onSurface else s.onSurface.copy(alpha = 0.38f),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 if (subtitle.isNotEmpty()) {
@@ -1034,7 +1034,7 @@ fun PixelAodToggleRow(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = if (enabled) s.onSurfaceVariant else s.onSurfaceVariant.copy(alpha = 0.38f),
-                        maxLines = 1,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -1079,7 +1079,7 @@ fun PixelAodChoiceRow(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
                     color = if (enabled) s.onSurface else s.onSurface.copy(alpha = 0.38f),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 if (subtitle.isNotEmpty()) {
@@ -1088,7 +1088,7 @@ fun PixelAodChoiceRow(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = if (enabled) s.onSurfaceVariant else s.onSurfaceVariant.copy(alpha = 0.38f),
-                        maxLines = 1,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -1151,7 +1151,7 @@ fun PixelAodSliderRow(
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.titleMedium,
                     color = if (enabled) s.onSurface else s.onSurface.copy(alpha = 0.38f),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
                 Surface(
@@ -1332,7 +1332,7 @@ fun PixelAodSelectionDialog(
                                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
                                     ),
                                     color = if (selected) s.onSecondaryContainer else s.onSurface,
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 if (option.subtitle.isNotEmpty()) {
@@ -1341,7 +1341,7 @@ fun PixelAodSelectionDialog(
                                         text = option.subtitle,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = s.onSurfaceVariant,
-                                        maxLines = 1,
+                                        maxLines = 4,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }

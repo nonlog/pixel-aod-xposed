@@ -679,7 +679,7 @@ final class PixelAodHook {
     }
 
     private static boolean shouldSuppressStockClockDraw(View view) {
-        if (!CouiClockPluginHostController.isHookInstalled()) {
+        if (!CouiClockPluginHostController.hasValidatedHost()) {
             return false;
         }
         if (isPixelClockOverlay(view) || hasCustomClockAncestor(view)) {
@@ -771,7 +771,7 @@ final class PixelAodHook {
     }
 
     private static boolean shouldSuppressStockClockByHook(View view) {
-        if (!CouiClockPluginHostController.isHookInstalled()) {
+        if (!CouiClockPluginHostController.hasValidatedHost()) {
             return false;
         }
         if (isPixelClockOverlay(view) || hasCustomClockAncestor(view)) {
@@ -4300,7 +4300,7 @@ final class PixelAodHook {
                     .append(source)
                     .append(" view=").append(markerFor(view))
                     .append(" parentRoot=").append(markerFor(highestParentGroup(view)));
-            if (CouiClockPluginHostController.isHookInstalled()
+            if (CouiClockPluginHostController.hasValidatedHost()
                     && PixelLockscreenClockView.shouldShowOnLockscreen(view.getContext())) {
                 hideStockKeyguardClockViews(highestParentGroup(view));
                 if (!containsPersistentClockPluginHost(view)) {
@@ -5158,7 +5158,7 @@ final class PixelAodHook {
     }
 
     private static void hideStockClockViews(ViewGroup root) {
-        if (!CouiClockPluginHostController.isHookInstalled()) {
+        if (!CouiClockPluginHostController.hasValidatedHost()) {
             return;
         }
         if (!PrimaryDisplayPolicy.isPrimary(root)) {
@@ -5243,7 +5243,7 @@ final class PixelAodHook {
     }
 
     private static void hideStockKeyguardClockViews(ViewGroup root) {
-        if (!CouiClockPluginHostController.isHookInstalled()) {
+        if (!CouiClockPluginHostController.hasValidatedHost()) {
             return;
         }
         if (!PrimaryDisplayPolicy.isPrimary(root)) {

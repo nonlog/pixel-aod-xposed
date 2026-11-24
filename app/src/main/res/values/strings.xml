@@ -92,7 +92,7 @@
     <string name="language_english">English</string>
     <string name="builtin_google_weather_icon_pack">Google 图标 (内置)</string>
     <string name="title_weather_data_source">天气数据源</string>
-    <string name="desc_weather_data_source">选择系统天气或 Breezy Weather</string>
+    <string name="desc_weather_data_source">选择系统天气或 Breezy Weather（使用 Breezy 需在其 设置 → 外部模块 中开启数据共享）</string>
     <string name="weather_source_auto">自动</string>
     <string name="weather_source_system">系统天气</string>
     <string name="weather_source_breezy">Breezy</string>
