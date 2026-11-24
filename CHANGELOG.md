@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.1.69] - 2026-11-24
+### Added
+- **`com.fankes.coloros.notify` monochrome icon compatibility with pixel chroma guard**:
+  - Added `ExternalStatusBarIconCache` hooked into `StatusBarIconView.set(StatusBarIcon)` so monochrome status bar icons injected by `com.fankes.coloros.notify` are reused directly on AOD without hook conflicts.
+  - Added pixel-level monochrome chroma validation (`isMonochromePixels` and `looksMonochromeDrawable`) so uninstalling `com.fankes.coloros.notify` safely rejects colored ColorOS bitmaps instead of tinting them into solid silhouettes.
+
+### Changed
+- **Authentic Pixel Ambient Notification Peek (`PixelPeekNotificationView`)**:
+  - Removed the dark gray card container and icon circle so incoming AOD notifications render directly on pure OLED black aligned with the compact Pixel clock (`17dp` tinted monochrome smallIcon, `12.5sp` app name, `16sp` bold white title, `14.5sp` body).
+- **Material 3 Expressive (M3E) Settings UI (`PixelAodDesignSystem.kt`)**:
+  - Replaced hardcoded neutral grays and drop shadows with Android 16 Dynamic Color tonal surfaces (`surfaceContainer`, `surfaceContainerLowest`, `primaryContainer`, `secondaryContainer`, `tertiaryContainer`), `30sp` bold root header, `30dp` `primaryContainer` Hero card, `40dp` circular icon wells, `2dp` segmented row dividers, M3E check-thumb switches, pill segmented controls, and floating pill navigation bar.
+
+### Fixed
+- **ColorOS 17 Flashlight AOD icon missing**:
+  - Tracked active camera torch IDs in `PixelAodHook` (`onTorchStateChanged`) and synthesized the tinted flashlight icon in `PixelAodClockView` when ColorOS 17 Fluid Cloud / Seedling skips posting `NotificationManager.notify(10011)`.
+  - Updated `PixelAodClockView.forceRefreshNotificationIcons()` to refresh `ActiveClockRendererController` semantic snapshots in `COUI_PORT` mode.
+- **System & Fluid Cloud (Live Alert) notification icon adaptation**:
+  - Expanded Desk Clock Fluid Cloud matching to `com.coloros.alarmclock` / `com.oplus.alarmclock`, added Screen Recorder, Sound Recorder, and In-Call Fluid Cloud fallback glyphs, preserved real monochrome `smallIcon` drawables for generic Fluid Cloud apps, and added Chinese USB/Hotspot text plus VPN (`stat_sys_vpn_ic`) and Screen Cast (`stat_sys_cast`) icon support.
+
 ## [0.1.68] - 2026-11-23
 ### Added
 - **ColorOS 17 / Android 17 support**:
