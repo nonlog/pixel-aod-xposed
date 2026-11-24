@@ -150,6 +150,7 @@ final class CouiClockHostView extends FrameLayout {
     private String diagnosticSource = "constructor";
     private String lastTargetDiagnosticSignature;
     private float contextualTargetTopPx;
+    private float lastCompactClockVisualBottomPx;
     private boolean contextualSurfaceActive;
     private boolean deferredSmallContextualReveal;
     private boolean smallAodContextualTransitionInProgress;
@@ -1007,6 +1008,11 @@ final class CouiClockHostView extends FrameLayout {
         float contextualY = CouiClockContextualLayoutPolicy.contextualTop(
                 top, dateHeight, weatherVisible, weatherY, weatherHeight,
                 dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP));
+        if (lastCompactClockVisualBottomPx > 0f) {
+            contextualY = Math.max(contextualY,
+                    lastCompactClockVisualBottomPx
+                            + dp(PixelAodVisualStyle.COUI_COMPACT_CLOCK_TO_EVENT_GAP_DP));
+        }
         float contextualX = PresentationLayoutDirectionPolicy.startAlignedX(
                 getWidth(), contextualGroup.getMeasuredWidth(),
                 CouiCompactLayout.couiHostContentLeft(
@@ -1927,9 +1933,25 @@ final class CouiClockHostView extends FrameLayout {
                             getResources().getDisplayMetrics().density), rtl);
             contextualGapPx = dp(PixelAodVisualStyle.COUI_COMPACT_INFO_TO_EVENT_GAP_DP);
         }
-        contextualY = CouiClockContextualLayoutPolicy.contextualTop(
-                dateY, contextualDateHeight, contextualWeatherVisible,
-                weatherY, contextualWeatherHeight, contextualGapPx);
+        float compactClockBottomPx = 0f;
+        if (presentation.visualScene() != CouiClockPresentationModel.Scene.LARGE
+                && metricSet != null && glyphTargets != null) {
+            float clockBurnY = presentation.dozing() ? burnInY : 0f;
+            compactClockBottomPx = compactClockVisualBottom(metricSet, glyphTargets, clockBurnY);
+            if (presentation.visualScene() == CouiClockPresentationModel.Scene.SMALL
+                    && compactClockBottomPx > 0f) {
+                lastCompactClockVisualBottomPx = compactClockBottomPx;
+            }
+        }
+        contextualY = compactClockBottomPx > 0f
+                ? CouiClockContextualLayoutPolicy.contextualTopBelowClockAndInfo(
+                        compactClockBottomPx,
+                        dp(PixelAodVisualStyle.COUI_COMPACT_CLOCK_TO_EVENT_GAP_DP),
+                        dateY, contextualDateHeight, contextualWeatherVisible,
+                        weatherY, contextualWeatherHeight, contextualGapPx)
+                : CouiClockContextualLayoutPolicy.contextualTop(
+                        dateY, contextualDateHeight, contextualWeatherVisible,
+                        weatherY, contextualWeatherHeight, contextualGapPx);
         float xOffset = presentation.dozing() ? burnInX : 0f;
         float yOffset = presentation.dozing() ? burnInY : 0f;
         applyInformationTarget(dateGroup, dateX + xOffset, dateY + yOffset, animate, duration);
@@ -2410,6 +2432,23 @@ final class CouiClockHostView extends FrameLayout {
                     + glyphWidth(glyphSet, i) * targets[i].scale);
         }
         return right;
+    }
+
+    private float compactClockVisualBottom(GlyphSet glyphSet, GlyphTarget[] targets, float burnY) {
+        float bottom = 0f;
+        int count = Math.min(4, targets.length);
+        for (int i = 0; i < count; i++) {
+            TextView digit = glyphSet.digits[i];
+            float baseline = digit.getBaseline();
+            float visualHeight = baseline > 0f
+                    ? baseline
+                    : digit.getMeasuredHeight() * 0.78f;
+            if (visualHeight <= 0f) {
+                visualHeight = digit.getTextSize() * 0.92f;
+            }
+            bottom = Math.max(bottom, (targets[i].y - burnY) + visualHeight * targets[i].scale);
+        }
+        return bottom;
     }
 
     private float compactClockLeft(GlyphSet glyphSet, GlyphTarget[] targets, float burnX) {

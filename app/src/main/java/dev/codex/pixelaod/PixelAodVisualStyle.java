@@ -58,7 +58,7 @@ final class PixelAodVisualStyle {
     // by 2 dp from the prior 27 dp anchor so its painted bottom aligns more closely with the small
     // clock digits; the contextual/notification minimum anchors remain independently protected.
     static final int COUI_COMPACT_DATE_TO_WEATHER_TOP_OFFSET_DP = 25;
-    static final int COUI_COMPACT_INFO_TO_EVENT_GAP_DP = 4;
+    static final int COUI_COMPACT_INFO_TO_EVENT_GAP_DP = 12;
     static final int COMPACT_CONTEXTUAL_TO_NOTIFICATION_GAP_DP = 12;
     static final int COMPACT_MEDIA_TO_NOTIFICATION_GAP_DP = 12;
     static final int COUI_COMPACT_MEDIA_EDGE_DP = 32;

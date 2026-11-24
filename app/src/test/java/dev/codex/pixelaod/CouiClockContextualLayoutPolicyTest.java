@@ -97,4 +97,12 @@ public final class CouiClockContextualLayoutPolicyTest {
         assertFalse(CouiClockContextualLayoutPolicy.deferSmallAodContextualReveal(
                 true, true, true, false));
     }
+
+    @Test
+    public void contextualTopClearsTallerCompactClockBottom() {
+        assertEquals(212f, CouiClockContextualLayoutPolicy.contextualTopBelowClockAndInfo(
+                200f, 12f, 149f, 22, true, 172f, 22, 12f), 0.01f);
+        assertEquals(220f, CouiClockContextualLayoutPolicy.contextualTopBelowClockAndInfo(
+                180f, 12f, 150f, 30, true, 184f, 24, 12f), 0.01f);
+    }
 }
