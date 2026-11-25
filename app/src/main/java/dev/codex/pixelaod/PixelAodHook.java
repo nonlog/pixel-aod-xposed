@@ -849,6 +849,7 @@ final class PixelAodHook {
         }
         String name = className.toLowerCase(Locale.US);
         if (name.contains("pixelaod")
+                || StockAodSuppressionScopePolicy.isProtectedSharedPluginOrLyricMarker(className)
                 || name.contains("media")
                 || name.contains("music")
                 || name.contains("charge")
@@ -4452,7 +4453,9 @@ final class PixelAodHook {
                 return;
             }
             lastPixelHost = new WeakReference<>(host);
-            if (lastStockHost.get() == null) {
+            if (lastStockHost.get() == null
+                    && StockAodSuppressionScopePolicy.isStockAodSuppressionRootClassName(
+                            host.getClass().getName())) {
                 lastStockHost = new WeakReference<>(host);
             }
             boolean surfaceVisible = isLikelyLockscreenSurfaceVisible(context, host, host);
@@ -4694,7 +4697,8 @@ final class PixelAodHook {
             }
 
             String marker = markerFor(view);
-            if (looksLikeNativeOplusPeekView(marker)) {
+            if (looksLikeNativeOplusPeekView(marker)
+                    || StockAodSuppressionScopePolicy.isProtectedSharedPluginOrLyricMarker(marker)) {
                 return false;
             }
             if (view instanceof ViewGroup && containsNativeOplusPeekView((ViewGroup) view)) {
@@ -5161,6 +5165,14 @@ final class PixelAodHook {
         if (!CouiClockPluginHostController.hasValidatedHost()) {
             return;
         }
+        if (root == null || !StockAodSuppressionScopePolicy.isStockAodSuppressionRootClassName(
+                root.getClass().getName())) {
+            if (root != null) {
+                PixelAodLog.log("skipped stock AOD hide pass reason=non-aod-root root="
+                        + markerFor(root));
+            }
+            return;
+        }
         if (!PrimaryDisplayPolicy.isPrimary(root)) {
             return;
         }
@@ -5178,7 +5190,8 @@ final class PixelAodHook {
             }
 
             String marker = markerFor(view);
-            if (looksLikeNativeOplusPeekView(marker)) {
+            if (looksLikeNativeOplusPeekView(marker)
+                    || StockAodSuppressionScopePolicy.isProtectedSharedPluginOrLyricMarker(marker)) {
                 return false;
             }
             if (looksLikeSystemAodMediaView(marker)) {
@@ -5783,7 +5796,9 @@ final class PixelAodHook {
     }
 
     private static boolean looksLikeGenericStockAodVisual(String marker, View view) {
-        if (view == null || looksLikeNativeOplusPeekView(marker)) {
+        if (view == null
+                || looksLikeNativeOplusPeekView(marker)
+                || StockAodSuppressionScopePolicy.isProtectedSharedPluginOrLyricMarker(marker)) {
             return false;
         }
         String m = marker.toLowerCase(Locale.US);
@@ -6167,6 +6182,9 @@ final class PixelAodHook {
     }
 
     private static boolean looksLikeSystemAodMediaView(String marker) {
+        if (StockAodSuppressionScopePolicy.isProtectedSharedPluginOrLyricMarker(marker)) {
+            return false;
+        }
         String m = marker.toLowerCase(Locale.US);
         if (m.contains("timeview") || m.contains("clock") || m.contains("date")) {
             return false;

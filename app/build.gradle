@@ -13,8 +13,8 @@ android {
         applicationId "dev.codex.pixelaod"
         minSdk 26
         targetSdk 36
-        versionCode 9070
-        versionName "0.1.71"
+        versionCode 9071
+        versionName "0.1.72"
     }
 
     signingConfigs {
