@@ -213,18 +213,12 @@ jobs:
         env:
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
           VERSION_CODE: ${{ steps.version.outputs.version_code }}
-          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
-          APK_SHA256: ${{ steps.package.outputs.apk_sha256 }}
-          CERT_SHA256: ${{ steps.package.outputs.cert_sha256 }}
         run: |
           python3 - <<'PY'
           import os, re
 
           ver = os.environ['VERSION_NAME']
           code = os.environ['VERSION_CODE']
-          mode = os.environ['SIGNING_MODE']
-          apk_sha = os.environ['APK_SHA256']
-          cert_sha = os.environ['CERT_SHA256']
 
           changelog = open('CHANGELOG.md', encoding='utf-8').read()
           pattern = rf'^## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=^## \[|\Z)'
@@ -235,17 +229,7 @@ jobs:
               f'## Pixel AOD for OPlus v{ver} (`versionCode {code}`)',
               '',
               body,
-              '',
-              '### Package & Signature',
-              f'- **APK**: `PixelAOD-v{ver}-release.apk`',
-              f'- **APK SHA-256**: `{apk_sha}`',
-              f'- **Signing Certificate SHA-256**: `{cert_sha}`',
-              f'- **Signing Mode**: `{mode}`',
           ]
-          if mode == 'ephemeral-generated':
-              notes.append(
-                  '- **Install Note**: Signed with a freshly generated release key. If a previously installed build used a different signature, uninstall the old app first before installing this APK.'
-              )
           open('dist/RELEASE_NOTES.md', 'w', encoding='utf-8').write('\n'.join(notes) + '\n')
           PY
 
