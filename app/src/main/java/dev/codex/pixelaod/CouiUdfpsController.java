@@ -50,6 +50,8 @@ final class CouiUdfpsController {
             "com.android.systemui.biometrics.AuthRippleView";
     private static final String FINGERPRINT_UTILS_CLASS =
             "com.oplus.systemui.biometrics.finger.KeyguardFingerprintUtils";
+    private static final String ICON_CLASS =
+            "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintIcon";
     private static final String PRESSED_ICON_CLASS =
             "com.oplus.systemui.biometrics.finger.udfps.OnScreenFingerprintPressedIcon";
     private static final String[] ASYNC_RUNNABLE_CLASSES = {
@@ -141,6 +143,7 @@ final class CouiUdfpsController {
     private static final Map<ImageView, HdrSurfaceState> LAST_HDR_SURFACE_STATES =
             new WeakHashMap<>();
     private static final Map<Object, String> LAST_PRESSED_CARRIER_LOGS = new WeakHashMap<>();
+    private static final Map<ImageView, CouiUdfpsDimmedIconOverlay> DIMMED_OVERLAYS = new WeakHashMap<>();
     private static volatile WeakReference<Object> lastUiMech = new WeakReference<>(null);
 
     private CouiUdfpsController() {
@@ -154,6 +157,7 @@ final class CouiUdfpsController {
         hooked += hookVisualClass(classLoader, UI_MECH_CLASS, true);
         hooked += hookPressedIconClass(classLoader);
         hooked += hookPressedIconMutations(classLoader);
+        hooked += hookPrimaryIconVisibility(classLoader);
         hooked += hookPressedAnimationDecisions(classLoader);
         hooked += hookNotifyHideAodFadeOut(classLoader);
         hooked += hookAsyncClasses(classLoader);
@@ -164,6 +168,43 @@ final class CouiUdfpsController {
         hooked += hookConfigurationChanges();
         PixelAodLog.i("installed independent COUI UDFPS hooks count=" + hooked
                 + " renderer=" + PixelAodFeatureFlags.startupUdfpsRenderer());
+    }
+
+    private static int hookPrimaryIconVisibility(ClassLoader classLoader) {
+        try {
+            Class<?> clazz = ModernHookBridge.findClass(ICON_CLASS, classLoader);
+            int count = 0;
+            for (Method method : clazz.getDeclaredMethods()) {
+                if (!"setVisibility".equals(method.getName())
+                        || Modifier.isAbstract(method.getModifiers())) {
+                    continue;
+                }
+                final Method target = method;
+                target.setAccessible(true);
+                ModernHookBridge.hookAfter(target, param -> {
+                    if (!(param.thisObject instanceof ImageView)) {
+                        return;
+                    }
+                    ImageView icon = (ImageView) param.thisObject;
+                    if (icon.getVisibility() != View.VISIBLE) {
+                        hideDimmedIconOverlay(icon);
+                    } else {
+                        Object uiMech = lastUiMech.get();
+                        if (uiMech != null && isReplacementEnabled(icon.getContext())) {
+                            requestVisualState(icon.getContext(), uiMech,
+                                    "OnScreenFingerprintIcon#setVisibility", false, false);
+                        }
+                    }
+                });
+                count++;
+            }
+            PixelAodLog.log("hooked COUI UDFPS primary icon visibility class=" + ICON_CLASS
+                    + " methods=" + count);
+            return count;
+        } catch (Throwable throwable) {
+            PixelAodLog.log("failed to hook COUI UDFPS primary icon visibility", throwable);
+            return 0;
+        }
     }
 
     private static int hookPressedIconClass(ClassLoader classLoader) {
@@ -719,6 +760,7 @@ final class CouiUdfpsController {
                 updatePressedHdr(pressedIcon, false);
                 restorePressed(pressedIcon, source + "#pressed-restore-after-disable");
             });
+            hideDimmedIconOverlay(icon);
             restoreOriginal(icon, source + "#restore-after-disable");
             hidePress(uiMech, source + "#restore-after-disable");
             return;
@@ -728,10 +770,20 @@ final class CouiUdfpsController {
         normalizeIcon(icon, aod);
         CouiUdfpsDrawable drawable = couiDrawable(icon, resolved, aod);
         cancelCustomAodExit(icon);
-        drawable.setAlpha(255);
-        boolean transitionAnimate = animate && !(force && drawable.isOutlineOnly() == aod);
-        drawable.transitionTo(aod, isDark(resolved), transitionAnimate, force);
+        // OnScreenFingerprintIcon overrides hasOverlappingRendering() to false, so ImageView
+        // delegates OPlus brightnessAlpha dimming directly to mDrawable.setAlpha() while leaving
+        // RenderNode alpha at 1.0. Never call Drawable.setAlpha(int) here or subsequent visual
+        // refreshes clobber brightnessAlpha back to full HBM intensity.
+        drawable.setExitFadeAlpha(1f);
+        boolean dark = isDark(resolved);
+        boolean hasDimLayer = findViewField(uiMech, "dimLayer", "mDimLayer") != null;
+        boolean primaryOutlineOnly = hasDimLayer || aod;
+        boolean transitionAnimate = !hasDimLayer && animate && !(force && drawable.isOutlineOnly() == aod);
+        drawable.transitionTo(primaryOutlineOnly, dark, transitionAnimate, force);
         boolean hdrEnabled = isHdrPressEffectEnabled(resolved);
+        boolean useDimmedOverlay = updateDimmedIconOverlay(
+                uiMech, icon, resolved, hasDimLayer, aod, liveTouchDown, dark, force);
+        drawable.setSuppressedByDimmedOverlay(useDimmedOverlay);
         drawable.setPressed(CouiUdfpsPressedVisualPolicy.primaryDrawablePressed(
                 liveTouchDown, hdrEnabled));
         if (icon.getDrawable() != drawable) {
@@ -794,6 +846,73 @@ final class CouiUdfpsController {
             }
             return drawable;
         }
+    }
+
+    private static boolean updateDimmedIconOverlay(Object uiMech, ImageView icon,
+            Context context, boolean hasDimLayer, boolean aod, boolean liveTouchDown,
+            boolean dark, boolean refreshColors) {
+        if (uiMech == null || icon == null || context == null) {
+            return false;
+        }
+        if (!hasDimLayer || aod || liveTouchDown || icon.getVisibility() != View.VISIBLE) {
+            hideDimmedIconOverlay(icon);
+            return false;
+        }
+        int width = icon.getWidth();
+        int height = icon.getHeight();
+        if (width <= 0 || height <= 0 || !icon.isAttachedToWindow()) {
+            hideDimmedIconOverlay(icon);
+            return false;
+        }
+        int[] location = new int[2];
+        try {
+            icon.getLocationOnScreen(location);
+        } catch (Throwable ignored) {
+            hideDimmedIconOverlay(icon);
+            return false;
+        }
+        float centerX = location[0] + width / 2f;
+        float centerY = location[1] + height / 2f;
+        if (centerX <= 0f || centerY <= 0f) {
+            hideDimmedIconOverlay(icon);
+            return false;
+        }
+        CouiUdfpsDimmedIconOverlay overlay;
+        synchronized (DIMMED_OVERLAYS) {
+            overlay = DIMMED_OVERLAYS.get(icon);
+            if (overlay == null) {
+                overlay = new CouiUdfpsDimmedIconOverlay(context.getApplicationContext(), dark);
+                DIMMED_OVERLAYS.put(icon, overlay);
+            }
+        }
+        overlay.show(centerX, centerY, dark, refreshColors);
+        return true;
+    }
+
+    private static void hideDimmedIconOverlay(ImageView icon) {
+        if (icon == null) {
+            return;
+        }
+        CouiUdfpsDimmedIconOverlay overlay;
+        synchronized (DIMMED_OVERLAYS) {
+            overlay = DIMMED_OVERLAYS.get(icon);
+        }
+        if (overlay != null) {
+            overlay.hide();
+        }
+    }
+
+    private static View findViewField(Object target, String... names) {
+        if (target == null) {
+            return null;
+        }
+        for (String name : names) {
+            Object value = readObjectField(target, name);
+            if (value instanceof View) {
+                return (View) value;
+            }
+        }
+        return null;
     }
 
     private static void normalizeIcon(ImageView icon, boolean aod) {
@@ -1068,6 +1187,12 @@ final class CouiUdfpsController {
         rememberPressedOriginal(pressedIcon);
         synchronized (PRESSED_TOUCH_STATES) {
             PRESSED_TOUCH_STATES.put(pressedIcon, touchDown);
+        }
+        if (touchDown) {
+            ImageView primaryIcon = findFingerprintIcon(uiMech);
+            if (primaryIcon != null) {
+                hideDimmedIconOverlay(primaryIcon);
+            }
         }
         dispatchViewOperation(pressedIcon, source,
                 () -> applyPressedCarrierVisibility(pressedIcon, touchDown, source));
@@ -1517,15 +1642,15 @@ final class CouiUdfpsController {
                 icon.setImageDrawable(targetDrawable);
             }
             if (!SystemAnimationScalePolicy.animationsEnabled()) {
-                targetDrawable.setAlpha(0);
+                targetDrawable.setExitFadeAlpha(0f);
                 PixelAodLog.i("COUI UDFPS custom AOD exit=snap reason=system-animation-scale");
                 return;
             }
-            ValueAnimator animator = ValueAnimator.ofInt(targetDrawable.getAlpha(), 0);
+            ValueAnimator animator = ValueAnimator.ofFloat(targetDrawable.getExitFadeAlpha(), 0f);
             animator.setDuration(resolveAodExitDuration(uiMech));
             animator.setInterpolator(new android.view.animation.LinearInterpolator());
             animator.addUpdateListener(valueAnimator ->
-                    targetDrawable.setAlpha((Integer) valueAnimator.getAnimatedValue()));
+                    targetDrawable.setExitFadeAlpha((Float) valueAnimator.getAnimatedValue()));
             animator.addListener(new AnimatorListenerAdapter() {
                 @Override
                 public void onAnimationEnd(Animator animation) {
@@ -1659,10 +1784,13 @@ final class CouiUdfpsController {
 
     private static void logLiveStateIfChanged(Object uiMech, boolean aod,
             boolean liveTouchDown, String source, ImageView icon) {
+        Drawable currentDrawable = icon.getDrawable();
         String state = "surface=" + (aod ? "AOD" : "LOCKSCREEN")
                 + ",touchDown=" + liveTouchDown + ",drawable="
-                + (icon.getDrawable() != null ? icon.getDrawable().getClass().getSimpleName() : "null")
-                + ",visibility=" + icon.getVisibility();
+                + (currentDrawable != null ? currentDrawable.getClass().getSimpleName() : "null")
+                + ",visibility=" + icon.getVisibility()
+                + ",viewAlpha=" + icon.getAlpha()
+                + ",drawableAlpha=" + (currentDrawable != null ? currentDrawable.getAlpha() : -1);
         synchronized (LAST_STATE_LOGS) {
             if (state.equals(LAST_STATE_LOGS.get(uiMech))) {
                 return;

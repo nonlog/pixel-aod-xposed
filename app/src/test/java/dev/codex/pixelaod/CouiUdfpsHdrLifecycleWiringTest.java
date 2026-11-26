@@ -70,4 +70,23 @@ public final class CouiUdfpsHdrLifecycleWiringTest {
         assertFalse(controller.contains("AODDisplayUtil"));
         assertFalse(controller.contains("requestScreenState"));
     }
+
+    @Test
+    public void primaryDrawableNeverClobbersVendorDrawableAlpha() throws Exception {
+        String controller = source("CouiUdfpsController");
+        assertFalse(controller.contains("drawable.setAlpha("));
+        assertFalse(controller.contains("targetDrawable.setAlpha("));
+        assertTrue(controller.contains("drawable.setExitFadeAlpha(1f)"));
+        assertTrue(controller.contains("targetDrawable.setExitFadeAlpha("));
+    }
+
+    @Test
+    public void dimLayerDevicesKeepFilledCircleOffPrimaryHbmPlane() throws Exception {
+        String controller = source("CouiUdfpsController");
+        assertTrue(controller.contains("boolean primaryOutlineOnly = hasDimLayer || aod;"));
+        assertTrue(controller.contains("drawable.setSuppressedByDimmedOverlay(useDimmedOverlay);"));
+        String overlay = source("CouiUdfpsDimmedIconOverlay");
+        assertTrue(overlay.contains("WINDOW_TITLE = \"PixelUdfpsDimmedIcon\""));
+        assertTrue(overlay.contains("{ 2024,"));
+    }
 }

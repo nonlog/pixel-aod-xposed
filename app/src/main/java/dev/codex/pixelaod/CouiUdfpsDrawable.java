@@ -50,6 +50,7 @@ final class CouiUdfpsDrawable extends Drawable {
     private float aodStrokeWidth;
     private float outlineProgress;
     private int drawableAlpha = 255;
+    private float exitFadeAlpha = 1f;
     private int backgroundColor;
     private int normalForegroundColor;
     private int lightBackgroundColor;
@@ -59,6 +60,7 @@ final class CouiUdfpsDrawable extends Drawable {
     private boolean targetOutlineOnly;
     private boolean targetDark;
     private boolean pressed;
+    private boolean suppressedByDimmedOverlay;
     private ValueAnimator transitionAnimator;
 
     CouiUdfpsDrawable(Context context, boolean outlineOnly, boolean dark) {
@@ -198,6 +200,27 @@ final class CouiUdfpsDrawable extends Drawable {
         return targetOutlineOnly;
     }
 
+    float getExitFadeAlpha() {
+        return exitFadeAlpha;
+    }
+
+    void setExitFadeAlpha(float alpha) {
+        float clamped = clamp(alpha);
+        if (Float.compare(exitFadeAlpha, clamped) == 0) {
+            return;
+        }
+        exitFadeAlpha = clamped;
+        invalidateSelf();
+    }
+
+    void setSuppressedByDimmedOverlay(boolean suppressed) {
+        if (suppressedByDimmedOverlay == suppressed) {
+            return;
+        }
+        suppressedByDimmedOverlay = suppressed;
+        invalidateSelf();
+    }
+
     void setPressed(boolean pressed) {
         if (this.pressed == pressed) {
             return;
@@ -208,7 +231,7 @@ final class CouiUdfpsDrawable extends Drawable {
 
     @Override
     public void draw(Canvas canvas) {
-        if (pressed || squareSize <= 0f) {
+        if (pressed || suppressedByDimmedOverlay || squareSize <= 0f) {
             return;
         }
         float progress = clamp(outlineProgress);
@@ -293,7 +316,8 @@ final class CouiUdfpsDrawable extends Drawable {
 
     private int modulatedAlpha(int color, float progress) {
         return Math.max(0, Math.min(255, Math.round(
-                clamp(progress) * (Color.alpha(color) * drawableAlpha / 255f))));
+                clamp(progress) * clamp(exitFadeAlpha)
+                        * (Color.alpha(color) * drawableAlpha / 255f))));
     }
 
     private static int blendArgb(int from, int to, float progress) {
