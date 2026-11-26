@@ -3,21 +3,18 @@
 ## [Unreleased]
 
 ## [0.1.74] - 2026-11-26
-### Fixed
-- **Pixel UDFPS lockscreen circle HBM highlight**:
-  - Hosted the lockscreen idle 64dp Pixel fingerprint glyph in a dedicated `PixelUdfpsDimmedIcon` (`TYPE_NAVIGATION_BAR_PANEL`) window below `OnScreenFingerprintDimLayer` on global-HBM + DimLayer devices (e.g. OnePlus 12), eliminating the physical OLED highlight circle caused by OPlus SurfaceFlinger forcing `OnScreenFingerprintIcon` above `DimLayer`.
-  - Locked the primary `OnScreenFingerprintIcon` drawable to outline-only mode on DimLayer devices so the 64dp filled circle never flashes on screen-off/AOD transitions, while keeping `OnScreenFingerprintPressedIcon` above `DimLayer` for native optical authentication and success ripple.
-  - Moved custom AOD exit fade to an independent `exitFadeAlpha` multiplier in `CouiUdfpsDrawable` so vendor `Drawable.setAlpha()` brightness control is never overwritten.
+### Bug Fixes
+- The Pixel fingerprint circle on the lock screen no longer stays overly bright on OLED displays.
+- Turning off the screen no longer briefly flashes the fingerprint circle when entering AOD.
+- Fingerprint icon brightness now follows the system brightness properly without being overwritten.
 
 ## [0.1.73] - 2026-11-26
-### Fixed
-- **Pixel Peek consecutive notifications**:
-  - Hooked `CurvedDisplayManager#onReceiveNotification`, `CurvedDisplayManager$ShowCurvedNotification#run`, and `mAnimationEndListener#onAnimationEnd(Animator)` with `PixelPeekConsecutivePolicy` so consecutive incoming notifications refresh Pixel Peek immediately instead of only showing the first one, with a self-rescheduling deferred dismiss (20s max session cap).
+### Bug Fixes
+- Consecutive notifications now refresh Pixel Peek instead of only showing the first one.
 
 ## [0.1.72] - 2026-11-25
-### Fixed
-- **Lockscreen lyrics disappearing on Panoramic AOD entry** ([#6](https://github.com/nonlog/pixel-aod-xposed/issues/6)):
-  - Added `StockAodSuppressionScopePolicy` so `NotificationShadeWindowView` is excluded from `lastStockHost` / `hideStockClockViews()`, and protected `com.oplus.systemui.plugins.shared.template.component.*` and lyric views from stock AOD suppression.
+### Bug Fixes
+- Lock screen lyrics no longer disappear when entering Panoramic AOD ([#6](https://github.com/nonlog/pixel-aod-xposed/issues/6)).
 
 ## [0.1.71] - 2026-11-24
 ### Fixed
